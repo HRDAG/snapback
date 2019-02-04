@@ -43,6 +43,10 @@ then again use "resize2fs -P" to see if it's shrunk enough to fit on any of
 your smaller drives (if you're using e.g. XFS or some other modern filesystem,
 there's probably a similar way to perform the above operations).
 
+Before you copy the master drive to your other drives, you may want to think
+seriously about first encrypting the other drives.  See the 'snapcrypt'
+project for easy setup and maintenance of encrypted drives.
+
 Now you can use "snapback copy-backup" (which will show you what arguments are
 needed) to copy your master drive to each of the drives large enough to hold
 its contents.  If the drives are physically smaller than the master drive,
@@ -53,6 +57,10 @@ simultaneously (this is desired, since all the copies will share the same
 source contents in the page cache).  You don't need to use the 'nohup' command
 with "snapback copy-backup": it runs 'nohup' internally and saves the output
 to $FS_label.out .
+
+If you copied your master drive to encrypted drives, you now want to encrypt
+your master drive and use "snapback copy-backup" to copy one of the copied
+drives back to your now-encrypted no-longer-master drive.
 
 B. Installing files in this project
 
