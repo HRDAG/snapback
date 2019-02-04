@@ -1,0 +1,73 @@
+automagically changing pruning/backup_period to manage high disk usage
+
+   When $min_FS_usage_percent is substantially exceeded (i.e. the sysadmin
+   hasn't dealt with the daily emails nagging about this, and the usage keeps
+   rising), here's some policies to deal with this:
+
+   Do both of the following: start with 2, when exhausted switch to 1.a. or
+   1.b (depends on extra_prune_auto_type).  Config vars called extra_prune_* .
+
+   All state is kept in $backup_log_dir/extra-state/ :
+      default-state.sh # source it; if current vars are different, rm *
+      state.sh   # holds extra_prune_state=<num>\nbackup_period=NN ..
+      states.txt # each line is: ___N: backup_period=NN month_span=I ...
+
+   Note that maintain full state if exclude.txt or backup_dirs are tightened
+   up, the hysteresis will adapt.
+
+   Worst case of extra_prune is a month of dailies; might allow month_span=0
+   if hit worst case: extra_prune_spans_to_0=$true
+
+   1. partial, brute force: the simplest, takes a few hours to implement.
+   There are two ways to do it.  Both of them would be driven by a policy
+   variable that can be changed:
+
+	prune_decrement_order=hour-prune,day-prune,month-prune,year-prune,freq
+
+   1.a. uniform: quickly cycle through the $prune_decrement_order variables
+   and back, decrementing each in turn (except increasing backup_period),
+   using this loop: 1. decrement next variable; 2. wait for all the
+   newly-pruned snapshots to be deleted; 3. if disk usage is now acceptable,
+   break out of the loop but retain this state (and email it to sysadmin,
+   besides logging).  Implementing this policy would take a few hours.
+
+   1.b. chunked: slowly cycle through the $prune_decrement_order variables,
+   staying with one and steadily decrementing it until it hits 1 before moving
+   on to the next variable.  I'd probably not include backup-period aka freq
+   in $extra_prune_decrement_order, but instead only increase it after all the
+   pruning variables hit 1 (i.e. it would implicitly be last).  This policy
+   lets the sysadmin decide which time period needs the most granularity, and
+   which the least.  The implementation cost is probably the same as 1.a.
+
+   Providing a choice of either 1.a or 1.b would add an extra hour or so.
+
+   Every time the pruning and backup_period values in configure.sh change, I'd
+   clear the brute-force state and start afresh.
+
+   If the disk usage falls back under $min_FS_usage_percent, I'd start working
+   backwards through the states I'd transitioned, i.e. unwinding the
+   tightening: basically, there'd be hysteresis.
+
+   2. full, sysadmin-managed: the sysadmin would specify the order of the
+   actions to take to reduce disk usage, eg with the (optionally per-drive)
+   variable:
+
+	free_disk_usage_actions=2*hour,month,3*day,year,freq,hour,...
+
+   The advantage of this method is that it's easier to separate management of
+   free space (with the above variable) vs management of the time-granularity
+   needed for file recovery (by editing the *_per_span_for_*_prune variables
+   in configure.sh).  As above, I'd log and email each action.  I would create
+   /etc/snapback/recovery.txt, and encourage the sysadmins to use it to
+   document every time they do a recovery (recording the age in days,hours of
+   the snapshot they used, and the time-granularity that was adequate for the
+   recovery), so they can develop a notion to manage all these variables.  I'd
+   guess it would take a large fraction of a day to implement this policy, and
+   longer if I do a full regression test (I'm not sure that's needed).
+
+   If the disk usage falls back under $min_FS_usage_percent, I'd start working
+   backwards through the actions in $free_disk_usage_actions=2, i.e. unwinding
+   the tightening: basically, there'd be hysteresis.
+
+   Every time the pruning and backup_period values in configure.sh change, I'd
+   clear the automagic state and start afresh.

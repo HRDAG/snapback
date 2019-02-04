@@ -1,2 +1,2 @@
 # snapback
-snapshot/hardlink based backups 
+snapback stands for "snapshot backups": hardlink-based backups 

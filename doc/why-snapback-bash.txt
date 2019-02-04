@@ -1,0 +1,33 @@
+Why snapback not rsnapshot:
+
+   Designed to support many USB drives, some plugged in and some off-site;
+      efficiently runs simultaneous backups (making cheap SSDs "safe"),
+      with separate logs and policies for each flexibly-named drive.
+   Every config variable can have a per-drive value, in-line or separate-file
+      (can use smaller drives (e.g. memory sticks) to backup subset of system).
+   Integrated with 'snapcrypt', for easy use of encrypted, named drives.
+   Easy control over backup frequency (& can exclude list of off-peak hours).
+   Snapshots named by date (similar to rsync-snapshot), for transparency.
+   Sophisticated pruning of old snapshots: different retention policy over the
+     hours vs days vs months vs years (high -T debug_level shows how it works).
+   Prunes and rsyncs simultaneously (separate nice/ionice): never miss a backup
+      (no seek penalty with SSDs; can optionally suspend prune on disk drives);
+      when disk usage threshold is exceeded, pruning gets the higher priority.
+   Manages rsync's "Too many links" error (admin solves by adjusting pruning);
+     such errors are emailed to (per-drive) sysadmin(s).
+   Has 'watch' action, to watch current backups and see status of pruning.
+   Can safely and easily kill any backup or prune job, e.g. to eject drive.
+   Maintains history of snapshots on each ejected drive (for offsite requests).
+   Built-in regression tests to ensure reliable development.
+   Written in bash ...
+
+Why write such a serious program in bash:
+
+   It can start as a simple script, and evolve into a reliable, featureful one.
+   Config file holds shell commands (eg functions, arrays, maps, computation).
+   Automagically maintain list of config variables:
+      easy/reliable validation that all config variables were set;
+      per-variable customization: associative array maps drive name to value.
+   Supports simulation, which allows trivial creation of fast regression tests.
+   Supports tracing of all commands, for deep debugging, or learning new code.
+   Simple support of background processes with control of session groups.

@@ -1,0 +1,179 @@
+# version=1
+
+################################################################
+################################################################
+### This file and exclude.txt specify backup & prune policy. ###
+### Email requests for more variables to sweikart@gmail.com  ###
+################################################################
+################################################################
+
+##############################################################################
+# Most variables can have per-drive values (must remove -r or readonly label),
+#   using either source_drive_specific_config_file (which can be modified) or
+#   eg: bkp_name2dirs_to_backup[Z]=/var/tmp/small-dir  # test w/pseudo-drive Z
+##############################################################################
+
+# -------------------------------------------------
+# Variables used by run-backup* and prune-backup* #
+# -------------------------------------------------
+
+# We append the backup name to this variable to get the mount point.
+# If change this, change comment at top of "snapback mkfs".
+# DON'T FORGET to add this directory to PRUNEPATHS in /etc/updatedb.conf !
+readonly backup_dir_prefix=/backup/
+
+# In case have mounted drives encrypted with old name (usually FS label).
+readonly old_crypt_name_prefixes=
+
+# Where send warning and error messages.
+readonly sysadmin_email_addresses="sweikart@gmail.com"
+
+# level 0: log when create *,00 snapshot; log # pruned & also # *.rm deleted
+# level 1: log every backup (plus above)
+# level 2: log the new snapshots that will be pruned (plus above)
+# level 3: log the deleted snapshots (plus above); misses deletions before kill
+declare -i -r log_level=0	     # verbosity of logs in /var/log/snapback/
+
+# ----------------------------------
+
+# How high can FileSystem usage get before warning $sysadmin_email_addresses?
+declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
+
+# Normally, backups run at higher priority and pruning runs at lower priority;
+#  but, if the min_FS_usage_percent is exceeded, those priorities are inverted.
+readonly  lower_priority_renice_args="--priority +15"
+readonly higher_priority_renice_args="--priority +13"
+#
+readonly  lower_priority_ionice_args="--class 2  --classdata 6"
+readonly higher_priority_ionice_args="--class 2  --classdata 5"
+
+# SSDs have no seek penalty, so can run rsync backup and deletion of pruned
+# snapshots simultaneously with no I/O penalty (the priority is controlled as
+# described above).  Hard disks are different, so can change that policy.
+readonly suspend_prune_when_backup=$false # can set $true for hard disk drives
+
+# ------------------------------------
+# variables that control run-backup* #
+# ------------------------------------
+
+# The directories we back up, *must* be absolute paths; can use bash globbing.
+	 dirs_to_backup="/"
+bkp_name2dirs_to_backup[Y]=/home/scott/{.bash*,bin,git} # personal memory stick
+bkp_name2dirs_to_backup[Z]=/var/tmp/small-dir # for testing with pseudo-drive Z
+
+# Basic options for "rsync"; add --acls if it's supported.
+# preallocate: slight ext4 speedup; hopefully works with --sparse
+# preallocate error: rsync: do_fallocate <path> "Operation not supported (95)
+readonly rsync_backup_opts="--archive --hard-links --xattrs --sparse --preallocate"
+
+# See: https://stackoverflow.com/a/20738063 or "EXIT VALUES" in man page.
+# Vanished source files (status=24) are common if backup tmp directories.
+readonly successful_rsync_exit_statuses="0 24"
+#
+# We ignore SIGUSR1 or SIGINT (status=20) since partial snapshots are handled.
+# Instead of logging failures for Too many links (status=31), speedup pruning.
+readonly no_log_rsync_exit_statuses="20" # add 31 after address all issues
+
+# "rsync --exclude-from=$exclude_from_file" ; also used to prune old snapshots.
+readonly exclude_from_file=$backup_config_dir/exclude.txt
+
+# Skip backups when there aren't many users, to avoid 'Too many links" problem.
+readonly excluded_backup_hours="23 1 3"
+#
+# The number of hours (1, 2, 4, 8, 12, or 24) between cron-based backup runs.
+# A backup is *always* done at midnight, since that's the one pruning keeps.
+declare -i backup_period=1		# need much RAM & SSDs for small period
+  bkp_name2backup_period[E]=24		# the E drive seems to be dieing
+  bkp_name2backup_period[Z]=2		# twice the period of the mk-Z output
+
+# ----------------------------------------------------------------------------
+# Variables that control prune-backups, plus ...			     #
+# NOTE: backup_period and exclude_from_file (above) are also used in pruning.#
+# ----------------------------------------------------------------------------
+
+# Dirs that contain files with massive numbers of hard-links.
+readonly hard_link_dirs="/var/repos/snap*"
+
+# The following description of how pruning works is hard to follow.
+# If you prefer examples, run the command "snapback test-prune",
+# then 'cd' to ${backup_dir_prefix}Z (or however you renamed Z),
+# then study the 'ls -CF -d .mk-Z.*' directories and files.  For example,
+# .mk-Z.hour/ holds a few weeks of hourly snapshots, and
+# .mk-Z.hour.pruned.ls holds the snapshots that were left after pruning.
+#
+# To grok how pruning works, you can trace the code in simulation mode:
+#    snapback -d -T 5 prune-backups |& less
+# and study the 'prune_backup' function.
+
+# Skip 'span' days of the newest snapshots, rm half the older ones; repeat this
+# loop until all the oldest snapshots are only *,00 (i.e. one per day),
+# which encompasses 1.5 months for an hourly 'span' of 7 days.
+declare -i days_per_span_for_hour_prune=7	# prune-backup* can change this
+  bkp_name2days_per_span_for_hour_prune[Z]=1	# for action test-prune
+#
+# At date where the previous rm's all but *,00, repeat algorithm for months,
+# until all the oldest snapshots are only *-01,00 (i.e. one per month).
+declare -i months_per_span_for_day_prune=4	# prune-backup* can change this
+  bkp_name2months_per_span_for_day_prune[Z]=1	# for action test-prune
+#
+# At date where the previous rm's all but *-01,00, repeat algorithm for years,
+# until all the oldest snapshots are only *-01-01,00 (i.e. one per year).
+declare -i years_per_span_for_month_prune=4	# prune-backup* can change
+  bkp_name2years_per_span_for_month_prune[Z]=1	# for action test-prune
+
+# At date where previous rm's all but *-01-01,00, repeat algorithm for decades,
+# until all the oldest snapshots are only ?0-01-01,00 (i.e. one per decade).
+declare -i decades_per_span_for_year_prune=4	# prune-backup* can change
+  bkp_name2decades_per_span_for_year_prune[Z]=1	# for action test-prune
+
+# You can use this variable to change all 4 of the previous variables at once,
+# or to scale all 4 of the previous variables for a drive of a different size.
+	 pruning_span_scale_factor=1.0	  # scales previous 4 variables
+bkp_name2pruning_span_scale_factor[G]=1.5 # G is 50% bigger than other drives
+bkp_name2pruning_span_scale_factor[Z]=1	  # Z used for pruning regression tests
+
+# -----------------------------------------------
+# Miscellaneous variables and functions		#
+# -----------------------------------------------
+
+# Set to 'T' for ISO standard, code will automagically rename snapshots.
+# [Code is hard-wired to ',' ; email sweikart@gmail.com to implement variable.]
+readonly snapshot_date_time_separator=','
+
+# Default policy: backups are named as a single upper-case letter.
+set_backup_name() {
+	backup_name=$1
+	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
+
+	if [[ $backup_name != ? && $backup_name == *[_/]* ]]
+	   then [[ $backup_name != */* && $backup_name == *_* ]] && # FS label?
+		    backup_name=/${backup_name//_/\/}
+		[[ $backup_name == $backup_dir_prefix[A-Z] ]] ||
+		   abort "$backup_name looks like directory, but invalid name"
+		backup_name=${backup_name: -1} # grab last letter
+	   else [[ $backup_name == [a-zA-Z] ]] ||
+		   abort "'$backup_name' is an invalid backup name"
+		backup_name=${backup_name^}	# upper-case it
+	fi
+}
+
+# By default, config-$backup_name.sh holds custom per-drive config variables;
+# if a lot of drives share custom config, symlink their files to config-XXX.sh
+drive_config_file=
+source_drive_specific_config_file() {
+	[[ $# == 0 ]] && return
+	local _name=${1: -1}  _main_config_file=${2:-${backup_config_file-}}
+	set_backup_name $_name
+	[[ $_main_config_file ]] || abort "pass backup_config_file as 2nd arg"
+
+	local     _config_file=${_main_config_file/%.sh/-$backup_name.sh}
+	if [[ -s $_config_file ]]
+	   then drive_config_file=$_config_file	; source $_config_file
+	   else drive_config_file=		; true
+	fi
+}
+
+# if this doesn't work, use: M-x shell-script-mode
+# Local Variables:
+# mode: sh
+# End:

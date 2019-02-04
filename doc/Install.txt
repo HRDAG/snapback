@@ -1,0 +1,67 @@
+WARNING: if you heavily use an application (like our 'snap' aka 'snapshot')
+which generates lots of hard-linked files, you'll run into the "Too many
+links" error if you use a backup filesystem that has too-small limits on the
+maximum number of hard-links per inode (I think the NTFS max is very small;
+the ext4 max is 65K).  In this case, you'll ideally use something like XFS (or
+Btrfs if you're adventuresome).
+
+A. Re-using existing backup drives
+
+If you have backup drives with one or more existing snaphots, it's best to use
+"cp -al" to copy all the snapshots onto one drive (ideally, the smallest drive
+that will hold all the fully-hard-linked files ...).  Before each individual
+"cp -al", hard-link all the identical files on the source (which will decrease
+disk space) using e.g. 'rmlint' (https://github.com/sahib/rmlint); after each
+"cp -al", run 'rmlint' on the whole destination drive.
+
+Once all the snapshots are on one drive (called the master drive), you need to
+rename them to conform to snapback's standards, and make sure all the
+snapshots are in the root of the drive (and, ideally, nothing else is in the
+root of the drive, except perhaps in an e.g. .my-stuff/ directory).  To see
+the naming conventions, run:
+
+    snapback mkfs		# you won't otherwise need to use this command
+
+Now label your master drive.  First, to see a good fstab record, run:
+
+    snapback -d mkfs -f $device A	# -d means "simulation"
+
+which will also indicate the label to use with e.g. 'e2label'.
+
+If you weren't able to use your smallest drive as the master, but the amount
+of disk space in-use on the master will fit on smaller backup drives, after
+the final 'rmlint' on your master drive, run e.g. (for ext?):
+
+    sudo umount $device
+    sudo resize2fs -P $device
+
+to see if it can be shrunk enough to fit on a smaller drive.  If so, run:
+
+    nohup sudo resize2fs -M -p $device &
+
+then again use "resize2fs -P" to see if it's shrunk enough to fit on any of
+your smaller drives (if you're using e.g. XFS or some other modern filesystem,
+there's probably a similar way to perform the above operations).
+
+Now you can use "snapback copy-backup" (which will show you what arguments are
+needed) to copy your master drive to each of the drives large enough to hold
+its contents.  If the drives are physically smaller than the master drive,
+"snapback copy-backup" runs a 'dd' command that will fail, but you run a
+simulation with "snapback -d copy-backup ..." to see what commands you need to
+run to finish the job ('nohup' them).  You can copy multiple drives
+simultaneously (this is desired, since all the copies will share the same
+source contents in the page cache).  You don't need to use the 'nohup' command
+with "snapback copy-backup": it runs 'nohup' internally and saves the output
+to $FS_label.out .
+
+B. Installing files in this project
+
+sudo cp bin/snapback /usr/local/bin/
+sudo cp ../libsnap/bin/libsnap.sh /usr/local/bin/
+sudo cp etc/cron.d/snapback /etc/cron.d/
+sudo cp etc/sudoers.d/snapback /etc/sudoers.d/
+sudo cp -r etc/snapback /etc/
+cd /etc/snapback
+for fs in *.sample; do f=${fs%.sample}; sudo cp $fs $f; echo "edit $f"; done
+
+C. Configuring 'snapback'

@@ -1,0 +1,3 @@
+# 'snapback watch -C' runs 'sudo ps', which will fill up auth.log, unless ...
+Cmnd_Alias SNAPBACK = /bin/ps
+Defaults!SNAPBACK !syslog, !pam_session

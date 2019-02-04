@@ -1,0 +1,42 @@
+If you run
+
+    snapback watch
+
+or
+
+    ssh -t <my-server> snapback watch
+
+you'll see a lot of info.  If you decrease/increase the width of your screen,
+you'll see less/more info from 'ps'.  If you decrease/increase the height of
+your screen, you'll see fewer/more sections and sub-sections.
+
+If your screen is tall enough to show 'df', you'll see disk usage.  If it's
+too high, check "Number pruned snapshots awaiting 'rm'"; if there's few,
+you'll probably need to increase the rate of pruning in
+/etc/snapback/configure.sh (normally, backups take priority over pruning; but
+when the disk usage threshold is exceeded, this priority is inverted ... so
+the pruning will proceed faster than the backups).
+
+I spent a couple of hours trying to include the output of 'rsync --progress',
+but it was never reliable, so I gave up.  The only sign of activity (besides
+the slowly incresing 'ps' TIME) is to watch IUsed (Inodes Used) go up (your
+screen needs to be tall enough to see the 'df' output).
+
+The -C option shows the Cron job(s).  Unless your screen has a zillion lines
+(i.e. very tall and/or small font), a lot of sections will disappear as soon
+as a big cron job starts, because -C prioritizes fitting the cron job on the
+screen.
+
+Typically, the cron job starts every hour on the hour; it will start to get
+smaller over time, as rsync finishes on the smaller or faster drives (or ones
+with limited $dirs_to_backup.  Also, the biggest cron job only appears by
+"restarting fresh" (pruning-jobs run for hours, so the typical cron job
+doesn't have to do much pruning).  If you want to see the full cron job, run:
+
+    snapback kill-both all
+
+which kills both backups and pruning on all the drives ... which is
+*completely* *safe*, there are *no* *races*, this is done *all* *the* *time*.
+Really.  Run the kill-both (in another window) *after* you start "snapback
+watch", so you can 'watch' the kill take place (some commands take time to
+die, because they're waiting to finish expensive I/O).

@@ -1,0 +1,2134 @@
+#!/bin/bash
+
+source libsnap.sh || exit 1
+
+readonly coder=sweikart@gmail.com
+
+readonly  backup_config_dir=/etc/$our_name
+readonly backup_exclude_file=$backup_config_dir/exclude.txt
+readonly  backup_config_file=$backup_config_dir/configure.sh
+readonly  backup_config_file_sample=$backup_config_file.sample
+
+if [[ ! -s $backup_config_file_sample ]]
+   then abort "have to install $backup_config_file_sample"
+elif ! head -n1  $backup_config_file_sample | fgrep -q -x "# version=1"
+   then abort "$backup_config_file_sample version does not match $our_name"
+fi
+
+# for each config var, create associative array for per-drive customization
+readonly uncustomizable_config_vars="
+		backup_dir_prefix old_crypt_name_prefixes drive_config_file"
+readonly config_vars=$(sed '/() *{/,/^}/d' $backup_config_file | # strip funcs
+		       sed -n -r 's/^[^#]*\b(\w+)=.*$/\1/p' | sort -u)
+for var in $config_vars; do eval "declare -A bkp_name2$var"; done
+#
+source $backup_config_file || abort "$backup_config_file broken"
+
+[[ -s $backup_exclude_file ]] ||
+   abort "install/edit $backup_exclude_file, see included .sample"
+
+PATH=/usr/local/sbin:/usr/local/bin:$PATH
+
+Usage="
+Usage: $our_name action [args]
+  Current actions are:
+    list-backups: list all the mounted backups
+    run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
+    prune-backups [span] [dirs]: see configure.sh (dirs defaults to all drives)
+    snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
+    w: show pruning & backup activity, and the status of pruning and backups
+    watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
+    kill-backup name(s): for each name (can be 'all'), kill backup
+    kill-prune name(s) : for each name (can be 'all'), kill prune
+    kill-both name(s)  : for each name (can be 'all'), kill backup & prune
+
+    mkfs device [name]: prepare blank-first or smallest drive (see comments)
+    copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
+    mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
+    test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
+
+  NOTE: to see what an action would do, use -d option to simulate the action.
+
+  Common options:
+	-C: we are being run from cron
+
+	-c: pass -c (--checksum) to rsync (for actions that use 'rsv')
+	-n: pass -n (--dry-run ) to rsync (for actions that use 'rsv')
+	-v: pass -v (--verbose ) to rsync and maybe other commands
+	-q: pass -q (--quiet   ) to rsync and maybe other commands
+
+	-d: Debug shell script (don't run commands, just show them): simulation
+	-t: Trace shell script (show commands as they execute)
+	-T level: control whether Trace and TraceV functions run echoE*\n"
+
+is_cron=$false   cron_opt=
+RunIf= Trace=    debug_opt= trace_opt=  our_rsync_opts=
+our_opts=
+while getopts "C cnvq dtT: hk"  arg
+    do	add_words our_opts -$arg ${OPTARG-}
+	case $arg in
+	   ( C ) is_cron=$true	cron_opt=-C ;;
+
+	   ( c ) add_words our_rsync_opts --checksum ;;
+	   ( n ) add_words our_rsync_opts --verbose --dry-run ;;
+	   ( v ) add_words our_rsync_opts --verbose ;;
+	   ( q ) add_words our_rsync_opts --quiet   ;; # cancels --verbose
+
+	   ( d ) RunIf="echo -e" debug_opt=-d ;; # $RunIf prevents side-effects
+	   ( t ) Trace="set -x"  trace_opt=-t ;;
+	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
+
+	   (h|k) print_or_egrep_Usage_then_exit "$@" ;;
+	   ( * ) echo "$Usage" >&2; exit 1 ;;
+	esac
+done
+let OPTIND=$OPTIND-1
+shift $OPTIND
+unset arg
+
+[[ $trace_opt ]] && warn "the rsync options have not been tested"
+
+[[ -n $Trace && -n $RunIf ]] && RunIf=:
+
+trap '' HUP TERM
+trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
+
+readonly tmp_1=$tmp_dir/$our_name-1-$$	; tmp=$tmp_1
+readonly tmp_2=$tmp_dir/$our_name-2-$$
+readonly tmp_3=$tmp_dir/$our_name-3-$$
+readonly tmp_4=$tmp_dir/$our_name-4-$$
+readonly tmp_5=$tmp_dir/$our_name-5-$$
+
+need_cmds lockpid
+
+shopt -s extglob
+
+umask 02				# log dirs are setgid sudo
+
+FUNCNEST=100				# catch coding errors
+
+# $Trace
+
+# ----------------------------------------------------------------------------
+# miscellaneous variables and functions used by for making and pruning backups
+# ----------------------------------------------------------------------------
+
+# touched when prune ends; its time is compared to files in $backup_config_dir/
+readonly pruned_timestamp=.pruned.ts
+
+readonly our_opts=${our_opts# }
+# if background prune_backup shell function, parent & child share $tmp* files?!
+readonly prune_backup_exe="$our_path $our_opts prune-backup"
+# if background   run_backup shell function, parent & child share $tmp* files?!
+readonly   run_backup_exe="$our_path $our_opts run-backup"
+
+readonly hostname=${HOSTNAME%%.*}
+
+readonly log_dir=/var/log/$our_name
+
+log_cmd_file=$log_dir/messages.log	# set__backup_dir__log_cmd_file sets it
+log_msg_prefix=' ${action-} ${backup_name-}' # this gets eval'ed each time
+
+# ----------------------------------------------------------------------------
+
+source /etc/snapcrypt/configure.sh &> /dev/null # optional, might hold ...
+
+type \
+set_FS_label &> /dev/null ||		# if user didn't specify one
+set_FS_label() {
+	local mount_dir=$1
+
+	case $mount_dir in
+	   ( /dev/mapper/* | /dev/VG*/* )
+		      FS_label=$(sudo e2label  $mount_dir 2>/dev/null)
+		      [[ $FS_label ]] ||
+		      FS_label=$(basename $mount_dir); return 0 ;;
+	   ( /dev/* ) FS_label=$(basename $mount_dir); return 0 ;;
+           ( /*     ) ;;
+	   ( */*    ) mount_dir=${mount_dir#${backup_dir_prefix#/}} ;;
+	   (  *	    ) mount_dir=$backup_dir_prefix$mount_dir ;;
+	esac
+	[[ $mount_dir == /* ]] || mount_dir=$backup_dir_prefix$mount_dir
+	FS_label=${mount_dir#/}
+	FS_label=${FS_label//\//_}
+	return 0
+}
+
+type \
+label_drive &> /dev/null ||
+label_drive() {
+	local device=$1 mount_dir=$2 FS_label=
+
+	set_FS_label $mount_dir
+	$RunIf sudo e2label $device $FS_label
+}
+
+    [[ ${FS_type-} ]] ||
+readonly FS_type=ext4
+
+# ----------------------------------------------------------------------------
+
+set_readable_du_size() {
+	declare -i size=$1
+
+	local suffix=K
+	while (( $size >= 1024 ))
+	   do	let size/=1024
+		case $suffix in		# see: man du
+		    ( 'K' ) suffix=M ;;
+		    ( 'M' ) suffix=G ;;
+		    ( 'G' ) suffix=T ;;
+		    ( 'T' ) suffix=P ;;
+		    ( 'P' ) suffix=E ;;
+		    ( 'E' ) suffix=Z ;;
+		    ( 'Z' ) suffix=Y ;;
+		esac
+	done
+	readable_du_size=$size${suffix}B
+}
+
+# ----------------------------------------------------------------------------
+
+set_PGID() {
+
+	if [[ $# == 0 ]]
+	   then PGID=
+	   else PGID=$(set -- $(ps h -o pgid $* | sort -u); echo $*)
+	fi
+	[[ $PGID ]]
+}
+
+# ---------------------------------
+
+process_group_PIDs() {
+
+	local PGID
+	for PGID
+	    do	# I don't know why this didn't work
+		# ps -u root -o pid,pgid | grep " $PGID$" | awk '{ print $1 }'
+
+		# "pstree -p -a" lines start with: <command>,<PID> ...
+		pstree -p -a $PGID | sed 's/^[^,]*,\([0-9]*\).*/\1/'
+	done
+}
+
+# ----------------------------------------------------------------------------
+
+is_disk_usage_too_high() {
+
+	set -- $(df --output=pcent,ipcent $backup_dir | tail -n1)
+	declare -i block_percent=${1%\%} inode_percent=${2%\%}
+	(( $block_percent <= $min_FS_usage_percent )) || return 0
+	(( $inode_percent <= $min_FS_usage_percent )) || return 0
+	return 1
+}
+
+# -----------------------
+
+setup_lower_priority() {
+
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+	$RunIf $sudo renice $lower_priority_renice_args --pid $$ &>/dev/null
+	$RunIf $sudo ionice $lower_priority_ionice_args --pid $$ &>/dev/null
+}
+
+# --------------
+
+setup_higher_priority() {
+
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+	$RunIf $sudo renice $higher_priority_renice_args --pid $$ &>/dev/null
+	$RunIf $sudo ionice $higher_priority_ionice_args --pid $$ &>/dev/null
+}
+
+# -----------------------
+
+# returns success if run at higher priority
+setup_run_backup_priority() {
+
+	if is_disk_usage_too_high
+	   then  setup_lower_priority ; return 1
+	   else setup_higher_priority ; return 0
+	fi
+}
+
+# --------------
+
+setup_prune_backup_priority() {
+
+	if is_disk_usage_too_high
+	   then setup_higher_priority
+	   else  setup_lower_priority
+	fi
+}
+
+# ----------------------------------------------------------------------------
+
+list_backups() {
+	df --output=target --no-sync | grep "^$backup_dir_prefix" | sort -u
+}
+
+# --------------------------------------------
+
+function fix_snapshot_names {
+	local backup_dir=$1
+
+	set -- $backup_dir/$old_snapshot_pattern*
+	[[ -d $1 ]] || return 0
+
+	# this --kill -9 is completely safe
+	$RunIf sudo fuser --kill -9 --ismountpoint $backup_dir
+	local msg="$old_snapshot_pattern to $snapshot_pattern"
+	log "renaming snapshots from $msg, first waiting ..."
+	$RunIf sleep 5			# wait for kill
+
+	local old_name
+	cd_ $backup_dir
+	for old_name in $old_snapshot_pattern*
+	    do	[[ -d $old_name ]] || continue
+		set_new_name $old_name
+		$RunIf sudo mv $old_name $new_name || abort "need sudo privs"
+	done
+}
+
+# ---------------------------------
+
+     backup_dir= log_cmd_file=		# global, just in case
+# can pass a null backup_name to set default log_cmd_file
+set__backup_dir__log_cmd_file() {
+	local backup_name=$1		# result of set_backup_name, i.e. valid
+
+	[[ $backup_name != */* ]] ||
+	   abort "invalid / in backup name, add to backup_dir_prefix instead"
+
+	backup_dir=$backup_dir_prefix$backup_name
+	[[ $backup_name == Z ]]  &&
+	is_regression_test=$true &&
+	[[ ! -d $backup_dir  ]]  &&
+	sudo mkdir -p $backup_dir/lost+found &&
+	sudo chown $LOGNAME $backup_dir $backup_dir/*
+
+	[[ ! $backup_name || -d $backup_dir/lost+found ]] ||
+	    warn "no filesystem mounted on $backup_dir" || return 1
+
+	if [[ $backup_name ]]
+	   then local backup_log_dir=$log_dir/$backup_name
+	   else local backup_log_dir=$log_dir
+	fi
+	log_cmd_file=$backup_log_dir/messages.log
+
+	[[ -d $log_dir ]] || {
+	sudo mkdir -p $log_dir
+	sudo chgrp sudo $log_dir
+	sudo chmod g+w,g+s $log_dir
+	}
+	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
+
+	if [[ ! -d $backup_log_dir ]]
+	   then sudo mkdir -p -m g+w,o-w $backup_log_dir
+		[[ $is_regression_test ]] &&
+		sudo touch $log_cmd_file &&
+		sudo chown $LOGNAME $backup_log_dir $log_cmd_file
+	fi
+	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
+
+	fix_snapshot_names $backup_dir	# must call last
+}
+
+# ----------------------------------------------------------------------------
+
+readonly lock_types="prune-backup run-backup"
+
+set_lock_file() {
+	local type=$1 name=${2:-$backup_name}
+
+	is_arg1_in_arg2 $type $lock_types || abort "lock: '$type' is unknown"
+	set_backup_name $name
+	lock_file=/var/lock/$type-$backup_name.pid
+}
+
+# ---------------------------------
+
+locker_PIDs() {
+	local type=$1; shift
+	[[ $* == all ]] && set -- $(list_backups)
+
+	local backup
+	for backup
+	    do	set_lock_file $type $backup
+		if lockpid $lock_file >& /dev/null
+		   then lockpid -r $lock_file
+		   else echo $(< $lock_file)
+		fi
+	done
+}
+
+# ---------------------------------
+
+kill_locker_group() {
+	local type=$1; shift
+	[[ $* == all ]] && set -- $(list_backups)
+
+	local PGID pgid status=1
+	set_PGID $(locker_PIDs $type $*)
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+	for pgid in $PGID
+	    do	$RunIf $sudo kill -9 -$pgid && status=0
+	done
+
+	return $status
+}
+
+# ---------------------------------
+
+readonly lockpid_output_file=$tmp_5
+
+run_lockpid() {
+	local lock_file=$1 lock_holder_action=$2
+
+	local   lock_cmd="lockpid $lock_file"
+	$RunIf $lock_cmd &> $lockpid_output_file
+	local status=$?
+
+	if [[ $status == 0 ]]
+	   then [[ $RunIf ]] && cat $lockpid_output_file
+		rm $lockpid_output_file
+		return 0
+	fi
+
+	local lock_holder_PID=$(sed 's@^Process @@; s@ holds lock .*@@' \
+					$lockpid_output_file)
+	if [[ $status == 1 && $lock_holder_PID ]]
+	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
+		log  "process $lock_holder_PID is $lock_holder_action"
+	   else log "$lock_cmd -> $lockpid_msg (status=$status)"
+	fi
+	rm $lockpid_output_file
+	return 1
+}
+
+# -------------------------------------------------------
+
+job_PIDs() {
+	local type=$1; shift
+
+	process_group_PIDs $(locker_PIDs $type $*)
+}
+
+# ---------------------------------
+
+signal_job() {
+	local signal=$1 type=$2 name=${3:-$backup_name}
+
+	set_lock_file $type $name &&
+	[[ -s $lock_file ]] &&
+	set -- $(< $lock_file) &&
+	[[ $# != 0 ]] &&
+	$RunIf kill -s $signal -$1 &> /dev/null # job may not exist
+}
+
+# ---------------------------------
+
+_backup_managed_prune() {
+	local name=$1 state=$2
+
+	[[ $is_cron ]] || return
+
+	[[ $state == pre-rsync ]] &&
+	customize_and_validate_configuration_variables $name
+
+	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
+	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
+	   then # use setsid so action kill-prune doesn't kill backup
+		$RunIf  setsid $prune_backup_exe $backup_dir &
+		return
+	fi
+
+	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
+	signal_job SIGSTOP prune-backup $name
+}
+
+# -----------------------------------------------------------------------------
+
+is_regression_test=$false
+
+customize_config_variables() {
+	local dir=${1-}
+
+	[[ $dir ]] || return
+
+	set_backup_name $dir ||
+	   abort "$backup_config_file needs set_backup_name function"
+
+	[[ $backup_name == Z ]] && is_regression_test=$true
+
+	local var_name
+	for var_name in $config_vars
+	    do	local array_name=bkp_name2$var_name
+		eval "local bkp_names=\${!$array_name[*]}"
+		is_arg1_in_arg2 $backup_name $bkp_names || continue
+
+		eval "local custom_value=\${$array_name[\$backup_name]-}"
+		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
+		   abort "$backup_config_file can't have custom '$var_name'"
+		eval "$var_name=\$custom_value"
+		set +x
+		Trace 2 "$array_name[$backup_name] -> $var_name=$custom_value"
+	done
+}
+
+# ------------------------------------------------------------------
+
+validate_config_variables() {
+
+	declare -p $config_vars | grep -v '^declare -'
+	[[ ${PIPESTATUS[0]} == 0 ]] ||
+	    abort "must assign above variables, see $backup_config_file_sample"
+
+	local var=snapshot_date_time_separator
+	[[ ${!var} == ',' ]] ||
+	   abort "$var is not implemented, email $coder"
+	#
+	local bad_punctuation="[-.:0-9]" # you could ask $coder to change this
+	[[ $snapshot_date_time_separator != *$bad_punctuation* ]] ||
+	   abort "snapshot_date_time_separator can't contain $bad_punctuation"
+	#
+	[[ $excluded_backup_hours != *[^\ \	0-9]* ]] ||
+	   abort "excluded_backup_hours must be list of numbers, no ranges/etc"
+
+	[[ ${custom_dirs_to_backup-} ]] && # from interactive user
+	            dirs_to_backup=$custom_dirs_to_backup
+
+	set -- $backup_config_file $drive_config_file
+
+	echo " $dirs_to_backup " | grep ' [^/]' &&
+	   abort "dirs_to_backup contains a non-absolute path in $*"
+
+	is_arg1_in_arg2 $backup_period $valid_backup_periods ||
+	   abort "invalid 'backup_period=$backup_period' in $*"
+
+	[[ -s $exclude_from_file ]] ||
+	   abort "'exclude_from_file=$exclude_from_file' is empty file (from $*)"
+
+	is_arg1_in_arg2 0 $successful_rsync_exit_statuses ||
+	   abort "'successful_rsync_exit_statuses=$successful_rsync_exit_statuses' must contain 0 in $*"
+}
+
+# ----------------------------------------------------------------------------
+
+set_oldest_backup_snapshot() {
+
+	local oldest= FS
+	for FS in $(list_backups)
+	    do	suspend_tracing
+		set -- $FS/$snapshot_pattern
+		restore_tracing
+		[[ $oldest && $(basename $oldest) < $(basename $1) ]] &&
+		   continue
+		oldest=$1
+	done
+	[[ -d $oldest ]] || abort "no old backup drives are mounted"
+	oldest_backup_snapshot=$oldest
+}
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# functions and variables used to prune old backups
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+customize_and_validate_configuration_variables() {
+	local dir=${1-}
+
+	[[ $dir && $dir != /* ]] &&
+	set__backup_dir__log_cmd_file $dir && dir=$backup_dir
+
+	suspend_tracing
+
+	type source_drive_specific_config_file &> /dev/null && # optional
+	source_drive_specific_config_file $dir
+
+	customize_config_variables $dir
+
+	validate_config_variables	# must do this last
+
+	restore_tracing
+}
+
+# ------------------------------------------------------------------
+
+_is_time_to_prune_backup() {
+	local dir=$1
+
+	suspend_tracing
+	customize_and_validate_configuration_variables $dir
+	restore_tracing
+
+	[[ ! $is_cron ]] && return 0	# run by a person?
+
+	[[ $(date '+%H') == 00 ]] && return 0 # time for our daily prune?
+
+	set -- $dir/*.rm
+	[[ -d $1 ]] && return 0		# have partially-deleted snapshots?
+
+	local pruned_TS=$dir/$pruned_timestamp
+
+	[[ ! -e $pruned_TS ]] && return 0 # never finished a prune?
+	[[ $pruned_TS -ot $backup_config_file  ]] && return 0 # newer config?
+	[[ $pruned_TS -ot $backup_exclude_file ]] && return 0 # newer excludes?
+	[[ $(find $pruned_TS ! -mtime 0) ]] && return 0	      # older prune?
+
+	return 1			# not time to prune
+}
+
+# ----------------------
+
+_rm_pruned_snapshots() {
+	local snapshots_file=$1
+
+	local snapshot
+
+	suspend_tracing
+	set -- $(< $snapshots_file)
+
+	[[ $# != 0 ]] &&
+	if (( $log_level >= 2 ))
+	   then [[ $RunIf ]] ||
+		log "will prune these snapshots: " $*
+	   else $RunIf \
+		log "pruned $# snapshots, will rename to *.rm for deletion"
+	fi
+	restore_tracing
+
+	# first, rename snapshots to be pruned, so can see the pruning backlog
+	for snapshot
+	    do	[[ $snapshot != *.rm ]] &&
+		$RunIf mv $snapshot $snapshot.rm
+	done
+
+	suspend_tracing
+	set -- *.rm
+	[[ -d $1 ]] || shift
+	local snapshot_basenames=$*
+	restore_tracing
+
+	if [[ ! -d latest ]]
+	   then set -- $snapshot_pattern # only the successful snapshots
+		[[ -d ${!#} ]] && $RunIf rm -f latest &&
+		$RunIf ln -s $(basename ${!#}) latest
+	fi
+
+	suspend_tracing
+	# put newest ones first, since they have the most hardlinks.
+	# use absolute paths, so the 'ps' output is more clear.
+	set -- $(echo $backup_dir/*.rm | tr ' ' '\n' | sort --reverse)
+	[[ -d $1 ]] || shift
+	local number_pruned_snapshots=$#
+	restore_tracing number_pruned_snapshots
+
+	$Trace
+	# just prune subdirs containing files with massive # of hard-links;
+	# except too-high disk usage is more critical than "Too many files".
+	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $backup_dir &&
+	for snapshot
+	    do	local subdir
+		for subdir in $hard_link_dirs
+		    do	$RunIf rm -rf $snapshot$subdir
+		done
+		set +x
+	done
+
+	$Trace
+	# finally, prune the rest of the contents of the *.rm snapshots
+	for snapshot
+	    do	$RunIf rm -rf $snapshot
+		set +x
+	done
+
+	(( $number_pruned_snapshots > 0 )) &&
+	if (( $log_level >= 3 ))
+	   then [[ $RunIf ]] ||
+	        log "deleted these pruned snapshots: $snapshot_basenames"
+	   else $RunIf \
+		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
+	fi
+
+	local pruned_TS=$backup_dir/$pruned_timestamp
+	[[ $backup_name == Z ||		# regression test?
+	   ( ! $RunIf &&		# ... too slow for real drive
+	     # very slow: only run if exclude.txt changed since our last run
+	     ( ! -e $pruned_TS ||
+		    $pruned_TS -ot $backup_exclude_file ) ) ]] &&
+	{
+	# prune exclude-patterns from _all_ snapshots, very slow
+	local exclude_pattern file
+	for snapshot in $backup_dir/$snapshot_pattern*
+	    do	[[ $snapshot == *.rm ]] && continue
+		grep '^ */' $backup_exclude_file | fgrep -v '**' |
+		while read exclude_pattern
+		    do	set -- $snapshot"$exclude_pattern" # can have SPACEs
+			for file
+			   do	[[ -e "$file" ]] && echo "$file"
+			done
+		done
+		set +x
+	done | xargs --no-run-if-empty $RunIf rm -r
+	}
+
+	$RunIf log "pruned exclude-patterns from _all_ snapshots"
+
+	$RunIf sync --file-system $backup_dir &> /dev/null
+}
+
+# ---------------------------------------------------------------------------
+# variables and functions that implement the date format in snapshot basename
+# ---------------------------------------------------------------------------
+
+# snapshot basename format is Year-Mo-Da,Hr, all implemented in this section;
+#    to implement snapshot_date_time_separator, search for: ,00 ,?? ,$ ,/
+
+#			       _Year_MoDa-Hr
+readonly old_snapshot_pattern="[1-9]?????-??"
+readonly     snapshot_pattern="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
+set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
+readonly     snapshot_regex=${snapshot_pattern//\?/.}
+
+set_date_time() { date_time=$(date '+%Y-%m-%d,%H'); }
+set_day      () {       day=$(date '+%Y-%m-%d' --date="@$1" ); }
+set_seconds  () {   seconds=$(date '+%s'       --date="$(basename $1 |
+				        sed 's/\..*//;s/,/ /;s/$/:00:00/')" ||
+				warn "$FUNCNAME: can't parse $1"; ); }
+
+# --------------------------------------------
+
+shorten_date() {
+	case $1 in
+	    (  hour ) sed 's/,..$//' ;;	# strip time from snapshot's date-time
+	    (   day ) sed 's/-..$//' ;; # strip day from snapshot's date
+	    ( month ) sed 's/-..$//' ;; # strip month from year-month
+	    (  year ) sed   's/.$//' ;; # turn year into decade
+	esac | uniq
+}
+
+declare -A type2date_suffix_pattern=(
+	 [null]=""
+	 [hour]=",??"
+	  [day]="-??,??"
+	[month]="-??-??,??"
+	 [year]="?-??-??,??"
+)
+
+set_prune_pattern() {
+	local type=$1 pattern=$2  pp
+
+	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
+	local prefix_pattern=${snapshot_pattern%$date_suffix_pattern}
+	case $type in
+	    (  hour ) pp="$prefix_pattern$pattern{.*,}"		 ;;
+	    (   day ) pp="$prefix_pattern$pattern,00{.*,}"	 ;;
+	    ( month ) pp="$prefix_pattern$pattern-01,00{.*,}"	 ;;
+	    (  year ) pp="$prefix_pattern$pattern-01-01,00{.*,}" ;;
+	esac
+	prune_pattern=$pp
+}
+
+readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
+
+function load_type_maps {
+
+    type2prune_type_patterns=(
+# the ones these patterns skip: hour=00, day=01, month=01, year=00
+# period after prune: 2                   4                ~8         ~12   all
+   [hour]=",?[13579]         ,{[02][26],1[048]}       ,{04,20}    ,{08,16} ,12"
+    [day]="-{?[3579],[1-3]1} -{[02][26],1[048],30} -{04,12,20,28} -{08,24} -16"
+  [month]="-{0[3579],11}          -{02,06,10}        -{04,08,12}"
+   [year]="  [13579]                 {2,6}              {4,8}"
+    )
+
+    type2date_span=(
+	 [hour]=$days_per_span_for_hour_prune
+	  [day]=$months_per_span_for_day_prune
+	[month]=$years_per_span_for_month_prune
+	 [year]=$decades_per_span_for_year_prune
+    )
+}
+
+# ---------------------------------------------------------------------------
+# end of variables and functions that implement the date format in snapshots
+# ---------------------------------------------------------------------------
+
+scale_date_span() {
+
+	date_span=$( echo "$date_span $pruning_span_scale_factor" |
+		     awk '{ printf "%.0f\n", $1 * $2 }' )
+}
+
+_oldest_snapshot=
+
+prune_type_to_file() {
+	local type=${1%s} file_of_snapshots_to_prune=$2; shift 2
+	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten_date $type)
+	local remaining_reverse_sorted_snapshot_dates=$*
+
+	declare -A type2prune_type_patterns type2date_span
+	load_type_maps		# run after call to customize_config_variables
+	local date_span=${type2date_span[$type]}
+	scale_date_span
+	local prune_type_patterns=${type2prune_type_patterns[$type]}
+	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
+	[[ $type == hour ]] && _oldest_snapshot=$backup_dir/${!#},00
+
+	Trace 5 "\n==> $type prune <=="
+	declare -i period=$backup_period
+	local     prune_type_pattern  prune_pattern
+	while [[ $prune_type_patterns ]]
+	    do	set -- $remaining_reverse_sorted_snapshot_dates
+		Trace 5 "\nLOOP $type: $# dates left: ${1-} ${2-} ... ${!#}"
+		! _do_skip_newest_span_of_days $type || shift $date_span ||
+		    shift $# # shift does nothing if try to shift more than $#
+		remaining_reverse_sorted_snapshot_dates=$*
+		local first_prune_date=${1-}
+		[[ $first_prune_date ]] || break
+
+		set -f; set -- $prune_type_patterns; set +f
+		prune_type_pattern=$1; shift # we'll use first pattern
+		prune_type_patterns=$*	     # save remaining patterns
+
+		set_prune_pattern $type $prune_type_pattern
+		TraceV 5 date_suffix_pattern first_prune_date \
+			  prune_type_pattern prune_pattern
+		eval "set -- $prune_pattern"
+		[[ -d $1 ]] || shift
+		Trace 5 " Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
+
+		# skip over the snapshot prune-matches that aren't old enough
+		set -- $(echo $* | tr ' ' '\n' | sort --reverse)
+		while [[ $# != 0 ]]
+		   do	[[ $1 == $backup_dir/[^1-9]* ]] && shift && continue
+			local day_hour=${1##*/}
+			local date=${day_hour%$date_suffix_pattern*}
+			[[   $date > $first_prune_date ]] || break
+			shift
+		done
+		[[ -d ${1-} ]] || continue
+		# delete all the old-enough prune matches
+		Trace 5 "Deleting ~$# snapshots: $1 ${2-} ${3-} ... ${!#}"
+		echo ${*%$_oldest_snapshot*} # don't delete oldest snapshot
+	done >> $file_of_snapshots_to_prune
+
+	echo $remaining_reverse_sorted_snapshot_dates
+}
+
+# ----------------------
+
+_do_skip_newest_span_of_days() {
+	local type=$1
+
+	[[ $type != hour* ]] && return 0
+
+	# if $backup_period had been too short and we lengthened it,
+	#   we delete recent snapshots that "shouldn't" have been created,
+	#   by not shifting remaining-days until we've pruned the "spurious"
+	if   (( period <=  1 )) ; then return 0
+	elif (( period <=  2 )) ; then period=1
+	elif (( period <=  4 )) ; then period=2
+	elif (( period <=  8 )) ; then period=4
+	elif (( period <= 24 )) ; then period=8
+				  else period=24
+	fi
+	Trace 5 "period now $period, didn't shift"
+	return 2			# higher than 'shift' error status
+}
+
+# ---------------------------------------------------------
+
+# for goals of this function, see prune-variable comments in configure.sh
+prune_backup() {
+	local backup_name=$1 backup_dir
+
+	set_backup_name $backup_name &&
+	set__backup_dir__log_cmd_file $backup_name || return 1
+
+	_is_time_to_prune_backup $backup_dir || return 0
+
+	set_lock_file prune-backup $backup_name
+	run_lockpid $lock_file "pruning $backup_dir" ||
+	    # since we're called, lock holder should be un-suspended
+	    { signal_job SIGCONT prune-backup $backup_name; return 1; }
+
+	trap '' HUP
+	setup_prune_backup_priority
+
+	$Trace
+	local  snapshots_to_prune_file=$tmp_4
+	rm -f $snapshots_to_prune_file
+
+	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
+
+	# set -- <all the snapshot basenames, reverse sorted>
+	suspend_tracing
+	set -- $(cd $backup_dir &&
+		   echo $snapshot_pattern*  | # '*' for .links & .partial
+		   tr ' ' '\n' | sort -u -r |
+		   grep -v '\.rm$')	# _rm_pruned_snapshots handles *.rm
+	restore_tracing
+	# prune_type_to_file returns dates remaining, to check for more pruning
+	set -- $(prune_type_to_file hour  $snapshots_to_prune_file $*)
+	set -- $(prune_type_to_file day   $snapshots_to_prune_file $*);#$Trace
+	set -- $(prune_type_to_file month $snapshots_to_prune_file $*);#set +x
+	set -- $(prune_type_to_file year  $snapshots_to_prune_file $*);#set +x
+
+	_rm_pruned_snapshots $snapshots_to_prune_file
+	rm $snapshots_to_prune_file
+
+	$RunIf touch $backup_dir/$pruned_timestamp # touch even if did nothing
+
+	$RunIf lockpid -r $lock_file
+}
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# functions and variables used to create new backups
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+declare -i num_link_dests=0
+
+set_link_dest_opts() {
+	local new_snapshot=$1
+
+	suspend_tracing
+	local latest_snapshot=
+	set -- $backup_dir/$snapshot_pattern # all the date,hour snapshots
+	[[ -d $1 ]] && latest_snapshot=${!#} || shift
+	local successful=$*
+	restore_tracing latest_snapshot
+
+	suspend_tracing
+	set -- $backup_dir/$snapshot_pattern.{links,partial}
+	[[ -d $1 ]] || shift
+	set --	$(echo $successful | tr ' ' '\n' | tac) \
+		$(echo $*          | tr ' ' '\n' | tac) # newest to oldest
+	restore_tracing
+
+	[[ $latest_snapshot != $new_snapshot ]] || shift
+
+	# need at least 2 --link-dest args in case the sysadmnin borked one,
+	# and a few hours worth in case a file was deleted then recovered;
+	# don't make this too large, it slows recovery from "Too many links"
+	if (( $backup_period == 1 ))
+	   then num_link_dests=4
+	   else num_link_dests=2
+	fi
+
+	link_dest_opts=
+	if [[ -d ${1-} ]]
+	   then declare -i snapshots_used=0
+		suspend_tracing
+		for snapshot
+		    do	[[ -d $snapshot ]] || continue
+			link_dest_opts="$link_dest_opts --link-dest=$snapshot"
+			snapshots_used+=1
+			(( snapshots_used >= num_link_dests )) && break
+		done
+		restore_tracing link_dest_opts
+	fi
+}
+
+# -------------------------------------------------------
+
+_links_error_msg() {
+	local msg=$*
+
+	# since contents of $() are run in subshell, have to echo results
+	declare -i max_src_links=$(
+	declare -i max_src_links=0
+	bzcat $log | tr -d '"' | cut -d' ' -f3 |
+	while read dst_file
+	    do	src_file=${dst_file#$backup_dir/$snapshot_pattern.partial}
+		[[ -f $src_file ]] || continue
+		set -- $(ls -l $src_file)
+		((   $max_src_links >= $2 )) && continue
+		      max_src_links=$2
+		echo $max_src_links
+	done | tail -n1
+	)
+
+	declare -i link_dest_wait=$(( num_link_dests * backup_period ))
+	set -- *.rm
+	msg="$msg; Worst case, tried to add $max_src_links links to a snapshot file; these files will eventually appear in a new snapshot after $link_dest_wait hours; $# snapshots waiting to be pruned, newer prunes subtract ~$max_src_links links"
+
+	[[ $hostname != eleanor ]] &&
+	msg="$msg; Edit prune variables in $backup_config_file to reduce # snapshots"
+
+	echo "$msg"
+}
+
+_handle_rsync_results() {
+	local new_snapshot=$1 status=$2 log=$3
+
+	if [[ -s $log ]]
+	   then [[ $is_interactive ]] && { bzcat $log; rm $log; }
+	   else rm $log
+	fi
+
+	# uncomment next line to debug link_fail_count code with -d option
+	# echo 'link failed: Too many links (31)' | bzip2 >> $log; status=31
+
+	local error_msg=
+
+	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
+	   then $RunIf mv  $new_snapshot.partial     $new_snapshot &&
+		$RunIf rm -f latest && $RunIf ln -s ${new_snapshot##*/} latest
+		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
+		   ! $is_cron || $RunIf ]] &&
+		$RunIf log "created $new_snapshot (at ${priority}er priority)"
+	   else set -- $(bzcat $log 2>/dev/null | # might be empty file
+			 grep -c ': Too many links (31) *$')
+		local  link_fail_count=$1 # see test, above
+		if (( $link_fail_count == 0 ))
+		   then error_msg="rsync exit status=$status"
+		   else error_msg="$link_fail_count 'Too many links'"
+			error_msg=$(_links_error_msg "$error_msg")
+			$RunIf mv $new_snapshot.partial $new_snapshot.links
+		fi
+		if is_arg1_in_arg2 $status "$no_log_rsync_exit_statuses" ||
+		   (( $(bzcat $log | wc --lines) == 0 ))
+		   then rm -f $log
+			error_msg="$error_msg; Partial snapshot still useful"
+		   else error_msg="$error_msg; See $log"
+		fi
+	fi
+
+	if [[  $error_msg ]]
+	   then	[[ $Trace || $backup_name == Z ]] && # Z = debug "drive"
+		log "$error_msg" ||
+		log "$error_msg" | tee -a /dev/stderr | sed 's/; /\n/g' |
+		   $RunIf mail -s "$our_name: errors" $sysadmin_email_addresses
+	   else rm -f $log
+	fi
+}
+
+# -------------------------------------------------------
+
+_is_time_to_run_backup() {
+	local dir=$1
+
+	suspend_tracing
+	customize_and_validate_configuration_variables $dir
+	restore_tracing
+
+	[[ ! $is_cron ]] && return 0	# run by a person?
+
+	local  current_hour=$(date '+%k')
+	local excluded_hours=$(echo ${excluded_backup_hours-} | sed 's/\b0//g')
+	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
+	(( $current_hour % $backup_period == 0 )) && return 0
+
+	return 1
+}
+
+# ----------------------
+
+run_backup() {
+	local backup_name=$1 backup_dir
+
+	set_backup_name $backup_name
+	set__backup_dir__log_cmd_file $backup_name || return 1
+
+	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
+
+	_backup_managed_prune $backup_name pre-rsync
+
+	_is_time_to_run_backup $backup_dir || return 0
+
+	set_lock_file run-backup $backup_name
+	run_lockpid $lock_file "backing up $backup_dir" || return 1
+
+	setup_run_backup_priority && local priority=high || local priority=low
+
+	if [[ -t 2 ]]
+	   then local is_interactive=$true
+	   else local is_interactive=$false
+	fi
+
+	local date_time
+	set_date_time
+	local new_snapshot=$backup_dir/$date_time
+
+	if [[ $is_interactive && $backup_name != Z ]] # Z = debug "drive"
+	   then echo -n "rsync $dirs_to_backup $new_snapshot/; can CTRL-C ..."
+		$RunIf sleep 5
+		echo " too late."
+	fi
+
+	local log=$tmp_dir/$backup_name-$date_time.bz2
+	if [[ -s $log ]]
+	   then bzip2 --test $log &> /dev/null || bzip2recover $log
+		bzip2 --test $log &> /dev/null || rm $log
+	fi
+
+	suspend_tracing
+	set_link_dest_opts $new_snapshot
+	restore_tracing link_dest_opts
+
+	local partial_snapshot=$new_snapshot.partial
+
+	# if earlier backup run this hour, start with the earlier snapshot
+	local suffix
+	for   suffix in '' '.links'
+	    do	if [[  -d  $new_snapshot$suffix ]]
+		   then $RunIf mv $new_snapshot$suffix $partial_snapshot
+			break
+		fi
+	done
+
+	{
+	[[ $RunIf ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
+	until [[ -e $partial_snapshot || -e $new_snapshot ]] ; do sleep 9; done
+	$RunIf touch  $partial_snapshot	# in case we crash; see next 'touch'
+	[[ -f $partial_snapshot ]] && rm $partial_snapshot # quick backup??
+	} &
+
+	suspend_tracing
+	eval "set -- $dirs_to_backup"
+	restore_tracing
+
+	$Trace
+
+	PATH=/usr/local/bin:$PATH	# make sure get latest 'rsync' cmd
+	# most of these variables come from $backup_config_file
+	$RunIf rsync $rsync_backup_opts $our_rsync_opts	\
+	   --relative $link_dest_opts			\
+	   --exclude=$backup_dir_prefix*		\
+	   --exclude-from=$exclude_from_file		\
+	      $* $partial_snapshot/ |& bzip2 -9 >> $log
+	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
+
+	$RunIf touch $partial_snapshot	# 'when we finished', not mdate of src
+
+	_handle_rsync_results   $new_snapshot $status $log
+
+	_backup_managed_prune $backup_name post-rsync # do last, for testing
+
+	$RunIf sync --file-system $new_snapshot* &> /dev/null
+
+	$RunIf lockpid -r $lock_file
+
+	return $status
+}
+
+# -----------------------------------------------------------------------------
+# functions used by watch action
+# -----------------------------------------------------------------------------
+
+_set_age() {
+	local snapshot=$1
+
+	set_seconds $snapshot
+	declare -i snap_secs=$seconds
+	declare -i  now_secs=$(date '+%s')
+	age=$(( ($now_secs - $snap_secs)/(24*60*60) ))
+}
+
+# ------------------
+
+oldest_age=
+newest_age=
+
+_setup_ages() {
+
+	_set_age $1    ; oldest_age=$age
+	_set_age ${!#} ; newest_age=$age
+}
+
+# ---------------------------------
+
+stats_number=
+stats_oldest_age=
+stats_newest_age=
+
+setup_snapshot_stats() {
+	local suffix=$1 ignored_date_ending_type=${2-null}
+	[[ $ignored_date_ending_type == null ]] &&
+	   local dates=$true || local dates=$false
+
+	local cwd=$PWD nums= oldies= newies=
+	local dir backup_name
+	for dir in $(list_backups)
+	    do	set_backup_name $dir
+		local name=$backup_name
+		cd_ $dir
+		ending=${type2date_suffix_pattern[$ignored_date_ending_type]}
+		ending_RE=${ending//\?/.}
+		suspend_tracing
+		set -- $snapshot_pattern$suffix
+		restore_tracing
+		[[ -d $1 ]] || shift
+		[[ $# != 0 ]] &&
+		set -- $(echo $* | tr ' ' '\n' |
+			   sed "s/$ending_RE$//" | uniq)
+		restore_tracing
+
+		add_words nums $name=$#
+
+		[[ $dates ]] || continue
+		if [[ $# != 0 ]]
+		   then _setup_ages $*
+			local old=$oldest_age	new=$newest_age
+		   else local old=		new=
+		fi
+		add_words oldies $name=$old
+		add_words newies $name=$new
+	done
+	cd_ $cwd
+
+	suspend_tracing
+	local format=
+	for (( i = 1; i <= 26; i++ ))
+	    do	add_words format '%-6s'
+	done
+	restore_tracing
+	printf -v nums   "$format" $nums		    ; [[ $dates ]] && {
+	printf -v oldies "$format" $oldies
+	printf -v newies "$format" $newies				    ; }
+	stats_number=$(    echo "$nums"   | sed 's/  *$//') ; [[ $dates ]] && {
+	stats_oldest_age=$(echo "$oldies" | sed 's/  *$//')
+	stats_newest_age=$(echo "$newies" | sed 's/  *$//')		    ; }
+}
+
+# ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# routines to manage ext3/ext4 journal
+# ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+
+# note that this routine can modify caller's $device
+setup_journal_prologue() {
+	[[ $UID == 0 ]] || abort "run with sudo"
+
+	if [[ ! -b $device ]]
+	   then [[ -d $device/lost+found ]] ||
+		   abort "$FUNCNAME: '$device' not block device or mount point"
+		set -- $(mount | fgrep " on $device ")
+		device=${1-}
+		[[ -b $device ]] || abort "$FUNCNAME: couldn't find device"
+	fi
+
+	$RunIf sync
+
+	mkfs_cmd=mkfs.ext4
+	set -- $(mount | grep "^$device ")
+	if [[ $# != 0 ]]
+	   then $RunIf umount $device ||abort "$FUNCNAME: can't umount $device"
+		mkfs_cmd=mkfs.$5
+		_pre_journal_setup_mount_point=$3
+	   else _pre_journal_setup_mount_point=
+	fi
+
+	$RunIf tune2fs -O ^has_journal $device # disable current journal
+}
+
+# ---------------------------------
+
+setup_journal_epilogue() {
+	local status=$?
+
+	[[ $status == 0 ]] || warn "journal commands returned $status"
+
+	tune2fs -l $device | fgrep Journal # internal journal is inode 8
+	if [[ $_pre_journal_setup_mount_point ]]
+	   then $RunIf mount $device $_pre_journal_setup_mount_point ||
+		   abort "failed to remount $device"
+	fi
+}
+
+# -------------------------------------------------------
+
+setup_internal_journal() {
+	local  device=$1
+
+	setup_journal_prologue $device &&
+	$RunIf tune2fs -j $device
+	setup_journal_epilogue $?
+}
+
+# ---------------------------------
+
+setup_RAM_FS_journal() {
+	local  device=$1
+
+	setup_journal_prologue $device &&
+	$RunIf $mkfs_cmd -O journal_dev    /dev/ram0 &&
+	$RunIf tune2fs   -J size=32,device=/dev/ram0 $device
+	setup_journal_epilogue $?
+}
+
+# ---------------------------------
+
+setup_partition_journal() {
+	local  device=$1 journal_device=$2
+
+	setup_journal_prologue $device &&
+	$RunIf $mkfs_cmd -O journal_dev  -F $journal_device &&
+	$RunIf tune2fs   -J size=256,device=$journal_device $device # size=MB
+	setup_journal_epilogue $?
+	[[ $_pre_journal_setup_mount_point ]] &&
+	e2label $journal_device \
+	        $(basename $_pre_journal_setup_mount_point).journal
+}
+
+# ----------------------------------------------------------------------------
+# end of functions and global variables
+# ----------------------------------------------------------------------------
+
+shopt -s extglob			# we use extended pattern matching
+
+#############################################################################
+# put actions after here
+#############################################################################
+
+[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
+
+set -u					# abort if access unset variable
+
+action=$1; shift
+_our_name="$our_name"
+ our_name="$our_name $action"
+
+case $action in
+ # list-backups: list all the mounted backups
+   l*s*b*k*p* | l*s*d* | ls | lb )
+	list_backups
+	;;
+ # run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
+   r*b*k*p* | rb* )
+	is_arg1_in_arg2 $# "0 1 2 3" ||	# guard against -s without ''
+	   abort "wrong number of args, run: $_our_name -h"
+	# to use -s, must remove 'readonly' label in $backup_config_file
+	[[ ${1-} == -s ]] && { custom_dirs_to_backup="$2"; shift 2; }
+
+	set -- ${*:-$(list_backups)}
+	if [[ $# == 1 ]]
+	   then [[ $UID == 0 || $1 == *[zZ] ]] || $RunIf abort "run with sudo"
+		$Trace
+		run_backup $1
+		exit $?
+	fi
+
+	$Trace
+	for dir
+	    do	if [[ ! $RunIf ]]
+		   then trap '' HUP
+			# Run backups simultaneously, so share cached src data;
+			#  can't "run_backup d &": processes share $tmp* files.
+			# Want new process group so can kill them independently
+			setsid \
+			$run_backup_exe $dir &
+		   else $run_backup_exe $dir
+			echo
+		fi
+	done
+	wait				# want this process for 'w -C' & kill
+	;;
+ # prune-backups [span] [dirs]: see configure.sh (dirs defaults to all drives)
+   pr*n*b*k*p* | pb* )
+	# if specify span, must remove 'readonly' label in $backup_config_file
+	[[ ${1-} == [0-9]* ]] && { hour_prune_days_per_span=$1; shift; }
+
+	set -- ${*:-$(list_backups)}
+	if [[ $# == 1 ]]
+	   then [[ $UID == 0 || $1 == *[zZ] ]] || $RunIf abort "run with sudo"
+		$Trace
+		prune_backup $1
+		exit $?
+	fi
+
+	$Trace
+	for dir
+	    do	if [[ ! $RunIf ]]
+		   then trap '' HUP
+			# no I/O penalty to prune many drives simultaneously.
+			# can't "prune_backup d &": processes share $tmp* files
+			$prune_backup_exe $dir &
+		   else $prune_backup_exe $dir
+			echo
+		fi
+	done
+	[[ $RunIf || $Trace ]] && wait	# makes debugging simpler
+	;;
+
+#  snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
+   snapshot*size | ss )
+	[[ $# == 1 ]] || abort "pass directory, run: $_our_name -h"
+	dir=$1
+	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
+	$Trace
+	KB=$(sudo find $dir -links 1 -printf '%k\n' |
+		awk '{ total += $1 } ; END { print total }')
+	set_readable_du_size $KB
+	du_size=$readable_du_size
+	echo "$dir contains >= $du_size of files in no other directories"
+	;;
+
+#  w: show pruning & backup activity, and the status of pruning and backups
+#  watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
+   watch | wa* | wt* | w )
+	$Trace
+	watch_opt= ps_opt= cron_opt=
+	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
+	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
+	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ $is_cron ]] && cron_opt=-C
+
+	[[ $action == w ]] ||
+	   exec watch ${*:- -n 1} $our_path $our_opts w -w $ps_opt $cron_opt
+
+	# ------------------------------------------------------------------
+
+	set -- $(stty --all | head -n1)
+	declare -i rows=${5%;} cols=${7%;}
+
+	rsync_cmds=$(ps -C rsync -H ww | grep "[0-9] rsync.*/$snapshot_regex")
+	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
+	declare -i num_drives=$(list_backups | wc -l)
+
+	if [[ ! $watch_opt ]]
+	   then ps_opt=-f cron_opt=-C
+	elif [[ ! $rsync_cmds && $cron_opt &&
+		! -s /etc/sudoers.d/$our_name ]]
+	   then header "to not fill the log with frequent 'sudo ps'"
+		option_1="install etc/sudoers.d/$our_name"
+		option_2="move its contents into /etc/sudoers"
+		echo -e "\n$option_1, or $option_2"
+	fi
+
+	# since the contents of $() are run in subshell, have to echo results
+	set -- $(
+	declare -i max_device_len=0 max_mount_len=0
+	df --block-size=G $(list_backups) |
+	while read device size used avail used mount junk
+	    do	declare -i device_len=${#device} mount_len=${#mount}
+		is_new_max=$false
+		[[ $mount == /* ]] &&	# skip header
+		(( $max_mount_len  < $mount_len  )) &&
+		    max_mount_len=$mount_len	is_new_max=$true
+		(( $max_device_len < $device_len )) &&		  # also header
+		    max_device_len=$device_len	is_new_max=$true
+		[[ $is_new_max ]] && echo $max_device_len $max_mount_len
+	done | tail -n1
+	)
+	declare -i max_device_len=$1 max_mount_len=$2
+	#
+	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
+	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
+	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
+	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
+	declare -i max_ps_wchan_width=${#widest_wchan_value}+1
+	declare -i ps_wchan_width=10	 # min useful
+	declare -i ps_overhead=79
+	if (( $cols > $ps_overhead + $ps_wchan_width + $max_mount_len ))
+	   then ps_wchan_width=cols-ps_overhead-max_mount_len  ps_opt=-f
+		(( ps_wchan_width > max_ps_wchan_width )) &&
+		   ps_wchan_width=max_ps_wchan_width
+	fi
+	#
+	cron_job_regexp=' -C run-backups? *$' # put into configure.sh ??
+	set -- $(ps -u root w | egrep "$cron_job_regexp" | awk '{print $1}')
+	[[ ($cron_opt || ! $rsync_cmds) && $# != 0 ]] && {
+	set_PGID $*
+	cron_PGIDs=$PGID
+	set -- $(process_group_PIDs $cron_PGIDs)
+	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
+	[[ $wchan ]] && sudo ps > /dev/null && sudo=sudo || sudo=
+	#  option f for "forest"
+	cron_cmds=$($sudo ps www f -o pid,stat$wchan,bsdtime,command $*)
+	} || cron_cmds=
+
+	# -C + df: 25 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
+	#   (ignoring the ~500 characters for full-detail for: rsync /)
+	# includes basic pruning, but not parent of 'rm' process (since in -C)
+	declare -i CPB_num=$(echo "$cron_cmds" | fgrep -c prune-backup)
+	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + CPB_num ))
+	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
+	# echo $rows $min_C_df_rows
+
+	# ------------------------------------------------------------------
+
+	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
+	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
+	if [[ $ps_opt ]]
+	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
+		trim_ps_cols() { cut -c "10-21,24-37,40-44,46-"; }
+		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
+		#    123456789012345678901234567890123456789012345678901234567
+		#             1         2         3         4         5
+		prune_sort_opts="-k7r,8 -k9"	rsync_sort_opts="-k11"
+	   else trim_ps_cols() { cut -c 1-13,16-20,22-; }
+		hdr="  PID TTY      STAT   TIME COMMAND"
+		#    123456789012345678901234567890123456789012345678901234567
+		#             1         2         3         4         5
+		prune_sort_opts="-k5r,6 -k7"	rsync_sort_opts="-k8"
+	fi
+
+	# ------------------------------------------------------------------
+
+	backup_PIDs=$(job_PIDs run-backup all)
+	rsync_cmds=$(ps_ -H ww $backup_PIDs |
+			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+
+	psc rm w | grep "\b$snapshot_regex\b" | grep -v "\.rm\b" |
+	   sort $prune_sort_opts > $tmp
+	# could parameterize this restriction with 'stty' data
+	if [[ -s $tmp && ! ( $cron_opt && $rsync_cmds ) ]]
+	   then header "ad-hoc pruning by sysadmin (e.g. TTY != '?')"
+		echo
+		echo "$hdr" | trim_ps_cols
+		sed 's@\([0-9] rm [^0-9]*[0-9][^ ]* \).*@\1...@' $tmp
+	fi
+	rm $tmp
+	# ------------------------------------------------------------------
+	[[ $cron_opt && $rsync_cmds && $watch_opt && $rows -lt $min_C_rows ]] || {
+	header "prune by run-prune"
+	echo
+	> $tmp
+	prune_job_PIDs=$(job_PIDs prune-backup all)
+	[[ $prune_job_PIDs ]] && {
+	prune_cmds=$(ps_ w h $prune_job_PIDs |
+		     sed "s@ /bin.*bin/$_our_name@ $_our_name@")
+	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
+	   prune_cmds=$(echo "$prune_cmds" | fgrep -w $_our_name)
+	echo "$prune_cmds"
+	} | sort $prune_sort_opts > $tmp
+	if [[ -s $tmp ]]
+	   then echo "$hdr" | trim_ps_cols
+		cat $tmp
+	   else echo -e "No pruning is being done."
+	fi
+	rm $tmp
+
+	echo
+	setup_snapshot_stats .rm
+	echo "Number pruned snapshots awaiting 'rm':  $stats_number"
+	echo " Age of newest pending prune, in days:  $stats_newest_age"
+	setup_snapshot_stats .links
+	echo "    Days since 'Too many links' error:  $stats_newest_age"
+
+	[[ $rsync_cmds && $watch_opt ]] || {
+	echo
+	setup_snapshot_stats ''
+	echo "    Total number successful snapshots:  $stats_number"
+	echo " Age of oldest good snapshot, in days:  $stats_oldest_age"
+	echo " Age of newest good snapshot, in days:  $stats_newest_age"
+	setup_snapshot_stats '' hour
+	echo " Total number  days  w/good snapshots:  $stats_number"
+	setup_snapshot_stats '' day
+	echo " Total number months w/good snapshots:  $stats_number"
+	setup_snapshot_stats '' month
+	echo " Total number years  w/good snapshots:  $stats_number"
+	}
+	}
+
+	# ------------------------------------------------------------------
+
+	! [[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows ]] && {
+	echo
+	df_fields=source,fstype,size,avail,pcent,iused,ipcent,target
+	df --block-size=G --output=$df_fields  $(list_backups)
+	}
+
+	# ------------------------------------------------------------------
+
+	trim_rsync() {
+
+		sed -e "s@/bin/bash /@/@"			   \
+		    -e "s@$HOME/@~/@g"				   \
+		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
+	}
+
+	# for some reason, appending newlines does nothing?!
+	rsync_abbrev_msg="
+	  default opts=\"$rsync_backup_opts\" (\$rsync_backup_opts)
+	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)
+	"
+	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
+
+	[[ $cron_opt && $rows -lt $min_C_rows && $watch_opt ]] || {
+	    header "per-drive, primary rsync backup process (abbreviated)"
+	    [[ $rsync_cmds ]] && {
+	    echo "$rsync_abbrev_msg"; echo
+	    echo "$hdr" | trim_ps_cols
+	    # was: tac | trim_rsync | sort -k9 (but -k9 doesn't work with -f
+	    echo "$rsync_cmds" | trim_rsync | sort $rsync_sort_opts
+	    } || echo -e "\nNo backups are running."
+	}
+
+	# show process tree of master cron job(s)
+	[[ $cron_cmds ]] && {
+	stime=$(set -- $(ps h -o stime $cron_PGIDs | sort -u); echo $*)
+	regex=${cron_job_regexp%%s*}
+	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
+	(( $rows < $min_C_rows )) && echo "${rsync_abbrev_msg#?}" && echo
+	echo "$cron_cmds" | trim_rsync
+	}
+
+	[[ $rsync_cmds ]] && {
+	header "per-drive, primary rsync backup process (full details)"
+	echo
+	echo "$hdr" | trim_ps_cols
+	echo "$rsync_cmds" | sed "s@$HOME/@~/@g"
+	}
+	;;
+
+#  kill-backup name(s): for each name (can be 'all'), kill backup
+   kill-backup* | kb )
+	$Trace
+	kill_locker_group run-backup $*
+	;;
+#  kill-prune name(s) : for each name (can be 'all'), kill prune
+   kill-prune* | kp )
+	$Trace
+	kill_locker_group prune-backup $*
+	;;
+#  kill-both name(s)  : for each name (can be 'all'), kill backup & prune
+   kill-both | ka | kk )
+	$Trace
+	kill_locker_group   run-backup $*
+	kill_locker_group prune-backup $*
+	;;
+
+#############################################################################
+# sysadmin maintenance actions
+#############################################################################
+
+#  mkfs device [name]: prepare blank-first or smallest drive (see comments)
+   mkfs )
+	# If brand new drive, find its device name with: ls -lt /dev/sd?
+	# Save the device name and backup name: device=/dev/sdX  backup=Y
+	# Verify it's a new drive (which has partition table): fdisk -l $device
+	# See if someone is using it: fuser -v $device
+	# cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
+	#   (be SURE you type "YES" not "yes")
+	# Make sure encryption succeeded: fdisk -l $device # want no partitions
+	# Then run: snapcrypt open $device $backup (mount will fail).
+	# Then create new rule in /etc/snapcrypt/drives.rules .
+	# If have existing backup drives that are no bigger, use copy-backup .
+
+	set_date_time
+	line_1="if you're using a drive that already has backups,"
+	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
+	line_3="e.g. 'now' looks like /$date_time/ ; don't run 'mkfs',"
+	line_4="just re-label the drive and change its record in /etc/fstab ."
+	warn "$line_1\n   $line_2\n   $line_3\n   $line_4"
+
+	[[ ${1-} == -f ]] && shift ||
+	   abort "if this is your first or smallest disk, use the -f option; otherwise, use copy-backup instead; run: $_our_name -h"
+
+	[[ $# == [12] ]] || abort "device [backup-name]; run: $_our_name -h"
+	device=$1 name=${2-}
+
+	[[ $device = /* ]] || device=/dev/$device
+	[[ -b $device ]] || $RunIf abort "$device not a block device"
+
+	[[ ! $name ]] &&
+	[[ $device == /dev/mapper/* || $device == /dev/VG*/* ]] &&
+	name=$(basename $device)	# same logic as set_FS_label
+	[[ $name ]] || abort "$device doesn't contain name, specify it"
+
+	$Trace
+	set_backup_name $name
+	name=$backup_name
+	backup_dir=$backup_dir_prefix$backup_name
+
+	set_FS_label $backup_dir
+
+	default_blocks_per_inode=16
+	let blocks_per_inode=$default_blocks_per_inode/4 # 5% space penalty
+	let  bytes_per_inode=$blocks_per_inode*1024
+
+	if [[ $RunIf && $UID == 0 ]]
+	   then mkfs_debug_opt=-n RunIf= ;warn "running mkfs in debug mode ..."
+	   else mkfs_debug_opt=
+	fi
+	case $FS_type in
+	    ( ext? ) set -- mke2fs -t $FS_type $mkfs_debug_opt -m .1 \
+				   -i $bytes_per_inode -L $FS_label
+		     mkfs_cmd_opts=$* ;;
+	    (   *  ) abort "$FS_type not yet supported, email $coder" ;;
+	esac
+
+	df -m | grep " $backup_dir$" &&
+	  $RunIf abort "there's already a filesystem mounted on $backup_dir"
+	[[ -d $backup_dir ]] &&
+	  $RunIf abort "directory $backup_dir/ exists: is name '$name' in use?"
+	df -m | grep "^$device[ 	]" &&
+	  $RunIf abort "that device is mounted; to *DESTROY* its contents,
+			first run: umount $device"
+
+	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+
+	mount_opts="nosuid,nodev,relatime"
+	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts\t\t0 2"
+	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
+
+	cmd="$RunIf $mkfs_cmd_opts $device"
+	$cmd || abort "$cmd exited with $?"
+	[[ $mkfs_debug_opt ]] && RunIf=echo
+	$RunIf mkdir -p $backup_dir
+	cmd="$RunIf mount -t $FS_type $device $backup_dir"
+	$cmd || abort "$cmd exited with $?"
+	;;
+#  copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
+   *c*p*b*k*p | cpb )
+	action_opts=
+	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
+	[[ $# != 0 ]] ||
+	abort "[-f] [-M] [-F] {new_device new_name | new_device '' | '' new_name} [old_name]"
+	new_device=$1 new_name=${2-} old_name=${3-}
+
+	warn "the new device MUST be as-large as old_name's device"
+
+	set__name__device__backup_dir__FS_label() {
+		# save args in global variables
+		device=$1 name=$2
+
+		[[ $device$name ]] || abort "need 1 non-null argument"
+
+		[[ $name ]] && set_backup_name $name && name=$backup_name
+		[[ !  $device ]] &&
+		   set_FS_label $name && device=/dev/disk/by-label/$FS_label
+		[[ -b $device ]] || abort "$device is not a block device"
+
+		if [[ ! $name ]]
+		   then set_FS_label $device
+			name=$FS_label
+		fi
+
+		set_backup_name $name
+		name=$backup_name
+		backup_dir=$backup_dir_prefix$name
+		set_FS_label $backup_dir
+	}
+
+	set__name__device__backup_dir__FS_label "$new_device" $new_name
+	new_name=$name
+	new_device=$device
+	new_backup_dir=$backup_dir
+	new_FS_label=$FS_label
+
+	[[ ! $old_name ]] &&
+	set_oldest_backup_snapshot && 
+	set_backup_name $(dirname $oldest_backup_snapshot) &&
+	old_name=$backup_name
+
+	set__name__device__backup_dir__FS_label "" $old_name
+	old_name=$name
+	old_device=$device
+	old_backup_dir=$backup_dir
+	old_FS_label=$FS_label
+
+	# show the user a sample fstab record
+	$our_path -d mkfs -f $new_device $new_name |&
+	   fgrep -B 3 -A 1 LABEL= | sed 's/.* mkfs: //'
+
+	set --	$our_path $our_opts finish-$action $action_opts \
+		$old_device $old_backup_dir \
+		$new_device $new_backup_dir
+	cmd=$*
+set -x
+	[[ ! $RunIf ]] || exec $cmd || abort "$RunIf $cmd -> $?"
+
+	output_file=$new_FS_label.out
+	echo -e "
+	nohup'ing slow 'dd' to copy drive '$old_name' to drive '$new_name',
+	followed by slow fsck: takes about a day per TB of SSD.  We'll
+	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
+	"
+	nohup $cmd > $output_file &
+	sleep 0.1; set -x; exec tail -f $output_file
+	;;
+#  finish-copy-backup name: copy, label, fsck, mount, resize
+   f*c*p*b*k*p | f*c*p*b* | fcb  )
+	action_opts=
+	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
+	[[ $# == 4 ]] || 
+	   abort "to see args, run: $_our_name -d cpbkp dev [name [old_name]]"
+	old_device=$1 old_backup_dir=$2
+	new_device=$3 new_backup_dir=$4
+
+	is_arg1_in_arg2 -f $action_opts ||
+	for backup_dir in $old_backup_dir $new_backup_dir; do
+	if [[ -d $backup_dir/lost+found ]]
+	   then set -- $(list_backups | 
+			 fgrep -v -w -e $old_backup_dir -e $new_backup_dir)
+		[[ $# == 0 ]] &&
+		msg="
+	There are no other backup drives mounted besides the ones used to
+        copy $old_backup_dir to $new_backup_dir ; if you let me unmount these
+	drive(s), no new backups will be made for many hours (or days).
+
+	To use $backup_dir," ||	msg="
+	$backup_dir is mounted;"
+		abort "\n$msg re-run copy-backup with -f to Force unmount."
+	fi; done
+
+	trap '' HUP
+
+	$Trace
+
+	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+
+	for backup_dir in $old_backup_dir $new_backup_dir
+	    do	$our_path $our_opts umount $backup_dir |&
+		   grep -v -e ': no filesystem mounted on ' -e '^ *$'
+		[[ ! -d $backup_dir/lost+found ]] ||
+		    $RunIf abort "umount $backup_dir"
+	done
+
+	$RunIf set -x
+
+	$RunIf dd if=$old_device of=$new_device bs=1M status=progress ||
+	     abort "dd exited with $?"
+
+	is_arg1_in_arg2 -M $action_opts || {
+	cmd="$RunIf mount -t $FS_type $old_device $old_backup_dir"
+	$cmd || abort "$cmd exited with $?"
+	}
+
+	label_drive $new_device $new_backup_dir
+
+	is_arg1_in_arg2 -F $action_opts || {
+	cmd="$RunIf e2fsck -f -p -t -t -E discard $new_device"
+	$cmd || abort "$cmd exited with $?; better check $old_device ?!"
+	}
+
+	$RunIf mount -t $FS_type $new_device $new_backup_dir ||
+	   abort "mount exited with $?; make mount happen, then run resize2fs"
+	$RunIf resize2fs $new_device	# do this _after_ mount, for speed
+	;;
+#
+#  copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
+   copy-b*k*p-dump )
+	abort "this is incredibly slow, use copy-backup instead"
+	abort "this code is out of date, needs to be rewritten"
+
+	# this is probably faster than dump, if use setup_RAM_FS_journal:
+	# cmd="cp -al $snapshot_pattern ${backup_dir_prefix}new/"
+
+	[[ $# == 1 && $1 == [a-zA-Z] ]] || abort "specify backup drive letter"
+	letter=${1^}
+	new_device=/dev/mapper$backup_dir_prefix$letter
+	[[ -b $new_device ]] || abort "can't find device for $letter"
+	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+
+	have_cmd dump && have_cmd restore ||
+	    abort "need to run: sudo apt-get install dump"
+
+	set_oldest_backup_snapshot
+	backup_dir=$(dirname $oldest_backup_snapshot)
+	device=$(df --output=source $backup_dir | fgrep /dev/)
+	cd_ /tmp/root
+	$our_path $our_opts umount  $backup_dir
+
+	$RunIf umount $new_device &> /dev/null
+	$RunIf mkdir -p		${backup_dir_prefix}new
+	$RunIf mount  $new_device ${backup_dir_prefix}new ||
+	   abort "mount $new_device -> $?"
+
+	cmd="cp -al $snapshot_pattern ${backup_dir_prefix}new/" # only if setup_RAM_FS_journal
+	# see Part 3 of: https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
+	$RunIf set -x
+	$RunIf cd_ ${backup_dir_prefix}new
+	$RunIf dump -a0f - $device | $RunIf restore -rf - ||
+	   warn "dump | restore"
+	exit_status=$?
+	$RunIf set +x
+	$RunIf cd_ /tmp
+	[[ $exit_status == 0 ]] && {
+	$RunIf umount ${backup_dir_prefix}new
+	label_drive $new_device $mount_dir
+	$RunIf mount  $new_device $mount_dir || warn "mount $new_device"
+	}
+	$RunIf mount $device $backup_dir ||
+	   abort "mount $device $backup_dir -> $?"
+	;;
+
+#  mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
+   mk*[Zz] | mkz )
+	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
+
+	# The following designed to work with (custom) configure.sh span of 1,
+	#    and are memorialized in action test-prune.
+	# Test pruning of hours: snapback mk-Z 12/22/2099 0..23 # 0, 2 seconds
+	#    ...  days & months: snapback mk-Z 1/1/2094   0	 # 5,14 seconds
+	#    ... months & years: snapback mk-Z 1/1/2010   month # 58,8 seconds
+
+	# 1/1/2010 is earliest day, earlier days (e.g. 091231) look like octal
+   readonly end_date="1/1/2100"		# keep constant, so can compare
+	start_date=${1:-12/22/2099}	# tests hours with ...
+	    period=${2:-0..23}		# sequence of hours, else 'month'
+
+	umask=02
+
+	set__backup_dir__log_cmd_file Z
+	cd_ $backup_dir
+	[[ $RunIf ]] ||
+	rm -rf *
+	mkdir -p lost+found
+
+	hours=00 is_months=$false
+	case $period in
+	    ( 0 ) ;;
+	    ( month* ) is_months=$true ;;
+	    ( * ) eval set -- {$period} ; hours=$* ;;
+	esac
+
+	declare -i start_secs=$(date -d "$start_date" '+%s')
+	declare -i   end_secs=$(date -d   "$end_date" '+%s')
+	declare -i secs=start_secs secs_per_day=24*60*60
+	let end_secs-=3600		# end at 11 PM on previous day
+	while  ((  secs < end_secs ))
+	   do	set_day $secs
+		secs+=secs_per_day
+		[[ $day == *01 || ! $is_months ]] || continue
+		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
+		for hour in $hours
+		    do	[[ $hour == ? ]] && hour=0$hour
+			snapshot=$day,$hour
+			[[ -d $snapshot ]] || echo $snapshot
+		done
+	done | xargs --no-run-if-empty $RunIf mkdir || abort mkdir
+
+	# setup partial backups mid-date, to test pruning
+	declare -i mid_secs=start_secs+(end_secs-start_secs)/2
+	set_day $mid_secs; mid_day=$day
+	TraceV 7 start_date mid_day end_date
+	for hour in 00 02 04 08 09 12
+	    do	for ext in links partial
+		    do	snapshot=$mid_day,$hour.$ext
+			$RunIf mkdir -p $snapshot
+		done
+	done
+
+	set_day $start_secs
+	snapshot=$day,00
+	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
+	    do	bad_dir=$snapshot$subdir/deleteme
+		$RunIf mkdir -p $bad_dir
+		$RunIf touch    $bad_dir/deleteme.txt
+	done
+	[[ $is_quiet ]] ||
+	Trace 0 "created excludable-junk in $snapshot"
+
+	# there was something else that needed to be tested??
+	for file in
+	    do	true
+	done
+
+	$RunIf rm -rf .mk-Z
+	$RunIf mkdir  .mk-Z	; [[ $RunIf ]] ||
+	cp -al *    .mk-Z/
+	;;
+
+#  test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
+   test*prune | tp )
+
+	[[ $UID != 0 ]] || abort "do not run this as root"
+
+	customize_and_validate_configuration_variables Z
+
+	cmd_dirs="/usr/local/bin/ ~/git/$_our_name/bin/"
+	echo -e "\nComparing prune results using '$_our_name' in:
+	${cmd_dirs/ / vs }"
+	set__backup_dir__log_cmd_file Z
+
+	# see the comment at the top of the mk-Z option, above
+	declare -A prune_type2mk_Z_args=(
+	      [hour]="12/22/2099 0..23"
+	 [month-day]="1/1/2094 0"
+	[year-month]="1/1/2010 month"
+	)
+
+	clone_stashed_mk_Z() {
+		local type=$1 stash=.mk-Z.$1
+		suspend_tracing
+		rm -rf $snapshot_pattern* la* && cp -al $stash/* . ||
+		   abort "failed to clone $stash"
+		restore_tracing
+	}
+
+	$Trace
+	cd_ $backup_dir
+	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
+	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
+		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
+		stash=.mk-Z.$type
+		$RunIf rm -rf $stash.*.ls
+		[[ ! -d $stash ]] && {
+		$RunIf $our_path mk-Z -q $mk_Z_args &&
+		   $RunIf mv .mk-Z $stash && $RunIf rm -f $stash/latest ||
+			abort "couldn't populate $stash"; }
+		for dir in $cmd_dirs
+		    do	eval "dir=$dir"	# expand ~
+			$RunIf clone_stashed_mk_Z $type
+			$RunIf $dir$_our_name $our_opts prune-backup Z |&
+			   fgrep -v ' prune-backup Z: pruned '
+			[[ $dir == /usr/* ]] && cmd=old || cmd=new
+			ls > $stash.$cmd.ls
+		done
+		set -- $(echo $stash.*.ls | sort -r)
+		diff -q $* && mv $stash.new.ls $stash.pruned.ls &&
+			      rm $stash.old.ls &&
+		   echo -e "\nSame results, see $stash*" && continue
+		abort "Regression, see: diff $*"
+	done
+
+	clone_stashed_mk_Z hour
+	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
+	;;
+
+   test | t )
+	set_backup_name a
+	set__backup_dir__log_cmd_file $backup_name
+	set_FS_label $backup_dir
+	echo $FS_label
+	exit
+
+	log test 1
+	customize_and_validate_configuration_variables /backup/Z
+	echo $backup_name
+	log test 2
+
+	exit
+
+	set__backup_dir__log_cmd_file ${1^}
+	$Trace
+	is_disk_usage_too_high
+	abort $?
+
+	set_oldest_backup_snapshot
+	echo $oldest_backup_snapshot
+	exit
+
+	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
+	    do	set_readable_du_size $size; echo "$readable_du_size from $size"
+	done
+	exit
+
+	backup_dir=/backup/F
+	cd $backup_dir
+	log=/tmp/root/F-190126-15.bz2
+	_links_error_msg "nnn 'Too many links'"
+	exit
+
+	set__backup_dir__log_cmd_file F
+	exit
+
+	$Trace
+	set__backup_dir__log_cmd_file ${1-''}
+	log "test with drive ${1-}"
+	exit
+
+	echo $backup_period
+	customize_config_variables /backup/F
+	echo $backup_period
+	backup_period+=1
+	echo $backup_period
+	;;
+
+#############################################################################
+# actions for snapcrypt to call
+#############################################################################
+
+# WARNING: this should only be called by "snapcrypt close"
+#  unmount name(s): for each name (can be 'all'), kill backup & unmount drive
+   u*mount | u )			# umount
+	[[ $* == all ]] && set -- $(list_backups)
+
+	$Trace
+	# do this early, since takes a while for processes to die
+	$RunIf $our_path $our_opts kill-both $*
+
+	[[ $RunIf ]] && output=/dev/stdout || output=/dev/null
+	for name
+	    do	set_backup_name $name
+		set__backup_dir__log_cmd_file $backup_name
+		[[  -d  $backup_dir/lost+found ]] || continue
+		/bin/ls $backup_dir |
+		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
+		sudo umount -h > /dev/null || warn "need sudo privs" || break
+		umount_cmd="$RunIf sudo umount --verbose $backup_dir"
+		for (( i = 1; i <= 30; i++ )) # wait for kill to finish
+		    do	$umount_cmd && break
+			$RunIf sleep 0.1
+		done &> $output
+		[[ ! -d $backup_dir/lost+found ]] ||
+		$umount_cmd		# this time, show user error message
+	done
+	;;
+# for "snapcrypt close": don't eject if didn't get any backups today
+has-new-snapshots | hsn )
+	drive=$1
+	[[ $drive == *Z ]] && exit 0	# for debugging
+
+	$Trace
+	[[  -d $drive/lost+found ]] || exit 0
+	suspend_tracing
+	set -- $drive/$snapshot_pattern	# all the _successful_ snapshots
+	restore_tracing
+	latest_snapshot=${!#}
+	[[ -d $latest_snapshot ]] ||
+	    abort "$drive has no (successful) snapshots"
+	latest_date_time=$(basename $latest_snapshot)
+	latest_day=${latest_date_time%,??}
+	# let latest_day=latest_day-1		# uncomment to debug
+	set_date_time
+	day=${date_time%,??}
+	[[ $latest_day == $day ]] ||
+	    abort "$drive has no (successful) backups since $latest_day"
+	;;
+# for "snapcrypt close": find drive with max # snapshots since last mounted
+max-backup | mb )
+	if [[ $# == 1 ]]
+	   then set_backup_name $1 2>/dev/null
+		if [[ ${backup_name-} ]]
+		   then echo "$backup_dir_prefix$backup_name"
+			exit 0
+		fi
+	fi
+
+	set -- ${*:-$(list_backups)}	# for debugging: | tac
+	[[ $# != 0 ]] || abort "no backup drives are mounted"
+
+	declare -i secs_per_day=24*60*60
+	$Trace
+	max_drive=$1; shift
+	while [[ $# != 0 ]]
+	    do	new_drive=$1
+		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
+		    do	set_day $secs
+
+			set -- $new_drive/$day,??*
+			[[ -d $1 ]] || break
+
+			set -- $max_drive/$day,??*
+			[[ -d $1 ]] && continue
+			max_drive=$new_drive
+			break
+		done
+		shift
+	done
+	echo $max_drive
+	;;
+# for "snapcrypt": echo drive mountpoint
+   drive )
+	set_backup_name $1
+	echo $backup_dir_prefix$backup_name
+	;;
+
+   * )
+	abort "'$action' is not a recognized action, run: $_our_name -h"
+	;;
+
+esac

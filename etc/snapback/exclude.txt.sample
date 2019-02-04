@@ -1,0 +1,87 @@
+
+#############################################################################
+#############################################################################
+# This file of shell patterns is used in "rsync --exclude-from=", and
+#    also used to delete (excluded files) when pruning old backup snapshots.
+#############################################################################
+#############################################################################
+
+# -----------------------------------------------------------------------
+# GNU/Linux system directories: virtual filesystems and transient data. #
+# -----------------------------------------------------------------------
+
+/cdrom/*
+/dev/*
+/media/*
+/mnt/*
+/proc/*
+/run/*
+
+# you can remove these if you have plenty of space
+/usr/lib/jvm
+/usr/lib64/eclipse
+/usr/lib64/openoffice.org
+/usr/share/doc/texlive-latex-extra-doc
+/usr/share/gimp
+/usr/share/javadoc
+/usr/share/texmf-texlive
+/usr/src/kernels/*
+
+/var/cache/*
+# from default /etc/updatedb.conf
+/var/lib/schroot/*
+/var/staging/*
+/var/tmp/kdecache-*
+/sys/*
+
+# -------------------------------------------------------
+# workstation user stuff				#
+# -------------------------------------------------------
+
+# mostly application caches
+/home/*/.[Cc]ache/*
+/home/*/.conda/*
+/home/*/.torch/*
+/home/*/.*/bundle/*
+/home/*/tmp/*
+/home/*/[Tt]rash/*
+/home/**/*[cC]ache/*
+/home/**/[cC]ache*/*
+/home/**/Favicons
+
+# mostly browser/mailer stuff
+/home/*/.config/google-chrome/Default/Extensions/
+/home/*/.config/google-chrome/Default/File?System/
+/home/*/.claws-mail/imapcache
+/home/*/.gvfs
+/home/*/.mozilla/seamonkey/*/ImapMail
+# not sure if all these can be repopulated
+/home/*/.mozilla/seamonkey/*/*.sqlite*
+/home/*/.shotwell
+
+# big WINE files that can be repopulated
+/home/*/.cxoffice/Microsoft?Office?20??/drive_c/MSOCache
+/home/*/.cxoffice/Microsoft?Office?20??/drive_c/users/crossover/Local?Settings/Temporary?Internet?Files
+/home/*/.cxoffice/Microsoft?Office?20??/drive_c/users/crossover/Local?Settings/Application?Data/Microsoft/*Outlook/outlook.ost
+/home/*/.cxoffice/**/*.tmp
+
+# personal R libraries
+/home/*/R/x86_64-pc-linux-gnu-library/*
+/home/*/R/library/*
+/home/*/R/rlib/*
+/home/*/*/R/x86_64-pc-linux-gnu-library/*
+/home/*/*/R/library/*
+/home/*/*/R/rlib/*
+
+# --------------------------------------------------------------------
+# subdirectories that the 'snapshot' command backs up, can be *huge* #
+# --------------------------------------------------------------------
+
+# data-project workspaces (named by country-code names), skip 'snapshot' dirs
+/home/**/[A-Z][A-Z]**/input/*
+/home/**/[A-Z][A-Z]**/output/*
+/home/**/[A-Z][A-Z]**/frozen/*
+
+############################################
+# Extra records could be added after this. #
+############################################
