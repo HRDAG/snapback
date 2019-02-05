@@ -92,9 +92,11 @@ in the parent directory of your snapback workspace.
 From the root of the snapback workspace, copy-and-paste the following commands
 into a terminal window:
 
-    sudo cp bin/snapback		/usr/local/bin/
-    sudo cp ../libsnap/bin/libsnap.sh	/usr/local/bin/
-    sudo cp etc/sudoers.d/snapback	/etc/sudoers.d/
+    sudo cp bin/snapback			/usr/local/bin/
+    sudo cp etc/sudoers.d/snapback		/etc/sudoers.d/
+    sudo cp ../libsnap/bin/libsnap.sh		/usr/local/bin/
+    sudo cp ../libsnap/src/lockpid/lockpid	/usr/local/bin/
+    # you might need to recompile 'lockpid'
 
     sudo cp -r etc/snapback /etc/
     cd /etc/snapback &&
