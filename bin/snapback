@@ -15,7 +15,7 @@ readonly  backup_config_file_sample=$backup_config_file.sample
 
 if [[ ! -s $backup_config_file_sample ]]
    then abort "have to install $backup_config_file_sample"
-elif ! head -n1  $backup_config_file_sample | fgrep -q -x "# version=1"
+elif ! head -n1  $backup_config_file_sample | fgrep -q -x "# version=2"
    then abort "$backup_config_file_sample version does not match $our_name"
 fi
 
