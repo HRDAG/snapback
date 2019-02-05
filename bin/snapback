@@ -22,7 +22,7 @@ fi
 # for each config var, create associative array for per-drive customization
 readonly uncustomizable_config_vars="
 		backup_dir_prefix old_crypt_name_prefixes drive_config_file"
-readonly config_vars=$(sed '/() *{/,/^}/d' $backup_config_file | # strip funcs
+readonly config_vars=$(sed '/() *{/,/^}/d' $backup_config_file_sample |
 		       sed -n -r 's/^[^#]*\b(\w+)=.*$/\1/p' | sort -u)
 for var in $config_vars; do eval "declare -A bkp_name2$var"; done
 #
