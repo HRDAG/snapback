@@ -10,7 +10,7 @@ NOTE: the following is heavily oriented towards a GNU/Linux system like
 Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
 'copy-backup' actions (see below) will eventually fully support XFS
 filesystems, because HRDAG uses 'snap' aka 'snapshot' so we experience "Too
-many links" errors with our 4 years of snapshots.]
+many links" errors with our 4 years of backup snapshots.]
 
 A. Re-using existing backup drives and partitions
 
