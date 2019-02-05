@@ -1637,7 +1637,7 @@ case $action in
 	[[ ${1-} == -f ]] && shift ||
 	   abort "if this is your first or smallest disk, use the -f option; otherwise, use copy-backup instead; run: $_our_name -h"
 
-	[[ $# == [12] ]] || abort "device [backup-name]; run: $_our_name -h"
+	[[ $# == [12] ]] || abort "-f device [backup-name]; run: $_our_name -h"
 	device=$1 name=${2-}
 
 	[[ $device = /* ]] || device=/dev/$device

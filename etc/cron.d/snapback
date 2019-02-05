@@ -12,6 +12,6 @@ HOME=/root
 # |  |   |  .-------  month (1 - 12) OR Jan, Feb, ..., Nov, Dec
 # |  |   |  |   .---- day of week (0 - 6) (Sunday=0 or 7) OR Sun, ..., Fri, Sat
 # |  |   |  |   |
-# *  *   *  *   *   user command-to-be-executed
-#-- --- -- --- ---  ---- ----------------------
-  0  *   *  *   *   root setsid snapback -C run-backups &>> /var/log/snapback/cron.log
+# *  *   *  *   *   user   command-to-be-executed
+#-- --- -- --- ---  ----   ----------------------
+  0  *   *  *   *   root   setsid snapback -C run-backups &>> /var/log/snapback/cron.log

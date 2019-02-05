@@ -1,76 +1,207 @@
 WARNING: if you heavily use an application which generates lots of hard-linked
-files (like HRDAG's 'snap' aka 'snapshot'), you'll run into the "Too many
-links" rsync error if you use a backup filesystem that has too-small limits on
-the maximum number of hard-links per inode (I think the NTFS max is very
-small; the ext4 max is 65K).  In this case, you'll ideally use a filesystem
-like XFS (or Btrfs if you're adventuresome) that uses a 32-bit word to hold
-the hard-link reference-count.
+files (like HRDAG's 'snap' aka 'snapshot'), you could run into the "Too many
+links" rsync error if you use a backup filesystem type that has too-small
+limits on the maximum number of hard-links per inode (I think the NTFS max is
+very small; the ext4 max is 65K).  In this case, you'll ideally use a
+filesystem like XFS (or Btrfs if you're adventuresome) that uses a 32-bit word
+to hold the hard-link reference-count.
 
-A. Re-using existing backup drives
+NOTE: the following is heavily oriented towards a GNU/Linux system like
+Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
+'copy-backup' actions (see below) will eventually fully support XFS
+filesystems, because HRDAG uses 'snap' aka 'snapshot' so we experience "Too
+many links" errors with our 4 years of snapshots.]
 
-If you have backup drives with one or more existing snaphots, it's best to use
-"cp -al" to copy all the snapshots onto one drive (ideally, the smallest drive
-that will hold all the fully-hard-linked files ...).  Before each individual
-"cp -al", hard-link all the identical files on the source (which will decrease
-disk space) using e.g. 'rmlint' (https://github.com/sahib/rmlint); after each
-"cp -al", run 'rmlint' on the whole destination drive.
+A. Re-using existing backup drives and partitions
 
-Once all the snapshots are on one drive (called the master drive), you need to
-rename them to conform to snapback's standards, and make sure all the
-snapshots are in the root of the drive (and, ideally, nothing else is in the
-root of the drive, except perhaps in an e.g. .my-stuff/ directory).  To see
-the naming conventions, run:
+If you have backup partitions with one or more existing snaphots, it's best to
+use "cp -al" to copy all the snapshots onto one partition (ideally, the
+smallest partition that will hold all the fully-hard-linked files ...).
+Before each individual "cp -al", hard-link all the identical files on the
+source (which will decrease disk space) using e.g. 'rmlint'
+(https://github.com/sahib/rmlint); after each "cp -al", run 'rmlint' on the
+whole destination partition.
+
+Once all the snapshots have been copied to one partition (which I'll call the
+master partition), you need to rename the snapshots to conform to snapback's
+standards, and make sure all the snapshots are in the root of the partition
+(and, ideally, nothing else is in the root of the partition, except perhaps in
+an e.g. /.my-stuff/ sub-directory).  To see snapback's snapshot naming
+conventions, run:
 
     snapback mkfs		# you won't otherwise need to use this command
 
-Now label your master drive.  First, to see a good fstab record, run:
+Now, label your master partition.  First, to see a good fstab record, run e.g.:
 
-    snapback -d mkfs -f $device A	# -d means "simulation"
+    snapback -d mkfs -f $device A	# -d means Debug i.e. "simulation"
 
 which will also indicate the label to use with e.g. 'e2label'.
 
-If you weren't able to use your smallest drive as the master, but the amount
-of disk space in-use on the master will fit on smaller backup drives, after
-the final 'rmlint' on your master drive, run e.g. (for ext?):
+If you weren't able to use your smallest partition as the master, but the
+amount of disk space actually in-use on the master will fit in smaller backup
+partitions, after the final 'rmlint' on your master partition, run e.g. (for
+ext*):
 
+    device=/dev/xxxx
     sudo umount $device
     sudo resize2fs -P $device
 
-to see if it can be shrunk enough to fit on a smaller drive.  If so, run:
+to see if it can be shrunk enough to fit on a smaller partition.  If so, run:
 
-    nohup sudo resize2fs -M -p $device &
+    nohup sudo resize2fs -M -p $device & sleep 0.1; tail -f nohup.out
 
-then again use "resize2fs -P" to see if it's shrunk enough to fit on any of
-your smaller drives (if you're using e.g. XFS or some other modern filesystem,
-there's probably a similar way to perform the above operations).
+When it finishes (it could take hours), again use "resize2fs -P" to see if
+it's shrunk enough to fit in any of your smaller partitions (if you're using
+e.g. XFS or some other modern filesystem, there's probably a similar way to
+perform the above operations).
 
-Before you copy the master drive to your other drives, you may want to think
-seriously about first encrypting the other drives.  See the 'snapcrypt'
-project for easy setup and maintenance of encrypted drives.
+Before you copy the master partition to your other partitions, you may want to
+think seriously about first encrypting the other partitions.  See HRDAG's
+'snapcrypt' project for easy setup and maintenance of encrypted partitions
+(note that it currently encrypts the whole drive, overwriting the partition
+table).
 
 Now you can use "snapback copy-backup" (which will show you what arguments are
-needed) to copy your master drive to each of the drives large enough to hold
-its contents.  If the drives are physically smaller than the master drive,
-"snapback copy-backup" runs a 'dd' command that will fail, but you run a
-simulation with "snapback -d copy-backup ..." to see what commands you need to
-run to finish the job ('nohup' them).  You can copy multiple drives
+needed) to copy your master partition to each of the partitions large enough
+to hold its contents.  If the partitions are physically smaller than the
+master partition, "snapback copy-backup" runs a 'dd' command that will fail;
+but you can run a simulation with "snapback -d copy-backup <args>" to see what
+commands you need to run to finish the job (it's best to 'nohup' the 'fsck'
+command, it will take a long time).  You can copy multiple partitions
 simultaneously (this is desired, since all the copies will share the same
 source contents in the page cache).  You don't need to use the 'nohup' command
-with "snapback copy-backup": it runs 'nohup' internally and saves the output
+with "snapback copy-backup": it runs 'nohup' internally, and saves the output
 to $FS_label.out .
 
-If you copied your master drive to encrypted drives, you now want to encrypt
-your master drive and use "snapback copy-backup" to copy one of the copied
-drives back to your now-encrypted no-longer-master drive.
+If you copied your master partition to encrypted partitions, you now want to
+encrypt your master partition and use "snapback copy-backup" to copy the
+smallest partition back to your now-encrypted no-longer-master partition.
 
-B. Installing files in this project
+Now you can mount all your backup partitions on $backup_dir_prefix (defined in
+/etc/snapback/configure.sh).
 
-sudo cp bin/snapback /usr/local/bin/
-sudo cp ../libsnap/bin/libsnap.sh /usr/local/bin/
-sudo cp etc/cron.d/snapback /etc/cron.d/
-sudo cp etc/sudoers.d/snapback /etc/sudoers.d/
-sudo cp -r etc/snapback /etc/
-cd /etc/snapback
-for fs in *.sample; do f=${fs%.sample}; sudo cp $fs $f; echo "edit $f"; done
+
+B. Installing the files that snapback needs
+
+You will need to run:
+
+    git clone git@github.com:HRDAG/libsnap.git
+
+in the parent directory of your snapback workspace.
+
+From the root of the snapback workspace, copy-and-paste the following commands
+into a terminal window:
+
+    sudo cp bin/snapback		/usr/local/bin/
+    sudo cp ../libsnap/bin/libsnap.sh	/usr/local/bin/
+    sudo cp etc/sudoers.d/snapback	/etc/sudoers.d/
+
+    sudo cp -r etc/snapback /etc/
+    cd /etc/snapback &&
+    for fs in *.sample; do f=${fs%.sample}; sudo cp -v $fs $f; done &&
+    echo "now edit the two files copied from the .sample files"
+
 
 C. Configuring 'snapback'
+
+All configuration takes place in
+
+    /etc/snapback/configure.sh
+    /etc/snapback/exclude.txt
+
+Some of it is quite abstract, you'll need to carefully read the comments.  And
+it's probably best to leave the tuning variables alone (see section F.), and
+re-read those variables comments after you've let cron create a lot of
+snapshots and you start to run out of resources on some drives.
+
+[If there's something you want to change that can't be accomplished by editing
+those two files, email sweikart@gmail.com with a description of what you want
+to accomplish.]
+
+
+D. Preparing brand new partitions when you have no existing snapshots
+
+You can use:
+
+    sudo snapback mkfs -f
+
+to prepare a new partition, add a record to /etc/fstab, then mount the
+partition on $backup_dir_prefix (defined in /etc/snapback/configure.sh).
+
+You can test a single, mounted backup partition with:
+
+    sudo snapback run-backup <backup-name>
+
+in a new window, and then in another window watch it by running:
+
+    snapback watch
+
+See doc/watch.txt for details on using the 'watch' action.
+
+Once you've created and mounted all the partitions you plan to use, you can
+backup all of them simultaneously with:
+
+    sudo snapback run-backups
+
+
+E. Automation with cron
+
+Once everything looks OK, from the root of the snapback workspace,
+copy-and-paste the following command into a terminal window:
+
+    sudo cp etc/cron.d/snapback /etc/cron.d/
+
+If you get the error:
+
+    cp: cannot create regular file `/etc/cron.d//': Not a directory
+
+then you'll have to copy the snapback command (under command-to-be-executed)
+from etc/cron.d/snapback into a file in /etc/cron.hourly/ . If you don't have
+/etc/cron.hourly/ , then you'll probably need to append the last line of
+etc/cron.d/snapback to your /etc/crontab file.
+
+
+F. Tuning
+
+There's two kinds of problems that will require tuning: you're running out
+of drive space or inodes, or you're getting "Too many links" errors.  If you
+get these errors when "snapback watch" reports e.g.
+
+    Number pruned snapshots awaiting 'rm':  A=0    C=0    G=0
+
+then you'll need to edit /etc/snapback/configure.sh and either increase
+'backup_period' or decrease one of the four '*_per_span_for_*_prune'
+variables; carefully read the comments to figure out what these do.  It's best
+to just change one variable at a time.  Then wait for the next backup: It will
+kick off a prune, which will rename the now-unneeded snapshots to
+Date,Hour.rm, and then start deleting them (but if you set
+'suspend_prune_when_backup=$true' because you're using disk drives not SSDs,
+then the prune won't be started until the backup finishes).  [Note that a
+prune will still be started at the next hour even if your 'backup_period' and
+'excluded_backup_hours' values prevent a backup that hour.]  As soon as the
+prune job finishes, "snapback watch" will show that your drive now has non-0
+"Number pruned snapshots awaiting 'rm'"; you'll need to wait until this value
+goes to 0, then decide if your tuning-change freed up enough disk space.
+
+[If you'd rather that these variables were automagically tuned by snapback
+itself (with some tuning priorities specified by you), ask sweikart@gmail.com
+to implement something like the ideas in doc/extra-prune.txt .]
+
+Remember, you don't need to change the global tuning variables, you can set a
+custom value for each partition that's running out of resources.  To see
+examples of this, search configure.sh for '[Z]', to see how very-small values
+are used for the pseudo-partition named 'Z' ('Z' is used for regression tests,
+and for studying how pruning works with the "-T 5" option to snapback).
+
+--
+
+Instead of the above, you could edit /etc/snapback/exclude.txt to exclude
+pieces of your system.  Again, you'll need to wait an hour for the next prune
+job to start, and then wait until the partition's log
+(/var/log/snapback/<backup-name>/messages.log) reports:
+
+    pruned exclude-patterns from _all_ snapshots
+
+[Note that you might be able to accomplish the same goal by changing
+'dirs_to_backup'; but 'snapback' won't currently delete the
+no-longer-backed-up-dirs from older snapshots.]
