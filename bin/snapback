@@ -8,7 +8,8 @@ source libsnap.sh || exit 1
 
 readonly coder=sweikart@gmail.com
 
-readonly  backup_config_dir=/etc/$our_name
+for dir in /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
+readonly   backup_config_dir=$dir/$our_name
 readonly backup_exclude_file=$backup_config_dir/exclude.txt
 readonly  backup_config_file=$backup_config_dir/configure.sh
 readonly  backup_config_file_sample=$backup_config_file.sample
@@ -1631,8 +1632,9 @@ case $action in
 	line_1="if you're using a drive that already has backups,"
 	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
 	line_3="e.g. 'now' looks like /$date_time/ ; don't run 'mkfs',"
-	line_4="just re-label the drive and change its record in /etc/fstab ."
-	warn "$line_1\n   $line_2\n   $line_3\n   $line_4"
+	line_4="just re-label the drive and change its record in /etc/fstab"
+	line_5="(which is not needed if the partition is auto-mounted)."
+	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
 	[[ ${1-} == -f ]] && shift ||
 	   abort "if this is your first or smallest disk, use the -f option; otherwise, use copy-backup instead; run: $_our_name -h"
