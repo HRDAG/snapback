@@ -181,10 +181,11 @@ prune will still be started at the next hour even if your 'backup_period' and
 'excluded_backup_hours' values prevent a backup that hour.]  As soon as the
 prune job finishes, "snapback watch" will show that your drive now has non-0
 "Number pruned snapshots awaiting 'rm'"; you'll need to wait until this value
-goes to 0, then decide if your tuning-change freed up enough disk space.
+goes to 0, then decide if your tuning-change freed up enough disk space.  See
+doc/watch.txt for more details on watching how the system responds to tuning.
 
 [If you'd rather that these variables were automagically tuned by snapback
-itself (with some tuning priorities specified by you), ask sweikart@gmail.com
+itself (with some tuning-priorities specified by you), ask sweikart@gmail.com
 to implement something like the ideas in doc/extra-prune.txt .]
 
 Remember, you don't need to change the global tuning variables, you can set a
@@ -202,6 +203,12 @@ job to start, and then wait until the partition's log
 
     pruned exclude-patterns from _all_ snapshots
 
-[Note that you might be able to accomplish the same goal by changing
-'dirs_to_backup'; but 'snapback' won't currently delete the
-no-longer-backed-up-dirs from older snapshots.]
+And note that you can use the source_drive_specific_config_file function at
+the end of /etc/snapback/configure.sh.sample to have separate exclude files
+for different categories of partitions.
+
+Note that you might be able to accomplish the same goal by changing
+'dirs_to_backup', which is also convenient because it's easy to add separate
+per-backup values to configure.sh .  But, 'snapback' won't currently delete
+the no-longer-backed-up-dirs from older snapshots; you'll need to do this
+manually.
