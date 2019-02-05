@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# functions/variables: warn, abort, tmp_dir, our_name, our_path, true, false,
+# need_cmds, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
+# log, log_cmd_file, log_level, log_msg_prefix, header,
+# cd_ , add_words, confirm, functionis_arg1_in_arg2
 source libsnap.sh || exit 1
 
 readonly coder=sweikart@gmail.com
@@ -22,6 +26,8 @@ readonly config_vars=$(sed '/() *{/,/^}/d' $backup_config_file | # strip funcs
 		       sed -n -r 's/^[^#]*\b(\w+)=.*$/\1/p' | sort -u)
 for var in $config_vars; do eval "declare -A bkp_name2$var"; done
 #
+# this grabs variables that control backup and pruning, and also gets
+# (customizable) functions set_backup_name & source_drive_specific_config_file
 source $backup_config_file || abort "$backup_config_file broken"
 
 [[ -s $backup_exclude_file ]] ||
@@ -265,7 +271,8 @@ setup_prune_backup_priority() {
 # ----------------------------------------------------------------------------
 
 list_backups() {
-	df --output=target --no-sync | grep "^$backup_dir_prefix" | sort -u
+	df --output=target --no-sync |
+	   grep "^$backup_dir_prefix$backup_name_pattern$" | sort -u
 }
 
 # --------------------------------------------

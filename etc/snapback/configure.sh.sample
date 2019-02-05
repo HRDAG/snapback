@@ -141,20 +141,24 @@ bkp_name2pruning_span_scale_factor[Z]=1	  # Z used for pruning regression tests
 readonly snapshot_date_time_separator=','
 
 # Default policy: backups are named as a single upper-case letter.
+# You might be able to change this policy by changing backup_*name_pattern,
+# while leaving set_backup_name roughly the same (maybe change the last line).
+readonly    backup_name_pattern='[A-Z]'
+readonly backup_UI_name_pattern='[A-Za-z]'
 set_backup_name() {
-	backup_name=$1
 	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
+	local name=$1
 
-	if [[ $backup_name != ? && $backup_name == *[_/]* ]]
-	   then [[ $backup_name != */* && $backup_name == *_* ]] && # FS label?
-		    backup_name=/${backup_name//_/\/}
-		[[ $backup_name == $backup_dir_prefix[A-Z] ]] ||
-		   abort "$backup_name looks like directory, but invalid name"
-		backup_name=${backup_name: -1} # grab last letter
-	   else [[ $backup_name == [a-zA-Z] ]] ||
-		   abort "'$backup_name' is an invalid backup name"
-		backup_name=${backup_name^}	# upper-case it
+	if [[ $name != $backup_UI_name_pattern && $name == *[_/]* ]]
+	   then [[ $name != */* && $name == *_* ]] && # FS label?
+		    name=/${name//_/\/}		      # turn into mount dir
+		[[ $name == $backup_dir_prefix$backup_name_pattern ]] ||
+		   abort "$name looks like directory/label, but invalid name"
+		name=${name: -1}	# grab last letter
+	   else [[ $name == $backup_UI_name_pattern ]] ||
+		   abort "'$name' is an invalid backup name"
 	fi
+	backup_name=${name^}		# upper-case it
 }
 
 # By default, config-$backup_name.sh holds custom per-drive config variables;
