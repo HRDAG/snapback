@@ -1,9 +1,10 @@
-WARNING: if you heavily use an application (like our 'snap' aka 'snapshot')
-which generates lots of hard-linked files, you'll run into the "Too many
-links" error if you use a backup filesystem that has too-small limits on the
-maximum number of hard-links per inode (I think the NTFS max is very small;
-the ext4 max is 65K).  In this case, you'll ideally use something like XFS (or
-Btrfs if you're adventuresome).
+WARNING: if you heavily use an application which generates lots of hard-linked
+files (like HRDAG's 'snap' aka 'snapshot'), you'll run into the "Too many
+links" rsync error if you use a backup filesystem that has too-small limits on
+the maximum number of hard-links per inode (I think the NTFS max is very
+small; the ext4 max is 65K).  In this case, you'll ideally use a filesystem
+like XFS (or Btrfs if you're adventuresome) that uses a 32-bit word to hold
+the hard-link reference-count.
 
 A. Re-using existing backup drives
 
