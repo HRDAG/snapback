@@ -1,12 +1,12 @@
 #!/bin/bash
 
+readonly coder=sweikart@gmail.com
+
 # functions/variables: warn, abort, tmp_dir, our_name, our_path, true, false,
 # need_cmds, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
 # log, log_cmd_file, log_level, log_msg_prefix, header,
 # cd_ , add_words, confirm, functionis_arg1_in_arg2
 source libsnap.sh || exit 1
-
-readonly coder=sweikart@gmail.com
 
 for dir in /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
 readonly   backup_config_dir=$dir/$our_name
