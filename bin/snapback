@@ -666,8 +666,8 @@ _rm_pruned_snapshots() {
 	    do	[[ $snapshot == *.rm ]] && continue
 		grep '^ */' $backup_exclude_file | fgrep -v '**' |
 		while read exclude_pattern
-		    do	set -- $snapshot"$exclude_pattern" # can have SPACEs
-			for file
+		    do	set -- $snapshot$exclude_pattern
+			for file	# can have SPACEs, need to quote it
 			   do	[[ -e "$file" ]] && echo "$file"
 			done
 		done
@@ -1397,10 +1397,10 @@ case $action in
 	if [[ ! $watch_opt ]]
 	   then ps_opt=-f cron_opt=-C
 	elif [[ ! $rsync_cmds && $cron_opt &&
-		! -s /etc/sudoers.d/$our_name ]]
+		! -s /etc/sudoers.d/$_our_name ]]
 	   then header "to not fill the log with frequent 'sudo ps'"
 		option_1="install etc/sudoers.d/$our_name"
-		option_2="move its contents into /etc/sudoers"
+		option_2="put its contents into /etc/sudoers"
 		echo -e "\n$option_1, or $option_2"
 	fi
 
