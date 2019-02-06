@@ -34,7 +34,8 @@ source $backup_config_file || abort "$backup_config_file broken"
 [[ -s $backup_exclude_file ]] ||
    abort "install/edit $backup_exclude_file, see included .sample"
 
-PATH=/usr/local/sbin:/usr/local/bin:$PATH
+# let sysadmin install newer versions of (GNU) commands in /usr/local/*bin
+prepend_to_PATH_var PATH /usr/local/bin /usr/local/sbin
 
 Usage="
 Usage: $our_name action [args]
@@ -909,20 +910,14 @@ set_link_dest_opts() {
 	local new_snapshot=$1
 
 	suspend_tracing
-	local latest_snapshot=
-	set -- $backup_dir/$snapshot_pattern # all the date,hour snapshots
-	[[ -d $1 ]] && latest_snapshot=${!#} || shift
-	local successful=$*
-	restore_tracing latest_snapshot
-
-	suspend_tracing
-	set -- $backup_dir/$snapshot_pattern.{links,partial}
-	[[ -d $1 ]] || shift
-	set --	$(echo $successful | tr ' ' '\n' | tac) \
-		$(echo $*          | tr ' ' '\n' | tac) # newest to oldest
+	# want the .links snapshots too, so quickly recover from
+	#    'Too many links' by just copying the file
+	# want a .partial to get the latest stuff, but won't "count" it
+	set -- $(echo $backup_dir/$snapshot_pattern{,.links,.partial} |
+		 tr ' ' '\n' | sort -r)
 	restore_tracing
 
-	[[ $latest_snapshot != $new_snapshot ]] || shift
+	while [[ ! -d $1 || ${1%.*} == $new_snapshot ]] ; do shift; done
 
 	# need at least 2 --link-dest args in case the sysadmnin borked one,
 	# and a few hours worth in case a file was deleted then recovered;
@@ -939,7 +934,7 @@ set_link_dest_opts() {
 		for snapshot
 		    do	[[ -d $snapshot ]] || continue
 			link_dest_opts="$link_dest_opts --link-dest=$snapshot"
-			snapshots_used+=1
+			[[ $snapshot != *.partial ]] && snapshots_used+=1
 			(( snapshots_used >= num_link_dests )) && break
 		done
 		restore_tracing link_dest_opts
@@ -1107,7 +1102,6 @@ run_backup() {
 
 	$Trace
 
-	PATH=/usr/local/bin:$PATH	# make sure get latest 'rsync' cmd
 	# most of these variables come from $backup_config_file
 	$RunIf rsync $rsync_backup_opts $our_rsync_opts	\
 	   --relative $link_dest_opts			\
@@ -1526,6 +1520,7 @@ case $action in
 	echo "Number pruned snapshots awaiting 'rm':  $stats_number"
 	echo " Age of newest pending prune, in days:  $stats_newest_age"
 	setup_snapshot_stats .links
+	echo " Number of 'Too many links' snapshots:  $stats_number"
 	echo "    Days since 'Too many links' error:  $stats_newest_age"
 
 	[[ $rsync_cmds && $watch_opt ]] || {
