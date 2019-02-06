@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /usr/bin/env bash
 
 readonly coder=sweikart@gmail.com
 
@@ -33,9 +33,6 @@ source $backup_config_file || abort "$backup_config_file broken"
 
 [[ -s $backup_exclude_file ]] ||
    abort "install/edit $backup_exclude_file, see included .sample"
-
-# let sysadmin install newer versions of (GNU) commands in /usr/local/*bin
-prepend_to_PATH_var PATH /usr/local/bin /usr/local/sbin
 
 Usage="
 Usage: $our_name action [args]
