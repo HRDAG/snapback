@@ -330,8 +330,12 @@ set__backup_dir__log_cmd_file() {
 	log_cmd_file=$backup_log_dir/messages.log
 
 	[[ -d $log_dir ]] || {
+	local group
+	for group in sudo wheel admin
+	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
+	done
 	sudo mkdir -p $log_dir
-	sudo chgrp sudo $log_dir
+	sudo chgrp $group $log_dir
 	sudo chmod g+w,g+s $log_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
