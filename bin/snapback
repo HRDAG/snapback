@@ -331,7 +331,7 @@ set__backup_dir__log_cmd_file() {
 
 	[[ -d $log_dir ]] || {
 	local group
-	for group in sudo wheel admin
+	for group in sudo wheel admin	# admin for Darwin aka MacOS
 	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
 	done
 	sudo mkdir -p $log_dir
