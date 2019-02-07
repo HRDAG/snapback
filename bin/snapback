@@ -1559,8 +1559,9 @@ case $action in
 
 	trim_rsync() {
 
-		sed -e "s@/bin/bash /@/@"			   \
-		    -e "s@$HOME/@~/@g"				   \
+		sed -e "s@/bin/bash /@/@"	\
+		    -e "s@ bash /@ /@"		\
+		    -e "s@$HOME/@~/@g"		\
 		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
 	}
 
@@ -1705,7 +1706,7 @@ case $action in
 	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
 
 	mount_opts="nosuid,nodev,relatime,nodiratime"
-	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts\t0 2"
+	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
 	cmd="$RunIf $cmd_opts $mkfs_debug_opt -L $FS_label $device"
