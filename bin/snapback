@@ -1558,7 +1558,7 @@ case $action in
 
 	! [[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows ]] && {
 	echo
-	df_fields=source,fstype,size,avail,pcent,iused,ipcent,target
+	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	df --block-size=G --output=$df_fields  $(list_backups)
 	}
 
