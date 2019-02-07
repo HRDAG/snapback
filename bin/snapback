@@ -301,6 +301,15 @@ function fix_snapshot_names {
 
 # ---------------------------------
 
+is_backup_dir_mounted() {
+	local backup_dir=$1
+
+	[[ $backup_dir ]] || return 1
+	df | grep -q " $backup_dir$" || [[ $backup_dir == */Z ]]
+}
+
+# ---------------------------------
+
      backup_dir= log_cmd_file=		# global, just in case
 # can pass a null backup_name to set default log_cmd_file
 set__backup_dir__log_cmd_file() {
@@ -313,10 +322,10 @@ set__backup_dir__log_cmd_file() {
 	[[ $backup_name == Z ]]  &&
 	is_regression_test=$true &&
 	[[ ! -d $backup_dir  ]]  &&
-	sudo mkdir -p $backup_dir/lost+found &&
-	sudo chown $LOGNAME $backup_dir $backup_dir/*
+	sudo mkdir $backup_dir   &&
+	sudo chown $LOGNAME $backup_dir
 
-	[[ ! $backup_name || -d $backup_dir/lost+found ]] ||
+	is_backup_dir_mounted $backup_dir ||
 	    warn "no filesystem mounted on $backup_dir" || return 1
 
 	if [[ $backup_name ]]
@@ -1703,7 +1712,7 @@ case $action in
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && RunIf=echo
 	$RunIf mkdir -p $backup_dir
-	cmd="$RunIf mount -t $FS_type $device $backup_dir"
+	cmd="$RunIf mount -v -t $FS_type $device $backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	;;
 #  copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
@@ -1786,7 +1795,7 @@ set -x
 
 	is_arg1_in_arg2 -f $action_opts ||
 	for backup_dir in $old_backup_dir $new_backup_dir; do
-	if [[ -d $backup_dir/lost+found ]]
+	if is_backup_dir_mounted $backup_dir
 	   then set -- $(list_backups | 
 			 fgrep -v -w -e $old_backup_dir -e $new_backup_dir)
 		[[ $# == 0 ]] &&
@@ -1809,7 +1818,7 @@ set -x
 	for backup_dir in $old_backup_dir $new_backup_dir
 	    do	$our_path $our_opts umount $backup_dir |&
 		   grep -v -e ': no filesystem mounted on ' -e '^ *$'
-		[[ ! -d $backup_dir/lost+found ]] ||
+		is_backup_dir_mounted $backup_dir &&
 		    $RunIf abort "umount $backup_dir"
 	done
 
@@ -1902,7 +1911,6 @@ set -x
 	cd_ $backup_dir
 	[[ $RunIf ]] ||
 	rm -rf *
-	mkdir -p lost+found
 
 	hours=00 is_months=$false
 	case $period in
@@ -2081,7 +2089,7 @@ set -x
 	for name
 	    do	set_backup_name $name
 		set__backup_dir__log_cmd_file $backup_name
-		[[  -d  $backup_dir/lost+found ]] || continue
+		is_backup_dir_mounted $backup_dir || continue
 		/bin/ls $backup_dir |
 		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
 		sudo umount -h > /dev/null || warn "need sudo privs" || break
@@ -2090,7 +2098,7 @@ set -x
 		    do	$umount_cmd && break
 			$RunIf sleep 0.1
 		done &> $output
-		[[ ! -d $backup_dir/lost+found ]] ||
+		is_backup_dir_mounted $backup_dir &&
 		$umount_cmd		# this time, show user error message
 	done
 	;;
@@ -2100,7 +2108,7 @@ has-new-snapshots | hsn )
 	[[ $drive == *Z ]] && exit 0	# for debugging
 
 	$Trace
-	[[  -d $drive/lost+found ]] || exit 0
+	is_backup_dir_mounted $backup_dir || exit 0
 	suspend_tracing
 	set -- $drive/$snapshot_pattern	# all the _successful_ snapshots
 	restore_tracing
