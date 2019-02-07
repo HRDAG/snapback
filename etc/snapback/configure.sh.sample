@@ -1,4 +1,4 @@
-# version=2
+# version=3
 
 ################################################################
 ################################################################
@@ -12,6 +12,20 @@
 #   using either source_drive_specific_config_file (which can be modified) or
 #   eg: bkp_name2dirs_to_backup[Z]=/var/tmp/small-dir  # test w/pseudo-drive Z
 ##############################################################################
+
+# -----------------------------------------------------------------------------
+# The command + options used by action 'mkfs' to create a brand new filesystem.
+# -----------------------------------------------------------------------------
+
+# Comment-out all-but-one of these sample values:
+
+# Will need to add -f if the partition already has an *UNWANTED* filesystem.
+# sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
+# The default is "-i maxpct=0", which you can override.
+readonly mkfs_cmd_opts="mkfs.xfs"   # needed if your apps use many hard-links
+
+# ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one.
+readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
 
 # -------------------------------------------------
 # Variables used by run-backup* and prune-backup* #

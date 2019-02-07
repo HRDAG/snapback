@@ -168,8 +168,7 @@ label_drive() {
 	$RunIf sudo e2label $device $FS_label
 }
 
-    [[ ${FS_type-} ]] ||
-readonly FS_type=ext4
+FS_type=
 
 # ----------------------------------------------------------------------------
 
@@ -1625,10 +1624,10 @@ case $action in
 	# If have existing backup drives that are no bigger, use copy-backup .
 
 	set_date_time
-	line_1="if you're using a drive that already has backups,"
+	line_1="if you're using a partition or LV that already has backups,"
 	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
 	line_3="e.g. 'now' looks like /$date_time/ ; don't run 'mkfs',"
-	line_4="just re-label the drive and change its record in /etc/fstab"
+	line_4="just re-label the partition and change its record in /etc/fstab"
 	line_5="(which is not needed if the partition is auto-mounted)."
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
@@ -1657,16 +1656,34 @@ case $action in
 	let blocks_per_inode=$default_blocks_per_inode/4 # 5% space penalty
 	let  bytes_per_inode=$blocks_per_inode*1024
 
-	if [[ $RunIf && $UID == 0 ]]
-	   then mkfs_debug_opt=-n RunIf= ;warn "running mkfs in debug mode ..."
-	   else mkfs_debug_opt=
+	cmd_opts=$mkfs_cmd_opts
+	  if [[ $cmd_opts == mkfs.xfs* ]]
+	   then FS_type=xfs
+		[[ $(which mkfs.xfs) ]] || $RunIf abort "install xfsprogs"
+		[[ $cmd_opts == *maxpct=* ]] || add_words cmd_opts -i maxpct=0
+	elif [[ $cmd_opts == mkfs.ext* ]]
+	   then cmd=${cmd_opts%% *}
+		FS_type=${cmd#*.}
+	elif [[ $cmd_opts == mke2fs* ]]
+	   then FS_type=$(echo $cmd_opts |
+				sed -r 's/.*\W-t\W*(\w+)\b.*/\1/')
+		[[ $FS_type ]] || FS_type=ext4
+	elif [[ $cmd_opts != mk* ]]
+	   then abort  "the value of 'cmd_opts' should start with 'mk'"
+	   else abort "don't support $cmd_opts, email $coder"
 	fi
-	case $FS_type in
-	    ( ext? ) set -- mke2fs -t $FS_type $mkfs_debug_opt -m .1 \
-				   -i $bytes_per_inode -L $FS_label
-		     mkfs_cmd_opts=$* ;;
-	    (   *  ) abort "$FS_type not yet supported, email $coder" ;;
-	esac
+	#
+	if ! [[ $FS_type == ext? && $RunIf && $UID == 0 ]]
+	   then mkfs_debug_opt=
+	   else mkfs_debug_opt=-n  RunIf=
+		warn "running mkfs.$FS_type in debug mode ..."
+	fi
+	if [[ $FS_type == ext? ]]
+	   then opts=
+		[[ $cmd_opts != *-i* ]] && add_words opts -i $bytes_per_inode
+		[[ $cmd_opts != *-m* ]] && add_words opts -m .1
+		cmd_opts="$cmd_opts $opts"
+	fi
 
 	df -m | grep " $backup_dir$" &&
 	  $RunIf abort "there's already a filesystem mounted on $backup_dir"
@@ -1678,11 +1695,11 @@ case $action in
 
 	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
 
-	mount_opts="nosuid,nodev,relatime"
-	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts\t\t0 2"
+	mount_opts="nosuid,nodev,relatime,nodiratime"
+	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts\t0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
-	cmd="$RunIf $mkfs_cmd_opts $device"
+	cmd="$RunIf $cmd_opts $mkfs_debug_opt -L $FS_label $device"
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && RunIf=echo
 	$RunIf mkdir -p $backup_dir
@@ -1751,7 +1768,7 @@ set -x
 
 	output_file=$new_FS_label.out
 	echo -e "
-	nohup'ing slow 'dd' to copy drive '$old_name' to drive '$new_name',
+	nohup'ing slow 'dd' to copy partition '$old_name' to '$new_name',
 	followed by slow fsck: takes about a day per TB of SSD.  We'll
 	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
 	"
@@ -1774,9 +1791,9 @@ set -x
 			 fgrep -v -w -e $old_backup_dir -e $new_backup_dir)
 		[[ $# == 0 ]] &&
 		msg="
-	There are no other backup drives mounted besides the ones used to
+	There are no other backup partitions mounted besides the ones used to
         copy $old_backup_dir to $new_backup_dir ; if you let me unmount these
-	drive(s), no new backups will be made for many hours (or days).
+	partition(s), no new backups will be made for many hours (or days).
 
 	To use $backup_dir," ||	msg="
 	$backup_dir is mounted;"
