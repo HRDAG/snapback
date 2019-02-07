@@ -1472,6 +1472,14 @@ case $action in
 
 	# ------------------------------------------------------------------
 
+	trim_rsync() {
+
+		sed -e "s@/bin/bash /@/@"	\
+		    -e "s@ bash /@ /@"		\
+		    -e "s@$HOME/@~/@g"		\
+		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
+	}
+
 	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
 	if [[ $ps_opt ]]
@@ -1511,8 +1519,7 @@ case $action in
 	> $tmp
 	prune_job_PIDs=$(job_PIDs prune-backup all)
 	[[ $prune_job_PIDs ]] && {
-	prune_cmds=$(ps_ w h $prune_job_PIDs |
-		     sed "s@ /bin.*bin/$_our_name@ $_our_name@")
+	prune_cmds=$(ps_ w h $prune_job_PIDs | trim_rsync)
 	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -w $_our_name)
 	echo "$prune_cmds"
@@ -1556,14 +1563,6 @@ case $action in
 	}
 
 	# ------------------------------------------------------------------
-
-	trim_rsync() {
-
-		sed -e "s@/bin/bash /@/@"	\
-		    -e "s@ bash /@ /@"		\
-		    -e "s@$HOME/@~/@g"		\
-		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
-	}
 
 	# for some reason, appending newlines does nothing?!
 	rsync_abbrev_msg="
