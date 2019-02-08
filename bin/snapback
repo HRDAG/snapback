@@ -1832,6 +1832,8 @@ set -x
 	$cmd || abort "$cmd exited with $?"
 	}
 
+	$Run tune2fs -U $(uuidgen) $new_device
+
 	label_drive $new_device $new_backup_dir
 
 	is_arg1_in_arg2 -F $action_opts || {
