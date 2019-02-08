@@ -1472,10 +1472,11 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	trim_rsync() {
+	trim_prune_rsync() {
 
 		sed -e "s@/bin/bash /@/@"	\
 		    -e "s@ bash /@ /@"		\
+		    -e "s@ /usr/local/bin/@ @"	\
 		    -e "s@$HOME/@~/@g"		\
 		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
 	}
@@ -1519,7 +1520,7 @@ case $action in
 	> $tmp
 	prune_job_PIDs=$(job_PIDs prune-backup all)
 	[[ $prune_job_PIDs ]] && {
-	prune_cmds=$(ps_ w h $prune_job_PIDs | trim_rsync)
+	prune_cmds=$(ps_ w h $prune_job_PIDs | trim_prune_rsync)
 	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -w $_our_name)
 	echo "$prune_cmds"
@@ -1576,8 +1577,7 @@ case $action in
 	    [[ $rsync_cmds ]] && {
 	    echo "$rsync_abbrev_msg"; echo
 	    echo "$hdr" | trim_ps_cols
-	    # was: tac | trim_rsync | sort -k9 (but -k9 doesn't work with -f
-	    echo "$rsync_cmds" | trim_rsync | sort $rsync_sort_opts
+	    echo "$rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
 	    } || echo -e "\nNo backups are running."
 	}
 
@@ -1587,7 +1587,7 @@ case $action in
 	regex=${cron_job_regexp%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows < $min_C_rows )) && echo "${rsync_abbrev_msg#?}" && echo
-	echo "$cron_cmds" | trim_rsync
+	echo "$cron_cmds" | trim_prune_rsync
 	}
 
 	[[ $rsync_cmds ]] && {
