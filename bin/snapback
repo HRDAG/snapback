@@ -1687,6 +1687,7 @@ case $action in
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs) ]] || $RunIf abort "install xfsprogs"
 		[[ $cmd_opts == *maxpct=* ]] || add_words cmd_opts -i maxpct=0
+		mount_opts="$XFS_mount_options"
 	elif [[ $cmd_opts == mkfs.ext* ]]
 	   then cmd=${cmd_opts%% *}
 		FS_type=${cmd#*.}
@@ -1709,6 +1710,7 @@ case $action in
 		[[ $cmd_opts != *-i* ]] && add_words opts -i $bytes_per_inode
 		[[ $cmd_opts != *-m* ]] && add_words opts -m .1
 		cmd_opts="$cmd_opts $opts"
+		mount_opts="$mount_options"
 	fi
 
 	df -m | grep " $backup_dir$" &&
@@ -1721,7 +1723,6 @@ case $action in
 
 	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
 
-	mount_opts="nosuid,nodev,relatime,nodiratime"
 	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
@@ -1729,7 +1730,7 @@ case $action in
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && RunIf=echo
 	$RunIf mkdir -p $backup_dir
-	cmd="$RunIf mount -v -t $FS_type $device $backup_dir"
+	cmd="$RunIf mount -v -t $FS_type -o $mount_opts $device $backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	;;
 #  copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
@@ -1845,7 +1846,7 @@ set -x
 	     abort "dd exited with $?"
 
 	is_arg1_in_arg2 -M $action_opts || {
-	cmd="$RunIf mount -t $FS_type $old_device $old_backup_dir"
+	cmd="$RunIf mount -t $FS_type -o $mount_options $old_device $old_backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	}
 
@@ -1858,7 +1859,8 @@ set -x
 	$cmd || abort "$cmd exited with $?; better check $old_device ?!"
 	}
 
-	$RunIf mount -t $FS_type $new_device $new_backup_dir ||
+	$RunIf \
+	mount -t $FS_type -o $mount_options $new_device $new_backup_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
 	$RunIf resize2fs $new_device	# do this _after_ mount, for speed
 	;;
