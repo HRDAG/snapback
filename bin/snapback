@@ -318,12 +318,19 @@ set__backup_dir__log_cmd_file() {
 	[[ $backup_name != */* ]] ||
 	   abort "invalid / in backup name, add to backup_dir_prefix instead"
 
+	local group
+	for group in sudo wheel admin NoNe '' # 'admin' is for Darwin aka MacOS
+	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
+	done
+	[[ $group == NoNe ]] && group= || group=:$group
+	#
 	backup_dir=$backup_dir_prefix$backup_name
 	[[ $backup_name == Z ]]  &&
 	is_regression_test=$true &&
 	[[ ! -d $backup_dir  ]]  &&
 	sudo mkdir $backup_dir   &&
-	sudo chown $LOGNAME $backup_dir
+	sudo chmod g+s,g+w $backup_dir &&
+	sudo chown $LOGNAME$group $backup_dir
 
 	is_backup_dir_mounted $backup_dir ||
 	    warn "no filesystem mounted on $backup_dir" || return 1
@@ -335,12 +342,8 @@ set__backup_dir__log_cmd_file() {
 	log_cmd_file=$backup_log_dir/messages.log
 
 	[[ -d $log_dir ]] || {
-	local group
-	for group in sudo wheel admin	# admin for Darwin aka MacOS
-	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
-	done
 	sudo mkdir -p $log_dir
-	sudo chgrp $group $log_dir
+	sudo chgrp ${group#:} $log_dir
 	sudo chmod g+w,g+s $log_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
@@ -2026,7 +2029,7 @@ set -x
 	;;
 
    test | t )
-	set_backup_name a
+	set_backup_name ${1:-a}
 	set__backup_dir__log_cmd_file $backup_name
 	set_FS_label $backup_dir
 	echo $FS_label
