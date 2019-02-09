@@ -144,7 +144,7 @@ set_FS_label() {
 	local mount_dir=$1
 
 	case $mount_dir in
-	   ( /dev/mapper/* | /dev/VG*/* )
+	   ( /dev/mapper/* | /dev/VG*/* | /dev/disk/by-label/* )
 		      FS_label=$(sudo e2label  $mount_dir 2>/dev/null)
 		      [[ $FS_label ]] ||
 		      FS_label=$(basename $mount_dir); return 0 ;;
@@ -154,6 +154,7 @@ set_FS_label() {
 	   (  *	    ) mount_dir=$backup_dir_prefix$mount_dir ;;
 	esac
 	[[ $mount_dir == /* ]] || mount_dir=$backup_dir_prefix$mount_dir
+	# this code is duplicated to set FS_label_prefix
 	FS_label=${mount_dir#/}
 	FS_label=${FS_label//\//_}
 	return 0
@@ -232,8 +233,8 @@ is_disk_usage_too_high() {
 setup_lower_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$RunIf $sudo renice $lower_priority_renice_args --pid $$ &>/dev/null
-	$RunIf $sudo ionice $lower_priority_ionice_args --pid $$ &>/dev/null
+	$RunIf $sudo renice $lower_priority_renice_args -p $$ &>/dev/null
+	$RunIf $sudo ionice $lower_priority_ionice_args -p $$ &>/dev/null
 }
 
 # --------------
@@ -241,8 +242,8 @@ setup_lower_priority() {
 setup_higher_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$RunIf $sudo renice $higher_priority_renice_args --pid $$ &>/dev/null
-	$RunIf $sudo ionice $higher_priority_ionice_args --pid $$ &>/dev/null
+	$RunIf $sudo renice $higher_priority_renice_args -p $$ &>/dev/null
+	$RunIf $sudo ionice $higher_priority_ionice_args -p $$ &>/dev/null
 }
 
 # -----------------------
@@ -285,7 +286,7 @@ function fix_snapshot_names {
 	[[ -d $1 ]] || return 0
 
 	# this --kill -9 is completely safe
-	$RunIf sudo fuser --kill -9 --ismountpoint $backup_dir
+	$RunIf sudo fuser -k -9 -M $backup_dir
 	local msg="$old_snapshot_pattern to $snapshot_pattern"
 	log "renaming snapshots from $msg, first waiting ..."
 	$RunIf sleep 5			# wait for kill
@@ -645,7 +646,7 @@ _rm_pruned_snapshots() {
 	suspend_tracing
 	# put newest ones first, since they have the most hardlinks.
 	# use absolute paths, so the 'ps' output is more clear.
-	set -- $(echo $backup_dir/*.rm | tr ' ' '\n' | sort --reverse)
+	set -- $(echo $backup_dir/*.rm | tr ' ' '\n' | sort -r)
 	[[ -d $1 ]] || shift
 	local number_pruned_snapshots=$#
 	restore_tracing number_pruned_snapshots
@@ -696,7 +697,7 @@ _rm_pruned_snapshots() {
 			done
 		done
 		set +x
-	done | xargs --no-run-if-empty $RunIf rm -r
+	done | xargs -r $RunIf rm -r
 	}
 
 	$RunIf log "pruned exclude-patterns from _all_ snapshots"
@@ -718,8 +719,8 @@ set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
 readonly     snapshot_regex=${snapshot_pattern//\?/.}
 
 set_date_time() { date_time=$(date '+%Y-%m-%d,%H'); }
-set_day      () {       day=$(date '+%Y-%m-%d' --date="@$1" ); }
-set_seconds  () {   seconds=$(date '+%s'       --date="$(basename $1 |
+set_day      () {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
+set_seconds  () {   seconds=$(date '+%s'       -d "$(basename $1 |
 				        sed 's/\..*//;s/,/ /;s/$/:00:00/')" ||
 				warn "$FUNCNAME: can't parse $1"; ); }
 
@@ -826,7 +827,7 @@ prune_type_to_file() {
 		Trace 5 " Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
 
 		# skip over the snapshot prune-matches that aren't old enough
-		set -- $(echo $* | tr ' ' '\n' | sort --reverse)
+		set -- $(echo $* | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
 		   do	[[ $1 == $backup_dir/[^1-9]* ]] && shift && continue
 			local day_hour=${1##*/}
@@ -1011,7 +1012,7 @@ _handle_rsync_results() {
 			$RunIf mv $new_snapshot.partial $new_snapshot.links
 		fi
 		if is_arg1_in_arg2 $status "$no_log_rsync_exit_statuses" ||
-		   (( $(bzcat $log | wc --lines) == 0 ))
+		   (( $(bzcat $log | wc -l) == 0 ))
 		   then rm -f $log
 			error_msg="$error_msg; Partial snapshot still useful"
 		   else error_msg="$error_msg; See $log"
@@ -1406,7 +1407,7 @@ case $action in
 
 	customize_and_validate_configuration_variables Z
 
-	set -- $(stty --all | head -n1)
+	set -- $(stty -a | head -n1)
 	declare -i rows=${5%;} cols=${7%;}
 
 	rsync_cmds=$(ps -C rsync -H ww | grep "[0-9] rsync.*/$snapshot_regex")
@@ -1564,6 +1565,15 @@ case $action in
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	df --block-size=G --output=$df_fields  $(list_backups)
+	}
+
+	! [[ $cron_opt && $rsync_cmds ]] && {
+	FS_label_prefix=${backup_dir_prefix#/}
+	FS_label_prefix=${FS_label_prefix//\//_}
+	# fields that don't work: rm,model,opt-io,rota
+	lsblk_fields=name,label,fstype,type,size,state,sched,mountpoint
+	type lsblk &>/dev/null && [[ -d /dev/disk/by-label/ ]] && echo &&
+	lsblk  --output=$lsblk_fields   /dev/disk/by-label/$FS_label_prefix*
 	}
 
 	# ------------------------------------------------------------------
@@ -1938,7 +1948,7 @@ set -x
 			snapshot=$day,$hour
 			[[ -d $snapshot ]] || echo $snapshot
 		done
-	done | xargs --no-run-if-empty $RunIf mkdir || abort mkdir
+	done | xargs -r $RunIf mkdir || abort mkdir
 
 	# setup partial backups mid-date, to test pruning
 	declare -i mid_secs=start_secs+(end_secs-start_secs)/2
@@ -2098,7 +2108,7 @@ set -x
 		/bin/ls $backup_dir |
 		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
 		sudo umount -h > /dev/null || warn "need sudo privs" || break
-		umount_cmd="$RunIf sudo umount --verbose $backup_dir"
+		umount_cmd="$RunIf sudo umount -v $backup_dir"
 		for (( i = 1; i <= 30; i++ )) # wait for kill to finish
 		    do	$umount_cmd && break
 			$RunIf sleep 0.1
