@@ -1409,7 +1409,7 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	customize_and_validate_configuration_variables Z
+	customize_and_validate_configuration_variables
 
 	set -- $(stty -a | head -n1)
 	declare -i rows=${5%;} cols=${7%;}
