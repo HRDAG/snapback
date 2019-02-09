@@ -922,6 +922,8 @@ declare -i num_link_dests=0
 set_link_dest_opts() {
 	local new_snapshot=$1
 
+	link_dest_opts=
+
 	suspend_tracing
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
@@ -930,7 +932,10 @@ set_link_dest_opts() {
 		 tr ' ' '\n' | sort -r)
 	restore_tracing
 
-	while [[ ! -d $1 || ${1%.*} == $new_snapshot ]] ; do shift; done
+	while [[ ! -d ${1-} || ${1-} == $new_snapshot* ]]
+	   do	[[ $# != 0 ]] || return	# we might not have any snapshots
+		shift
+	done
 
 	# need at least 2 --link-dest args in case the sysadmnin borked one,
 	# and a few hours worth in case a file was deleted then recovered;
@@ -940,7 +945,6 @@ set_link_dest_opts() {
 	   else num_link_dests=2
 	fi
 
-	link_dest_opts=
 	if [[ -d ${1-} ]]
 	   then declare -i snapshots_used=0
 		suspend_tracing
