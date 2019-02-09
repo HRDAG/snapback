@@ -1565,13 +1565,13 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	! [[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows ]] && {
+	[[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows ]] || {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	df --block-size=G --output=$df_fields  $(list_backups)
 	}
 
-	! [[ $cron_opt && $rsync_cmds ]] && {
+	[[ $cron_opt || $rsync_cmds ]] || {
 	FS_label_prefix=${backup_dir_prefix#/}
 	FS_label_prefix=${FS_label_prefix//\//_}
 	# fields that don't work: rm,model,opt-io,rota
