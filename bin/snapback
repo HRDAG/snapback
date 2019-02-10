@@ -271,7 +271,7 @@ is_backup_dir_mounted() {
 	local backup_dir=$1
 
 	[[ $backup_dir ]] || return 1
-	df | grep -q " $backup_dir$" || [[ $backup_dir == */Z ]]
+	df | grep -q " $backup_dir$" || [[ $backup_dir == *[-/]Z ]]
 }
 
 # ---------------------------------
@@ -374,14 +374,18 @@ set__backup_dir__log_cmd_file() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="prune-backup run-backup"
+readonly lock_types="prune-backup run-backup copy-to"
+
+readonly lock_dir=/var/lock
 
 set_lock_file() {
 	local type=$1 name=${2:-$backup_name}
 
+	[[ -d $lock_dir ]] || mkdir -p --mode=1777 $lock_dir
+
 	is_arg1_in_arg2 $type $lock_types || abort "lock: '$type' is unknown"
 	set_backup_name $name
-	lock_file=/var/lock/$type-$backup_name.pid
+	lock_file=$lock_dir/$type-$backup_name.pid
 }
 
 # ---------------------------------
@@ -1803,7 +1807,7 @@ case $action in
 		$old_device $old_backup_dir \
 		$new_device $new_backup_dir
 	cmd=$*
-set -x
+
 	[[ ! $RunIf ]] || exec $cmd || abort "$RunIf $cmd -> $?"
 
 	output_file=$new_FS_label.out
@@ -1839,6 +1843,10 @@ set -x
 	$backup_dir is mounted;"
 		abort "\n$msg re-run copy-backup with -f to Force unmount."
 	fi; done
+
+	set_FS_type___from_FS_device $old_device
+	[[ $FS_type == xfs ]] &&
+	   abort "$FUNCNAME: after umount both, 'xfs_copy $old_device $new_device <new-device-2>' then 'xfs_admin -L $new_FS_label $new_device' then mount both then 'xfs_growfs $new_backup_dir'"
 
 	trap '' HUP
 
