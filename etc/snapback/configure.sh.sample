@@ -1,4 +1,4 @@
-# version=3
+# version=4
 
 ################################################################
 ################################################################
@@ -150,50 +150,26 @@ declare -i decades_per_span_for_year_prune=4	# prune-backup* can change
 bkp_name2pruning_span_scale_factor[G]=1.5 # G is 50% bigger than other drives
 bkp_name2pruning_span_scale_factor[Z]=1	  # Z used for pruning regression tests
 
-# -----------------------------------------------
-# Miscellaneous variables and functions		#
-# -----------------------------------------------
+# --------------------------------------------------------------------------
+# Naming policy (can be re-implemented with custom functions defined here) #
+# --------------------------------------------------------------------------
+
+# -----------------------------------
+# to see the functions you can change, run: grep -A1 '^have_cmd \\$*' snapback
+# -----------------------------------
 
 # Set to 'T' for ISO standard, code will automagically rename snapshots.
 # [Code is hard-wired to ',' ; email sweikart@gmail.com to implement variable.]
 readonly snapshot_date_time_separator=','
 
-# Default policy: backups are named as a single upper-case letter.
-# You might be able to change this policy by changing backup_*name_pattern,
-# while leaving set_backup_name roughly the same (maybe change the last line).
-readonly    backup_name_pattern='[A-Z]'
-readonly backup_UI_name_pattern='[A-Za-z]'
-set_backup_name() {
-	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
-	local name=$1
+# Default policy: backups are named as a single capitalized letter; you can
+# usually set your own policy by simply changing anchored_backup_*name_regex= ,
+# instead of defining your own 'et_backup_name'function in here.
+readonly    anchored_backup_name_regex='[A-Z]'
+readonly anchored_backup_UI_name_regex='[A-Za-z]'
+readonly is_backup_name_capitalized=$true
 
-	if [[ $name != $backup_UI_name_pattern && $name == *[_/]* ]]
-	   then [[ $name != */* && $name == *_* ]] && # FS label?
-		    name=/${name//_/\/}		      # turn into mount dir
-		[[ $name == $backup_dir_prefix$backup_name_pattern ]] ||
-		   abort "$name looks like directory/label, but invalid name"
-		name=${name: -1}	# grab last letter
-	   else [[ $name == $backup_UI_name_pattern ]] ||
-		   abort "'$name' is an invalid backup name"
-	fi
-	backup_name=${name^}		# upper-case it
-}
-
-# By default, config-$backup_name.sh holds custom per-drive config variables;
-# if a lot of drives share custom config, symlink their files to config-XXX.sh
-drive_config_file=
-source_drive_specific_config_file() {
-	[[ $# == 0 ]] && return
-	local _name=${1: -1}  _main_config_file=${2:-${backup_config_file-}}
-	set_backup_name $_name
-	[[ $_main_config_file ]] || abort "pass backup_config_file as 2nd arg"
-
-	local     _config_file=${_main_config_file/%.sh/-$backup_name.sh}
-	if [[ -s $_config_file ]]
-	   then drive_config_file=$_config_file	; source $_config_file
-	   else drive_config_file=		; true
-	fi
-}
+# -----------------------------------------------------------------------------
 
 # if this doesn't work, use: M-x shell-script-mode
 # Local Variables:

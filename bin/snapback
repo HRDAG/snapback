@@ -1,5 +1,7 @@
 #! /usr/bin/env bash
 
+version=4			# has to match version= in configure.sh.sample
+
 readonly coder=sweikart@gmail.com
 
 # functions/variables: warn, abort, tmp_dir, our_name, our_path, true, false,
@@ -16,7 +18,7 @@ readonly  backup_config_file_sample=$backup_config_file.sample
 
 if [[ ! -s $backup_config_file_sample ]]
    then abort "have to install $backup_config_file_sample"
-elif ! head -n1  $backup_config_file_sample | fgrep -q -x "# version=3"
+elif ! head -n1  $backup_config_file_sample | fgrep -q -x "# version=$version"
    then abort "$backup_config_file_sample version does not match $our_name"
 fi
 
@@ -24,7 +26,7 @@ fi
 readonly uncustomizable_config_vars="
 		backup_dir_prefix old_crypt_name_prefixes drive_config_file"
 readonly config_vars=$(sed '/() *{/,/^}/d' $backup_config_file_sample |
-		       sed -n -r 's/^[^#]*\b(\w+)=.*$/\1/p' | sort -u)
+		       sed -n -r 's/^[^#=]*\b(\w+)=.*$/\1/p' | sort -u)
 for var in $config_vars; do eval "declare -A bkp_name2$var"; done
 #
 # this grabs variables that control backup and pruning, and also gets
@@ -136,43 +138,6 @@ log_msg_prefix=' ${action-} ${backup_name-}' # this gets eval'ed each time
 
 # ----------------------------------------------------------------------------
 
-source /etc/snapcrypt/configure.sh &> /dev/null # optional, might hold ...
-
-type \
-set_FS_label &> /dev/null ||		# if user didn't specify one
-set_FS_label() {
-	local mount_dir=$1
-
-	case $mount_dir in
-	   ( /dev/mapper/* | /dev/VG*/* | /dev/disk/by-label/* )
-		      FS_label=$(sudo e2label  $mount_dir 2>/dev/null)
-		      [[ $FS_label ]] ||
-		      FS_label=$(basename $mount_dir); return 0 ;;
-	   ( /dev/* ) FS_label=$(basename $mount_dir); return 0 ;;
-           ( /*     ) ;;
-	   ( */*    ) mount_dir=${mount_dir#${backup_dir_prefix#/}} ;;
-	   (  *	    ) mount_dir=$backup_dir_prefix$mount_dir ;;
-	esac
-	[[ $mount_dir == /* ]] || mount_dir=$backup_dir_prefix$mount_dir
-	# this code is duplicated to set FS_label_prefix
-	FS_label=${mount_dir#/}
-	FS_label=${FS_label//\//_}
-	return 0
-}
-
-type \
-label_drive &> /dev/null ||
-label_drive() {
-	local device=$1 mount_dir=$2 FS_label=
-
-	set_FS_label $mount_dir
-	$RunIf sudo e2label $device $FS_label
-}
-
-FS_type=
-
-# ----------------------------------------------------------------------------
-
 set_readable_du_size() {
 	declare -i size=$1
 
@@ -274,7 +239,7 @@ list_backups() {
 	customize_and_validate_configuration_variables Z # ensure have *pattern
 
 	df --output=target --no-sync |
-	   grep "^$backup_dir_prefix$backup_name_pattern$" | sort -u
+	   grep "^$backup_dir_prefix$anchored_backup_name_regex$" | sort -u
 }
 
 # --------------------------------------------
@@ -307,6 +272,53 @@ is_backup_dir_mounted() {
 
 	[[ $backup_dir ]] || return 1
 	df | grep -q " $backup_dir$" || [[ $backup_dir == */Z ]]
+}
+
+# ---------------------------------
+
+drive_config_file=
+
+have_cmd \
+source_drive_specific_config_file ||  # configure.sh can replace this function
+source_drive_specific_config_file() {
+	[[ $# == 0 ]] && return
+	local _name=$1  _main_config_file=${2:-${backup_config_file-}}
+	set_backup_name $_name
+	[[ $_main_config_file ]] || abort "pass backup_config_file as 2nd arg"
+
+	local     _config_file=${_main_config_file/%.sh/-$backup_name.sh}
+	if [[ -s $_config_file ]]
+	   then drive_config_file=$_config_file	; source $_config_file
+	   else drive_config_file=		; true
+	fi
+}
+
+# ---------------------------------
+
+have_cmd \
+set_backup_name ||		      # configure.sh can replace this function
+set_backup_name() {
+	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
+	local name=$1
+
+	if [[ ! $name =~ ^$anchored_backup_UI_name_regex$ ]]
+	   then if [[ $name == /dev/* ]]
+		   then set_FS_label___from_FS_device $name
+			set_mount_dir___from_FS_label $FS_label
+			backup_dir=$mount_dir
+		elif [[ $name != /* ]]
+		   then set_backup_dir___from_FS_label $name
+		   else     backup_dir=$name
+		fi
+		[[  $backup_dir =~					\
+		   ^$backup_dir_prefix$anchored_backup_name_regex$ ]] ||
+		   abort "$name is not backup-dir or FS-label or valid-name"
+		name=${backup_dir#$backup_dir_prefix}
+	fi
+	if [[ is_backup_name_capitalized ]]
+	   then backup_name=${name^}
+	   else backup_name=$name
+	fi
 }
 
 # ---------------------------------
@@ -1572,12 +1584,15 @@ case $action in
 	}
 
 	[[ $cron_opt || $rsync_cmds ]] || {
-	FS_label_prefix=${backup_dir_prefix#/}
-	FS_label_prefix=${FS_label_prefix//\//_}
+	devices=
+	for dir in $(list_backups)
+	    do	set_FS_device___from_mount_dir
+		add_words devices $FS_device
+	done
 	# fields that don't work: rm,model,opt-io,rota
 	lsblk_fields=name,label,fstype,type,size,state,sched,mountpoint
-	type lsblk &>/dev/null && [[ -d /dev/disk/by-label/ ]] && echo &&
-	lsblk  --output=$lsblk_fields   /dev/disk/by-label/$FS_label_prefix*
+	type lsblk &>/dev/null && echo &&
+	lsblk --output=$lsblk_fields $devices
 	}
 
 	# ------------------------------------------------------------------
@@ -1666,17 +1681,14 @@ case $action in
 	[[ $device = /* ]] || device=/dev/$device
 	[[ -b $device ]] || $RunIf abort "$device not a block device"
 
-	[[ ! $name ]] &&
-	[[ $device == /dev/mapper/* || $device == /dev/VG*/* ]] &&
-	name=$(basename $device)	# same logic as set_FS_label
-	[[ $name ]] || abort "$device doesn't contain name, specify it"
-
-	$Trace
-	set_backup_name $name
+	if [[ $name ]]
+	   then set_backup_name $name
+	   else set_backup_name $device
+	fi
 	name=$backup_name
 	backup_dir=$backup_dir_prefix$backup_name
 
-	set_FS_label $backup_dir
+	set_FS_label___from_mount_dir $backup_dir
 
 	default_blocks_per_inode=16
 	let blocks_per_inode=$default_blocks_per_inode/4 # 5% space penalty
@@ -1751,18 +1763,19 @@ case $action in
 
 		[[ $name ]] && set_backup_name $name && name=$backup_name
 		[[ !  $device ]] &&
-		   set_FS_label $name && device=/dev/disk/by-label/$FS_label
+		   set_FS_label___from_mount_dir $backup_dir_prefix$name &&
+		   set_FS_device___from_FS_label $FS_label && device=$FS_device
 		[[ -b $device ]] || abort "$device is not a block device"
 
 		if [[ ! $name ]]
-		   then set_FS_label $device
+		   then set_FS_label___from_FS_device $device
 			name=$FS_label
 		fi
 
 		set_backup_name $name
 		name=$backup_name
 		backup_dir=$backup_dir_prefix$name
-		set_FS_label $backup_dir
+		set_FS_label___from_mount_dir $backup_dir
 	}
 
 	set__name__device__backup_dir__FS_label "$new_device" $new_name
@@ -1850,7 +1863,7 @@ set -x
 	$cmd || abort "$cmd exited with $?"
 	}
 
-	$Run tune2fs -U $(uuidgen) $new_device
+	$RunIf tune2fs -U $(uuidgen) $new_device
 
 	label_drive $new_device $new_backup_dir
 
@@ -2047,7 +2060,7 @@ set -x
    test | t )
 	set_backup_name ${1:-a}
 	set__backup_dir__log_cmd_file $backup_name
-	set_FS_label $backup_dir
+	set_FS_label___from_mount_dir $backup_dir
 	echo $FS_label
 	exit
 
