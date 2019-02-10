@@ -381,7 +381,7 @@ readonly lock_dir=/var/lock
 set_lock_file() {
 	local type=$1 name=${2:-$backup_name}
 
-	[[ -d $lock_dir ]] || mkdir -p --mode=1777 $lock_dir
+	[[ -d $lock_dir ]] || sudo mkdir -p --mode=1777 $lock_dir
 
 	is_arg1_in_arg2 $type $lock_types || abort "lock: '$type' is unknown"
 	set_backup_name $name
