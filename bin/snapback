@@ -41,7 +41,7 @@ Usage: $our_name action [args]
   Current actions are:
     list-backups: list all the mounted backups
     run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
-    prune-backups [span] [dirs]: see configure.sh (dirs defaults to all drives)
+    prune-backups [span] [dirs]: see configure.sh; dirs defaults to all drives
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
@@ -111,6 +111,8 @@ need_cmds lockpid
 shopt -s extglob
 
 umask 02				# log dirs are setgid sudo
+
+set -u					# abort if access unset variable
 
 FUNCNEST=100				# catch coding errors
 
@@ -1157,7 +1159,9 @@ run_backup() {
 }
 
 # -----------------------------------------------------------------------------
-# functions used by watch action
+# -----------------------------------------------------------------------------
+# helper functions used by watch actions
+# -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
 _set_age() {
@@ -1323,24 +1327,26 @@ setup_partition_journal() {
 shopt -s extglob			# we use extended pattern matching
 
 #############################################################################
-# put actions after here
+# main, holds our actions
 #############################################################################
 
-[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
-
-set -u					# abort if access unset variable
-
-action=$1; shift
+action=
 _our_name="$our_name"
  our_name="$our_name $action"
 
+main() {
+
+[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
+
+action=$1; shift
+
 case $action in
- # list-backups: list all the mounted backups
-   l*s*b*k*p* | l*s*d* | ls | lb )
+   # list-backups: list all the mounted backups
+   ( l*s*b*k*p* | l*s*d* | ls | lb )
 	list_backups
 	;;
- # run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
-   r*b*k*p* | rb* )
+   # run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
+   ( r*b*k*p* | rb* )
 	is_arg1_in_arg2 $# "0 1 2 3" ||	# guard against -s without ''
 	   abort "wrong number of args, run: $_our_name -h"
 	# to use -s, must remove 'readonly' label in $backup_config_file
@@ -1369,8 +1375,8 @@ case $action in
 	done
 	wait				# want this process for 'w -C' & kill
 	;;
- # prune-backups [span] [dirs]: see configure.sh (dirs defaults to all drives)
-   pr*n*b*k*p* | pb* )
+   # prune-backups [span] [dirs]: see configure.sh; dirs defaults to all drives
+   ( pr*n*b*k*p* | pb* )
 	# if specify span, must remove 'readonly' label in $backup_config_file
 	[[ ${1-} == [0-9]* ]] && { hour_prune_days_per_span=$1; shift; }
 
@@ -1396,11 +1402,12 @@ case $action in
 	[[ $RunIf || $Trace ]] && wait	# makes debugging simpler
 	;;
 
-#  snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-   snapshot*size | ss )
+  # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
+   ( snapshot*size | ss )
 	[[ $# == 1 ]] || abort "pass directory, run: $_our_name -h"
 	dir=$1
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
+	warn "this could take hours"
 	$Trace
 	KB=$(sudo find $dir -links 1 -printf '%k\n' |
 		awk '{ total += $1 } ; END { print total }')
@@ -1409,9 +1416,9 @@ case $action in
 	echo "$dir contains >= $du_size of files in no other directories"
 	;;
 
-#  w: show pruning & backup activity, and the status of pruning and backups
-#  watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
-   watch | wa* | wt* | w )
+   # w: show pruning & backup activity, and the status of pruning and backups
+   # watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
+   ( watch | wa* | wt* | w )
 	$Trace
 	watch_opt= ps_opt= cron_opt=
 	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
@@ -1634,29 +1641,29 @@ case $action in
 	}
 	;;
 
-#  kill-backup name(s): for each name (can be 'all'), kill backup
-   kill-backup* | kb )
+   # kill-backup name(s): for each name (can be 'all'), kill backup
+   ( kill-backup* | kb )
 	$Trace
 	kill_locker_group run-backup $*
 	;;
-#  kill-prune name(s) : for each name (can be 'all'), kill prune
-   kill-prune* | kp )
+   # kill-prune name(s) : for each name (can be 'all'), kill prune
+   ( kill-prune* | kp )
 	$Trace
 	kill_locker_group prune-backup $*
 	;;
-#  kill-both name(s)  : for each name (can be 'all'), kill backup & prune
-   kill-both | ka | kk )
+   # kill-both name(s)  : for each name (can be 'all'), kill backup & prune
+   ( kill-both | ka | kk )
 	$Trace
 	kill_locker_group   run-backup $*
 	kill_locker_group prune-backup $*
 	;;
 
-#############################################################################
-# sysadmin maintenance actions
-#############################################################################
+   ###########################################################################
+   # sysadmin maintenance actions
+   ###########################################################################
 
-#  mkfs device [name]: prepare blank-first or smallest drive (see comments)
-   mkfs )
+   # mkfs device [name]: prepare blank-first or smallest drive (see comments)
+   ( mkfs )
 	# If brand new drive, find its device name with: ls -lt /dev/sd?
 	# Save the device name and backup name: device=/dev/sdX  backup=Y
 	# Verify it's a new drive (which has partition table): fdisk -l $device
@@ -1749,8 +1756,8 @@ case $action in
 	cmd="$RunIf mount -v -t $FS_type -o $mount_opts $device $backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	;;
-#  copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
-   *c*p*b*k*p | cpb )
+# copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
+   ( c*p*b*k*p | cpb )
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# != 0 ]] ||
@@ -1819,8 +1826,8 @@ case $action in
 	nohup $cmd > $output_file &
 	sleep 0.1; set -x; exec tail -f $output_file
 	;;
-#  finish-copy-backup name: copy, label, fsck, mount, resize
-   f*c*p*b*k*p | f*c*p*b* | fcb  )
+   # finish-copy-backup name: copy, label, fsck, mount, resize
+   ( f*c*p*b*k*p | f*c*p*b* | fcb  )
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# == 4 ]] || 
@@ -1885,9 +1892,8 @@ case $action in
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
 	$RunIf resize2fs $new_device	# do this _after_ mount, for speed
 	;;
-#
-#  copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
-   copy-b*k*p-dump )
+   # copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
+   ( copy-b*k*p-dump )
 	abort "this is incredibly slow, use copy-backup instead"
 	abort "this code is out of date, needs to be rewritten"
 
@@ -1932,8 +1938,8 @@ case $action in
 	   abort "mount $device $backup_dir -> $?"
 	;;
 
-#  mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
-   mk*[Zz] | mkz )
+   # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
+   ( mk*[Zz] | mkz )
 	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
 
 	# The following designed to work with (custom) configure.sh span of 1,
@@ -1943,9 +1949,9 @@ case $action in
 	#    ... months & years: snapback mk-Z 1/1/2010   month # 58,8 seconds
 
 	# 1/1/2010 is earliest day, earlier days (e.g. 091231) look like octal
-   readonly end_date="1/1/2100"		# keep constant, so can compare
-	start_date=${1:-12/22/2099}	# tests hours with ...
-	    period=${2:-0..23}		# sequence of hours, else 'month'
+     readonly end_date="1/1/2100"	# keep constant, so can compare
+	    start_date=${1:-12/22/2099}	# tests hours with ...
+	        period=${2:-0..23}	# sequence of hours, else 'month'
 
 	umask=02
 
@@ -2008,8 +2014,8 @@ case $action in
 	cp -al *    .mk-Z/
 	;;
 
-#  test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
-   test*prune | tp )
+   # test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
+   ( test*prune | tp )
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
 
@@ -2065,7 +2071,17 @@ case $action in
 	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
 	;;
 
-   test | t )
+   ( test | t )
+	echoE test
+	foo() {
+		echoE ftest
+		for (( i=0; [[ ${FUNCNAME[$i]} ]] ; i++ ))
+		   do	echo "FUNCNAME[$i]=${FUNCNAME[$i]}"
+		done
+	}
+	foo
+	exit
+
 	set_backup_name ${1:-a}
 	set__backup_dir__log_cmd_file $backup_name
 	set_FS_label___from_mount_dir $backup_dir
@@ -2114,13 +2130,13 @@ case $action in
 	echo $backup_period
 	;;
 
-#############################################################################
-# actions for snapcrypt to call
-#############################################################################
+   ###########################################################################
+   # actions for snapcrypt to call
+   ###########################################################################
 
-# WARNING: this should only be called by "snapcrypt close"
-#  unmount name(s): for each name (can be 'all'), kill backup & unmount drive
-   u*mount | u )			# umount
+   # WARNING: this should only be called by "snapcrypt close"
+   # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
+   ( u*mount | u )			# umount
 	[[ $* == all ]] && set -- $(list_backups)
 
 	$Trace
@@ -2144,8 +2160,8 @@ case $action in
 		$umount_cmd		# this time, show user error message
 	done
 	;;
-# for "snapcrypt close": don't eject if didn't get any backups today
-has-new-snapshots | hsn )
+   # for "snapcrypt close": don't eject if didn't get any backups today
+   ( has-new-snapshots | hsn )
 	drive=$1
 	[[ $drive == *Z ]] && exit 0	# for debugging
 
@@ -2165,8 +2181,8 @@ has-new-snapshots | hsn )
 	[[ $latest_day == $day ]] ||
 	    abort "$drive has no (successful) backups since $latest_day"
 	;;
-# for "snapcrypt close": find drive with max # snapshots since last mounted
-max-backup | mb )
+   # for "snapcrypt close": find drive with max # snapshots since last mounted
+   ( max-backup | mb )
 	if [[ $# == 1 ]]
 	   then set_backup_name $1 2>/dev/null
 		if [[ ${backup_name-} ]]
@@ -2198,14 +2214,17 @@ max-backup | mb )
 	done
 	echo $max_drive
 	;;
-# for "snapcrypt": echo drive mountpoint
-   drive )
+   # for "snapcrypt": echo drive mountpoint
+   ( drive )
 	set_backup_name $1
 	echo $backup_dir_prefix$backup_name
 	;;
 
-   * )
+   ( * )
 	abort "'$action' is not a recognized action, run: $_our_name -h"
 	;;
-
 esac
+
+}
+
+main "$@"
