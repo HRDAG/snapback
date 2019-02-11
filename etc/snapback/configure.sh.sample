@@ -126,7 +126,7 @@ readonly hard_link_dirs="/var/repos/snap*"
 # Skip 'span' days of the newest snapshots, rm half the older ones; repeat this
 # loop until all the oldest snapshots are only *,00 (i.e. one per day),
 # which encompasses 1.5 months for an hourly 'span' of 7 days.
-declare -i days_per_span_for_hour_prune=7	# prune-backup* can change this
+declare -i days_per_span_for_hour_prune=5	# prune-backup* can change this
   bkp_name2days_per_span_for_hour_prune[Z]=1	# for action test-prune
 #
 # At date where the previous rm's all but *,00, repeat algorithm for months,

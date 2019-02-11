@@ -50,7 +50,7 @@ Usage: $our_name action [args]
     kill-both name(s)  : for each name (can be 'all'), kill backup & prune
 
     mkfs device [name]: prepare blank-first or smallest drive (see comments)
-    copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
+    copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
 
@@ -1251,10 +1251,10 @@ setup_journal_prologue() {
 
 	if [[ ! -b $device ]]
 	   then [[ -d $device/lost+found ]] ||
-		   abort "$FUNCNAME: '$device' not block device or mount point"
+		   abort "'$device' not block device or mount point"
 		set -- $(mount | fgrep " on $device ")
 		device=${1-}
-		[[ -b $device ]] || abort "$FUNCNAME: couldn't find device"
+		[[ -b $device ]] || abort "couldn't find device"
 	fi
 
 	$RunIf sync
@@ -1262,7 +1262,7 @@ setup_journal_prologue() {
 	mkfs_cmd=mkfs.ext4
 	set -- $(mount | grep "^$device ")
 	if [[ $# != 0 ]]
-	   then $RunIf umount $device ||abort "$FUNCNAME: can't umount $device"
+	   then $RunIf umount $device || abort "can't umount $device"
 		mkfs_cmd=mkfs.$5
 		_pre_journal_setup_mount_point=$3
 	   else _pre_journal_setup_mount_point=
@@ -1327,18 +1327,18 @@ setup_partition_journal() {
 shopt -s extglob			# we use extended pattern matching
 
 #############################################################################
-# main, holds our actions
+# process requested action
 #############################################################################
-
-action=
-_our_name="$our_name"
- our_name="$our_name $action"
-
-main() {
 
 [[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
 
 action=$1; shift
+_our_name="$our_name"
+ our_name="$our_name $action"
+
+process_action() {
+
+stack_frame_to_show=0	     # show our line-number in action 'case- statement
 
 case $action in
    # list-backups: list all the mounted backups
@@ -1756,15 +1756,15 @@ case $action in
 	cmd="$RunIf mount -v -t $FS_type -o $mount_opts $device $backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	;;
-# copy-backup dev [name [old_name]]: dd old_name (default oldest) to as-big dev
+   # copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
    ( c*p*b*k*p | cpb )
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# != 0 ]] ||
-	abort "[-f] [-M] [-F] {new_device new_name | new_device '' | '' new_name} [old_name]"
-	new_device=$1 new_name=${2-} old_name=${3-}
+	abort "[-f] [-M] [-F] {src_name | ''} {dst_name dst_dev | '' dst_dev | dst_name}"
+	src_name=$1 dst_name=$2 dst_device=${3-}
 
-	warn "the new device MUST be as-large as old_name's device"
+	warn "the new device MUST be as-large as src_name's device"
 
 	set__name__device__backup_dir__FS_label() {
 		# save args in global variables
@@ -1789,37 +1789,38 @@ case $action in
 		set_FS_label___from_mount_dir $backup_dir
 	}
 
-	set__name__device__backup_dir__FS_label "$new_device" $new_name
-	new_name=$name
-	new_device=$device
-	new_backup_dir=$backup_dir
-	new_FS_label=$FS_label
+	set__name__device__backup_dir__FS_label "$dst_device" $dst_name
+	dst_name=$name
+	dst_device=$device
+	dst_backup_dir=$backup_dir
+	dst_FS_label=$FS_label
 
-	[[ ! $old_name ]] &&
+	[[ ! $src_name ]] &&
 	set_oldest_backup_snapshot && 
 	set_backup_name $(dirname $oldest_backup_snapshot) &&
-	old_name=$backup_name
+	src_name=$backup_name
 
-	set__name__device__backup_dir__FS_label "" $old_name
-	old_name=$name
-	old_device=$device
-	old_backup_dir=$backup_dir
-	old_FS_label=$FS_label
+	set__name__device__backup_dir__FS_label "" $src_name
+	src_name=$name
+	src_device=$device
+	src_backup_dir=$backup_dir
+	src_FS_label=$FS_label
 
 	# show the user a sample fstab record
-	$our_path -d mkfs -f $new_device $new_name |&
+	$our_path -d mkfs -f $dst_device $dst_name |&
 	   fgrep -B 3 -A 1 LABEL= | sed 's/.* mkfs: //'
 
 	set --	$our_path $our_opts finish-$action $action_opts \
-		$old_device $old_backup_dir \
-		$new_device $new_backup_dir
+		$src_device $src_backup_dir \
+		$dst_device $dst_backup_dir
 	cmd=$*
 
+	[[   $RunIf ]] && header "$_our_name ${cmd#* }"
 	[[ ! $RunIf ]] || exec $cmd || abort "$RunIf $cmd -> $?"
 
-	output_file=$new_FS_label.out
+	output_file=$dst_FS_label.out
 	echo -e "
-	nohup'ing slow 'dd' to copy partition '$old_name' to '$new_name',
+	nohup'ing slow 'dd' to copy partition '$src_name' to '$dst_name',
 	followed by slow fsck: takes about a day per TB of SSD.  We'll
 	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
 	"
@@ -1831,19 +1832,19 @@ case $action in
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# == 4 ]] || 
-	   abort "to see args, run: $_our_name -d cpbkp dev [name [old_name]]"
-	old_device=$1 old_backup_dir=$2
-	new_device=$3 new_backup_dir=$4
+	   abort "to see args, run: $_our_name -d cpbkp {src_name | ''} dev [dev_name]"
+	src_device=$1 src_backup_dir=$2
+	dst_device=$3 dst_backup_dir=$4
 
 	is_arg1_in_arg2 -f $action_opts ||
-	for backup_dir in $old_backup_dir $new_backup_dir; do
+	for backup_dir in $src_backup_dir $dst_backup_dir; do
 	if is_backup_dir_mounted $backup_dir
 	   then set -- $(list_backups | 
-			 fgrep -v -w -e $old_backup_dir -e $new_backup_dir)
+			 fgrep -v -w -e $src_backup_dir -e $dst_backup_dir)
 		[[ $# == 0 ]] &&
 		msg="
 	There are no other backup partitions mounted besides the ones used to
-        copy $old_backup_dir to $new_backup_dir ; if you let me unmount these
+        copy $src_backup_dir to $dst_backup_dir ; if you let me unmount these
 	partition(s), no new backups will be made for many hours (or days).
 
 	To use $backup_dir," ||	msg="
@@ -1851,9 +1852,9 @@ case $action in
 		abort "\n$msg re-run copy-backup with -f to Force unmount."
 	fi; done
 
-	set_FS_type___from_FS_device $old_device
+	set_FS_type___from_FS_device $src_device
 	[[ $FS_type == xfs ]] &&
-	   abort "$FUNCNAME: after umount both, 'xfs_copy $old_device $new_device <new-device-2>' then 'xfs_admin -L $new_FS_label $new_device' then mount both then 'xfs_growfs $new_backup_dir'"
+	   abort "after umount both, 'xfs_copy $src_device $dst_device <new-device-2>' then 'xfs_admin -L $dst_FS_label $dst_device' then mount both then 'xfs_growfs $dst_backup_dir'"
 
 	trap '' HUP
 
@@ -1861,7 +1862,7 @@ case $action in
 
 	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
 
-	for backup_dir in $old_backup_dir $new_backup_dir
+	for backup_dir in $src_backup_dir $dst_backup_dir
 	    do	$our_path $our_opts umount $backup_dir |&
 		   grep -v -e ': no filesystem mounted on ' -e '^ *$'
 		is_backup_dir_mounted $backup_dir &&
@@ -1870,27 +1871,27 @@ case $action in
 
 	$RunIf set -x
 
-	$RunIf dd if=$old_device of=$new_device bs=1M status=progress ||
+	$RunIf dd if=$src_device of=$dst_device bs=1M status=progress ||
 	     abort "dd exited with $?"
 
 	is_arg1_in_arg2 -M $action_opts || {
-	cmd="$RunIf mount -t $FS_type -o $mount_options $old_device $old_backup_dir"
+	cmd="$RunIf mount -t $FS_type -o $mount_options $src_device $src_backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	}
 
-	$RunIf tune2fs -U $(uuidgen) $new_device
+	$RunIf tune2fs -U $(uuidgen) $dst_device
 
-	label_drive $new_device $new_backup_dir
+	label_drive $dst_device $dst_backup_dir
 
 	is_arg1_in_arg2 -F $action_opts || {
-	cmd="$RunIf e2fsck -f -p -t -t -E discard $new_device"
-	$cmd || abort "$cmd exited with $?; better check $old_device ?!"
+	cmd="$RunIf e2fsck -f -p -t -t -E discard $dst_device"
+	$cmd || abort "$cmd exited with $?; better check $src_device ?!"
 	}
 
 	$RunIf \
-	mount -t $FS_type -o $mount_options $new_device $new_backup_dir ||
+	mount -t $FS_type -o $mount_options $dst_device $dst_backup_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
-	$RunIf resize2fs $new_device	# do this _after_ mount, for speed
+	$RunIf resize2fs $dst_device	# do this _after_ mount, for speed
 	;;
    # copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
    ( copy-b*k*p-dump )
@@ -2072,12 +2073,18 @@ case $action in
 	;;
 
    ( test | t )
+	copy_snapshot 1 2 3
+	exit
+
 	echoE test
 	foo() {
 		echoE ftest
-		for (( i=0; [[ ${FUNCNAME[$i]} ]] ; i++ ))
-		   do	echo "FUNCNAME[$i]=${FUNCNAME[$i]}"
+		for  i  in ${!FUNCNAME[*]}
+		   do	echo "FUNCNAME[i]=${FUNCNAME[$i]}"
 		done
+		echoEV   i
+		TraceV 0 i i
+		abort "aborting test"
 	}
 	foo
 	exit
@@ -2227,4 +2234,4 @@ esac
 
 }
 
-main "$@"
+process_action "$@"
