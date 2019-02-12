@@ -1,8 +1,10 @@
 #! /usr/bin/env bash
 
-version=4			# has to match version= in configure.sh.sample
+version=5			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
+
+[[ ${1-} == -s ]] && { shift; sample_suffix=.sample; } || sample_suffix=
 
 # functions/variables: warn, abort, tmp_dir, our_name, our_path, true, false,
 # need_cmds, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
@@ -10,11 +12,12 @@ readonly coder=sweikart@gmail.com
 # cd_ , add_words, confirm, functionis_arg1_in_arg2
 source libsnap.sh || exit 1
 
+
 for dir in /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
 readonly   backup_config_dir=$dir/$our_name
-readonly backup_exclude_file=$backup_config_dir/exclude.txt
-readonly  backup_config_file=$backup_config_dir/configure.sh
-readonly  backup_config_file_sample=$backup_config_file.sample
+readonly backup_exclude_file=$backup_config_dir/exclude.txt$sample_suffix
+readonly  backup_config_file=$backup_config_dir/configure.sh$sample_suffix
+readonly  backup_config_file_sample=${backup_config_file%.sample}.sample
 
 if [[ ! -s $backup_config_file_sample ]]
    then abort "have to install $backup_config_file_sample"
@@ -49,7 +52,8 @@ Usage: $our_name action [args]
     kill-prune name(s) : for each name (can be 'all'), kill prune
     kill-both name(s)  : for each name (can be 'all'), kill backup & prune
 
-    mkfs device [name]: prepare blank-first or smallest drive (see comments)
+    add-extN-journal backup_name [FS_device]: backup gets external journal
+    mkfs device [name]: prepare blank first- or smallest-drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
@@ -240,8 +244,12 @@ list_backups() {
 
 	customize_and_validate_configuration_variables Z # ensure have *pattern
 
+	if [[ -t 0 || -t 1 || -t 2 ]]
+	   then local regex=$anchored_backup_UI_name_regex
+	   else local regex=$anchored_backup_name_regex # for cron (& nohup)
+	fi
 	df --output=target --no-sync |
-	   grep "^$backup_dir_prefix$anchored_backup_name_regex$" | sort -u
+	   grep "^$backup_dir_prefix$regex$" | sort -u
 }
 
 # --------------------------------------------
@@ -313,7 +321,7 @@ set_backup_name() {
 		   else     backup_dir=$name
 		fi
 		[[  $backup_dir =~					\
-		   ^$backup_dir_prefix$anchored_backup_name_regex$ ]] ||
+		   ^$backup_dir_prefix$anchored_backup_UI_name_regex$ ]] ||
 		   abort "$name is not backup-dir or FS-label or valid-name"
 		name=${backup_dir#$backup_dir_prefix}
 	fi
@@ -715,7 +723,7 @@ _rm_pruned_snapshots() {
 			done
 		done
 		set +x
-	done | xargs -r $RunIf rm -r
+	done | tr '\n' '\0' | xargs -0 -r $RunIf rm -r # -0: files with SPACEs
 	}
 
 	$RunIf log "pruned exclude-patterns from _all_ snapshots"
@@ -1079,12 +1087,14 @@ run_backup() {
 
 	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
-	_backup_managed_prune $backup_name pre-rsync
-
-	_is_time_to_run_backup $backup_dir || return 0
-
+	# grab lock before prune, so don't suspend prune if backup suspended
 	set_lock_file run-backup $backup_name
 	run_lockpid $lock_file "backing up $backup_dir" || return 1
+
+	_backup_managed_prune $backup_name pre-rsync
+
+	_is_time_to_run_backup $backup_dir ||
+	   { $RunIf lockpid -r $lock_file; return 0; }
 
 	setup_run_backup_priority && local priority=high || local priority=low
 
@@ -1428,7 +1438,7 @@ case $action in
 	[[ $is_cron ]] && cron_opt=-C
 
 	[[ $action == w ]] ||
-	   exec watch ${*:- -n 1} $our_path $our_opts w -w $ps_opt $cron_opt
+	   exec watch ${*:- -n 0.1} $our_path $our_opts w -w $ps_opt $cron_opt
 
 	# ------------------------------------------------------------------
 
@@ -1530,8 +1540,10 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	backup_PIDs=$(job_PIDs run-backup all)
-	rsync_cmds=$(ps_ -H ww $backup_PIDs |
+	# backup_PIDs=$(job_PIDs run-backup all)
+	set -- $(cat $lock_dir/run-backup-*.pid 2> /dev/null)
+	[[ $# == 0 ]] && rsync_cmds= ||
+	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 
 	psc rm w | grep "\b$snapshot_regex\b" | grep -v "\.rm\b" |
@@ -1551,10 +1563,13 @@ case $action in
 	> $tmp
 	prune_job_PIDs=$(job_PIDs prune-backup all)
 	[[ $prune_job_PIDs ]] && {
-	prune_cmds=$(ps_ w h $prune_job_PIDs | trim_prune_rsync)
+	# prune_cmds=$(ps_ w h $prune_job_PIDs | trim_prune_rsync)
+	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
+	[[ $# == 0 ]] && prune_cmds= ||
+	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g') | trim_prune_rsync)
 	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
-	   prune_cmds=$(echo "$prune_cmds" | fgrep -w $_our_name)
-	echo "$prune_cmds"
+	   prune_cmds=$(echo "$prune_cmds" | fgrep -w rm)
+	echo "$prune_cmds" | fgrep -v -w xargs
 	} | sort $prune_sort_opts > $tmp
 	if [[ -s $tmp ]]
 	   then echo "$hdr" | trim_ps_cols
@@ -1571,7 +1586,7 @@ case $action in
 	echo " Number of 'Too many links' snapshots:  $stats_number"
 	echo "    Days since 'Too many links' error:  $stats_newest_age"
 
-	[[ $rsync_cmds && $watch_opt ]] || {
+	[[ $rsync_cmds && $watch_opt ]] || { # && $rows < ???
 	echo
 	setup_snapshot_stats ''
 	echo "    Total number successful snapshots:  $stats_number"
@@ -1662,7 +1677,45 @@ case $action in
    # sysadmin maintenance actions
    ###########################################################################
 
-   # mkfs device [name]: prepare blank-first or smallest drive (see comments)
+   # add-extN-journal backup_name [FS_device]: backup gets external journal
+   ( add-ext-journal | aej )
+	[[   $# == [12] ]] || abort "backup_name [device]"
+	name=$1 FS_device=${2-}
+
+	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+
+	set_backup_name $1
+	set__backup_dir__log_cmd_file $backup_name
+	set_FS_label___from_mount_dir $backup_dir	; [[ $FS_device ]] ||
+	set_FS_device___from_FS_label $FS_label
+
+	set_FS_external_log $FS_label || abort "need valid set_FS_external_log"
+	label=$(basename $FS_external_log)
+
+	$Trace
+
+	$RunIf mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log ||
+	   abort "mke2fs -O journal_dev -> $?"
+
+	suspend_tracing
+	$our_path $our_opts umount $backup_dir |&
+	   grep -v -e ': no filesystem mounted on ' -e '^ *$'
+	is_backup_dir_mounted $backup_dir && $RunIf abort "umount $backup_dir"
+	restore_tracing
+
+	warn "removing internal journal can take many minutes"
+	$RunIf tune2fs -O ^has_journal $FS_device
+
+	$RunIf tune2fs -J device=LABEL=$label $FS_device ||
+	   abort "tune2fs -J attempt to attach journal -> $?"
+	$RunIf tune2fs -l $FS_device | grep -i "journal [id]"
+
+	$RunIf \
+	mount -v -t ext4 -o $mount_options $FS_device $backup_dir ||
+	   abort "mount exited with $?"
+	;;
+
+   # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
    ( mkfs )
 	# If brand new drive, find its device name with: ls -lt /dev/sd?
 	# Save the device name and backup name: device=/dev/sdX  backup=Y
@@ -1705,12 +1758,16 @@ case $action in
 	let blocks_per_inode=$default_blocks_per_inode/4 # 5% space penalty
 	let  bytes_per_inode=$blocks_per_inode*1024
 
-	cmd_opts=$mkfs_cmd_opts
+	cmd_opts=$mkfs_cmd_opts  log_opt=
 	  if [[ $cmd_opts == mkfs.xfs* ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs) ]] || $RunIf abort "install xfsprogs"
 		[[ $cmd_opts == *maxpct=* ]] || add_words cmd_opts -i maxpct=0
 		mount_opts="$XFS_mount_options"
+		type set_FS_external_log &> /dev/null && # optional
+		     set_FS_external_log $FS_label &&
+		logdev="logdev=$FS_external_log" &&
+		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
 	elif [[ $cmd_opts == mkfs.ext* ]]
 	   then cmd=${cmd_opts%% *}
 		FS_type=${cmd#*.}
@@ -1734,6 +1791,12 @@ case $action in
 		[[ $cmd_opts != *-m* ]] && add_words opts -m .1
 		cmd_opts="$cmd_opts $opts"
 		mount_opts="$mount_options"
+		type set_FS_external_log &> /dev/null	&& # optional
+		     set_FS_external_log $FS_label	&&
+		log_label=$(basename $FS_external_log)	&&
+		$RunIf mke2fs -v -b 4096 -O journal_dev \
+			 -L $log_label $FS_external_log &&
+		cmd_opts="$cmd_opts -J device=LABEL=$log_label"
 	fi
 
 	df -m | grep " $backup_dir$" &&
@@ -1749,7 +1812,7 @@ case $action in
 	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
-	cmd="$RunIf $cmd_opts $mkfs_debug_opt -L $FS_label $device"
+	cmd="$RunIf $cmd_opts $log_opt $mkfs_debug_opt -L $FS_label $device"
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && RunIf=echo
 	$RunIf mkdir -p $backup_dir
@@ -2073,6 +2136,10 @@ case $action in
 	;;
 
    ( test | t )
+	echo test abort
+	abort test
+	exit
+
 	copy_snapshot 1 2 3
 	exit
 
@@ -2141,7 +2208,7 @@ case $action in
    # actions for snapcrypt to call
    ###########################################################################
 
-   # WARNING: this should only be called by "snapcrypt close"
+   # WARNING: this should only be called by ourself or "snapcrypt close"
    # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u )			# umount
 	[[ $* == all ]] && set -- $(list_backups)
@@ -2173,7 +2240,7 @@ case $action in
 	[[ $drive == *Z ]] && exit 0	# for debugging
 
 	$Trace
-	is_backup_dir_mounted $backup_dir || exit 0
+	is_backup_dir_mounted $drive || exit 0
 	suspend_tracing
 	set -- $drive/$snapshot_pattern	# all the _successful_ snapshots
 	restore_tracing

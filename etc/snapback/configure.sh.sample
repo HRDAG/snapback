@@ -1,4 +1,4 @@
-# version=4
+# version=5
 
 ################################################################
 ################################################################
@@ -22,10 +22,21 @@
 # Will need to add -f if the partition already has an *UNWANTED* filesystem.
 # sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
 # The default is "-i maxpct=0", which you can override.
-readonly mkfs_cmd_opts="mkfs.xfs"   # needed if your apps use many hard-links
+readonly mkfs_cmd_opts="mkfs.xfs" # needed if your apps use many hard-links
 
 # ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one.
 readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
+
+false &&			       # have to first customize this function
+set_FS_external_log() {
+	local FS_label=$1
+	local  log=/dev/VGmain/${FS_label}_log
+	[[ -b $log ]] && FS_external_log=$log && return 0;	$RunIf  \
+	lvcreate --type striped --stripes 4 --stripesize 64 --size 128M \
+		 --name $log VGmain || log=
+	FS_external_log=$log
+	[[ $FS_external_log ]]
+}
 
 # You probably won't need to change these.
 readonly     mount_options="nodev,nosuid,relatime,nodiratime"
@@ -68,7 +79,7 @@ readonly higher_priority_ionice_args="--class 2  --classdata 5"
 # SSDs have no seek penalty, so can run rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
 # described above).  Hard disks are different, so can change that policy.
-readonly suspend_prune_when_backup=$false # can set $true for hard disk drives
+readonly suspend_prune_when_backup=$true # can set $false for SSD / flash drive
 
 # ------------------------------------
 # variables that control run-backup* #
@@ -100,14 +111,15 @@ readonly excluded_backup_hours="23 1 3"
 #
 # The number of hours (1, 2, 4, 8, 12, or 24) between cron-based backup runs.
 # A backup is *always* done at midnight, since that's the one pruning keeps.
-declare -i backup_period=1		# need mucho RAM for small period
-  bkp_name2backup_period[E]=24		# the E drive seems to be dieing
+declare -i backup_period=1		# need much RAM for small period
+  bkp_name2backup_period[E]=4		# the E drive is 6x slower
+  bkp_name2backup_period[G]=24		# the G drive seems to be dieing
   bkp_name2backup_period[Z]=2		# twice the period of the mk-Z output
 
-# ----------------------------------------------------------------------------
-# Variables that control prune-backups, plus ...			     #
-# NOTE: backup_period and exclude_from_file (above) are also used in pruning.#
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Variables that control prune-backups.  NOTE: backup_period, extra_excludes, #
+#    and excluded_backup_hours (above) are also used in pruning.	      #
+# -----------------------------------------------------------------------------
 
 # Dirs that contain files with massive numbers of hard-links.
 readonly hard_link_dirs="/var/repos/snap*"
@@ -126,7 +138,7 @@ readonly hard_link_dirs="/var/repos/snap*"
 # Skip 'span' days of the newest snapshots, rm half the older ones; repeat this
 # loop until all the oldest snapshots are only *,00 (i.e. one per day),
 # which encompasses 1.5 months for an hourly 'span' of 7 days.
-declare -i days_per_span_for_hour_prune=5	# prune-backup* can change this
+declare -i days_per_span_for_hour_prune=4	# prune-backup* can change this
   bkp_name2days_per_span_for_hour_prune[Z]=1	# for action test-prune
 #
 # At date where the previous rm's all but *,00, repeat algorithm for months,
