@@ -1170,6 +1170,57 @@ run_backup() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
+# functions and variables used to copy snapshots between backups
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+_set_dst() {
+	local src_name=$1 dst_dir=$2
+
+	set -- $dst_dir/${src_name%%.*}*	# a version might exist
+	[[ $# == 1    ]] || abort "$* exist, (mv then) delete worse one(s)"
+	[[ $1 != *.rm ]] || abort "destination is waiting to be pruned"
+	dst=$1
+
+	if [[ ! -d $dst ]]
+	   then dst=$dst_dir/${src_name%%.*}.partial
+		return
+	fi
+
+	local dst_name=$(basename $dst)
+	[[ $dst_name != $snapshot_pattern.* ]]  ||
+	   is_arg1_in_arg2 ${dst_name##*.} links partial || {
+	   local fix="change its suffix to .partial if you want to update it"
+	   abort "destination $dst exists, but has invalid suffix; $fix" ; }
+	local src_ext=${src_name#*.} ; src_ext=${src_ext%.rm}
+	local dst_ext=${dst_name##*.}
+	[[ $src_ext == $dst_ext &&  $dst_ext != partial ]] &&
+	   local fix="cd $dst_dir && mv $dst_name ${dst_name%%.*}.partial" &&
+	   abort "$dst has snapshot; if want to update it, run: $fix"
+}
+
+# ---------------------------------
+
+copy_snapshot() {
+	[[ $# == 2 ]] || abort "$FUNCNAME src dst_dir"
+	local src=$1 dst_dir=$2
+
+	[[ -d $src     ]] || abort "$FUNCNAME $*: $1 does not exist"
+	[[ -d $dst_dir ]] || abort "$FUNCNAME $*: dst_dir should be parent dir"
+	[[ $(basename $src) == $snapshot_pattern{,.{links,partial,rm}} ]] ||
+	   abort "$FUNCNAME $*: $src is not a valid snapshot name"
+	[[ $(basename $dst_dir) != $snapshot_pattern* ]] ||
+	   abort "$FUNCNAME $*: dst_dir should be (backup) dir, not snapshot"
+
+	warn "need -f if dst_dir is backup & excludes or dirs_to_backup differ"
+
+	local src_name=$(basename $src)
+	_set_dst $src_name $dst_dir
+	TraceV 2 src dst
+}
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # helper functions used by watch actions
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
