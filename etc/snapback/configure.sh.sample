@@ -27,11 +27,11 @@ readonly mkfs_cmd_opts="mkfs.xfs" # needed if your apps use many hard-links
 # ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one.
 readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
 
-false &&			       # have to first customize this function
+false &&				# rewrite function if not using LVM
 set_FS_external_log() {
 	local FS_label=$1
 
-	local VG=VGmain
+	local VG=VGfast			# set VG to your fastest Volume Group
 
 	local  log=/dev/$VG/${FS_label}_log
 	[[ -b $log ]] && FS_external_log=$log && return 0;	$RunIf  \

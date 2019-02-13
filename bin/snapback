@@ -8,7 +8,7 @@ readonly coder=sweikart@gmail.com
 
 # functions/variables: warn, abort, tmp_dir, our_name, our_path, true, false,
 # need_cmds, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
-# log, log_cmd_file, log_level, log_msg_prefix, header,
+# log, file_for_logging, log_level, log_msg_prefix, header,
 # cd_ , add_words, confirm, functionis_arg1_in_arg2
 source libsnap.sh || exit 1
 
@@ -32,8 +32,8 @@ readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
 		       sed -n -r 's/^[^#=]*\b(\w+)=.*$/\1/p' | sort -u)
 for var in $config_vars; do eval "declare -A bkp_name2$var"; done
 #
-# this grabs variables that control backup and pruning, and also gets
-# (customizable) functions set_backup_name & source_drive_specific_config_file
+# this grabs variables that control backup and pruning, and may also hold
+# customizable functions set_backup_name & source_drive_specific_config_file
 source $config_file || abort "$config_file broken"
 
 [[ -s $exclude_file ]] ||
@@ -139,7 +139,7 @@ readonly hostname=${HOSTNAME%%.*}
 
 readonly log_dir=/var/log/$our_name
 
-log_cmd_file=$log_dir/messages.log	# set__backup_dir__log_cmd_file sets it
+file_for_logging=$log_dir/messages.log	     # set__backup_dir__* sets it
 log_msg_prefix=' ${action-} ${backup_name-}' # this gets eval'ed each time
 
 # ----------------------------------------------------------------------------
@@ -275,13 +275,48 @@ function fix_snapshot_names {
 	done
 }
 
-# ---------------------------------
+# -----------------------------------------------------------------------------
 
-is_backup_dir_mounted() {
-	local backup_dir=$1
+backup_log_dir=
 
-	[[ $backup_dir ]] || return 1
-	df | grep -q " $backup_dir$" || [[ $backup_dir == *[-/]Z ]]
+admin_group=
+
+is_regression_test=$false
+
+# this is normally called by set_backup_name; but you can pass
+# a null backup_name to set default file_for_logging & backup_log_dir
+set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
+	local  backup_name=$1	    # called from set_backup_name, so $1 valid
+
+	if [[ $backup_name ]]
+	   then local backup_log_dir=$log_dir/$backup_name
+	   else local backup_log_dir=$log_dir
+	fi
+	file_for_logging=$backup_log_dir/messages.log
+
+	local group
+	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
+	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
+	done
+	[[ $group == NoNe ]] && group= || admin_group=$group
+
+	[[ -d $log_dir ]] || {
+	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
+	sudo chgrp $group  $log_dir &&
+	sudo chmod g+w,g+s $log_dir
+	}
+	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
+
+	[[ $backup_name == Z ]] && is_regression_test=$true
+
+	[[ $group ]] && group=:$group
+	if [[ ! -d $backup_log_dir ]]
+	   then sudo mkdir -p -m g+w,o-w $backup_log_dir
+		[[ $is_regression_test ]] &&
+		sudo touch $file_for_logging &&
+		sudo chown $LOGNAME$group $backup_log_dir $file_for_logging
+	fi
+	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
 }
 
 # ---------------------------------
@@ -305,6 +340,8 @@ source_drive_specific_config_file() {
 
 # ---------------------------------
 
+backup_name=				# global, used by log()
+
 have_cmd \
 set_backup_name ||		      # configure.sh can replace this function
 set_backup_name() {
@@ -325,59 +362,47 @@ set_backup_name() {
 		   abort "$name is not backup-dir or FS-label or valid-name"
 		name=${backup_dir#$backup_dir_prefix}
 	fi
-	if [[ is_backup_name_capitalized ]]
+	if [[ $is_backup_name_capitalized ]]
 	   then backup_name=${name^}
 	   else backup_name=$name
 	fi
+
+       set__backup_log_dir__file_for_logging__admin_group__is_regression_test \
+	   $backup_name
 }
 
 # ---------------------------------
 
-     backup_dir= log_cmd_file=		# global, just in case
-# can pass a null backup_name to set default log_cmd_file
-set__backup_dir__log_cmd_file() {
+
+is_backup_dir_mounted() {
+	local backup_dir=$1
+
+	[[ $backup_dir ]] || return 1
+	df | grep -q " $backup_dir$" || [[ $backup_dir == *[-/]Z ]]
+}
+
+# ---------------------------------
+
+backup_dir=				# global, just in case
+
+set_backup_dir() {
 	local backup_name=$1		# result of set_backup_name, i.e. valid
 
 	[[ $backup_name != */* ]] ||
-	   abort "invalid / in backup name, add to backup_dir_prefix instead"
+	   abort "'/' in backup name not supported, add to backup_dir_prefix"
 
-	local group
-	for group in sudo wheel admin NoNe '' # 'admin' is for Darwin aka MacOS
-	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
-	done
-	[[ $group == NoNe ]] && group= || group=:$group
-	#
 	backup_dir=$backup_dir_prefix$backup_name
-	[[ $backup_name == Z ]]  &&
-	is_regression_test=$true &&
-	[[ ! -d $backup_dir  ]]  &&
-	sudo mkdir $backup_dir   &&
-	sudo chmod g+s,g+w $backup_dir &&
-	sudo chown $LOGNAME$group $backup_dir
+
+	if [[ $is_regression_test && ! -d $backup_dir ]]
+	   then	[[ $admin_group ]] && local group=:$admin_group || local group=
+		sudo mkdir $backup_dir &&
+		sudo chmod g+s,g+w $backup_dir &&
+		sudo chown $LOGNAME$group $backup_dir ||
+		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
+	fi
 
 	is_backup_dir_mounted $backup_dir ||
 	    warn "no filesystem mounted on $backup_dir" || return 1
-
-	if [[ $backup_name ]]
-	   then local backup_log_dir=$log_dir/$backup_name
-	   else local backup_log_dir=$log_dir
-	fi
-	log_cmd_file=$backup_log_dir/messages.log
-
-	[[ -d $log_dir ]] || {
-	sudo mkdir -p $log_dir
-	sudo chgrp ${group#:} $log_dir
-	sudo chmod g+w,g+s $log_dir
-	}
-	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
-
-	if [[ ! -d $backup_log_dir ]]
-	   then sudo mkdir -p -m g+w,o-w $backup_log_dir
-		[[ $is_regression_test ]] &&
-		sudo touch $log_cmd_file &&
-		sudo chown $LOGNAME $backup_log_dir $log_cmd_file
-	fi
-	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
 
 	fix_snapshot_names $backup_dir	# must call last
 }
@@ -501,8 +526,6 @@ _backup_managed_prune() {
 
 # -----------------------------------------------------------------------------
 
-is_regression_test=$false
-
 customize_config_variables() {
 	local dir=${1-}
 
@@ -592,7 +615,7 @@ customize_and_validate_configuration_variables() {
 	local dir=${1-}
 
 	[[ $dir && $dir != /* ]] &&
-	set__backup_dir__log_cmd_file $dir && dir=$backup_dir
+	set_backup_dir $dir && dir=$backup_dir
 
 	suspend_tracing
 
@@ -649,7 +672,6 @@ _rm_pruned_snapshots() {
 	   else $RunIf \
 		log "pruned $# snapshots, will rename to *.rm for deletion"
 	fi
-	restore_tracing
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
@@ -657,7 +679,6 @@ _rm_pruned_snapshots() {
 		$RunIf mv $snapshot $snapshot.rm
 	done
 
-	suspend_tracing
 	set -- *.rm
 	[[ -d $1 ]] || shift
 	local snapshot_basenames=$*
@@ -686,14 +707,14 @@ _rm_pruned_snapshots() {
 		for subdir in $hard_link_dirs
 		    do	$RunIf rm -rf $snapshot$subdir
 		done
-		set +x
+		[[ $RunIf ]] && set +x
 	done
 
 	$Trace
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
 	    do	$RunIf rm -rf $snapshot
-		set +x
+		[[ $RunIf ]] && set +x
 	done
 
 	(( $number_pruned_snapshots > 0 )) &&
@@ -722,7 +743,7 @@ _rm_pruned_snapshots() {
 			   do	[[ -e "$file" ]] && echo "$file"
 			done
 		done
-		set +x
+		[[ $RunIf ]] && set +x
 	done | tr '\n' '\0' | xargs -0 -r $RunIf rm -r # -0: files with SPACEs
 	}
 
@@ -898,7 +919,7 @@ prune_backup() {
 	local backup_name=$1 backup_dir
 
 	set_backup_name $backup_name &&
-	set__backup_dir__log_cmd_file $backup_name || return 1
+	set_backup_dir $backup_name || return 1
 
 	_is_time_to_prune_backup $backup_dir || return 0
 
@@ -1083,7 +1104,7 @@ run_backup() {
 	local backup_name=$1 backup_dir
 
 	set_backup_name $backup_name
-	set__backup_dir__log_cmd_file $backup_name || return 1
+	set_backup_dir $backup_name || return 1
 
 	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
@@ -1736,7 +1757,7 @@ case $action in
 	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
 
 	set_backup_name $1
-	set__backup_dir__log_cmd_file $backup_name
+	set_backup_dir $backup_name
 	set_FS_label___from_mount_dir $backup_dir	; [[ $FS_device ]] ||
 	set_FS_device___from_FS_label $FS_label
 
@@ -2071,7 +2092,7 @@ case $action in
 
 	umask=02
 
-	set__backup_dir__log_cmd_file Z
+	set_backup_dir Z
 	cd_ $backup_dir
 	[[ $RunIf ]] ||
 	rm -rf *
@@ -2140,7 +2161,7 @@ case $action in
 	cmd_dirs="/usr/local/bin/ ~/git/$_our_name/bin/"
 	echo -e "\nComparing prune results using '$_our_name' in:
 	${cmd_dirs/ / vs }"
-	set__backup_dir__log_cmd_file Z
+	set_backup_dir Z
 
 	# see the comment at the top of the mk-Z option, above
 	declare -A prune_type2mk_Z_args=(
@@ -2188,8 +2209,12 @@ case $action in
 	;;
 
    ( test | t )
-	echo test abort
-	abort test
+	set_backup_name ${1:-a}
+	TraceV 0 backup_name file_for_logging log_msg_prefix
+	echo  test1
+	echoE test2
+	log 0 test3
+	abort test4
 	exit
 
 	copy_snapshot 1 2 3
@@ -2209,7 +2234,7 @@ case $action in
 	exit
 
 	set_backup_name ${1:-a}
-	set__backup_dir__log_cmd_file $backup_name
+	set_backup_dir $backup_name
 	set_FS_label___from_mount_dir $backup_dir
 	echo $FS_label
 	exit
@@ -2221,7 +2246,7 @@ case $action in
 
 	exit
 
-	set__backup_dir__log_cmd_file ${1^}
+	set_backup_dir ${1^}
 	$Trace
 	is_disk_usage_too_high
 	abort $?
@@ -2241,11 +2266,11 @@ case $action in
 	_links_error_msg "nnn 'Too many links'"
 	exit
 
-	set__backup_dir__log_cmd_file F
+	set_backup_dir F
 	exit
 
 	$Trace
-	set__backup_dir__log_cmd_file ${1-''}
+	set_backup_dir ${1-''}
 	log "test with drive ${1-}"
 	exit
 
@@ -2272,7 +2297,7 @@ case $action in
 	[[ $RunIf ]] && output=/dev/stdout || output=/dev/null
 	for name
 	    do	set_backup_name $name
-		set__backup_dir__log_cmd_file $backup_name
+		set_backup_dir $backup_name
 		is_backup_dir_mounted $backup_dir || continue
 		/bin/ls $backup_dir |
 		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
