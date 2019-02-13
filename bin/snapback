@@ -1754,8 +1754,9 @@ case $action in
 	is_backup_dir_mounted $backup_dir && $RunIf abort "umount $backup_dir"
 	restore_tracing
 
+	tune2fs -l $FS_device | grep -q '^Journal ' &&    {
 	warn "removing internal journal can take many minutes"
-	$RunIf tune2fs -O ^has_journal $FS_device
+	$RunIf tune2fs -O ^has_journal $FS_device	; }
 
 	$RunIf tune2fs -J device=LABEL=$label $FS_device ||
 	   abort "tune2fs -J attempt to attach journal -> $?"

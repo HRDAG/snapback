@@ -30,10 +30,13 @@ readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
 false &&			       # have to first customize this function
 set_FS_external_log() {
 	local FS_label=$1
-	local  log=/dev/VGmain/${FS_label}_log
+
+	local VG=VGmain
+
+	local  log=/dev/$VG/${FS_label}_log
 	[[ -b $log ]] && FS_external_log=$log && return 0;	$RunIf  \
 	lvcreate --type striped --stripes 4 --stripesize 64 --size 128M \
-		 --name $log VGmain || log=
+		 --name $log $VG || log=
 	FS_external_log=$log
 	[[ $FS_external_log ]]
 }
