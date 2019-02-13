@@ -1,4 +1,4 @@
-# version=5
+# version=6
 
 ################################################################
 ################################################################
@@ -73,11 +73,11 @@ declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 
 # Normally, backups run at higher priority and pruning runs at lower priority;
 #  but, if the min_FS_usage_percent is exceeded, those priorities are inverted.
-readonly  lower_priority_renice_args="--priority +15"
-readonly higher_priority_renice_args="--priority +13"
+readonly  lower_priority_CPU_cmd="renice +15 -p"
+readonly higher_priority_CPU_cmd="renice +13 -p"
 #
-readonly  lower_priority_ionice_args="--class 2  --classdata 6"
-readonly higher_priority_ionice_args="--class 2  --classdata 5"
+readonly  lower_priority_IO_cmd="ionice -c 2 -n 6 -p"
+readonly higher_priority_IO_cmd="ionice -c 2 -n 5 -p"
 
 # SSDs have no seek penalty, so can run rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
@@ -105,9 +105,6 @@ readonly successful_rsync_exit_statuses="0 24"
 # We ignore SIGUSR1 or SIGINT (status=20) since partial snapshots are handled.
 # Instead of logging failures for Too many links (status=31), speedup pruning.
 readonly no_log_rsync_exit_statuses="20" # add 31 after address all issues
-
-# "rsync --exclude-from=$exclude_from_file" ; also used to prune old snapshots.
-readonly exclude_from_file=$config_dir/exclude.txt
 
 # Skip backups when there aren't many users, to avoid 'Too many links" problem.
 readonly excluded_backup_hours="23 1 3"
