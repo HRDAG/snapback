@@ -24,12 +24,18 @@
 # The default is "-i maxpct=0", which you can override.
 readonly mkfs_cmd_opts="mkfs.xfs" # needed if your apps use many hard-links
 
-# ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one.
+# ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one;
+# also defaults to extent-based, which you can override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
+
+fast_enough_drive_labels=      # labels of drives that don't need external log
 
 false &&				# rewrite function if not using LVM
 set_FS_external_log() {
 	local FS_label=$1
+
+	is_arg1_in_arg2 $FS_label $fast_enough_drive_labels &&
+	   FS_external_log= && return 1
 
 	local VG=VGfast			# set VG to your fastest Volume Group
 

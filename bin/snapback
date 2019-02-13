@@ -1873,8 +1873,10 @@ case $action in
 	fi
 	if [[ $FS_type == ext? ]]
 	   then opts=
-		[[ $cmd_opts != *-i* ]] && add_words opts -i $bytes_per_inode
-		[[ $cmd_opts != *-m* ]] && add_words opts -m .1
+		[[ $cmd_opts != *-i* ]]  && add_words opts -i $bytes_per_inode
+		[[ $cmd_opts != *-m* ]]  && add_words opts -m .1
+		[[ $cmd_opts != *extent* && $FS_type == ext4 ]] &&
+					    add_words opts -O extent
 		cmd_opts="$cmd_opts $opts"
 		mount_opts="$mount_options"
 		type set_FS_external_log &> /dev/null	&& # optional
