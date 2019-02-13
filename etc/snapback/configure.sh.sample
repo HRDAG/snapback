@@ -104,7 +104,7 @@ readonly successful_rsync_exit_statuses="0 24"
 readonly no_log_rsync_exit_statuses="20" # add 31 after address all issues
 
 # "rsync --exclude-from=$exclude_from_file" ; also used to prune old snapshots.
-readonly exclude_from_file=$backup_config_dir/exclude.txt
+readonly exclude_from_file=$config_dir/exclude.txt
 
 # Skip backups when there aren't many users, to avoid 'Too many links" problem.
 readonly excluded_backup_hours="23 1 3"
