@@ -246,6 +246,7 @@ setup_prune_backup_priority() {
 
 list_backups() {
 
+	suspend_tracing
 	customize_and_validate_configuration_variables Z # ensure have *pattern
 
 	if [[ -t 0 || -t 1 || -t 2 ]]
@@ -254,6 +255,7 @@ list_backups() {
 	fi
 	df --output=target --no-sync |
 	   grep "^$backup_dir_prefix$regex$" | sort -u
+	restore_tracing
 }
 
 # --------------------------------------------
@@ -321,6 +323,10 @@ set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
 		sudo chown $LOGNAME$group $backup_log_dir $file_for_logging
 	fi
 	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
+
+	suspend_tracing
+	customize_and_validate_configuration_variables $backup_name
+	restore_tracing
 }
 
 # ---------------------------------
@@ -514,9 +520,6 @@ _backup_managed_prune() {
 
 	[[ $is_cron ]] || return
 
-	[[ $state == pre-rsync ]] &&
-	customize_and_validate_configuration_variables $name
-
 	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
 	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
 	   then # use setsid so action kill-prune doesn't kill backup
@@ -615,11 +618,16 @@ set_oldest_backup_snapshot() {
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
+_did_dir=
+
 customize_and_validate_configuration_variables() {
 	local dir=${1-}
 
 	[[ $dir && $dir != /* ]] &&
-	set_backup_dir $dir && dir=$backup_dir
+	set_backup_dir  $dir && dir=$backup_dir
+
+	[[ $_did_dir == $dir ]] && return # avoid infinite loop
+	    _did_dir=$dir
 
 	suspend_tracing
 
@@ -637,10 +645,6 @@ customize_and_validate_configuration_variables() {
 
 _is_time_to_prune_backup() {
 	local dir=$1
-
-	suspend_tracing
-	customize_and_validate_configuration_variables $dir
-	restore_tracing
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
@@ -1087,10 +1091,6 @@ _handle_rsync_results() {
 
 _is_time_to_run_backup() {
 	local dir=$1
-
-	suspend_tracing
-	customize_and_validate_configuration_variables $dir
-	restore_tracing
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
 

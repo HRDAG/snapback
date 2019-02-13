@@ -28,21 +28,20 @@ readonly mkfs_cmd_opts="mkfs.xfs" # needed if your apps use many hard-links
 # also defaults to extent-based, which you can override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
 
-fast_enough_drive_labels=      # labels of drives that don't need external log
-
+# Optional function to allowcate an external filesystem log/journal
+# on fast storage (RAID, SSD, even flash memory stick).
 false &&				# rewrite function if not using LVM
 set_FS_external_log() {
 	local FS_label=$1
 
-	is_arg1_in_arg2 $FS_label $fast_enough_drive_labels &&
-	   FS_external_log= && return 1
+	[[ $do_want_external_log ]] ||	# defined later in this file
+	   { FS_external_log= && return 1; }
 
 	local VG=VGfast			# set VG to your fastest Volume Group
 
 	local  log=/dev/$VG/${FS_label}_log
 	[[ -b $log ]] && FS_external_log=$log && return 0;	$RunIf  \
-	lvcreate --type striped --stripes 4 --stripesize 64 --size 128M \
-		 --name $log $VG || log=
+	lvcreate --size 128M --name $log $VG || log=
 	FS_external_log=$log
 	[[ $FS_external_log ]]
 }
@@ -88,7 +87,14 @@ readonly higher_priority_IO_cmd="ionice -c 2 -n 5 -p"
 # SSDs have no seek penalty, so can run rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
 # described above).  Hard disks are different, so can change that policy.
-readonly suspend_prune_when_backup=$true # can set $false for SSD / flash drive
+	 suspend_prune_when_backup=$true # rotational hard-disk drive
+bkp_name2suspend_prune_when_backup[C]=$false # SSD
+#
+# The above and the below are correlated.
+#
+# Used by set_FS_external_log .
+	 do_want_external_log=$true	# rotational hard-disk drive
+bkp_name2do_want_external_log[C]=$false # SSD
 
 # ------------------------------------
 # variables that control run-backup* #
