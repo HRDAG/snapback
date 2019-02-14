@@ -105,6 +105,20 @@ bkp_name2do_want_external_log[C]=$false # SSD
 bkp_name2dirs_to_backup[Y]=/home/scott/{.bash*,bin,git} # personal memory stick
 bkp_name2dirs_to_backup[Z]=/var/tmp/small-dir # for testing with pseudo-drive Z
 
+# If some drives are smaller and their filesystem usage gets too high, you can
+# exclude directories rather than speed-up pruning; this is better than
+# changing dirs_to_backup, because run-prune will delete $extra_includes from
+# older backups, freeing up space.
+#
+# NOTE: using this variable (or dirs_to_backup) has a big disadvantage: such
+# drives can't be merged with bigger drives (e.g. after a drive was off-site):
+# If you keep drives off-site, it's better to use a bigger backup_period
+# or faster pruning for smaller drives, which still allows for merging.
+#
+# After you change this variable, touch excludes.txt to alert run-prune that
+# a full exclude-style prune run is needed, so new excludes delete files.
+readonly extra_includes=		# per-drive custom excludes
+
 # Basic options for "rsync"; add --acls if it's supported.
 # preallocate: slight ext4 speedup; hopefully works with --sparse
 # preallocate error: rsync: do_fallocate <path> "Operation not supported (95)

@@ -419,7 +419,7 @@ set_backup_dir() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="prune-backup run-backup copy-to"
+readonly lock_types="prune-backup run-backup"
 
 readonly lock_dir=/var/lock
 
@@ -567,6 +567,10 @@ validate_config_variables() {
 
 	local var=snapshot_date_time_separator
 	[[ ${!var} == ',' ]] ||
+	   abort "$var is not implemented, email $coder"
+	#
+	local var=extra_includes
+	[[ ! ${!var} ]] ||
 	   abort "$var is not implemented, email $coder"
 	#
 	local bad_punctuation="[-.:0-9]" # you could ask $coder to change this
@@ -957,7 +961,7 @@ prune_backup() {
 	set -- $(prune_type_to_file hour  $snapshots_to_prune_file $*)
 	set -- $(prune_type_to_file day   $snapshots_to_prune_file $*);#$Trace
 	set -- $(prune_type_to_file month $snapshots_to_prune_file $*);#set +x
-	set -- $(prune_type_to_file year  $snapshots_to_prune_file $*);#set +x
+	set -- $(prune_type_to_file year  $snapshots_to_prune_file $*)
 
 	_rm_pruned_snapshots $snapshots_to_prune_file
 	rm $snapshots_to_prune_file
