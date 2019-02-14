@@ -1241,46 +1241,6 @@ run_backup() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# Run multiple jobs, each in a separate session (has its own PGID).
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-
-# Run a bunch of jobs in parallel, each in its own session (so lock files
-# will hold PGID (process-group ID), making 'kill' and 'ps' easy).
-# We run backups simultaneously, so they all share the cached source files;
-# we run prunes  simultaneously, since a prune's I/O stays on its own drive.
-run_jobs_in_parallel() {
-	local type=$1; shift
-
-	case $type in
-	   ( backup ) function=run_backup   exe=$run_backup_exe   ;;
-	   ( prune  ) function=prune_backup exe=$prune_backup_exe ;;
-	   (   *    ) abort "'$type' is not supported" ;;
-	esac
-
-	if [[ ${1-} == -r ]]		# are we recursing?
-	   then shift
-		$Trace
-		$function $1
-		exit $?
-	fi
-
-	$Trace
-	for dir in ${*:-$(list_backups)}
-	    do	if [[ ! $IfRun ]]
-		   then trap '' HUP
-			# Can't "$function dir &", processes share $tmp* files.
-			# Want new process-group so can ps/kill independently.
-			setsid \
-			$exe -r $dir &
-		   else $exe -r $dir	# run in foreground, for testing
-			echo
-		fi
-	done
-}
-
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
 # Functions and variables used to copy snapshots between backups.
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
@@ -1328,6 +1288,46 @@ copy_snapshot() {
 	local src_name=$(basename $src)
 	_set_dst $src_name $dst_dir
 	TraceV 2 src dst
+}
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Run multiple jobs, each in a separate session (has its own PGID).
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+# Run a bunch of jobs in parallel, each in its own session (so lock files
+# will hold PGID (process-group ID), making 'kill' and 'ps' easy).
+# We run backups simultaneously, so they all share the cached source files;
+# we run prunes  simultaneously, since a prune's I/O stays on its own drive.
+run_jobs_in_parallel() {
+	local type=$1; shift
+
+	case $type in
+	   ( backup ) function=run_backup   exe=$run_backup_exe   ;;
+	   ( prune  ) function=prune_backup exe=$prune_backup_exe ;;
+	   (   *    ) abort "'$type' is not supported" ;;
+	esac
+
+	if [[ ${1-} == -r ]]		# are we recursing?
+	   then shift
+		$Trace
+		$function $1
+		exit $?
+	fi
+
+	$Trace
+	for dir in ${*:-$(list_backups)}
+	    do	if [[ ! $IfRun ]]
+		   then trap '' HUP
+			# Can't "$function dir &", processes share $tmp* files.
+			# Want new process-group so can ps/kill independently.
+			setsid \
+			$exe -r $dir &
+		   else $exe -r $dir	# run in foreground, for testing
+			echo
+		fi
+	done
 }
 
 # -----------------------------------------------------------------------------
