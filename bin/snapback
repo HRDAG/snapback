@@ -1086,7 +1086,7 @@ _handle_rsync_results() {
 	if [[  $error_msg ]]
 	   then	[[ $Trace || $backup_name == Z ]] && # Z = debug "drive"
 		log "$error_msg" ||
-		log "$error_msg" | tee -a /dev/stderr | sed 's/; /\n/g' |
+		log "$error_msg" |& tee -a /dev/stderr | sed 's/; /\n/g' |
 		   $IfRUn mail -s "$our_name: errors" $sysadmin_email_addresses
 	   else rm -f $log
 	fi
