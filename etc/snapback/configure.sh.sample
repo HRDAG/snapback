@@ -40,7 +40,7 @@ set_FS_external_log() {
 	local VG=VGfast			# set VG to your fastest Volume Group
 
 	local  log=/dev/$VG/${FS_label}_log
-	[[ -b $log ]] && FS_external_log=$log && return 0;	$RunIf  \
+	[[ -b $log ]] && FS_external_log=$log && return 0;	$IfRun  \
 	lvcreate --size 128M --name $log $VG || log=
 	FS_external_log=$log
 	[[ $FS_external_log ]]
