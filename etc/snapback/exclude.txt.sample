@@ -28,8 +28,10 @@
 /usr/src/kernels/*
 
 /var/cache/*
+
 # from default /etc/updatedb.conf
 /var/lib/schroot/*
+
 /var/staging/*
 /var/tmp/kdecache-*
 /sys/*

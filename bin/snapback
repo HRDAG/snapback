@@ -220,6 +220,34 @@ set_lock_file() {
 
 # ---------------------------------
 
+readonly lockpid_output_file=$tmp_5
+
+run_lockpid() {
+	local lock_file=$1 lock_holder_action=$2
+
+	local   lock_cmd="lockpid $lock_file"
+	$IfRun $lock_cmd &> $lockpid_output_file
+	local status=$?
+
+	if [[ $status == 0 ]]
+	   then [[ $IfRun ]] && cat $lockpid_output_file
+		rm $lockpid_output_file
+		return 0
+	fi
+
+	local lock_holder_PID=$(sed 's@^Process @@; s@ holds lock .*@@' \
+					$lockpid_output_file)
+	if [[ $status == 1 && $lock_holder_PID ]]
+	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
+		log  "process $lock_holder_PID is $lock_holder_action"
+	   else log "$lock_cmd -> $lockpid_msg (status=$status)"
+	fi
+	rm $lockpid_output_file
+	return 1
+}
+
+# -----------------------------------------------------------
+
 locker_PIDs() {
 	local type=$1; shift
 	[[ $* == all ]] && set -- $(list_backups)
@@ -251,34 +279,6 @@ kill_locker_group() {
 	done
 
 	return $status
-}
-
-# ---------------------------------
-
-readonly lockpid_output_file=$tmp_5
-
-run_lockpid() {
-	local lock_file=$1 lock_holder_action=$2
-
-	local   lock_cmd="lockpid $lock_file"
-	$IfRun $lock_cmd &> $lockpid_output_file
-	local status=$?
-
-	if [[ $status == 0 ]]
-	   then [[ $IfRun ]] && cat $lockpid_output_file
-		rm $lockpid_output_file
-		return 0
-	fi
-
-	local lock_holder_PID=$(sed 's@^Process @@; s@ holds lock .*@@' \
-					$lockpid_output_file)
-	if [[ $status == 1 && $lock_holder_PID ]]
-	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
-		log  "process $lock_holder_PID is $lock_holder_action"
-	   else log "$lock_cmd -> $lockpid_msg (status=$status)"
-	fi
-	rm $lockpid_output_file
-	return 1
 }
 
 # -------------------------------------------------------
