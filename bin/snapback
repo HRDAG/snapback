@@ -515,7 +515,7 @@ signal_job() {
 
 # ---------------------------------
 
-_backup_managed_prune() {
+_backup_management_of_prune() {
 	local name=$1 state=$2
 
 	[[ $is_cron ]] || return
@@ -1116,7 +1116,7 @@ run_backup() {
 	set_lock_file run-backup $backup_name
 	run_lockpid $lock_file "backing up $backup_dir" || return 1
 
-	_backup_managed_prune $backup_name pre-rsync
+	_backup_management_of_prune $backup_name pre-rsync
 
 	_is_time_to_run_backup $backup_dir ||
 	   { $RunIf lockpid -r $lock_file; return 0; }
@@ -1183,9 +1183,9 @@ run_backup() {
 
 	$RunIf touch $partial_snapshot	# 'when we finished', not mdate of src
 
-	_handle_rsync_results   $new_snapshot $status $log
+	_handle_rsync_results $new_snapshot $status $log
 
-	_backup_managed_prune $backup_name post-rsync # do last, for testing
+	_backup_management_of_prune $backup_name post-rsync # last, for testing
 
 	$RunIf sync --file-system $new_snapshot* &> /dev/null
 
