@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-version=7			# has to match version= in configure.sh.sample
+version=8			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -208,8 +208,8 @@ is_disk_usage_too_high() {
 setup_lower_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRUn $sudo $lower_priority_CPU_cmd $$ &>/dev/null
-	$IfRUn $sudo $lower_priority_IO_cmd  $$ &>/dev/null
+	$IfRUn $sudo $cmd_to_set_lower_CPU_priority $$ &>/dev/null
+	$IfRUn $sudo $cmd_to_set_lower_IO_priority  $$ &>/dev/null
 }
 
 # --------------
@@ -217,8 +217,8 @@ setup_lower_priority() {
 setup_higher_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRUn $sudo $higher_priority_CPU_cmd $$ &>/dev/null
-	$IfRUn $sudo $higher_priority_IO_cmd  $$ &>/dev/null
+	$IfRUn $sudo $cmd_to_set_higher_CPU_priority $$ &>/dev/null
+	$IfRUn $sudo $cmd_to_set_higher_IO_priority  $$ &>/dev/null
 }
 
 # -----------------------

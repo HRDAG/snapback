@@ -1,4 +1,4 @@
-# version=7
+# version=8
 
 ################################################################
 ################################################################
@@ -77,12 +77,15 @@ declare -i -r log_level=0	     # verbosity of logs in /var/log/snapback/
 declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 
 # Normally, backups run at higher priority and pruning runs at lower priority;
-#  but, if the min_FS_usage_percent is exceeded, those priorities are inverted.
-readonly  lower_priority_CPU_cmd="renice +15 -p"
-readonly higher_priority_CPU_cmd="renice +13 -p"
+# but, if the min_FS_usage_percent is exceeded, those priorities are inverted.
+# A PID will be appended to these commands; if that's not adequate, then you'll
+# need to define a function that takes a PID as its final argument, and assign
+# that function (with optional initial arguments) to these variables.
+readonly  cmd_to_set_lower_CPU_priority="renice +15 -p"
+readonly cmd_to_set_higher_CPU_priority="renice +13 -p"
 #
-readonly  lower_priority_IO_cmd="ionice -c 2 -n 6 -p"
-readonly higher_priority_IO_cmd="ionice -c 2 -n 5 -p"
+readonly  cmd_to_set_lower_IO_priority="ionice -c 2 -n 6 -p"
+readonly cmd_to_set_higher_IO_priority="ionice -c 2 -n 5 -p"
 
 # SSDs have no seek penalty, so can run rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
