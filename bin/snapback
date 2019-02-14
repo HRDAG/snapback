@@ -47,8 +47,8 @@ Usage="
 Usage: $our_name action [args]
   Current actions are:
     list-backups: list all the mounted backups
-    run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
-    prune-backups [span] [dirs]: see configure.sh; dirs defaults to all drives
+    run-backups   [dir(s)]: dir(s) defaults to every mounted backup
+    prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
@@ -582,9 +582,6 @@ validate_config_variables() {
 	[[ $excluded_backup_hours != *[^\ \	0-9]* ]] ||
 	   abort "excluded_backup_hours must be list of numbers, no ranges/etc"
 
-	[[ ${custom_dirs_to_backup-} ]] && # from interactive user
-	            dirs_to_backup=$custom_dirs_to_backup
-
 	set -- $config_file $drive_config_file
 
 	echo " $dirs_to_backup " | grep ' [^/]' &&
@@ -1115,7 +1112,7 @@ run_backup() {
 	local backup_name=$1 backup_dir
 
 	set_backup_name $backup_name
-	set_backup_dir $backup_name || return 1
+	set_backup_dir  $backup_name || return 1
 
 	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
@@ -1477,20 +1474,12 @@ case $action in
    ( l*s*b*k*p* | l*s*d* | ls | lb )
 	list_backups
 	;;
-   # run-backups [-s 'src_dirs'] [dir]: dir defaults to every mounted backup
+   # run-backups   [dir(s)]: dir(s) defaults to every mounted backup
    ( r*b*k*p* | rb* )
-	is_arg1_in_arg2 $# "0 1 2 3" ||	# guard against -s without ''
-	   abort "wrong number of args, run: $_our_name -h"
-	# to use -s, you must remove 'readonly' label in $config_file
-	[[ ${1-} == -s ]] && { custom_dirs_to_backup="$2"; shift 2; }
-
 	run_jobs_in_parallel backup "$@"
 	;;
-   # prune-backups [span] [dirs]: see configure.sh; dirs defaults to all drives
+   # prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
    ( pr*n*b*k*p* | pb* )
-	# if specify span, must remove 'readonly' label in $config_file
-	[[ ${1-} == [0-9]* ]] && { hour_prune_days_per_span=$1; shift; }
-
 	run_jobs_in_parallel prune "$@"
 	;;
 
