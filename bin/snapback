@@ -131,7 +131,7 @@ FUNCNEST=100				# catch coding errors
 # $Trace
 
 # ----------------------------------------------------------------------------
-# miscellaneous variables and functions used by for making and pruning backups
+# miscellaneous variables used by for making and pruning backups
 # ----------------------------------------------------------------------------
 
 # touched when prune ends; its time is compared to files in $config_dir/
@@ -150,6 +150,8 @@ readonly log_dir=/var/log/$our_name
 file_for_logging=$log_dir/messages.log	     # set__backup_dir__* sets it
 log_msg_prefix=' ${action-} ${backup_name-}' # this gets eval'ed each time
 
+# ----------------------------------------------------------------------------
+# miscellaneous functions used by for making and pruning backups
 # ----------------------------------------------------------------------------
 
 set_readable_du_size() {
@@ -171,6 +173,8 @@ set_readable_du_size() {
 	readable_du_size=$size${suffix}B
 }
 
+# ----------------------------------------------------------------------------
+# process and lock management
 # ----------------------------------------------------------------------------
 
 set_PGID() {
@@ -194,231 +198,6 @@ process_group_PIDs() {
 		# "pstree -p -a" lines start with: <command>,<PID> ...
 		pstree -p -a $PGID | sed 's/^[^,]*,\([0-9]*\).*/\1/'
 	done
-}
-
-# ----------------------------------------------------------------------------
-
-is_disk_usage_too_high() {
-
-	set -- $(df --output=pcent,ipcent $backup_dir | tail -n1)
-	declare -i block_percent=${1%\%} inode_percent=${2%\%}
-	(( $block_percent <= $min_FS_usage_percent )) || return 0
-	(( $inode_percent <= $min_FS_usage_percent )) || return 0
-	return 1
-}
-
-# -----------------------
-
-setup_lower_priority() {
-
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_lower_CPU_priority $$ &>/dev/null
-	$IfRun $sudo $cmd_to_set_lower_IO_priority  $$ &>/dev/null
-}
-
-# --------------
-
-setup_higher_priority() {
-
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_higher_CPU_priority $$ &>/dev/null
-	$IfRun $sudo $cmd_to_set_higher_IO_priority  $$ &>/dev/null
-}
-
-# -----------------------
-
-# returns success if run at higher priority
-setup_run_backup_priority() {
-
-	if is_disk_usage_too_high
-	   then  setup_lower_priority ; return 1
-	   else setup_higher_priority ; return 0
-	fi
-}
-
-# --------------
-
-setup_prune_backup_priority() {
-
-	if is_disk_usage_too_high
-	   then setup_higher_priority
-	   else  setup_lower_priority
-	fi
-}
-
-# ----------------------------------------------------------------------------
-
-list_backups() {
-
-	suspend_tracing
-	customize_and_validate_configuration_variables Z # ensure have *pattern
-
-	if [[ -t 0 || -t 1 || -t 2 ]]
-	   then local regex=$anchored_backup_UI_name_regex
-	   else local regex=$anchored_backup_name_regex # for cron (& nohup)
-	fi
-	df --output=target --no-sync |
-	   grep "^$backup_dir_prefix$regex$" | sort -u
-	restore_tracing
-}
-
-# --------------------------------------------
-
-function fix_snapshot_names {
-	local backup_dir=$1
-
-	set -- $backup_dir/$old_snapshot_pattern*
-	[[ -d $1 ]] || return 0
-
-	# this --kill -9 is completely safe
-	$IfRun sudo fuser -k -9 -M $backup_dir
-	local msg="$old_snapshot_pattern to $snapshot_pattern"
-	log "renaming snapshots from $msg, first waiting ..."
-	$IfRun sleep 5			# wait for kill
-
-	local old_name
-	cd_ $backup_dir
-	for old_name in $old_snapshot_pattern*
-	    do	[[ -d $old_name ]] || continue
-		set_new_name $old_name
-		$IfRun sudo mv $old_name $new_name || abort "need sudo privs"
-	done
-}
-
-# -----------------------------------------------------------------------------
-
-backup_log_dir=
-
-admin_group=
-
-is_regression_test=$false
-
-# this is normally called by set_backup_name; but you can pass
-# a null backup_name to set default file_for_logging & backup_log_dir
-set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
-	local  backup_name=$1	    # called from set_backup_name, so $1 valid
-
-	if [[ $backup_name ]]
-	   then local backup_log_dir=$log_dir/$backup_name
-	   else local backup_log_dir=$log_dir
-	fi
-	file_for_logging=$backup_log_dir/messages.log
-
-	local group
-	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
-	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
-	done
-	[[ $group == NoNe ]] && group= || admin_group=$group
-
-	[[ -d $log_dir ]] || {
-	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
-	sudo chgrp $group  $log_dir &&
-	sudo chmod g+w,g+s $log_dir
-	}
-	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
-
-	[[ $backup_name == Z ]] && is_regression_test=$true
-
-	[[ $group ]] && group=:$group
-	if [[ ! -d $backup_log_dir ]]
-	   then sudo mkdir -p -m g+w,o-w $backup_log_dir
-		[[ $is_regression_test ]] &&
-		sudo touch $file_for_logging &&
-		sudo chown $LOGNAME$group $backup_log_dir $file_for_logging
-	fi
-	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
-
-	suspend_tracing
-	customize_and_validate_configuration_variables $backup_name
-	restore_tracing
-}
-
-# ---------------------------------
-
-drive_config_file=
-
-have_cmd \
-source_drive_specific_config_file ||  # configure.sh can replace this function
-source_drive_specific_config_file() {
-	[[ $# == 0 ]] && return
-	local _name=$1  _main_config_file=${2:-${config_file-}}
-	set_backup_name $_name
-	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
-
-	local     _config_file=${_main_config_file/%.sh/-$backup_name.sh}
-	if [[ -s $_config_file ]]
-	   then drive_config_file=$_config_file	; source $_config_file
-	   else drive_config_file=		; true
-	fi
-}
-
-# ---------------------------------
-
-backup_name=				# global, used by log()
-
-have_cmd \
-set_backup_name ||		      # configure.sh can replace this function
-set_backup_name() {
-	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
-	local name=$1
-
-	if [[ ! $name =~ ^$anchored_backup_UI_name_regex$ ]]
-	   then if [[ $name == /dev/* ]]
-		   then set_FS_label___from_FS_device $name
-			set_mount_dir___from_FS_label $FS_label
-			backup_dir=$mount_dir
-		elif [[ $name != /* ]]
-		   then set_backup_dir___from_FS_label $name
-		   else     backup_dir=$name
-		fi
-		[[  $backup_dir =~					\
-		   ^$backup_dir_prefix$anchored_backup_UI_name_regex$ ]] ||
-		   abort "$name is not backup-dir or FS-label or valid-name"
-		name=${backup_dir#$backup_dir_prefix}
-	fi
-	if [[ $is_backup_name_capitalized ]]
-	   then backup_name=${name^}
-	   else backup_name=$name
-	fi
-
-       set__backup_log_dir__file_for_logging__admin_group__is_regression_test \
-	   $backup_name
-}
-
-# ---------------------------------
-
-
-is_backup_dir_mounted() {
-	local backup_dir=$1
-
-	[[ $backup_dir ]] || return 1
-	df | grep -q " $backup_dir$" || [[ $backup_dir == *[-/]Z ]]
-}
-
-# ---------------------------------
-
-backup_dir=				# global, just in case
-
-set_backup_dir() {
-	local backup_name=$1		# result of set_backup_name, i.e. valid
-
-	[[ $backup_name != */* ]] ||
-	   abort "'/' in backup name not supported, add to backup_dir_prefix"
-
-	backup_dir=$backup_dir_prefix$backup_name
-
-	if [[ $is_regression_test && ! -d $backup_dir ]]
-	   then	[[ $admin_group ]] && local group=:$admin_group || local group=
-		sudo mkdir $backup_dir &&
-		sudo chmod g+s,g+w $backup_dir &&
-		sudo chown $LOGNAME$group $backup_dir ||
-		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
-	fi
-
-	is_backup_dir_mounted $backup_dir ||
-	    warn "no filesystem mounted on $backup_dir" || return 1
-
-	fix_snapshot_names $backup_dir	# must call last
 }
 
 # ----------------------------------------------------------------------------
@@ -543,21 +322,199 @@ signal_job() {
 	$IfRun $sudo lockpid -r $lock_file
 }
 
+# ----------------------------------------------------------------------------
+# miscellaneous
+# ----------------------------------------------------------------------------
+
+list_backups() {
+
+	suspend_tracing
+	customize_and_validate_configuration_variables Z # ensure have *pattern
+
+	if [[ -t 0 || -t 1 || -t 2 ]]
+	   then local regex=$anchored_backup_UI_name_regex
+	   else local regex=$anchored_backup_name_regex # for cron (& nohup)
+	fi
+	df --output=target --no-sync |
+	   grep "^$backup_dir_prefix$regex$" | sort -u
+	restore_tracing
+}
+
 # ---------------------------------
 
-_backup_management_of_prune() {
-	local name=$1 state=$2
+is_backup_dir_mounted() {
+	local backup_dir=$1
 
-	[[ $is_cron ]] || return
+	[[ $backup_dir ]] || return 1
+	df | grep -q " $backup_dir$" || [[ $backup_dir == *[-/]Z ]]
+}
 
-	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
-	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
-	   then $IfRun run_jobs_in_parallel prune $backup_dir
-		return
+# -----------------------------------------------------------------------------
+
+function fix_snapshot_names {
+	local backup_dir=$1
+
+	set -- $backup_dir/$old_snapshot_pattern*
+	[[ -d $1 ]] || return 0
+
+	# this --kill -9 is completely safe
+	$IfRun sudo fuser -k -9 -M $backup_dir
+	local msg="$old_snapshot_pattern to $snapshot_pattern"
+	log "renaming snapshots from $msg, first waiting ..."
+	$IfRun sleep 5			# wait for kill
+
+	local old_name
+	cd_ $backup_dir
+	for old_name in $old_snapshot_pattern*
+	    do	[[ -d $old_name ]] || continue
+		set_new_name $old_name
+		$IfRun sudo mv $old_name $new_name || abort "need sudo privs"
+	done
+}
+
+# ----------------------------------------------------------------------------
+
+set_oldest_backup_snapshot() {
+
+	local oldest= FS
+	for FS in $(list_backups)
+	    do	suspend_tracing
+		set -- $FS/$snapshot_pattern
+		restore_tracing
+		[[ $oldest && $(basename $oldest) < $(basename $1) ]] &&
+		   continue
+		oldest=$1
+	done
+	[[ -d $oldest ]] || abort "no old backup drives are mounted"
+	oldest_backup_snapshot=$oldest
+}
+
+# -----------------------------------------------------------------------------
+# Setup variables for working with a specific backup drive.
+# -----------------------------------------------------------------------------
+
+backup_log_dir=
+
+admin_group=
+
+is_regression_test=$false
+
+# this is normally called by set_backup_name; but you can pass
+# a null backup_name to set default file_for_logging & backup_log_dir
+set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
+	local  backup_name=$1	    # called from set_backup_name, so $1 valid
+
+	if [[ $backup_name ]]
+	   then local backup_log_dir=$log_dir/$backup_name
+	   else local backup_log_dir=$log_dir
+	fi
+	file_for_logging=$backup_log_dir/messages.log
+
+	local group
+	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
+	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
+	done
+	[[ $group == NoNe ]] && group= || admin_group=$group
+
+	[[ -d $log_dir ]] || {
+	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
+	sudo chgrp $group  $log_dir &&
+	sudo chmod g+w,g+s $log_dir
+	}
+	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
+
+	[[ $backup_name == Z ]] && is_regression_test=$true
+
+	[[ $group ]] && group=:$group
+	if [[ ! -d $backup_log_dir ]]
+	   then sudo mkdir -p -m g+w,o-w $backup_log_dir
+		[[ $is_regression_test ]] &&
+		sudo touch $file_for_logging &&
+		sudo chown $LOGNAME$group $backup_log_dir $file_for_logging
+	fi
+	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
+
+	suspend_tracing
+	customize_and_validate_configuration_variables $backup_name
+	restore_tracing
+}
+
+# ---------------------------------
+
+drive_config_file=
+
+have_cmd \
+source_drive_specific_config_file ||  # configure.sh can replace this function
+source_drive_specific_config_file() {
+	[[ $# == 0 ]] && return
+	local _name=$1  _main_config_file=${2:-${config_file-}}
+	set_backup_name $_name
+	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
+
+	local     _config_file=${_main_config_file/%.sh/-$backup_name.sh}
+	if [[ -s $_config_file ]]
+	   then drive_config_file=$_config_file	; source $_config_file
+	   else drive_config_file=		; true
+	fi
+}
+
+# ---------------------------------
+
+backup_name=				# global, used by log()
+
+have_cmd \
+set_backup_name ||		      # configure.sh can replace this function
+set_backup_name() {
+	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
+	local name=$1
+
+	if [[ ! $name =~ ^$anchored_backup_UI_name_regex$ ]]
+	   then if [[ $name == /dev/* ]]
+		   then set_FS_label___from_FS_device $name
+			set_mount_dir___from_FS_label $FS_label
+			backup_dir=$mount_dir
+		elif [[ $name != /* ]]
+		   then set_backup_dir___from_FS_label $name
+		   else     backup_dir=$name
+		fi
+		[[  $backup_dir =~					\
+		   ^$backup_dir_prefix$anchored_backup_UI_name_regex$ ]] ||
+		   abort "$name is not backup-dir or FS-label or valid-name"
+		name=${backup_dir#$backup_dir_prefix}
+	fi
+	if [[ $is_backup_name_capitalized ]]
+	   then backup_name=${name^}
+	   else backup_name=$name
 	fi
 
-	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
-	signal_job SIGSTOP prune-backup $name
+       set__backup_log_dir__file_for_logging__admin_group__is_regression_test \
+	   $backup_name
+}
+
+# ---------------------------------
+
+backup_dir=				# global, just in case
+
+set_backup_dir() {
+	local backup_name=$1		# result of set_backup_name, i.e. valid
+
+	[[ $backup_name != */* ]] ||
+	   abort "'/' in backup name not supported, add to backup_dir_prefix"
+
+	backup_dir=$backup_dir_prefix$backup_name
+
+	if [[ $is_regression_test && ! -d $backup_dir ]]
+	   then	[[ $admin_group ]] && local group=:$admin_group || local group=
+		sudo mkdir $backup_dir &&
+		sudo chmod g+s,g+w $backup_dir &&
+		sudo chown $LOGNAME$group $backup_dir ||
+		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
+	fi
+
+	is_backup_dir_mounted $backup_dir ||
+	    warn "no filesystem mounted on $backup_dir" || return 1
+
+	fix_snapshot_names $backup_dir	# must call last
 }
 
 # -----------------------------------------------------------------------------
@@ -625,28 +582,7 @@ validate_config_variables() {
 	   abort "'successful_rsync_exit_statuses=$successful_rsync_exit_statuses' must contain 0 in $*"
 }
 
-# ----------------------------------------------------------------------------
-
-set_oldest_backup_snapshot() {
-
-	local oldest= FS
-	for FS in $(list_backups)
-	    do	suspend_tracing
-		set -- $FS/$snapshot_pattern
-		restore_tracing
-		[[ $oldest && $(basename $oldest) < $(basename $1) ]] &&
-		   continue
-		oldest=$1
-	done
-	[[ -d $oldest ]] || abort "no old backup drives are mounted"
-	oldest_backup_snapshot=$oldest
-}
-
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-# Functions and variables used to prune old backups.
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------
 
 _did_dir=
 
@@ -671,7 +607,80 @@ customize_and_validate_configuration_variables() {
 	restore_tracing
 }
 
-# ------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Manage priorities for backup and prune and update/merge.
+# ----------------------------------------------------------------------------
+
+is_disk_usage_too_high() {
+
+	set -- $(df --output=pcent,ipcent $backup_dir | tail -n1)
+	declare -i block_percent=${1%\%} inode_percent=${2%\%}
+	(( $block_percent <= $min_FS_usage_percent )) || return 0
+	(( $inode_percent <= $min_FS_usage_percent )) || return 0
+	return 1
+}
+
+# -----------------------
+
+setup_lower_priority() {
+
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+	$IfRun $sudo $cmd_to_set_lower_CPU_priority $$ &>/dev/null
+	$IfRun $sudo $cmd_to_set_lower_IO_priority  $$ &>/dev/null
+}
+
+# --------------
+
+setup_higher_priority() {
+
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+	$IfRun $sudo $cmd_to_set_higher_CPU_priority $$ &>/dev/null
+	$IfRun $sudo $cmd_to_set_higher_IO_priority  $$ &>/dev/null
+}
+
+# -----------------------
+
+# returns success if run at higher priority
+setup_run_backup_priority() {
+
+	if is_disk_usage_too_high
+	   then  setup_lower_priority ; return 1
+	   else setup_higher_priority ; return 0
+	fi
+}
+
+# --------------
+
+setup_prune_backup_priority() {
+
+	if is_disk_usage_too_high
+	   then setup_higher_priority
+	   else  setup_lower_priority
+	fi
+}
+
+# ---------------------------------
+
+_backup_management_of_prune() {
+	local name=$1 state=$2
+
+	[[ $is_cron ]] || return
+
+	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
+	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
+	   then $IfRun run_jobs_in_parallel prune $backup_dir
+		return
+	fi
+
+	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
+	signal_job SIGSTOP prune-backup $name
+}
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Functions and variables used to prune old backups.
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 _is_time_to_prune_backup() {
 	local dir=$1
