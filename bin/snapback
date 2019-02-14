@@ -495,6 +495,8 @@ run_lockpid() {
 
 # -------------------------------------------------------
 
+# you don't generally need this, instead use negative lock pid to
+#    signal or run ps on a job
 job_PIDs() {
 	local type=$1; shift
 
@@ -1599,6 +1601,7 @@ case $action in
 		    -e "s@ bash /@ /@"		\
 		    -e "s@ /usr/local/bin/@ @"	\
 		    -e "s@$HOME/@~/@g"		\
+		    -e "s@prune-backup -r @prune-backup @g" \
 		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
 	}
 
@@ -1620,7 +1623,6 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	# backup_PIDs=$(job_PIDs run-backup all)
 	set -- $(cat $lock_dir/run-backup-*.pid 2> /dev/null)
 	[[ $# == 0 ]] && rsync_cmds= ||
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
@@ -1641,11 +1643,8 @@ case $action in
 	header "prune by run-prune"
 	echo
 	> $tmp
-	prune_job_PIDs=$(job_PIDs prune-backup all)
-	[[ $prune_job_PIDs ]] && {
-	# prune_cmds=$(ps_ w h $prune_job_PIDs | trim_prune_rsync)
 	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
-	[[ $# == 0 ]] && prune_cmds= ||
+	[[ $# == 0 ]] && prune_cmds= || {
 	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g') | trim_prune_rsync)
 	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -w rm)
