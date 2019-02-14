@@ -644,7 +644,7 @@ set_oldest_backup_snapshot() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# functions and variables used to prune old backups
+# Functions and variables used to prune old backups.
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
@@ -1001,7 +1001,7 @@ prune_backup() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# functions and variables used to create new backups
+# Functions and variables used to create new backups.
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
@@ -1231,6 +1231,10 @@ run_backup() {
 }
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Run multiple jobs, each in a separate session (has its own PGID).
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 # Run a bunch of jobs in parallel, each in its own session (so lock files
 # will hold PGID (process-group ID), making 'kill' and 'ps' easy).
@@ -1268,7 +1272,7 @@ run_jobs_in_parallel() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# functions and variables used to copy snapshots between backups
+# Functions and variables used to copy snapshots between backups.
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
@@ -1319,7 +1323,7 @@ copy_snapshot() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# helper functions used by watch actions
+# Helper functions used by 'watch' action.
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
@@ -1398,95 +1402,10 @@ setup_snapshot_stats() {
 	stats_newest_age=$(echo "$newies" | sed 's/  *$//')		    ; }
 }
 
-# ----------------------------------------------------------------------------
-# ----------------------------------------------------------------------------
-# routines to manage ext3/ext4 journal
-# ----------------------------------------------------------------------------
-# ----------------------------------------------------------------------------
-
-# note that this routine can modify caller's $device
-setup_journal_prologue() {
-	[[ $UID == 0 ]] || abort "run with sudo"
-
-	if [[ ! -b $device ]]
-	   then [[ -d $device/lost+found ]] ||
-		   abort "'$device' not block device or mount point"
-		set -- $(mount | fgrep " on $device ")
-		device=${1-}
-		[[ -b $device ]] || abort "couldn't find device"
-	fi
-
-	$IfRun sync
-
-	mkfs_cmd=mkfs.ext4
-	set -- $(mount | grep "^$device ")
-	if [[ $# != 0 ]]
-	   then $IfRun umount $device || abort "can't umount $device"
-		mkfs_cmd=mkfs.$5
-		_pre_journal_setup_mount_point=$3
-	   else _pre_journal_setup_mount_point=
-	fi
-
-	$IfRun tune2fs -O ^has_journal $device # disable current journal
-}
-
-# ---------------------------------
-
-setup_journal_epilogue() {
-	local status=$?
-
-	[[ $status == 0 ]] || warn "journal commands returned $status"
-
-	tune2fs -l $device | fgrep Journal # internal journal is inode 8
-	if [[ $_pre_journal_setup_mount_point ]]
-	   then $IfRun mount $device $_pre_journal_setup_mount_point ||
-		   abort "failed to remount $device"
-	fi
-}
-
-# -------------------------------------------------------
-
-setup_internal_journal() {
-	local  device=$1
-
-	setup_journal_prologue $device &&
-	$IfRun tune2fs -j $device
-	setup_journal_epilogue $?
-}
-
-# ---------------------------------
-
-setup_RAM_FS_journal() {
-	local  device=$1
-
-	setup_journal_prologue $device &&
-	$IfRun $mkfs_cmd -O journal_dev    /dev/ram0 &&
-	$IfRun tune2fs   -J size=32,device=/dev/ram0 $device
-	setup_journal_epilogue $?
-}
-
-# ---------------------------------
-
-setup_partition_journal() {
-	local  device=$1 journal_device=$2
-
-	setup_journal_prologue $device &&
-	$IfRun $mkfs_cmd -O journal_dev  -F $journal_device &&
-	$IfRun tune2fs   -J size=256,device=$journal_device $device # size=MB
-	setup_journal_epilogue $?
-	[[ $_pre_journal_setup_mount_point ]] &&
-	e2label $journal_device \
-	        $(basename $_pre_journal_setup_mount_point).journal
-}
-
-# ----------------------------------------------------------------------------
-# end of functions and global variables
-# ----------------------------------------------------------------------------
-
-shopt -s extglob			# we use extended pattern matching
-
 #############################################################################
-# process requested action
+#############################################################################
+# Process the requested action with the above functions & global variables. #
+#############################################################################
 #############################################################################
 
 [[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
