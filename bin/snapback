@@ -49,16 +49,20 @@ Usage: $our_name action [args]
     list-backups: list all the mounted backups
     run-backups   [dir(s)]: dir(s) defaults to every mounted backup
     prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
+
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
-    kill-backup name(s): for each name (can be 'all'), kill backup
-    kill-prune name(s) : for each name (can be 'all'), kill prune
-    kill-both name(s)  : for each name (can be 'all'), kill backup & prune
+
+    # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
+    kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
+    kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
+    kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
 
     add-extN-journal backup_name [FS_device]: current backup gets fast journal
     mkfs device [name]: prepare blank first- or smallest-drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
+
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
 
@@ -455,14 +459,16 @@ locker_PIDs() {
 
 kill_locker_group() {
 	local type=$1; shift
+	[[ $1 == -*  ]] && { local signal=$1; shift; } || local signal=-KILL
 	[[ $* == all ]] && set -- $(list_backups)
 
+	set_signal_is_kill $signal
 	local PGID pgid status=1
 	set_PGID $(locker_PIDs $type $*)
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 	for pgid in $PGID
-	    do	$IfRun $sudo kill -9 -$pgid && status=0 || continue
-		$IfRun $sudo lockpid -r $lock_file
+	    do	$IfRun $sudo kill $signal -$pgid && status=0 || continue
+		[[ $signal_is_kill ]] && $IfRun $sudo lockpid -r $lock_file
 	done
 
 	return $status
@@ -508,6 +514,20 @@ job_PIDs() {
 
 # ---------------------------------
 
+signal_is_kill=
+
+set_signal_is_kill() {
+	local signal=${1#-}
+
+	case ${signal^^} in
+	   ( SIGKILL | KILL | 9 )
+		signal_is_kill=$true  ; return 0 ;;
+	   ( *)	signal_is_kill=$false ; return 1 ;;
+	esac
+}
+
+# ----------------------
+
 signal_job() {
 	local signal=${1#-} type=$2 name=${3:-$backup_name}
 
@@ -519,9 +539,8 @@ signal_job() {
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s $signal -$1 &> /dev/null || return 1
-	case $signal in
-	    ( SIGKILL | KILL | 9 ) $IfRun $sudo lockpid -r $lock_file ;;
-	esac
+	set_signal_is_kill   $signal &&
+	$IfRun $sudo lockpid -r $lock_file
 }
 
 # ---------------------------------
@@ -1735,17 +1754,17 @@ case $action in
 	}
 	;;
 
-   # kill-backup name(s): for each name (can be 'all'), kill backup
+   # kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
    ( kill-backup* | kb )
 	$Trace
 	kill_locker_group run-backup $*
 	;;
-   # kill-prune name(s) : for each name (can be 'all'), kill prune
+   # kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
    ( kill-prune* | kp )
 	$Trace
 	kill_locker_group prune-backup $*
 	;;
-   # kill-both name(s)  : for each name (can be 'all'), kill backup & prune
+   # kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
    ( kill-both | ka | kk )
 	$Trace
 	kill_locker_group   run-backup $*
