@@ -459,7 +459,7 @@ locker_PIDs() {
 
 kill_locker_group() {
 	local type=$1; shift
-	[[ $1 == -*  ]] && { local signal=$1; shift; } || local signal=-KILL
+	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
 	[[ $* == all ]] && set -- $(list_backups)
 
 	set_signal_is_kill $signal
@@ -538,8 +538,8 @@ signal_job() {
 	[[ -s $lock_file ]] &&
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
-	$IfRun $sudo kill -s $signal -$1 &> /dev/null || return 1
-	set_signal_is_kill   $signal &&
+	$IfRun $sudo kill -s ${signal^^} -$1 &> /dev/null || return 1
+	set_signal_is_kill    $signal &&
 	$IfRun $sudo lockpid -r $lock_file
 }
 
