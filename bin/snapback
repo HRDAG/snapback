@@ -522,8 +522,7 @@ _backup_management_of_prune() {
 
 	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
 	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
-	   then # use setsid so action kill-prune doesn't kill backup
-		$RunIf  setsid $prune_backup_exe $backup_dir &
+	   then $RunIf run_jobs_in_parallel prune $backup_dir
 		return
 	fi
 
@@ -927,9 +926,11 @@ prune_backup() {
 	local backup_name=$1 backup_dir
 
 	set_backup_name $backup_name &&
-	set_backup_dir $backup_name || return 1
+	set_backup_dir  $backup_name || return 1
 
 	_is_time_to_prune_backup $backup_dir || return 0
+
+	[[ $UID == 0 || $is_regression_test ]] || $RunIf abort "run with sudo"
 
 	set_lock_file prune-backup $backup_name
 	run_lockpid $lock_file "pruning $backup_dir" ||
@@ -1121,6 +1122,8 @@ run_backup() {
 	_is_time_to_run_backup $backup_dir ||
 	   { $RunIf lockpid -r $lock_file; return 0; }
 
+	[[ $UID == 0 || $is_regression_test ]] || $RunIf abort "run with sudo"
+
 	setup_run_backup_priority && local priority=high || local priority=low
 
 	if [[ -t 2 ]]
@@ -1192,6 +1195,42 @@ run_backup() {
 	$RunIf lockpid -r $lock_file
 
 	return $status
+}
+
+# -----------------------------------------------------------------------------
+
+# Run a bunch of jobs in parallel, each in its own session (so lock files
+# will hold PGID (process-group ID), making 'kill' and 'ps' easy).
+# We run backups simultaneously, so they all share the cached source files;
+# we run prunes  simultaneously, since a prune's I/O stays on its own drive.
+run_jobs_in_parallel() {
+	local type=$1; shift
+
+	case $type in
+	   ( backup ) function=run_backup   exe=$run_backup_exe   ;;
+	   ( prune  ) function=prune_backup exe=$prune_backup_exe ;;
+	   (   *    ) abort "'$type' is not supported" ;;
+	esac
+
+	if [[ ${1-} == -r ]]		# are we recursing?
+	   then shift
+		$Trace
+		$function $1
+		exit $?
+	fi
+
+	$Trace
+	for dir in ${*:-$(list_backups)}
+	    do	if [[ ! $RunIf ]]
+		   then trap '' HUP
+			# Can't "$function dir &", processes share $tmp* files.
+			# Want new process-group so can ps/kill independently.
+			setsid \
+			$exe -r $dir &
+		   else $exe -r $dir	# run in foreground, for testing
+			echo
+		fi
+	done
 }
 
 # -----------------------------------------------------------------------------
@@ -1436,57 +1475,17 @@ case $action in
    ( r*b*k*p* | rb* )
 	is_arg1_in_arg2 $# "0 1 2 3" ||	# guard against -s without ''
 	   abort "wrong number of args, run: $_our_name -h"
-	# to use -s, must remove 'readonly' label in $config_file
+	# to use -s, you must remove 'readonly' label in $config_file
 	[[ ${1-} == -s ]] && { custom_dirs_to_backup="$2"; shift 2; }
 
-	set -- ${*:-$(list_backups)}
-	if [[ $# == 1 ]]
-	   then [[ $UID == 0 || $1 == *[zZ] ]] || $RunIf abort "run with sudo"
-		$Trace
-		run_backup $1
-		exit $?
-	fi
-
-	$Trace
-	for dir
-	    do	if [[ ! $RunIf ]]
-		   then trap '' HUP
-			# Run backups simultaneously, so share cached src data;
-			#  can't "run_backup d &": processes share $tmp* files.
-			# Want new process group so can kill them independently
-			setsid \
-			$run_backup_exe $dir &
-		   else $run_backup_exe $dir
-			echo
-		fi
-	done
-	wait				# want this process for 'w -C' & kill
+	run_jobs_in_parallel backup "$@"
 	;;
    # prune-backups [span] [dirs]: see configure.sh; dirs defaults to all drives
    ( pr*n*b*k*p* | pb* )
 	# if specify span, must remove 'readonly' label in $config_file
 	[[ ${1-} == [0-9]* ]] && { hour_prune_days_per_span=$1; shift; }
 
-	set -- ${*:-$(list_backups)}
-	if [[ $# == 1 ]]
-	   then [[ $UID == 0 || $1 == *[zZ] ]] || $RunIf abort "run with sudo"
-		$Trace
-		prune_backup $1
-		exit $?
-	fi
-
-	$Trace
-	for dir
-	    do	if [[ ! $RunIf ]]
-		   then trap '' HUP
-			# no I/O penalty to prune many drives simultaneously.
-			# can't "prune_backup d &": processes share $tmp* files
-			$prune_backup_exe $dir &
-		   else $prune_backup_exe $dir
-			echo
-		fi
-	done
-	[[ $RunIf || $Trace ]] && wait	# makes debugging simpler
+	run_jobs_in_parallel prune "$@"
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
