@@ -77,7 +77,7 @@ Usage: $our_name action [args]
 	-T level: control whether Trace and TraceV functions run echoE*\n"
 
 is_cron=$false   cron_opt=
-RunIf= Trace=    debug_opt= trace_opt=  our_rsync_opts=
+IfRUn= Trace=    debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
 while getopts "C cnvq dtT: hk"  arg
     do	add_words our_opts -$arg ${OPTARG-}
@@ -89,7 +89,7 @@ while getopts "C cnvq dtT: hk"  arg
 	   ( v ) add_words our_rsync_opts --verbose ;;
 	   ( q ) add_words our_rsync_opts --quiet   ;; # cancels --verbose
 
-	   ( d ) RunIf="echo -e" debug_opt=-d ;; # $RunIf prevents side-effects
+	   ( d ) IfRUn="echo -e" debug_opt=-d ;; # $IfRUn prevents side-effects
 	   ( t ) Trace="set -x"  trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
 
@@ -103,7 +103,7 @@ unset arg
 
 [[ $trace_opt ]] && warn "the rsync options have not been tested"
 
-[[ -n $Trace && -n $RunIf ]] && RunIf=:
+[[ -n $Trace && -n $IfRUn ]] && IfRUn=:
 
 trap '' HUP TERM
 trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
@@ -208,8 +208,8 @@ is_disk_usage_too_high() {
 setup_lower_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$RunIf $sudo $lower_priority_CPU_cmd $$ &>/dev/null
-	$RunIf $sudo $lower_priority_IO_cmd  $$ &>/dev/null
+	$IfRUn $sudo $lower_priority_CPU_cmd $$ &>/dev/null
+	$IfRUn $sudo $lower_priority_IO_cmd  $$ &>/dev/null
 }
 
 # --------------
@@ -217,8 +217,8 @@ setup_lower_priority() {
 setup_higher_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$RunIf $sudo $higher_priority_CPU_cmd $$ &>/dev/null
-	$RunIf $sudo $higher_priority_IO_cmd  $$ &>/dev/null
+	$IfRUn $sudo $higher_priority_CPU_cmd $$ &>/dev/null
+	$IfRUn $sudo $higher_priority_IO_cmd  $$ &>/dev/null
 }
 
 # -----------------------
@@ -267,17 +267,17 @@ function fix_snapshot_names {
 	[[ -d $1 ]] || return 0
 
 	# this --kill -9 is completely safe
-	$RunIf sudo fuser -k -9 -M $backup_dir
+	$IfRUn sudo fuser -k -9 -M $backup_dir
 	local msg="$old_snapshot_pattern to $snapshot_pattern"
 	log "renaming snapshots from $msg, first waiting ..."
-	$RunIf sleep 5			# wait for kill
+	$IfRUn sleep 5			# wait for kill
 
 	local old_name
 	cd_ $backup_dir
 	for old_name in $old_snapshot_pattern*
 	    do	[[ -d $old_name ]] || continue
 		set_new_name $old_name
-		$RunIf sudo mv $old_name $new_name || abort "need sudo privs"
+		$IfRUn sudo mv $old_name $new_name || abort "need sudo privs"
 	done
 }
 
@@ -459,7 +459,7 @@ kill_locker_group() {
 	set_PGID $(locker_PIDs $type $*)
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 	for pgid in $PGID
-	    do	$RunIf $sudo kill -9 -$pgid && status=0
+	    do	$IfRUn $sudo kill -9 -$pgid && status=0
 	done
 
 	return $status
@@ -473,11 +473,11 @@ run_lockpid() {
 	local lock_file=$1 lock_holder_action=$2
 
 	local   lock_cmd="lockpid $lock_file"
-	$RunIf $lock_cmd &> $lockpid_output_file
+	$IfRUn $lock_cmd &> $lockpid_output_file
 	local status=$?
 
 	if [[ $status == 0 ]]
-	   then [[ $RunIf ]] && cat $lockpid_output_file
+	   then [[ $IfRUn ]] && cat $lockpid_output_file
 		rm $lockpid_output_file
 		return 0
 	fi
@@ -510,7 +510,7 @@ signal_job() {
 	[[ -s $lock_file ]] &&
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
-	$RunIf kill -s $signal -$1 &> /dev/null # job may not exist
+	$IfRUn kill -s $signal -$1 &> /dev/null # job may not exist
 }
 
 # ---------------------------------
@@ -522,7 +522,7 @@ _backup_management_of_prune() {
 
 	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
 	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
-	   then $RunIf run_jobs_in_parallel prune $backup_dir
+	   then $IfRUn run_jobs_in_parallel prune $backup_dir
 		return
 	fi
 
@@ -678,16 +678,16 @@ _rm_pruned_snapshots() {
 
 	[[ $# != 0 ]] &&
 	if (( $log_level >= 2 ))
-	   then [[ $RunIf ]] ||
+	   then [[ $IfRUn ]] ||
 		log "will prune these snapshots: " $*
-	   else $RunIf \
+	   else $IfRUn \
 		log "pruned $# snapshots, will rename to *.rm for deletion"
 	fi
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] &&
-		$RunIf mv $snapshot $snapshot.rm
+		$IfRUn mv $snapshot $snapshot.rm
 	done
 
 	set -- *.rm
@@ -697,8 +697,8 @@ _rm_pruned_snapshots() {
 
 	if [[ ! -d latest ]]
 	   then set -- $snapshot_pattern # only the successful snapshots
-		[[ -d ${!#} ]] && $RunIf rm -f latest &&
-		$RunIf ln -s $(basename ${!#}) latest
+		[[ -d ${!#} ]] && $IfRUn rm -f latest &&
+		$IfRUn ln -s $(basename ${!#}) latest
 	fi
 
 	suspend_tracing
@@ -716,29 +716,29 @@ _rm_pruned_snapshots() {
 	for snapshot
 	    do	local subdir
 		for subdir in $hard_link_dirs
-		    do	$RunIf rm -rf $snapshot$subdir
+		    do	$IfRUn rm -rf $snapshot$subdir
 		done
-		[[ $RunIf ]] && set +x
+		[[ $IfRUn ]] && set +x
 	done
 
 	$Trace
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
-	    do	$RunIf rm -rf $snapshot
-		[[ $RunIf ]] && set +x
+	    do	$IfRUn rm -rf $snapshot
+		[[ $IfRUn ]] && set +x
 	done
 
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
-	   then [[ $RunIf ]] ||
+	   then [[ $IfRUn ]] ||
 	        log "deleted these pruned snapshots: $snapshot_basenames"
-	   else $RunIf \
+	   else $IfRUn \
 		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
 	fi
 
 	local pruned_TS=$backup_dir/$pruned_timestamp
 	[[ $backup_name == Z ||		# regression test?
-	   ( ! $RunIf &&		# ... too slow for real drive
+	   ( ! $IfRUn &&		# ... too slow for real drive
 	     # very slow: only run if exclude.txt changed since our last run
 	     ( ! -e $pruned_TS ||
 		    $pruned_TS -ot $exclude_file ) ) ]] &&
@@ -754,13 +754,13 @@ _rm_pruned_snapshots() {
 			   do	[[ -e "$file" ]] && echo "$file"
 			done
 		done
-		[[ $RunIf ]] && set +x
-	done | tr '\n' '\0' | xargs -0 -r $RunIf rm -r # -0: files with SPACEs
+		[[ $IfRUn ]] && set +x
+	done | tr '\n' '\0' | xargs -0 -r $IfRUn rm -r # -0: files with SPACEs
 	}
 
-	$RunIf log "pruned exclude-patterns from _all_ snapshots"
+	$IfRUn log "pruned exclude-patterns from _all_ snapshots"
 
-	$RunIf sync --file-system $backup_dir &> /dev/null
+	$IfRUn sync --file-system $backup_dir &> /dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -934,7 +934,7 @@ prune_backup() {
 
 	_is_time_to_prune_backup $backup_dir || return 0
 
-	[[ $UID == 0 || $is_regression_test ]] || $RunIf abort "run with sudo"
+	[[ $UID == 0 || $is_regression_test ]] || $IfRUn abort "run with sudo"
 
 	set_lock_file prune-backup $backup_name
 	run_lockpid $lock_file "pruning $backup_dir" ||
@@ -966,9 +966,9 @@ prune_backup() {
 	_rm_pruned_snapshots $snapshots_to_prune_file
 	rm $snapshots_to_prune_file
 
-	$RunIf touch $backup_dir/$pruned_timestamp # touch even if did nothing
+	$IfRUn touch $backup_dir/$pruned_timestamp # touch even if did nothing
 
-	$RunIf lockpid -r $lock_file
+	$IfRUn lockpid -r $lock_file
 }
 
 # -----------------------------------------------------------------------------
@@ -1061,11 +1061,11 @@ _handle_rsync_results() {
 	local error_msg=
 
 	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
-	   then $RunIf mv  $new_snapshot.partial     $new_snapshot &&
-		$RunIf rm -f latest && $RunIf ln -s ${new_snapshot##*/} latest
+	   then $IfRUn mv  $new_snapshot.partial     $new_snapshot &&
+		$IfRUn rm -f latest && $IfRUn ln -s ${new_snapshot##*/} latest
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
-		   ! $is_cron || $RunIf ]] &&
-		$RunIf log "created $new_snapshot (at ${priority}er priority)"
+		   ! $is_cron || $IfRUn ]] &&
+		$IfRUn log "created $new_snapshot (at ${priority}er priority)"
 	   else set -- $(bzcat $log 2>/dev/null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
@@ -1073,7 +1073,7 @@ _handle_rsync_results() {
 		   then error_msg="rsync exit status=$status"
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links_error_msg "$error_msg")
-			$RunIf mv $new_snapshot.partial $new_snapshot.links
+			$IfRUn mv $new_snapshot.partial $new_snapshot.links
 		fi
 		if is_arg1_in_arg2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
@@ -1087,7 +1087,7 @@ _handle_rsync_results() {
 	   then	[[ $Trace || $backup_name == Z ]] && # Z = debug "drive"
 		log "$error_msg" ||
 		log "$error_msg" | tee -a /dev/stderr | sed 's/; /\n/g' |
-		   $RunIf mail -s "$our_name: errors" $sysadmin_email_addresses
+		   $IfRUn mail -s "$our_name: errors" $sysadmin_email_addresses
 	   else rm -f $log
 	fi
 }
@@ -1124,9 +1124,9 @@ run_backup() {
 	_backup_management_of_prune $backup_name pre-rsync
 
 	_is_time_to_run_backup $backup_dir ||
-	   { $RunIf lockpid -r $lock_file; return 0; }
+	   { $IfRUn lockpid -r $lock_file; return 0; }
 
-	[[ $UID == 0 || $is_regression_test ]] || $RunIf abort "run with sudo"
+	[[ $UID == 0 || $is_regression_test ]] || $IfRUn abort "run with sudo"
 
 	setup_run_backup_priority && local priority=high || local priority=low
 
@@ -1141,7 +1141,7 @@ run_backup() {
 
 	if [[ $is_interactive && $backup_name != Z ]] # Z = debug "drive"
 	   then echo -n "rsync $dirs_to_backup $new_snapshot/; can CTRL-C ..."
-		$RunIf sleep 5
+		$IfRUn sleep 5
 		echo " too late."
 	fi
 
@@ -1161,15 +1161,15 @@ run_backup() {
 	local suffix
 	for   suffix in '' '.links'
 	    do	if [[  -d  $new_snapshot$suffix ]]
-		   then $RunIf mv $new_snapshot$suffix $partial_snapshot
+		   then $IfRUn mv $new_snapshot$suffix $partial_snapshot
 			break
 		fi
 	done
 
 	{
-	[[ $RunIf ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
+	[[ $IfRUn ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
 	until [[ -e $partial_snapshot || -e $new_snapshot ]] ; do sleep 9; done
-	$RunIf touch  $partial_snapshot	# in case we crash; see next 'touch'
+	$IfRUn touch  $partial_snapshot	# in case we crash; see next 'touch'
 	[[ -f $partial_snapshot ]] && rm $partial_snapshot # quick backup??
 	} &
 
@@ -1180,7 +1180,7 @@ run_backup() {
 	$Trace
 
 	# rsync_backup_opts and backup_dir_prefix come from $config_file
-	$RunIf rsync $rsync_backup_opts		   \
+	$IfRUn rsync $rsync_backup_opts		   \
 		     $our_rsync_opts		   \
 		     --relative $link_dest_opts	   \
 		     --exclude=$backup_dir_prefix* \
@@ -1188,15 +1188,15 @@ run_backup() {
 			$* $partial_snapshot/ |& bzip2 -9 >> $log
 	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
 
-	$RunIf touch $partial_snapshot	# 'when we finished', not mdate of src
+	$IfRUn touch $partial_snapshot	# 'when we finished', not mdate of src
 
 	_handle_rsync_results $new_snapshot $status $log
 
 	_backup_management_of_prune $backup_name post-rsync # last, for testing
 
-	$RunIf sync --file-system $new_snapshot* &> /dev/null
+	$IfRUn sync --file-system $new_snapshot* &> /dev/null
 
-	$RunIf lockpid -r $lock_file
+	$IfRUn lockpid -r $lock_file
 
 	return $status
 }
@@ -1225,7 +1225,7 @@ run_jobs_in_parallel() {
 
 	$Trace
 	for dir in ${*:-$(list_backups)}
-	    do	if [[ ! $RunIf ]]
+	    do	if [[ ! $IfRUn ]]
 		   then trap '' HUP
 			# Can't "$function dir &", processes share $tmp* files.
 			# Want new process-group so can ps/kill independently.
@@ -1387,18 +1387,18 @@ setup_journal_prologue() {
 		[[ -b $device ]] || abort "couldn't find device"
 	fi
 
-	$RunIf sync
+	$IfRUn sync
 
 	mkfs_cmd=mkfs.ext4
 	set -- $(mount | grep "^$device ")
 	if [[ $# != 0 ]]
-	   then $RunIf umount $device || abort "can't umount $device"
+	   then $IfRUn umount $device || abort "can't umount $device"
 		mkfs_cmd=mkfs.$5
 		_pre_journal_setup_mount_point=$3
 	   else _pre_journal_setup_mount_point=
 	fi
 
-	$RunIf tune2fs -O ^has_journal $device # disable current journal
+	$IfRUn tune2fs -O ^has_journal $device # disable current journal
 }
 
 # ---------------------------------
@@ -1410,7 +1410,7 @@ setup_journal_epilogue() {
 
 	tune2fs -l $device | fgrep Journal # internal journal is inode 8
 	if [[ $_pre_journal_setup_mount_point ]]
-	   then $RunIf mount $device $_pre_journal_setup_mount_point ||
+	   then $IfRUn mount $device $_pre_journal_setup_mount_point ||
 		   abort "failed to remount $device"
 	fi
 }
@@ -1421,7 +1421,7 @@ setup_internal_journal() {
 	local  device=$1
 
 	setup_journal_prologue $device &&
-	$RunIf tune2fs -j $device
+	$IfRUn tune2fs -j $device
 	setup_journal_epilogue $?
 }
 
@@ -1431,8 +1431,8 @@ setup_RAM_FS_journal() {
 	local  device=$1
 
 	setup_journal_prologue $device &&
-	$RunIf $mkfs_cmd -O journal_dev    /dev/ram0 &&
-	$RunIf tune2fs   -J size=32,device=/dev/ram0 $device
+	$IfRUn $mkfs_cmd -O journal_dev    /dev/ram0 &&
+	$IfRUn tune2fs   -J size=32,device=/dev/ram0 $device
 	setup_journal_epilogue $?
 }
 
@@ -1442,8 +1442,8 @@ setup_partition_journal() {
 	local  device=$1 journal_device=$2
 
 	setup_journal_prologue $device &&
-	$RunIf $mkfs_cmd -O journal_dev  -F $journal_device &&
-	$RunIf tune2fs   -J size=256,device=$journal_device $device # size=MB
+	$IfRUn $mkfs_cmd -O journal_dev  -F $journal_device &&
+	$IfRUn tune2fs   -J size=256,device=$journal_device $device # size=MB
 	setup_journal_epilogue $?
 	[[ $_pre_journal_setup_mount_point ]] &&
 	e2label $journal_device \
@@ -1766,7 +1766,7 @@ case $action in
 	fi
 	FS_device=${2-}
 
-	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+	[[ $UID == 0 ]] || $IfRUn abort "run with sudo"
 
 	[[ ! $FS_label ]] && {
 	set_backup_name $1
@@ -1780,26 +1780,26 @@ case $action in
 
 	$Trace
 
-	$RunIf mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log ||
+	$IfRUn mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log ||
 	   abort "mke2fs -O journal_dev -> $?"
 
 	[[ ${name-} ]] && {
 	suspend_tracing
 	$our_path $our_opts umount $backup_dir |&
 	   grep -v -e ': no filesystem mounted on ' -e '^ *$'
-	is_backup_dir_mounted $backup_dir && $RunIf abort "umount $backup_dir"
+	is_backup_dir_mounted $backup_dir && $IfRUn abort "umount $backup_dir"
 	restore_tracing
-	} || $RunIf umount $FS_device || abort "need to: umount $FS_device"
+	} || $IfRUn umount $FS_device || abort "need to: umount $FS_device"
 
 	tune2fs -l $FS_device | grep -q '^Journal ' &&    {
 	warn "removing internal journal can take many minutes"
-	$RunIf tune2fs -O ^has_journal $FS_device	; }
+	$IfRUn tune2fs -O ^has_journal $FS_device	; }
 
-	$RunIf tune2fs -J device=LABEL=$label $FS_device ||
+	$IfRUn tune2fs -J device=LABEL=$label $FS_device ||
 	   abort "tune2fs -J attempt to attach journal -> $?"
-	$RunIf tune2fs -l $FS_device | grep -i "journal [id]"
+	$IfRUn tune2fs -l $FS_device | grep -i "journal [id]"
 
-	$RunIf \
+	$IfRUn \
 	mount -v -t ext4 -o $mount_options $FS_device $mount_dir ||
 	   abort "mount exited with $?"
 	;;
@@ -1832,7 +1832,7 @@ case $action in
 	device=$1 name=${2-}
 
 	[[ $device = /* ]] || device=/dev/$device
-	[[ -b $device ]] || $RunIf abort "$device not a block device"
+	[[ -b $device ]] || $IfRUn abort "$device not a block device"
 
 	if [[ $name ]]
 	   then set_backup_name $name
@@ -1850,7 +1850,7 @@ case $action in
 	cmd_opts=$mkfs_cmd_opts  log_opt=
 	  if [[ $cmd_opts == mkfs.xfs* ]]
 	   then FS_type=xfs
-		[[ $(which mkfs.xfs) ]] || $RunIf abort "install xfsprogs"
+		[[ $(which mkfs.xfs) ]] || $IfRUn abort "install xfsprogs"
 		[[ $cmd_opts == *maxpct=* ]] || add_words cmd_opts -i maxpct=0
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
@@ -1869,9 +1869,9 @@ case $action in
 	   else abort "don't support $cmd_opts, email $coder"
 	fi
 	#
-	if ! [[ $FS_type == ext? && $RunIf && $UID == 0 ]]
+	if ! [[ $FS_type == ext? && $IfRUn && $UID == 0 ]]
 	   then mkfs_debug_opt=
-	   else mkfs_debug_opt=-n  RunIf=
+	   else mkfs_debug_opt=-n  IfRUn=
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
@@ -1885,29 +1885,29 @@ case $action in
 		type set_FS_external_log &> /dev/null	&& # optional
 		     set_FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
-		$RunIf mke2fs -v -b 4096 -O journal_dev \
+		$IfRUn mke2fs -v -b 4096 -O journal_dev \
 			 -L $log_label $FS_external_log &&
 		cmd_opts="$cmd_opts -J device=LABEL=$log_label"
 	fi
 
 	df -m | grep " $backup_dir$" &&
-	  $RunIf abort "there's already a filesystem mounted on $backup_dir"
+	  $IfRUn abort "there's already a filesystem mounted on $backup_dir"
 	[[ -d $backup_dir ]] &&
-	  $RunIf abort "directory $backup_dir/ exists: is name '$name' in use?"
+	  $IfRUn abort "directory $backup_dir/ exists: is name '$name' in use?"
 	df -m | grep "^$device[ 	]" &&
-	  $RunIf abort "that device is mounted; to *DESTROY* its contents,
+	  $IfRUn abort "that device is mounted; to *DESTROY* its contents,
 			first run: umount $device"
 
-	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+	[[ $UID == 0 ]] || $IfRUn abort "run with sudo"
 
 	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
-	cmd="$RunIf $cmd_opts $log_opt $mkfs_debug_opt -L $FS_label $device"
+	cmd="$IfRUn $cmd_opts $log_opt $mkfs_debug_opt -L $FS_label $device"
 	$cmd || abort "$cmd exited with $?"
-	[[ $mkfs_debug_opt ]] && RunIf=echo
-	$RunIf mkdir -p $backup_dir
-	cmd="$RunIf mount -v -t $FS_type -o $mount_opts $device $backup_dir"
+	[[ $mkfs_debug_opt ]] && IfRUn=echo
+	$IfRUn mkdir -p $backup_dir
+	cmd="$IfRUn mount -v -t $FS_type -o $mount_opts $device $backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	;;
    # copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
@@ -1969,8 +1969,8 @@ case $action in
 		$dst_device $dst_backup_dir
 	cmd=$*
 
-	[[   $RunIf ]] && header "$_our_name ${cmd#* }"
-	[[ ! $RunIf ]] || exec $cmd || abort "$RunIf $cmd -> $?"
+	[[   $IfRUn ]] && header "$_our_name ${cmd#* }"
+	[[ ! $IfRUn ]] || exec $cmd || abort "$IfRUn $cmd -> $?"
 
 	output_file=$dst_FS_label.out
 	echo -e "
@@ -2014,38 +2014,38 @@ case $action in
 
 	$Trace
 
-	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+	[[ $UID == 0 ]] || $IfRUn abort "run with sudo"
 
 	for backup_dir in $src_backup_dir $dst_backup_dir
 	    do	$our_path $our_opts umount $backup_dir |&
 		   grep -v -e ': no filesystem mounted on ' -e '^ *$'
 		is_backup_dir_mounted $backup_dir &&
-		    $RunIf abort "umount $backup_dir"
+		    $IfRUn abort "umount $backup_dir"
 	done
 
-	$RunIf set -x
+	$IfRUn set -x
 
-	$RunIf dd if=$src_device of=$dst_device bs=1M status=progress ||
+	$IfRUn dd if=$src_device of=$dst_device bs=1M status=progress ||
 	     abort "dd exited with $?"
 
 	is_arg1_in_arg2 -M $action_opts || {
-	cmd="$RunIf mount -t $FS_type -o $mount_options $src_device $src_backup_dir"
+	cmd="$IfRUn mount -t $FS_type -o $mount_options $src_device $src_backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	}
 
-	$RunIf tune2fs -U $(uuidgen) $dst_device
+	$IfRUn tune2fs -U $(uuidgen) $dst_device
 
 	label_drive $dst_device $dst_backup_dir
 
 	is_arg1_in_arg2 -F $action_opts || {
-	cmd="$RunIf e2fsck -f -p -t -t -E discard $dst_device"
+	cmd="$IfRUn e2fsck -f -p -t -t -E discard $dst_device"
 	$cmd || abort "$cmd exited with $?; better check $src_device ?!"
 	}
 
-	$RunIf \
+	$IfRUn \
 	mount -t $FS_type -o $mount_options $dst_device $dst_backup_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
-	$RunIf resize2fs $dst_device	# do this _after_ mount, for speed
+	$IfRUn resize2fs $dst_device	# do this _after_ mount, for speed
 	;;
    # copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
    ( copy-b*k*p-dump )
@@ -2059,7 +2059,7 @@ case $action in
 	letter=${1^}
 	new_device=/dev/mapper$backup_dir_prefix$letter
 	[[ -b $new_device ]] || abort "can't find device for $letter"
-	[[ $UID == 0 ]] || $RunIf abort "run with sudo"
+	[[ $UID == 0 ]] || $IfRUn abort "run with sudo"
 
 	have_cmd dump && have_cmd restore ||
 	    abort "need to run: sudo apt-get install dump"
@@ -2070,26 +2070,26 @@ case $action in
 	cd_ /tmp/root
 	$our_path $our_opts umount  $backup_dir
 
-	$RunIf umount $new_device &> /dev/null
-	$RunIf mkdir -p		${backup_dir_prefix}new
-	$RunIf mount  $new_device ${backup_dir_prefix}new ||
+	$IfRUn umount $new_device &> /dev/null
+	$IfRUn mkdir -p		${backup_dir_prefix}new
+	$IfRUn mount  $new_device ${backup_dir_prefix}new ||
 	   abort "mount $new_device -> $?"
 
 	cmd="cp -al $snapshot_pattern ${backup_dir_prefix}new/" # only if setup_RAM_FS_journal
 	# see Part 3 of: https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
-	$RunIf set -x
-	$RunIf cd_ ${backup_dir_prefix}new
-	$RunIf dump -a0f - $device | $RunIf restore -rf - ||
+	$IfRUn set -x
+	$IfRUn cd_ ${backup_dir_prefix}new
+	$IfRUn dump -a0f - $device | $IfRUn restore -rf - ||
 	   warn "dump | restore"
 	exit_status=$?
-	$RunIf set +x
-	$RunIf cd_ /tmp
+	$IfRUn set +x
+	$IfRUn cd_ /tmp
 	[[ $exit_status == 0 ]] && {
-	$RunIf umount ${backup_dir_prefix}new
+	$IfRUn umount ${backup_dir_prefix}new
 	label_drive $new_device $mount_dir
-	$RunIf mount  $new_device $mount_dir || warn "mount $new_device"
+	$IfRUn mount  $new_device $mount_dir || warn "mount $new_device"
 	}
-	$RunIf mount $device $backup_dir ||
+	$IfRUn mount $device $backup_dir ||
 	   abort "mount $device $backup_dir -> $?"
 	;;
 
@@ -2112,7 +2112,7 @@ case $action in
 
 	set_backup_dir Z
 	cd_ $backup_dir
-	[[ $RunIf ]] ||
+	[[ $IfRUn ]] ||
 	rm -rf *
 
 	hours=00 is_months=$false
@@ -2136,7 +2136,7 @@ case $action in
 			snapshot=$day,$hour
 			[[ -d $snapshot ]] || echo $snapshot
 		done
-	done | xargs -r $RunIf mkdir || abort mkdir
+	done | xargs -r $IfRUn mkdir || abort mkdir
 
 	# setup partial backups mid-date, to test pruning
 	declare -i mid_secs=start_secs+(end_secs-start_secs)/2
@@ -2145,7 +2145,7 @@ case $action in
 	for hour in 00 02 04 08 09 12
 	    do	for ext in links partial
 		    do	snapshot=$mid_day,$hour.$ext
-			$RunIf mkdir -p $snapshot
+			$IfRUn mkdir -p $snapshot
 		done
 	done
 
@@ -2153,8 +2153,8 @@ case $action in
 	snapshot=$day,00
 	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
 	    do	bad_dir=$snapshot$subdir/deleteme
-		$RunIf mkdir -p $bad_dir
-		$RunIf touch    $bad_dir/deleteme.txt
+		$IfRUn mkdir -p $bad_dir
+		$IfRUn touch    $bad_dir/deleteme.txt
 	done
 	[[ $is_quiet ]] ||
 	Trace 0 "created excludable-junk in $snapshot"
@@ -2164,8 +2164,8 @@ case $action in
 	    do	true
 	done
 
-	$RunIf rm -rf .mk-Z
-	$RunIf mkdir  .mk-Z	; [[ $RunIf ]] ||
+	$IfRUn rm -rf .mk-Z
+	$IfRUn mkdir  .mk-Z	; [[ $IfRUn ]] ||
 	cp -al *    .mk-Z/
 	;;
 
@@ -2202,15 +2202,15 @@ case $action in
 	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
 		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
 		stash=.mk-Z.$type
-		$RunIf rm -rf $stash.*.ls
+		$IfRUn rm -rf $stash.*.ls
 		[[ ! -d $stash ]] && {
-		$RunIf $our_path mk-Z -q $mk_Z_args &&
-		   $RunIf mv .mk-Z $stash && $RunIf rm -f $stash/latest ||
+		$IfRUn $our_path mk-Z -q $mk_Z_args &&
+		   $IfRUn mv .mk-Z $stash && $IfRUn rm -f $stash/latest ||
 			abort "couldn't populate $stash"; }
 		for dir in $cmd_dirs
 		    do	eval "dir=$dir"	# expand ~
-			$RunIf clone_stashed_mk_Z $type
-			$RunIf $dir$_our_name $our_opts prune-backup Z |&
+			$IfRUn clone_stashed_mk_Z $type
+			$IfRUn $dir$_our_name $our_opts prune-backup Z |&
 			   fgrep -v ' prune-backup Z: pruned '
 			[[ $dir == /usr/* ]] && cmd=old || cmd=new
 			ls > $stash.$cmd.ls
@@ -2310,9 +2310,9 @@ case $action in
 
 	$Trace
 	# do this early, since takes a while for processes to die
-	$RunIf $our_path $our_opts kill-both $*
+	$IfRUn $our_path $our_opts kill-both $*
 
-	[[ $RunIf ]] && output=/dev/stdout || output=/dev/null
+	[[ $IfRUn ]] && output=/dev/stdout || output=/dev/null
 	for name
 	    do	set_backup_name $name
 		set_backup_dir $backup_name
@@ -2320,10 +2320,10 @@ case $action in
 		/bin/ls $backup_dir |
 		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
 		sudo umount -h > /dev/null || warn "need sudo privs" || break
-		umount_cmd="$RunIf sudo umount -v $backup_dir"
+		umount_cmd="$IfRUn sudo umount -v $backup_dir"
 		for (( i = 1; i <= 30; i++ )) # wait for kill to finish
 		    do	$umount_cmd && break
-			$RunIf sleep 0.1
+			$IfRUn sleep 0.1
 		done &> $output
 		is_backup_dir_mounted $backup_dir &&
 		$umount_cmd		# this time, show user error message
