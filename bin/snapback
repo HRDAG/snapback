@@ -421,7 +421,7 @@ set_backup_dir() {
 
 readonly lock_types="prune-backup run-backup"
 
-readonly lock_dir=/var/lock
+readonly lock_dir=/var/lock/$our_name
 
 set_lock_file() {
 	local type=$1 name=${2:-$backup_name}
