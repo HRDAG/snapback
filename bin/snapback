@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-version=6			# has to match version= in configure.sh.sample
+version=7			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
