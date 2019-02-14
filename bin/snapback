@@ -423,6 +423,8 @@ readonly lock_types="prune-backup run-backup"
 
 readonly lock_dir=/var/lock/$our_name
 
+lock_file=
+
 set_lock_file() {
 	local type=$1 name=${2:-$backup_name}
 
@@ -459,7 +461,8 @@ kill_locker_group() {
 	set_PGID $(locker_PIDs $type $*)
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 	for pgid in $PGID
-	    do	$IfRun $sudo kill -9 -$pgid && status=0
+	    do	$IfRun $sudo kill -9 -$pgid && status=0 || continue
+		$IfRun $sudo lockpid -r $lock_file
 	done
 
 	return $status
@@ -506,13 +509,19 @@ job_PIDs() {
 # ---------------------------------
 
 signal_job() {
-	local signal=$1 type=$2 name=${3:-$backup_name}
+	local signal=${1#-} type=$2 name=${3:-$backup_name}
 
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+
+	local lock_file
 	set_lock_file $type $name &&
 	[[ -s $lock_file ]] &&
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
-	$IfRun kill -s $signal -$1 &> /dev/null # job may not exist
+	$IfRun $sudo kill -s $signal -$1 &> /dev/null || return 1
+	case $signal in
+	    ( SIGKILL | KILL | 9 ) $IfRun $sudo lockpid -r $lock_file ;;
+	esac
 }
 
 # ---------------------------------
@@ -935,6 +944,7 @@ prune_backup() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
+	local lock_file
 	set_lock_file prune-backup $backup_name
 	run_lockpid $lock_file "pruning $backup_dir" ||
 	    # since we're called, lock holder should be un-suspended
@@ -1117,6 +1127,7 @@ run_backup() {
 	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
 	# grab lock before prune, so don't suspend prune if backup suspended
+	local lock_file
 	set_lock_file run-backup $backup_name
 	run_lockpid $lock_file "backing up $backup_dir" || return 1
 
