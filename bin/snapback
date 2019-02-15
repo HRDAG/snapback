@@ -1144,7 +1144,7 @@ _is_time_to_run_backup() {
 
 # ----------------------
 
-_run_backup() {
+run_backup_rsync() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
@@ -1236,7 +1236,7 @@ run_backup() {
 	_backup_management_of_prune $backup_name pre-rsync
 
 	if _is_time_to_run_backup $backup_dir
-	   then	_run_backup
+	   then	run_backup_rsync
 		local status=$?
 	   else local status=1
 	fi
@@ -1806,7 +1806,8 @@ case $action in
 	  if [[ $cmd_opts == mkfs.xfs* ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
-		[[ $cmd_opts == *maxpct=* ]] || add_words cmd_opts -i maxpct=0
+		[[ $cmd_opts == *maxpct=*  ]] || add_words cmd_opts -i maxpct=0
+		[[ $cmd_opts == *-i*size=* ]] || add_words cmd_opts -i size=512
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
 		     set_FS_external_log $FS_label &&
