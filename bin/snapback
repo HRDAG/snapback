@@ -1478,8 +1478,9 @@ case $action in
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ $is_cron ]] && cron_opt=-C
 
+	[[ ${SSH_TTY-}  ]] && n=1 || n=0.1
 	[[ $action == w ]] ||
-	   exec watch ${*:- -n 0.1} $our_path $our_opts w -w $ps_opt $cron_opt
+	   exec watch ${*:- -n $n} $our_path $our_opts w -w $ps_opt $cron_opt
 
 	# ------------------------------------------------------------------
 
@@ -1495,24 +1496,12 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	customize_and_validate_configuration_variables
+	if [[ ! $watch_opt ]]
+	   then ps_opt=-f cron_opt=-C
+	fi
 
 	set -- $(stty -a | head -n1)
 	declare -i rows=${5%;} cols=${7%;}
-
-	rsync_cmds=$(ps -C rsync -H ww | grep "[0-9] rsync.*/$snapshot_regex")
-	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
-	declare -i num_drives=$(list_backups | wc -l)
-
-	if [[ ! $watch_opt ]]
-	   then ps_opt=-f cron_opt=-C
-	elif [[ ! $rsync_cmds && $cron_opt &&
-		! -s /etc/sudoers.d/$_our_name ]]
-	   then header "to not fill the log with frequent 'sudo ps'"
-		option_1="install etc/sudoers.d/$our_name"
-		option_2="put its contents into /etc/sudoers"
-		echo -e "\n$option_1, or $option_2"
-	fi
 
 	# since the contents of $() are run in subshell, have to echo results
 	set -- $(
@@ -1530,7 +1519,7 @@ case $action in
 	done | tail -n1
 	)
 	declare -i max_device_len=$1 max_mount_len=$2
-	#
+
 	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
@@ -1543,7 +1532,39 @@ case $action in
 		(( ps_wchan_width > max_ps_wchan_width )) &&
 		   ps_wchan_width=max_ps_wchan_width
 	fi
-	#
+
+	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
+	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
+	if [[ $ps_opt ]]
+	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
+		trim_ps_cols() { cut -c "10-21,24-37,40-44,46-"; }
+		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
+		#    123456789012345678901234567890123456789012345678901234567
+		#             1         2         3         4         5
+		prune_sort_opts="-k7r,8 -k9"	rsync_sort_opts="-k11"
+	   else trim_ps_cols() { cut -c 1-13,16-20,22-; }
+		hdr="  PID TTY      STAT   TIME COMMAND"
+		#    123456789012345678901234567890123456789012345678901234567
+		#             1         2         3         4         5
+		prune_sort_opts="-k5r,6 -k7"	rsync_sort_opts="-k8"
+	fi
+
+	# ------------------------------------------------------------------
+
+	customize_and_validate_configuration_variables
+
+	rsync_cmds=$(ps -C rsync -H ww | grep "[0-9] rsync.*/$snapshot_regex")
+	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
+	declare -i num_drives=$(list_backups | wc -l)
+
+	if [[ ! $rsync_cmds && $cron_opt &&
+		! -s /etc/sudoers.d/$_our_name ]]
+	   then header "to not fill the log with frequent 'sudo ps'"
+		option_1="install etc/sudoers.d/$our_name"
+		option_2="put its contents into /etc/sudoers"
+		echo -e "\n$option_1, or $option_2"
+	fi
+
 	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
 	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g') 2>/dev/null |
 			trim_prune_rsync)
@@ -1567,24 +1588,6 @@ case $action in
 	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + PB_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
-
-	# ------------------------------------------------------------------
-
-	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
-	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
-	if [[ $ps_opt ]]
-	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
-		trim_ps_cols() { cut -c "10-21,24-37,40-44,46-"; }
-		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
-		#    123456789012345678901234567890123456789012345678901234567
-		#             1         2         3         4         5
-		prune_sort_opts="-k7r,8 -k9"	rsync_sort_opts="-k11"
-	   else trim_ps_cols() { cut -c 1-13,16-20,22-; }
-		hdr="  PID TTY      STAT   TIME COMMAND"
-		#    123456789012345678901234567890123456789012345678901234567
-		#             1         2         3         4         5
-		prune_sort_opts="-k5r,6 -k7"	rsync_sort_opts="-k8"
-	fi
 
 	# ------------------------------------------------------------------
 
