@@ -78,7 +78,8 @@ Usage: $our_name action [args]
 
 	-d: Debug shell script (don't run commands, just show them): simulation
 	-t: Trace shell script (show commands as they execute)
-	-T level: control whether Trace and TraceV functions run echoE*\n"
+	-T level: control whether Trace and TraceV functions run echoE*
+"
 
 is_cron=$false   cron_opt=
 IfRun= Trace=    debug_opt= trace_opt=  our_rsync_opts=
@@ -98,7 +99,7 @@ while getopts "C cnvq dtT: hk"  arg
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
 
 	   (h|k) print_or_egrep_Usage_then_exit "$@" ;;
-	   ( * ) echo "$Usage" >&2; exit 1 ;;
+	   ( * ) abort "$Usage" ;;
 	esac
 done
 let OPTIND=$OPTIND-1
@@ -1482,6 +1483,18 @@ case $action in
 
 	# ------------------------------------------------------------------
 
+	trim_prune_rsync() {
+
+		sed -e "s@/bin/bash /@/@"	\
+		    -e "s@ bash /@ /@"		\
+		    -e "s@ /usr/local/bin/@ @"	\
+		    -e "s@$HOME/@~/@g"		\
+		    -e "s@prune-backup -r @prune-backup @g" \
+		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
+	}
+
+	# ------------------------------------------------------------------
+
 	customize_and_validate_configuration_variables
 
 	set -- $(stty -a | head -n1)
@@ -1531,6 +1544,10 @@ case $action in
 		   ps_wchan_width=max_ps_wchan_width
 	fi
 	#
+	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
+	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g') 2>/dev/null |
+			trim_prune_rsync)
+	#
 	cron_job_regexp=' -C run-backups? *$' # put into configure.sh ??
 	set -- $(ps -u root w | egrep "$cron_job_regexp" | awk '{print $1}')
 	[[ ($cron_opt || ! $rsync_cmds) && $# != 0 ]] && {
@@ -1546,22 +1563,12 @@ case $action in
 	# -C + df: 25 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
 	#   (ignoring the ~500 characters for full-detail for: rsync /)
 	# includes basic pruning, but not parent of 'rm' process (since in -C)
-	declare -i CPB_num=$(echo "$cron_cmds" | fgrep -c prune-backup)
-	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + CPB_num ))
+	declare -i PB_num=$(echo "$prune_cmds" | fgrep -c prune-backup)
+	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + PB_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
 
 	# ------------------------------------------------------------------
-
-	trim_prune_rsync() {
-
-		sed -e "s@/bin/bash /@/@"	\
-		    -e "s@ bash /@ /@"		\
-		    -e "s@ /usr/local/bin/@ @"	\
-		    -e "s@$HOME/@~/@g"		\
-		    -e "s@prune-backup -r @prune-backup @g" \
-		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
-	}
 
 	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
@@ -1601,11 +1608,10 @@ case $action in
 	header "prune by run-prune"
 	echo
 	> $tmp
-	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
-	[[ $# == 0 ]] && prune_cmds= || {
-	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g') | trim_prune_rsync)
+	[[ $prune_cmds ]] && {
+	echo "$cron_cmds" | sed -n 's/.*prune-backup/prune-backup/p' > $tmp_2
 	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
-	   prune_cmds=$(echo "$prune_cmds" | fgrep -w rm)
+	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
 	echo "$prune_cmds" | fgrep -v -w xargs
 	} | sort $prune_sort_opts > $tmp
 	if [[ -s $tmp ]]

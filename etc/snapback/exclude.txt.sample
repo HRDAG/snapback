@@ -54,6 +54,7 @@
 # mostly browser/mailer stuff
 /home/*/.config/google-chrome/Default/Extensions/
 /home/*/.config/google-chrome/Default/File?System/
+/home/*/.config/google-chrome/Default/Pepper?Data/Shockwave?Flash/WritableRoot/
 /home/*/.claws-mail/imapcache
 /home/*/.gvfs
 /home/*/.mozilla/seamonkey/*/ImapMail
