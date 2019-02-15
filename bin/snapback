@@ -112,11 +112,11 @@ unset arg
 trap '' HUP TERM
 trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
 
-readonly tmp_1=$tmp_dir/$our_name-1-$$	; tmp=$tmp_1
-readonly tmp_2=$tmp_dir/$our_name-2-$$
-readonly tmp_3=$tmp_dir/$our_name-3-$$
-readonly tmp_4=$tmp_dir/$our_name-4-$$
-readonly tmp_5=$tmp_dir/$our_name-5-$$
+readonly tmp_1=$tmp_dir/$our_name-1-$BASHPID	; tmp=$tmp_1
+readonly tmp_2=$tmp_dir/$our_name-2-$BASHPID
+readonly tmp_3=$tmp_dir/$our_name-3-$BASHPID
+readonly tmp_4=$tmp_dir/$our_name-4-$BASHPID
+readonly tmp_5=$tmp_dir/$our_name-5-$BASHPID
 
 need_cmds lockpid
 
@@ -220,29 +220,26 @@ set_lock_file() {
 
 # ---------------------------------
 
-readonly lockpid_output_file=$tmp_5
-
 run_lockpid() {
 	local lock_file=$1 lock_holder_action=$2
 
-	local   lock_cmd="lockpid $lock_file"
-	$IfRun $lock_cmd &> $lockpid_output_file
+	local our_PID=$BASHPID
+	local lock_cmd="lockpid $lock_file $our_PID"
+	lockpid_output=$($IfRun $lock_cmd 2>&1)
 	local status=$?
 
 	if [[ $status == 0 ]]
-	   then [[ $IfRun ]] && cat $lockpid_output_file
-		rm $lockpid_output_file
+	   then [[ $IfRun ]] && echo "$lockpid_output"
 		return 0
 	fi
 
-	local lock_holder_PID=$(sed 's@^Process @@; s@ holds lock .*@@' \
-					$lockpid_output_file)
+	local lock_holder_PID=$(echo "$lockpid_output" |
+				sed 's@^Process @@; s@ holds lock .*@@')
 	if [[ $status == 1 && $lock_holder_PID ]]
 	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
 		log  "process $lock_holder_PID is $lock_holder_action"
-	   else log "$lock_cmd -> $lockpid_msg (status=$status)"
+	   else log "$lock_cmd -> $lockpid_output (status=$status)"
 	fi
-	rm $lockpid_output_file
 	return 1
 }
 
@@ -283,8 +280,8 @@ kill_locker_group() {
 
 # -------------------------------------------------------
 
-# you don't generally need this, instead use negative lock pid to
-#    signal or run ps on a job
+# you don't generally need this: instead, use negative lock pid to run ps
+# on a job, and use signal_job for signaling
 job_PIDs() {
 	local type=$1; shift
 
@@ -625,8 +622,8 @@ is_disk_usage_too_high() {
 setup_lower_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_lower_CPU_priority $$ &>/dev/null
-	$IfRun $sudo $cmd_to_set_lower_IO_priority  $$ &>/dev/null
+	$IfRun $sudo $cmd_to_set_lower_CPU_priority $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_lower_IO_priority  $BASHPID &>/dev/null
 }
 
 # --------------
@@ -634,8 +631,8 @@ setup_lower_priority() {
 setup_higher_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_higher_CPU_priority $$ &>/dev/null
-	$IfRun $sudo $cmd_to_set_higher_IO_priority  $$ &>/dev/null
+	$IfRun $sudo $cmd_to_set_higher_CPU_priority $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_higher_IO_priority  $BASHPID &>/dev/null
 }
 
 # -----------------------
@@ -1154,15 +1151,15 @@ run_backup() {
 
 	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
-	# grab lock before prune, so don't suspend prune if backup suspended
+	# grab lock before prune, so don't suspend prune if the sysadmin
+	# suspended the backup and continued the prune
 	local lock_file
 	set_lock_file run-backup $backup_name
 	run_lockpid $lock_file "backing up $backup_dir" || return 1
 
 	_backup_management_of_prune $backup_name pre-rsync
 
-	_is_time_to_run_backup $backup_dir ||
-	   { $IfRun lockpid -r $lock_file; return 0; }
+   _is_time_to_run_backup $backup_dir && {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
@@ -1229,7 +1226,7 @@ run_backup() {
 	$IfRun touch $partial_snapshot	# 'when we finished', not mdate of src
 
 	_handle_rsync_results $new_snapshot $status $log
-
+   }					# might have skipped backup
 	_backup_management_of_prune $backup_name post-rsync # last, for testing
 
 	$IfRun sync --file-system $new_snapshot* &> /dev/null
@@ -1292,7 +1289,7 @@ copy_snapshot() {
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# Run multiple jobs, each in a separate session (has its own PGID).
+# Run multiple jobs, each in a separate session (unique PGID, stored in lock).
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
