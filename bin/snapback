@@ -1585,7 +1585,7 @@ case $action in
 	#   (ignoring the ~500 characters for full-detail for: rsync /)
 	# includes basic pruning, but not parent of 'rm' process (since in -C)
 	declare -i PB_num=$(echo "$prune_cmds" | fgrep -c prune-backup)
-	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + PB_num ))
+	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + 2*PB_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
 
