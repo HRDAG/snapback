@@ -229,7 +229,8 @@ run_lockpid() {
 	local status=$?
 
 	if [[ $status == 0 ]]
-	   then [[ $IfRun ]] && echo "$lockpid_output"
+	   then [[ $IfRun ]] &&
+		echo "$lockpid_output" | sed "s@ $our_PID@ <our_PID>@"
 		return 0
 	fi
 
@@ -1143,23 +1144,7 @@ _is_time_to_run_backup() {
 
 # ----------------------
 
-run_backup() {
-	local backup_name=$1 backup_dir
-
-	set_backup_name $backup_name
-	set_backup_dir  $backup_name || return 1
-
-	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
-
-	# grab lock before prune, so don't suspend prune if the sysadmin
-	# suspended the backup and continued the prune
-	local lock_file
-	set_lock_file run-backup $backup_name
-	run_lockpid $lock_file "backing up $backup_dir" || return 1
-
-	_backup_management_of_prune $backup_name pre-rsync
-
-   _is_time_to_run_backup $backup_dir && {
+_run_backup() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
@@ -1226,10 +1211,37 @@ run_backup() {
 	$IfRun touch $partial_snapshot	# 'when we finished', not mdate of src
 
 	_handle_rsync_results $new_snapshot $status $log
-   }					# might have skipped backup
-	_backup_management_of_prune $backup_name post-rsync # last, for testing
 
 	$IfRun sync --file-system $new_snapshot* &> /dev/null
+
+	return $status
+}
+
+# ----------------------
+
+run_backup() {
+	local backup_name=$1 backup_dir
+
+	set_backup_name $backup_name
+	set_backup_dir  $backup_name || return 1
+
+	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
+
+	# grab lock before prune, so don't suspend prune if the sysadmin
+	# suspended the backup and continued the prune
+	local lock_file
+	set_lock_file run-backup $backup_name
+	run_lockpid $lock_file "backing up $backup_dir" || return 1
+
+	_backup_management_of_prune $backup_name pre-rsync
+
+	if _is_time_to_run_backup $backup_dir
+	   then	_run_backup
+		local status=$?
+	   else local status=1
+	fi
+
+	_backup_management_of_prune $backup_name post-rsync # last, for testing
 
 	$IfRun lockpid -r $lock_file
 
