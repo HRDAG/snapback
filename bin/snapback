@@ -2060,6 +2060,83 @@ case $action in
 	   abort "mount $device $backup_dir -> $?"
 	;;
 
+   ###########################################################################
+   # Actions for random testing, followed by regression tests.
+   ###########################################################################
+
+   ( test | t )
+	set_backup_name ${1:-a}
+	TraceV 0 backup_name file_for_logging log_msg_prefix
+	echo  test1
+	echoE test2
+	log 0 test3
+	abort test4
+	exit
+
+	copy_snapshot 1 2 3
+	exit
+
+	echoE test
+	foo() {
+		echoE ftest
+		for  i  in ${!FUNCNAME[*]}
+		   do	echo "FUNCNAME[i]=${FUNCNAME[$i]}"
+		done
+		echoEV   i
+		TraceV 0 i i
+		abort "aborting test"
+	}
+	foo
+	exit
+
+	set_backup_name ${1:-a}
+	set_backup_dir $backup_name
+	set_FS_label___from_mount_dir $backup_dir
+	echo $FS_label
+	exit
+
+	log test 1
+	customize_and_validate_configuration_variables /backup/Z
+	echo $backup_name
+	log test 2
+
+	exit
+
+	set_backup_dir ${1^}
+	$Trace
+	is_disk_usage_too_high
+	abort $?
+
+	set_oldest_backup_snapshot
+	echo $oldest_backup_snapshot
+	exit
+
+	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
+	    do	set_readable_du_size $size; echo "$readable_du_size from $size"
+	done
+	exit
+
+	backup_dir=/backup/F
+	cd $backup_dir
+	log=/tmp/root/F-190126-15.bz2
+	_links_error_msg "nnn 'Too many links'"
+	exit
+
+	set_backup_dir F
+	exit
+
+	$Trace
+	set_backup_dir ${1-''}
+	log "test with drive ${1-}"
+	exit
+
+	echo $backup_period
+	customize_config_variables /backup/F
+	echo $backup_period
+	backup_period+=1
+	echo $backup_period
+	;;
+
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
    ( mk*[Zz] | mkz )
 	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
@@ -2191,79 +2268,6 @@ case $action in
 
 	clone_stashed_mk_Z hour
 	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
-	;;
-
-   ( test | t )
-	set_backup_name ${1:-a}
-	TraceV 0 backup_name file_for_logging log_msg_prefix
-	echo  test1
-	echoE test2
-	log 0 test3
-	abort test4
-	exit
-
-	copy_snapshot 1 2 3
-	exit
-
-	echoE test
-	foo() {
-		echoE ftest
-		for  i  in ${!FUNCNAME[*]}
-		   do	echo "FUNCNAME[i]=${FUNCNAME[$i]}"
-		done
-		echoEV   i
-		TraceV 0 i i
-		abort "aborting test"
-	}
-	foo
-	exit
-
-	set_backup_name ${1:-a}
-	set_backup_dir $backup_name
-	set_FS_label___from_mount_dir $backup_dir
-	echo $FS_label
-	exit
-
-	log test 1
-	customize_and_validate_configuration_variables /backup/Z
-	echo $backup_name
-	log test 2
-
-	exit
-
-	set_backup_dir ${1^}
-	$Trace
-	is_disk_usage_too_high
-	abort $?
-
-	set_oldest_backup_snapshot
-	echo $oldest_backup_snapshot
-	exit
-
-	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
-	    do	set_readable_du_size $size; echo "$readable_du_size from $size"
-	done
-	exit
-
-	backup_dir=/backup/F
-	cd $backup_dir
-	log=/tmp/root/F-190126-15.bz2
-	_links_error_msg "nnn 'Too many links'"
-	exit
-
-	set_backup_dir F
-	exit
-
-	$Trace
-	set_backup_dir ${1-''}
-	log "test with drive ${1-}"
-	exit
-
-	echo $backup_period
-	customize_config_variables /backup/F
-	echo $backup_period
-	backup_period+=1
-	echo $backup_period
 	;;
 
    ###########################################################################
