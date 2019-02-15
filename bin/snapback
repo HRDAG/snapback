@@ -1491,7 +1491,7 @@ case $action in
 		    -e "s@ /usr/local/bin/@ @"	\
 		    -e "s@$HOME/@~/@g"		\
 		    -e "s@prune-backup -r @prune-backup @g" \
-		    -e "s@ $rsync_backup_opts .* @ \$opts -R \$dirs @"
+		    -e "s@ --.* @ \$opts -R \$dirs @"
 	}
 
 	# ------------------------------------------------------------------
