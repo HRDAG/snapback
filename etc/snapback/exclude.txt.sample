@@ -51,10 +51,13 @@
 /home/**/[cC]ache*/*
 /home/**/Favicons
 
-# mostly browser/mailer stuff
+# Google Chrome files that can disappear
 /home/*/.config/google-chrome/Default/Extensions/
 /home/*/.config/google-chrome/Default/File?System/
 /home/*/.config/google-chrome/Default/Pepper?Data/Shockwave?Flash/WritableRoot/
+/home/*/.config/google-chrome/EVWhitelist/?/_platform_specific/*/ev_hashes_*
+
+# mostly browser/mailer stuff
 /home/*/.claws-mail/imapcache
 /home/*/.gvfs
 /home/*/.mozilla/seamonkey/*/ImapMail
