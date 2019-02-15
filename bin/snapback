@@ -1444,10 +1444,12 @@ case $action in
    # run-backups   [dir(s)]: dir(s) defaults to every mounted backup
    ( r*b*k*p* | rb* )
 	run_jobs_in_parallel backup "$@"
+	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
    ( pr*n*b*k*p* | pb* )
 	run_jobs_in_parallel prune "$@"
+	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
