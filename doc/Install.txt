@@ -2,10 +2,11 @@ WARNING: if you heavily use an application which generates lots of hard-linked
 files (like HRDAG's 'snap' aka 'snapshot'; or Red Hat's 'yum' package
 manager's /var/lib/yum/yumdb/, but that's excluded by default), you could run
 into the "Too many links" rsync error if you use a backup filesystem type that
-has too-small limits on the maximum number of hard-links per inode (I think
-the NTFS max is very small; the ext4 max is 65K).  In this case, you'll
-ideally use a filesystem like XFS (or Btrfs if you're adventuresome) that uses
-a 32-bit word to hold the inode's link reference-count.
+has too-small limits on the maximum number of hard-links per inode (when
+mounting NTFS via 'fuseblk', the max links is 8K; for ext4, the max is 65K).
+In this case, you'll ideally use a filesystem like XFS (or Btrfs if you're
+adventuresome) that uses a 32-bit word to hold the inode's link
+reference-count.
 
 NOTE: the following is heavily oriented towards a GNU/Linux system like
 Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and

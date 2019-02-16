@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-version=8			# has to match version= in configure.sh.sample
+version=9			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -52,7 +52,7 @@ Usage: $our_name action [args]
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
-    watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
+    watch [-f][-C] [watch-opts]: 'watch w' (-f: full info; -C: show cron job)
 
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
@@ -1813,48 +1813,53 @@ case $action in
 	let blocks_per_inode=$default_blocks_per_inode/4 # 5% space penalty
 	let  bytes_per_inode=$blocks_per_inode*1024
 
-	cmd_opts=$mkfs_cmd_opts  log_opt=
-	  if [[ $cmd_opts == mkfs.xfs* ]]
+	# https://lwn.net/Articles/645722/ : 4/15: fixed ext4 extent corruption
+	# https://en.wikipedia.org/wiki/Linux_kernel#Releases_4.x.y
+	if [[ $FS_type == ext4 && $(uname -r) > 4.2.7 ]]
+	   then ext4_extent_opt="-O extent"
+	   else ext4_extent_opt=
+	fi
+
+	set -- $mkfs_cmd_opts
+	cmd=$1; shift; opts=$*  log_opt=
+	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
-		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
-		[[ $cmd_opts == *maxpct=*  ]] || add_words cmd_opts -i maxpct=0
-		[[ $cmd_opts == *-i*size=* ]] || add_words cmd_opts -i size=512
+		[[ $(which mkfs.xfs)   ]] || $IfRun abort "install xfsprogs"
+		[[ $opts == *maxpct=*  ]] || add_words opts -i maxpct=0
+		[[ $opts == *-i*size=* ]] || add_words opts -i size=512
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
 		     set_FS_external_log $FS_label &&
 		logdev="logdev=$FS_external_log" &&
 		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
-	elif [[ $cmd_opts == mkfs.ext* ]]
-	   then cmd=${cmd_opts%% *}
-		FS_type=${cmd#*.}
-	elif [[ $cmd_opts == mke2fs* ]]
-	   then FS_type=$(echo $cmd_opts |
-				sed -r 's/.*\W-t\W*(\w+)\b.*/\1/')
+	elif [[ $cmd == mkfs.ext? ]]
+	   then FS_type=${cmd#*.}
+	elif [[ $cmd == mke2fs ]]
+	   then FS_type=$(echo $opts | sed -r 's/.*\W-t\W*(\w+)\b.*/\1/')
 		[[ $FS_type ]] || FS_type=ext4
-	elif [[ $cmd_opts != mk* ]]
-	   then abort  "the value of 'cmd_opts' should start with 'mk'"
-	   else abort "don't support $cmd_opts, email $coder"
+	elif [[ $cmd != mk* ]]
+	   then abort "the value of 'mkfs_cmd_opts' should start with 'mk'"
+	   else abort "don't support '$cmd $opts', email $coder"
 	fi
 	#
 	if ! [[ $FS_type == ext? && $IfRun && $UID == 0 ]]
 	   then mkfs_debug_opt=
-	   else mkfs_debug_opt=-n  IfRun=
+	   else mkfs_debug_opt=-n
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
-	   then opts=
-		[[ $cmd_opts != *-i* ]]  && add_words opts -i $bytes_per_inode
-		[[ $cmd_opts != *-m* ]]  && add_words opts -m .1
-		[[ $cmd_opts != *extent* && $FS_type == ext4 ]] &&
-					    add_words opts -O extent
-		cmd_opts="$cmd_opts $opts"
-		mount_opts="$mount_options"
+	   then add_words opts -v
+		[[ $opts != *-i* ]]     && add_words opts -i $bytes_per_inode
+		[[ $opts != *-m* ]]     && add_words opts -m .1
+		[[ $opts != *extent* ]] && add_words opts $ext4_extent_opt
+		[[ $FS_type == ext4  ]] &&
+		mount_opts="$ext4_mount_options"
 		type set_FS_external_log &> /dev/null	&& # optional
 		     set_FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b 4096 -O journal_dev \
 			 -L $log_label $FS_external_log &&
-		cmd_opts="$cmd_opts -J device=LABEL=$log_label"
+		add_words opts -J device=LABEL=$log_label
 	fi
 
 	df -m | grep " $backup_dir$" &&
@@ -1867,10 +1872,14 @@ case $action in
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
+	[[ $mount_opts ]] && mount_opts=,$mount_opts
+	mount_opts=$common_mount_options$mount_opts
 	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
-	cmd="$IfRun $cmd_opts $log_opt $mkfs_debug_opt -L $FS_label $device"
+	[[ $mkfs_debug_opt ]] && IfRun=
+	cmd="$IfRun $cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
+	header $cmd
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $backup_dir

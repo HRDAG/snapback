@@ -1,4 +1,4 @@
-# version=8
+# version=9
 
 ################################################################
 ################################################################
@@ -25,7 +25,7 @@
 readonly mkfs_cmd_opts="mkfs.xfs" # needed if your apps use many hard-links
 
 # ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one;
-# also defaults to extent-based, which you can override with "-O ^extent".
+# defaults to extent-based if new-enough kernel, override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
 
 # Optional function to allowcate an external filesystem log/journal
@@ -47,8 +47,9 @@ set_FS_external_log() {
 }
 
 # You probably won't need to change these.
-readonly     mount_options="nodev,nosuid,relatime,nodiratime"
-readonly XFS_mount_options="$mount_options,logbsize=256k" # not if limited RAM
+readonly common_mount_options="nodev,nosuid,relatime,nodiratime"
+readonly   ext4_mount_options="journal_checksum" # for reliability
+readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
 # -------------------------------------------------
 # Variables used by run-backup* and prune-backup* #
