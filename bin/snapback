@@ -23,11 +23,8 @@ readonly exclude_file=$config_dir/exclude.txt$sample_suffix
 readonly  config_file=$config_dir/configure.sh$sample_suffix
 readonly  config_file_sample=${config_file%.sample}.sample
 
-if [[ ! -s $config_file_sample ]]
-   then abort "have to install $config_file_sample"
-elif ! head -n1  $config_file_sample | fgrep -q -x "# version=$version"
-   then abort "$config_file_sample version does not match $our_name"
-fi
+[[ -s $config_file_sample ]] ||
+   abort "have to install $config_file_sample"
 
 # for each config var, create associative array for per-drive customization
 readonly uncustomizable_config_vars="
@@ -128,6 +125,9 @@ umask 02				# log dirs are setgid sudo
 set -u					# abort if access unset variable
 
 FUNCNEST=100				# catch coding errors
+
+head -n1 $config_file_sample | fgrep -q -x "# version=$version" ||
+  $IfRun abort "$config_file_sample version does not match $our_name"
 
 # $Trace
 
