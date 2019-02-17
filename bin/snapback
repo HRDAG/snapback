@@ -103,8 +103,6 @@ let OPTIND=$OPTIND-1
 shift $OPTIND
 unset arg
 
-[[ $trace_opt ]] && warn "the rsync options have not been tested"
-
 [[ -n $Trace && -n $IfRun ]] && IfRun=:
 
 trap '' HUP TERM
@@ -1809,9 +1807,23 @@ case $action in
 
 	set_FS_label___from_mount_dir $backup_dir
 
-	default_blocks_per_inode=16
-	let blocks_per_inode=$default_blocks_per_inode/4 # 5% space penalty
-	let  bytes_per_inode=$blocks_per_inode*1024
+	# Since most files are shared between many snapshots, most of our
+	# inodes are directories (unless we only backup files that change
+	# often, and they're either tiny (so could fit in a large inode) or
+	# large enough that their disk space usage overwhelms that of the
+	# inodes); the minimum directory size is 1 block, so we want 1-2
+	# blocks per inode.
+	let default_block_size=4096
+	let blocks_per_inode=2
+	let  bytes_per_inode=$blocks_per_inode*$default_block_size
+
+	# There's no need to store small-files or file's extended-attributes
+	# in inodes: The extra blocks used for small-files or out-of-inode
+	# extended-attributes will be shared between snapshots, since file
+	# inodes are shared between snapshots.  So, we want small inodes
+	# (NOTE: If most of the backed-up directories have
+	# extended-attribute-blocks, then select an inode size that will hold
+	# the average set of extended-attributes).
 
 	# https://lwn.net/Articles/645722/ : 4/15: fixed ext4 extent corruption
 	# https://en.wikipedia.org/wiki/Linux_kernel#Releases_4.x.y
