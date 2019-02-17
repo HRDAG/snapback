@@ -57,6 +57,7 @@ Usage: $our_name action [args]
     kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
 
     add-extN-journal backup_name [FS_device]: current backup gets fast journal
+    avg-dir-size name : used to decide blocks-per-inode for ext* filesystem
     mkfs device [name]: prepare blank first- or smallest-drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
@@ -1768,6 +1769,20 @@ case $action in
 	   abort "mount exited with $?"
 	;;
 
+   # avg-dir-size name : used to decide blocks-per-inode for ext* filesystem
+   ( avg*dir*size | ads )
+	[[ $# == 1 ]] || abort "specify name for to-be-built filesystem"
+	set_backup_name $1
+	$IfRun rsync -n -v -r -R \
+		     --exclude=$backup_dir_prefix* \
+		     --exclude-from=$exclude_file  \
+		     --include='*/' --exclude='*'  $dirs_to_backup /tmp/ |
+	   grep '^/' | tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
+	   # head -n 1000 |		# uncomment to debug
+	   awk '    { KB += $1; count += 1 }
+		END { printf "average dir size is %.1f KB\n", KB / count }'
+	;;
+
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
    ( mkfs )
 	# If brand new drive, find its device name with: ls -lt /dev/sd?
@@ -1812,10 +1827,13 @@ case $action in
 	# often, and they're either tiny (so could fit in a large inode) or
 	# large enough that their disk space usage overwhelms that of the
 	# inodes); the minimum directory size is 1 block, so we want 1-2
-	# blocks per inode.
-	let default_block_size=4096
-	let blocks_per_inode=2
-	let  bytes_per_inode=$blocks_per_inode*$default_block_size
+	# blocks per inode.  To determine the actual average directory size,
+	# run: snapback avg-dir-size <backup-name>
+	# where the backup-name is used to find $dirs_to_backup and excludes.
+	# NOTE: you can over-ride bytes_per_inode on the command line.
+	let block_size=4096
+	let blocks_per_inode=1
+	let  bytes_per_inode=$blocks_per_inode*$block_size
 
 	# There's no need to store small-files or file's extended-attributes
 	# in inodes: The extra blocks used for small-files or out-of-inode
@@ -1860,7 +1878,7 @@ case $action in
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
-	   then add_words opts -v
+	   then add_words opts -v -b $block_size
 		[[ $opts != *-i* ]]     && add_words opts -i $bytes_per_inode
 		[[ $opts != *-m* ]]     && add_words opts -m .1
 		[[ $opts != *extent* ]] && add_words opts $ext4_extent_opt
