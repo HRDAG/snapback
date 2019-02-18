@@ -7,9 +7,9 @@ readonly coder=sweikart@gmail.com
 [[ ${1-} == -s ]] && { shift; sample_suffix=.sample; } || sample_suffix=
 
 # libsnap.sh has these funcs/vars: tmp_dir, our_name, our_path, true, false,
-# have_cmd, need_cmds, is_darwin, set_FS_type___from_FS_device,
+# have_cmd, need_cmds, is_darwin, set_FS_type___from_path,
 # set_FS_label___from_FS_device, label_drive,set_FS_device___from_FS_label,
-# set_FS_device___from_mount_dir, set_mount_dir___from_FS_device,
+# set_FS_device___from_path, set_mount_dir___from_FS_device,
 # set_mount_dir___from_FS_label,  set_FS_label___from_mount_dir,
 # warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
 # log, file_for_logging, log_level, log_msg_prefix, header,
@@ -57,7 +57,7 @@ Usage: $our_name action [args]
     kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
 
     add-extN-journal backup_name [FS_device]: current backup gets fast journal
-    avg-dir-size [-e] name: stats for mkfs -b (-e means use existing file)
+    avg-dir-size [-b bytes] [-o] name: stats for mkfs action; -o -> Old data
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
@@ -403,9 +403,10 @@ set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
 	local  backup_name=$1	    # called from set_backup_name, so $1 valid
 
 	if [[ $backup_name ]]
-	   then local backup_log_dir=$log_dir/$backup_name
-	   else local backup_log_dir=$log_dir
+	   then backup_log_dir=$log_dir/$backup_name
+	   else backup_log_dir=$log_dir
 	fi
+	TraceV 3 backup_log_dir
 	file_for_logging=$backup_log_dir/messages.log
 
 	local group
@@ -484,6 +485,7 @@ set_backup_name() {
 	   then backup_name=${name^}
 	   else backup_name=$name
 	fi
+	TraceV 3 backup_name
 
        set__backup_log_dir__file_for_logging__admin_group__is_regression_test \
 	   $backup_name
@@ -492,6 +494,8 @@ set_backup_name() {
 # ---------------------------------
 
 backup_dir=				# global, just in case
+
+is_OK_if_backup_dir_unmounted=$false
 
 set_backup_dir() {
 	local backup_name=$1		# result of set_backup_name, i.e. valid
@@ -509,10 +513,12 @@ set_backup_dir() {
 		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
 	fi
 
-	is_backup_dir_mounted $backup_dir ||
-	    warn "no filesystem mounted on $backup_dir" || return 1
-
-	fix_snapshot_names $backup_dir	# must call last
+	if  is_backup_dir_mounted  $backup_dir
+	   then fix_snapshot_names $backup_dir # must call last
+	   else [[ $is_OK_if_backup_dir_unmounted ]] ||
+		    warn "no filesystem mounted on $backup_dir"
+		return 1
+	fi
 }
 
 # -----------------------------------------------------------------------------
@@ -1656,7 +1662,7 @@ case $action in
 	[[ $cron_opt || $rsync_cmds ]] || {
 	devices=
 	for dir in $(list_backups)
-	    do	set_FS_device___from_mount_dir
+	    do	set_FS_device___from_path $dir &&
 		add_words devices $FS_device
 	done
 	# fields that don't work: rm,model,opt-io,rota
@@ -1768,36 +1774,63 @@ case $action in
 	   abort "mount exited with $?"
 	;;
 
-   # avg-dir-size [-e] name: stats for mkfs -b (-e means use existing file)
+   # avg-dir-size [-b bytes] [-o] name: stats for mkfs action; -o -> Old data
    ( avg*dir*size | ads )
-	local use_old_file=$false
-	[[ $1 == -e ]] && { shift; local use_old_file=$true; }
-	[[ $# == [12] ]] || abort "specify name for to-be-built filesystem"
-	set_backup_name $1 ; dirs_to_backup=${2:-$dirs_to_backup}
 	[[ ! $IfRun ]] || error "-d is not supported"
-KB=1
-	file=$backup_log_dir/dir-sizes-${KB}KB.ls
-	# let sysadmin check backups with smaller block sizes
-	[[ $dirs_to_backup == $backup_dir_prefix* ]] && exclude_opt= ||
-	   exclude_opt=--exclude=$backup_dir_prefix*
+	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
+	[[ $1 == -b ]] && { bytes=$2; shift 2; } || bytes=
+	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
+	[[ $# == 1 ]] || abort "specify name for to-be-built filesystem"
+	set_backup_name $1
 
-	[[ ! $use_old_file ]] &&
-	$IfRun rsync -n -v -r -R $exclude_opt \
-		     --exclude-from=$exclude_file  \
-		     --include='*/' --exclude='*'  $dirs_to_backup /tmp/ |
-	   grep '^/' |
-	   # head -n 1000 |		# uncomment to debug
-	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
-	   sort -n > $file.partial && mv $file.partial $file
+	TraceV 1 use_old_file bytes backup_name
 
-	$Trace
+	if ! [[ ${use_old_file-} && $bytes ]]
+	   then backup_dir=$backup_dir_prefix$backup_name
+		[[ -d $backup_dir/latest ]] &&
+		dirs_to_backup=$backup_dir/latest/.
+		[[ $bytes ]] || {
+		[[ -d $backup_dir ]] || abort "not mounted, specify -b"
+		set_FS_block_size___from_path ${dirs_to_backup%% *}
+		bytes=$FS_block_size
+		}
+	fi
+	[[ $bytes ]] || abort "have to specify -b"
+	file=$backup_log_dir/dir-sizes-b-$bytes.ls
+	TraceV 1 dirs_to_backup file
+
+	header $file
+	if [[ ${use_old_file-} ]]
+	   then [[ -s $file ]] || abort "no old file for -b $bytes"
+	   else [[ $UID == 0 ]] || abort "need to use sudo"
+		$IfRun rsync -n -v -r -R $exclude_opt \
+			     --exclude-from=$exclude_file  \
+			     --include='*/' --exclude='*'  \
+				$dirs_to_backup /tmp/ |
+		   grep '^/' |
+		   # head -n 1000 |		# uncomment to debug
+		   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
+		   sort -n > $file.partial && mv $file.partial $file
+	fi
+
 	set -- $(wc -l < $file)
 	declare -i dir_count=$1
 	declare -i median_line=$dir_count/2
 	set -- $(sed -n ${median_line}p $file)
-	echo "$dir_count directories; median directory is $1 KB"
+	echo -e "\n$dir_count directories; median directory size is ${1}B\n"
+
+	$Trace
+	declare -i decile_count=$(( ($dir_count + 5) / 10 )) i
+	declare -i decile_median_line=decile_count/2
+	for i in {0..9}
+	    do	set -- $(sed -n ${decile_median_line}p $file)
+		echo "Decile $i has median directory size of ${1}B"
+		decile_median_line+=decile_count
+	done
+	echo
+
 	awk '    { KB += $1; count += 1 }
-	     END { printf "average dir size is %.1f KB\n", KB/count }' $file
+	     END { printf "Average dir size is %.1f KB\n\n", KB/count }' $file
 	;;
 
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
@@ -1831,6 +1864,7 @@ KB=1
 	[[ $device = /* ]] || device=/dev/$device
 	[[ -b $device ]] || $IfRun abort "$device not a block device"
 
+	is_OK_if_backup_dir_unmounted=$true
 	if [[ $name ]]
 	   then set_backup_name $name
 	   else set_backup_name $device
@@ -2054,7 +2088,7 @@ KB=1
 		abort "\n$msg re-run copy-backup with -f to Force unmount."
 	fi; done
 
-	set_FS_type___from_FS_device $src_device
+	set_FS_type___from_path $src_device
 	[[ $FS_type == xfs ]] &&
 	   abort "after umount both, 'xfs_copy $src_device $dst_device <new-device-2>' then 'xfs_admin -L $dst_FS_label $dst_device' then mount both then 'xfs_growfs $dst_backup_dir'"
 
@@ -2146,6 +2180,9 @@ KB=1
    ###########################################################################
 
    ( test | t )
+	print_call_stack 1
+	abort test
+
 	set_backup_name ${1:-a}
 	TraceV 0 backup_name file_for_logging log_msg_prefix
 	echo  test1
