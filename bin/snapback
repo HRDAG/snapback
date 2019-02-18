@@ -57,7 +57,7 @@ Usage: $our_name action [args]
     kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
 
     add-extN-journal backup_name [FS_device]: current backup gets fast journal
-    avg-dir-size name : used to decide blocks-per-inode for ext* filesystem
+    avg-dir-size [-e] name: stats for mkfs -b (-e means use existing file)
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
@@ -1768,29 +1768,36 @@ case $action in
 	   abort "mount exited with $?"
 	;;
 
-   # avg-dir-size name : used to decide blocks-per-inode for ext* filesystem
+   # avg-dir-size [-e] name: stats for mkfs -b (-e means use existing file)
    ( avg*dir*size | ads )
+	local use_old_file=$false
+	[[ $1 == -e ]] && { shift; local use_old_file=$true; }
 	[[ $# == [12] ]] || abort "specify name for to-be-built filesystem"
 	set_backup_name $1 ; dirs_to_backup=${2:-$dirs_to_backup}
-
+	[[ ! $IfRun ]] || error "-d is not supported"
+KB=1
+	file=$backup_log_dir/dir-sizes-${KB}KB.ls
 	# let sysadmin check backups with smaller block sizes
 	[[ $dirs_to_backup == $backup_dir_prefix* ]] && exclude_opt= ||
 	   exclude_opt=--exclude=$backup_dir_prefix*
+
+	[[ ! $use_old_file ]] &&
 	$IfRun rsync -n -v -r -R $exclude_opt \
 		     --exclude-from=$exclude_file  \
 		     --include='*/' --exclude='*'  $dirs_to_backup /tmp/ |
 	   grep '^/' |
 	   # head -n 1000 |		# uncomment to debug
-	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd | sort -n > $tmp
+	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
+	   sort -n > $file.partial && mv $file.partial $file
 
 	$Trace
-	set -- $(wc -l < $tmp)
+	set -- $(wc -l < $file)
 	declare -i dir_count=$1
 	declare -i median_line=$dir_count/2
-	set -- $(sed -n ${median_line}p $tmp)
+	set -- $(sed -n ${median_line}p $file)
 	echo "$dir_count directories; median directory is $1 KB"
 	awk '    { KB += $1; count += 1 }
-	     END { printf "average dir size is %.1f KB\n", KB/count }' $tmp
+	     END { printf "average dir size is %.1f KB\n", KB/count }' $file
 	;;
 
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
@@ -1816,11 +1823,11 @@ case $action in
 
 	[[ ${1-} == -f ]] && shift ||
 	   abort "if this is your first or smallest disk, use the -f option; otherwise, use copy-backup instead; run: $_our_name -h"
-	mkfs_opts=$(echo $* | sed -r 's@^(.*) /dev/.*@\1@')
-	set -- $(echo $* | sed -r 's@.* /dev/@/dev/@')
+	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
+	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')
 	[[ $# == [12] ]] || abort "-f device [backup-name]; run: $_our_name -h"
 	device=$1 name=${2-}
-
+	TraceV 3 mkfs_opts device name
 	[[ $device = /* ]] || device=/dev/$device
 	[[ -b $device ]] || $IfRun abort "$device not a block device"
 
@@ -1851,6 +1858,7 @@ case $action in
 	# not affect performance on an SSD or flash memory stick.
 
 	# this block of code is only relevant to ext*
+	[[ $_mkfs_cmd_opts != mkfs.[^e]* ]] && {
 	set -- $_mkfs_cmd_opts
 	while [[ $# != 0 ]]
 	   do	[[ $1 == -b       ]] && block_size=${2-}
@@ -1862,6 +1870,8 @@ case $action in
 	   abort "ext* block size must be one of: $valid_block_sizes"
 	blocks_per_inode=1
 	let  bytes_per_inode=$blocks_per_inode*$block_size
+	TraceV 3 block_size bytes_per_inode
+	}
 
 	# There's no need to store small-files or file's extended-attributes
 	# in inodes: The extra blocks used for small-files or out-of-inode
