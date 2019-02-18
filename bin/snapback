@@ -465,6 +465,7 @@ have_cmd \
 set_backup_name ||		      # configure.sh can replace this function
 set_backup_name() {
 	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
+
 	local name=$1
 
 	if [[ ! $name =~ ^$anchored_backup_UI_name_regex$ ]]
@@ -473,8 +474,9 @@ set_backup_name() {
 			set_mount_dir___from_FS_label $FS_label
 			backup_dir=$mount_dir
 		elif [[ $name != /* ]]
-		   then set_backup_dir___from_FS_label $name
-		   else     backup_dir=$name
+		   then set_mount_dir___from_FS_label $name
+			backup_dir=$mount_dir
+		   else backup_dir=$name
 		fi
 		[[  $backup_dir =~					\
 		   ^$backup_dir_prefix$anchored_backup_UI_name_regex$ ]] ||
