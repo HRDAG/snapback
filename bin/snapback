@@ -1531,7 +1531,8 @@ case $action in
 	declare -i max_ps_wchan_width=${#widest_wchan_value}+1
 	declare -i ps_wchan_width=10	 # min useful
 	declare -i ps_overhead=79
-	if (( $cols > $ps_overhead + $ps_wchan_width + $max_mount_len ))
+
+	if (( $cols >= $ps_overhead + $ps_wchan_width + $max_mount_len ))
 	   then ps_wchan_width=cols-ps_overhead-max_mount_len  ps_opt=-f
 		(( ps_wchan_width > max_ps_wchan_width )) &&
 		   ps_wchan_width=max_ps_wchan_width
