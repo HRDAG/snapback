@@ -2180,6 +2180,19 @@ case $action in
    ###########################################################################
 
    ( test | t )
+	for dev in $(df | cut -d' ' -f1)
+	    do	[[ -b $dev ]] || continue
+		set_FS_label___from_FS_device $dev
+		echo "$dev -> $FS_label"
+	done
+	exit
+
+	for path in /backup/A /backup/A/latest /dev/sdb5
+	    do	set_FS_type___from_path $path
+		echo "$path -> $FS_type"
+	done
+	exit
+
 	print_call_stack 1
 	abort test
 
