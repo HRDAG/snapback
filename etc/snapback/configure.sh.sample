@@ -21,12 +21,14 @@
 
 # Will need to add -f if the partition already has an *UNWANTED* filesystem.
 # sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
-# The default is "-i maxpct=0" & "-i size=512": you can override either / both.
+# The default is "-i maxpct=0" & "-i size=256": you can override either / both.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 
-# ext?: snapback defaults to opts="-i 4096 -m .1", you can override either one;
+# Defaults to opts="-b 4096 -i 4096 -I 128 -m .1", you can override them.
+# but first read the long comments in the code for the 'mkfs' action );
 # defaults to extent-based if new-enough kernel, override with "-O ^extent".
-readonly mkfs_cmd_opts="mkfs.ext4"	# most common for GNU/Linux users
+readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
+readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # many tiny dirs (& SSD / flash?)
 
 # Optional function to allowcate an external filesystem log/journal
 # on fast storage (RAID, SSD, even flash memory stick).

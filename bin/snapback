@@ -58,7 +58,7 @@ Usage: $our_name action [args]
 
     add-extN-journal backup_name [FS_device]: current backup gets fast journal
     avg-dir-size name : used to decide blocks-per-inode for ext* filesystem
-    mkfs device [name]: prepare blank first- or smallest-drive (see comments)
+    mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
@@ -1017,8 +1017,6 @@ declare -i num_link_dests=0
 set_link_dest_opts() {
 	local new_snapshot=$1
 
-	link_dest_opts=
-
 	suspend_tracing
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
@@ -1172,6 +1170,7 @@ run_backup_rsync() {
 	fi
 
 	suspend_tracing
+	local link_dest_opts=
 	set_link_dest_opts $new_snapshot
 	restore_tracing link_dest_opts
 
@@ -1771,16 +1770,27 @@ case $action in
 
    # avg-dir-size name : used to decide blocks-per-inode for ext* filesystem
    ( avg*dir*size | ads )
-	[[ $# == 1 ]] || abort "specify name for to-be-built filesystem"
-	set_backup_name $1
-	$IfRun rsync -n -v -r -R \
-		     --exclude=$backup_dir_prefix* \
+	[[ $# == [12] ]] || abort "specify name for to-be-built filesystem"
+	set_backup_name $1 ; dirs_to_backup=${2:-$dirs_to_backup}
+
+	# let sysadmin check backups with smaller block sizes
+	[[ $dirs_to_backup == $backup_dir_prefix* ]] && exclude_opt= ||
+	   exclude_opt=--exclude=$backup_dir_prefix*
+	$IfRun rsync -n -v -r -R $exclude_opt \
 		     --exclude-from=$exclude_file  \
 		     --include='*/' --exclude='*'  $dirs_to_backup /tmp/ |
-	   grep '^/' | tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
+	   grep '^/' |
 	   # head -n 1000 |		# uncomment to debug
-	   awk '    { KB += $1; count += 1 }
-		END { printf "average dir size is %.1f KB\n", KB / count }'
+	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd | sort -n > $tmp
+
+	$Trace
+	set -- $(wc -l < $tmp)
+	declare -i dir_count=$1
+	declare -i median_line=$dir_count/2
+	set -- $(sed -n ${median_line}p $tmp)
+	echo "$dir_count directories; median directory is $1 KB"
+	awk '    { KB += $1; count += 1 }
+	     END { printf "average dir size is %.1f KB\n", KB/count }' $tmp
 	;;
 
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
@@ -1806,7 +1816,8 @@ case $action in
 
 	[[ ${1-} == -f ]] && shift ||
 	   abort "if this is your first or smallest disk, use the -f option; otherwise, use copy-backup instead; run: $_our_name -h"
-
+	mkfs_opts=$(echo $* | sed -r 's@^(.*) /dev/.*@\1@')
+	set -- $(echo $* | sed -r 's@.* /dev/@/dev/@')
 	[[ $# == [12] ]] || abort "-f device [backup-name]; run: $_our_name -h"
 	device=$1 name=${2-}
 
@@ -1819,6 +1830,8 @@ case $action in
 	fi
 	name=$backup_name
 	backup_dir=$backup_dir_prefix$backup_name
+	_mkfs_cmd_opts=$mkfs_cmd_opts
+	add_words _mkfs_cmd_opts $mkfs_opts
 
 	set_FS_label___from_mount_dir $backup_dir
 
@@ -1829,19 +1842,35 @@ case $action in
 	# inodes); the minimum directory size is 1 block, so we want 1-2
 	# blocks per inode.  To determine the actual average directory size,
 	# run: snapback avg-dir-size <backup-name>
-	# where the backup-name is used to find $dirs_to_backup and excludes.
+	# where the backup-name is used to set 'dirs_to_backup' and excludes.
 	# NOTE: you can over-ride bytes_per_inode on the command line.
-	let block_size=4096
-	let blocks_per_inode=1
+	# NOTE: if you make the block size smaller, you'll be able to
+	# have more inodes, see: https://askubuntu.com/a/1104944 ;
+	# this might reduce performance on a rotational hard disk
+	# (unless you're using extents and rsync's --preallocate), but might
+	# not affect performance on an SSD or flash memory stick.
+
+	# this block of code is only relevant to ext*
+	set -- $_mkfs_cmd_opts
+	while [[ $# != 0 ]]
+	   do	[[ $1 == -b       ]] && block_size=${2-}
+		[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
+		shift
+	done
+	valid_block_sizes="1024 2048 4096"
+	is_arg1_in_arg2 $block_size $valid_block_sizes ||
+	   abort "ext* block size must be one of: $valid_block_sizes"
+	blocks_per_inode=1
 	let  bytes_per_inode=$blocks_per_inode*$block_size
 
 	# There's no need to store small-files or file's extended-attributes
 	# in inodes: The extra blocks used for small-files or out-of-inode
 	# extended-attributes will be shared between snapshots, since file
-	# inodes are shared between snapshots.  So, we want small inodes
-	# (NOTE: If most of the backed-up directories have
+	# inodes are shared between snapshots.  So, we want small inodes.
+	# EXCEPT: If most of the backed-up directories have
 	# extended-attribute-blocks, then select an inode size that will hold
-	# the average set of extended-attributes).
+	# the average set of extended-attributes.  If you want to backup
+	# nanosecond timestamps or file creation time on ext*, then use >= 256.
 
 	# https://lwn.net/Articles/645722/ : 4/15: fixed ext4 extent corruption
 	# https://en.wikipedia.org/wiki/Linux_kernel#Releases_4.x.y
@@ -1850,13 +1879,13 @@ case $action in
 	   else ext4_extent_opt=
 	fi
 
-	set -- $mkfs_cmd_opts
+	set -- $_mkfs_cmd_opts
 	cmd=$1; shift; opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs)   ]] || $IfRun abort "install xfsprogs"
 		[[ $opts == *maxpct=*  ]] || add_words opts -i maxpct=0
-		[[ $opts == *-i*size=* ]] || add_words opts -i size=512
+		[[ $opts == *-i*size=* ]] || add_words opts -i size=256
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
 		     set_FS_external_log $FS_label &&
@@ -1878,16 +1907,19 @@ case $action in
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
-	   then add_words opts -v -b $block_size
-		[[ $opts != *-i* ]]     && add_words opts -i $bytes_per_inode
-		[[ $opts != *-m* ]]     && add_words opts -m .1
+	   then add_words opts -v
+		[[ $opts != *-T* ]] && {
+		[[ $opts != *-b* ]]	&& add_words opts -b $block_size
+		[[ $opts != *-i* ]]	&& add_words opts -i $bytes_per_inode
+		[[ $opts != *-I* ]]	&& add_words opts -I 128	; }
+		[[ $opts != *-m* ]]	&& add_words opts -m .1
 		[[ $opts != *extent* ]] && add_words opts $ext4_extent_opt
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$ext4_mount_options"
 		type set_FS_external_log &> /dev/null	&& # optional
 		     set_FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
-		$IfRun mke2fs -v -b 4096 -O journal_dev \
+		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
 		add_words opts -J device=LABEL=$log_label
 	fi
@@ -1907,7 +1939,7 @@ case $action in
 	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
-	[[ $mkfs_debug_opt ]] && IfRun=
+	[[ $mkfs_debug_opt ]] && IfRun= opts=$(echo $opts | sed 's/ -J .*//')
 	cmd="$IfRun $cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header $cmd
 	$cmd || abort "$cmd exited with $?"
