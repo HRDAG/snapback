@@ -1928,8 +1928,9 @@ case $action in
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs)   ]] || $IfRun abort "install xfsprogs"
+		# we'd prefer size=256, but 512 is needed for metadata CRCs
+		[[ $opts == *-i*size=* ]] || add_words opts -i size=512
 		[[ $opts == *maxpct=*  ]] || add_words opts -i maxpct=0
-		[[ $opts == *-i*size=* ]] || add_words opts -i size=256
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
 		     set_FS_external_log $FS_label &&
