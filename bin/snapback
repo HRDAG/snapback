@@ -1781,7 +1781,7 @@ case $action in
    ( dir*sizes | ds )
 	set__backup_log_dir__file_for_logging__admin_group__is_regression_test
 	readonly sizes_dir=$backup_log_dir/dir-sizes
-	$IfRun mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
+	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
 
 	if [[ $1 == -f ]]
