@@ -10,15 +10,15 @@
 # GNU/Linux system directories: virtual filesystems and transient data. #
 # -----------------------------------------------------------------------
 
-/cdrom/
-/dev/
-/media/
-/mnt/
-/proc/
-/run/
-/sys/
+/cdrom/*
+/dev/*
+/media/*
+/mnt/*
+/proc/*
+/run/*
+/sys/*
 
-/tmp/
+/tmp/*
 
 # you can uncomment these if you're tight on backup disk space
 # /usr/lib/jvm
@@ -28,22 +28,22 @@
 # /usr/share/gimp
 # /usr/share/javadoc
 # /usr/share/texmf-texlive
-# /usr/src/kernels/
+# /usr/src/kernels/*
 
 # contains 1 MB of .ttf files that change daily
-/usr/share/fonts/truetype/ttf-dejavu/
+/usr/share/fonts/truetype/ttf-dejavu/*
 
 # you could keep more or fewer, could be 1 MB each
 /var/backups/dpkg.status.[3-9].gz
 
-/var/cache/
-/var/lib/mlocate/
+/var/cache/*
+/var/lib/mlocate/*
 
 # from default /etc/updatedb.conf
-/var/lib/schroot/
+/var/lib/schroot/*
 
 # This is needed for small backup-disks or slow pruning.
-/var/log/
+/var/log/*
 # If you're security-sensitive and comment-out the above for forensics,
 # you should add 'dateext' and 'compress' and etc to /etc/logrotate.conf
 # (see etc/logrotate.conf.sample for a way to keep months of old logs),
@@ -53,7 +53,7 @@
 /var/log/**.[1-9][0-9].*[zZ]*
 /var/log/**.[1-9][0-9][0-9].*[zZ]*
 
-/var/staging/
+/var/staging/*
 /var/tmp/*cache*
 
 # -------------------------------------------------------
@@ -61,33 +61,33 @@
 # -------------------------------------------------------
 
 # mostly application caches
-/home/*/.[Cc]ache/
-/home/*/.conda/
-/home/*/.torch/
-/home/*/.*/bundle/
-/home/*/tmp/
-/home/*/[Tt]rash/
-/home/**/*[cC]ache/
-/home/**/[cC]ache*/
+/home/*/.[Cc]ache/*
+/home/*/.conda/*
+/home/*/.torch/*
+/home/*/.*/bundle/*
+/home/*/tmp/*
+/home/*/[Tt]rash/*
+/home/**/*[cC]ache/*
+/home/**/[cC]ache*/*
 /home/**/Favicons
 
 # Google Chrome files that can disappear, or are very large and change often
 /home/*/.config/google-chrome/Default/Bookmarks.bak
 /home/*/.config/google-chrome/Default/Cookies
-/home/*/.config/google-chrome/Default/Extensions/
-/home/*/.config/google-chrome/Default/File?System/
+/home/*/.config/google-chrome/Default/Extensions/*
+/home/*/.config/google-chrome/Default/File?System/*
 # GCM has been deprecated, replaced with FCM
-/home/*/.config/google-chrome/Default/GCM?Store/
+/home/*/.config/google-chrome/Default/GCM?Store/*
 # this can be GB, and changes constantly as you browse
 /home/*/.config/google-chrome/Default/History
-/home/*/.config/google-chrome/Default/IndexedDB/
-/home/*/.config/google-chrome/Default/Local?Storage/
+/home/*/.config/google-chrome/Default/IndexedDB/*
+/home/*/.config/google-chrome/Default/Local?Storage/*
 /home/*/.config/google-chrome/Default/Network?Action?Predictor
 /home/*/.config/google-chrome/Default/Pepper?Data/Shockwave?Flash/WritableRoot
-/home/*/.config/google-chrome/Default/Service?Worker/Database/
-/home/*/.config/google-chrome/Default/Session?Storage/
+/home/*/.config/google-chrome/Default/Service?Worker/Database/*
+/home/*/.config/google-chrome/Default/Session?Storage/*
 # large, holds passwords and credit card data
-/home/*/.config/google-chrome/Default/Sync?Data/
+/home/*/.config/google-chrome/Default/Sync?Data/*
 /home/*/.config/google-chrome/Default/Top?Sites
 # transient and large
 /home/*/.config/google-chrome/Default/Web?Data
@@ -103,32 +103,32 @@
 /home/*/.shotwell
 
 # big WINE files that can be repopulated
-/home/*/.cxoffice/Microsoft?Office?20??/drive_?/MSOCache/
-/home/*/.cxoffice/Microsoft?Office?20??/drive_?/users/crossover/Local?Settings/Temporary?Internet?Files/
+/home/*/.cxoffice/Microsoft?Office?20??/drive_?/MSOCache/*
+/home/*/.cxoffice/Microsoft?Office?20??/drive_?/users/crossover/Local?Settings/Temporary?Internet?Files/*
 /home/*/.cxoffice/Microsoft?Office?20??/drive_?/users/crossover/Local?Settings/Application?Data/Microsoft/*Outlook/outlook.ost
 /home/*/.cxoffice/**/*.tmp
 
 # miscellaneous config
-/home/*/.dbus/session-bus/
+/home/*/.dbus/session-bus/*
 # 19 MB, changes daily
-/home/*/.local/share/zeitgeist/
+/home/*/.local/share/zeitgeist/*
 
 # personal R libraries
-/home/*/R/x86_64-pc-linux-gnu-library/
-/home/*/R/library/
-/home/*/R/rlib/
-/home/*/*/R/x86_64-pc-linux-gnu-library/
-/home/*/*/R/library/
-/home/*/*/R/rlib/
+/home/*/R/x86_64-pc-linux-gnu-library/*
+/home/*/R/library/*
+/home/*/R/rlib/*
+/home/*/*/R/x86_64-pc-linux-gnu-library/*
+/home/*/*/R/library/*
+/home/*/*/R/rlib/*
 
 # --------------------------------------------------------------------
 # subdirectories that the 'snapshot' command backs up, can be *huge* #
 # --------------------------------------------------------------------
 
 # data-project workspaces (named by country-code names), skip 'snapshot' dirs
-/home/**/[A-Z][A-Z]**/input/
-/home/**/[A-Z][A-Z]**/output/
-/home/**/[A-Z][A-Z]**/frozen/
+/home/**/[A-Z][A-Z]**/input/*
+/home/**/[A-Z][A-Z]**/output/*
+/home/**/[A-Z][A-Z]**/frozen/*
 
 ############################################
 # Extra records could be added after this. #

@@ -57,7 +57,7 @@ Usage: $our_name action [args]
     kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
 
     add-extN-journal backup_name [FS_device]: current backup gets fast journal
-    avg-dir-size [-b bytes] [-o] name: stats for mkfs action; -o -> Old data
+    dir-sizes {-f [file] | name}: stats for 'mkfs'; -f -> use/list old data
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
@@ -400,7 +400,7 @@ is_regression_test=$false
 # this is normally called by set_backup_name; but you can pass
 # a null backup_name to set default file_for_logging & backup_log_dir
 set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
-	local  backup_name=$1	    # called from set_backup_name, so $1 valid
+	local  backup_name=${1-}    # called from set_backup_name, so $1 valid
 
 	if [[ $backup_name ]]
 	   then backup_log_dir=$log_dir/$backup_name
@@ -1777,59 +1777,79 @@ case $action in
 	   abort "mount exited with $?"
 	;;
 
-   # avg-dir-size [-b bytes] [-o] name: stats for mkfs action; -o -> Old data
-   ( avg*dir*size | ads | avg*d* )
-	[[ ! $IfRun ]] || abort "-d unsupported, use '-T 1' or -t & _not_ sudo"
-	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
-	[[ $1 == -b ]] && { bytes=$2; shift 2; } || bytes=
-	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
-	[[ $# == 1 ]] || abort "specify name for to-be-built filesystem"
-	set_backup_name $1
+   # dir-sizes {-f [file] | name}: stats for 'mkfs'; -f -> use/list old data
+   ( dir*sizes | ds )
+	set__backup_log_dir__file_for_logging__admin_group__is_regression_test
+	readonly sizes_dir=$backup_log_dir/dir-sizes
+	$IfRun mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
+	cd_ $sizes_dir
 
-	TraceV 1 use_old_file bytes backup_name
-	$Trace
-
-	if ! [[ ${use_old_file-} && $bytes ]]
-	   then backup_dir=$backup_dir_prefix$backup_name
-		[[ -d $backup_dir/latest ]] &&
-		exclude_opt=   dirs_to_backup=$backup_dir/latest/. ||
-		exclude_opt=--exclude=$backup_dir_prefix*
-		[[ $bytes ]] || {
-		[[ -d $backup_dir ]] || abort "not mounted, specify -b"
-		set_FS_block_size___from_path ${dirs_to_backup%% *}
-		bytes=$FS_block_size
-		}
+	if [[ $1 == -f ]]
+	   then file=${2-}
+		set -- *.ls-s		# the saved files
+		if [[ $file ]]
+		   then if [[ $file =~ ^[0-9]+$ ]]
+			   then eval "file=\${$file}"
+			elif [[ ! -f $file ]]
+			   then abort "no file $file"
+			fi
+		   else echo
+			for (( i = 1; i <= $#; i++ ))
+			    do	eval "echo $i. \${$i}"
+			done
+			echo -e "\nUse a filename or number with -f\n"
+			exit 1
+		fi
+	   else file=  name=${1-}
+		[[ $# == 1 && $name ]] || abort_with_action_Usage avg-dir-
+		set_backup_name $1
 	fi
-	[[ $bytes ]] || abort "have to specify -b"
-	file=$backup_log_dir/dir-sizes-b-$bytes.ls
+
+	[[ $file ]] || {
+
+	backup_dir=$backup_dir_prefix$backup_name
+	if [[ -d $backup_dir/latest ]]
+	   then exclude_opt=   dirs_to_backup=$backup_dir/latest/.
+	   else exclude_opt=--exclude=$backup_dir_prefix*
+	fi
+	is_backup_dir_mounted $backup_dir || abort "not mounted, use '-f file'"
+
+	dir=${dirs_to_backup%% *}
+	set_FS_type___from_path $dir
+	set__inode_size__data_block_size__dir_block_size___from_path $dir
+	type=$FS_type dirblock=$dir_block_size inode=$inode_size
+	file=$type-dirblock=$dirblock-inode=$inode-$backup_name.ls-s
 	TraceV 1 dirs_to_backup file
 
+	[[ ! $IfRun ]] ||
+	   abort "use '-T 1' or '-t' instead of '-d' (-d only works with -f)"
+	[[ $UID == 0 ]] || abort "need to use sudo"
+
+	rsync --dry-run --verbose --recursive --relative \
+		  $exclude_opt		      \
+		--exclude-from=$exclude_file  \
+		--include='*/' --exclude='*'  \
+		      $dirs_to_backup  /tmp/  |
+	   grep '^/' |
+	   # head -n 1000 |		# uncomment to debug
+	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
+	   sort -n > $file.partial && mv $file.partial $file
+	}
+
 	header $file
-	if [[ ${use_old_file-} ]]
-	   then [[ -s $file  ]] || {
-		 file=$file.old && [[ -s $file  ]] || abort "no old file"; }
-	   else [[ $UID == 0 ]] || abort "need to use sudo"
-		[[ -s $file  ]] &&
-		   warn "old file exists: can CTRL-C then re-run with -o"
-		cp -p $file $file.old
-		$IfRun rsync -n -v -r -R $exclude_opt \
-			     --exclude-from=$exclude_file  \
-			     --include='*/' --exclude='*'  \
-				$dirs_to_backup /tmp/ |
-		   grep '^/' |
-		   # head -n 1000 |		# uncomment to debug
-		   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
-		   sort -n > $file.partial && mv $file.partial $file
-	fi
 
 	set -- $(wc -l < $file)
 	declare -i dir_count=$1
 	declare -i median_line=$dir_count/2
 	set -- $(sed -n ${median_line}p $file)
-	echo -e "\n$dir_count directories; median directory size is ${1}B\n"
+	printf "\n%7s directories.\n" $dir_count
+	awk '    { KB += $1; count += 1 }
+	     END { printf "Average directory size is %.1f KB\n",
+				KB/count }' $file
 
+	echo -e " Median directory size is ${1%K} KB ...\n"
 	$Trace
-	(( $# > 100 )) && {
+	(( $dir_count > 100 )) && {
 	declare -i decile_count=$(( ($dir_count + 5) / 10 )) i
 	declare -i decile_median_line=decile_count/2
 	for i in {0..9}
@@ -1840,8 +1860,11 @@ case $action in
 	echo
 	}
 
-	awk '    { KB += $1; count += 1 }
-	     END { printf "Average dir size is %.1f KB\n\n", KB/count }' $file
+	echo "--> histogram of directory sizes <--"
+	echo "  count size"
+	echo "  ----- ----"
+	sed 's/^  *//; s@ */.*@@' $file | uniq -c | sort -nr | head
+	echo -e "    ...\n"
 	;;
 
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
@@ -1939,7 +1962,10 @@ case $action in
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs)   ]] || $IfRun abort "install xfsprogs"
-		# we'd prefer size=256, but 512 is needed for metadata CRCs
+		# size=256 seems best (see above); but 512 is needed for CRCs,
+		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
+		# for servers with bigger dirs (normal servers?), experiment
+		# with different mkfs opts and the dir-sizes action.
 		[[ $opts == *-i*size=* ]] || add_words opts -i size=512
 		[[ $opts == *maxpct=*  ]] || add_words opts -i maxpct=0
 		mount_opts="$XFS_mount_options"
