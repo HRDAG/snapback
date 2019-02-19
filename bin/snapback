@@ -1779,7 +1779,7 @@ case $action in
 
    # avg-dir-size [-b bytes] [-o] name: stats for mkfs action; -o -> Old data
    ( avg*dir*size | ads )
-	[[ ! $IfRun ]] || error "-d is not supported"
+	[[ ! $IfRun ]] || abort "-d unsupported, use '-T 1' or -t & _not_ sudo"
 	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
 	[[ $1 == -b ]] && { bytes=$2; shift 2; } || bytes=
 	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
@@ -1791,7 +1791,8 @@ case $action in
 	if ! [[ ${use_old_file-} && $bytes ]]
 	   then backup_dir=$backup_dir_prefix$backup_name
 		[[ -d $backup_dir/latest ]] &&
-		dirs_to_backup=$backup_dir/latest/.
+		exclude_opt=   dirs_to_backup=$backup_dir/latest/. ||
+		exclude_opt=--exclude=$backup_dir_prefix*
 		[[ $bytes ]] || {
 		[[ -d $backup_dir ]] || abort "not mounted, specify -b"
 		set_FS_block_size___from_path ${dirs_to_backup%% *}
