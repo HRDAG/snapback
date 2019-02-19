@@ -2092,7 +2092,7 @@ case $action in
 		abort "\n$msg re-run copy-backup with -f to Force unmount."
 	fi; done
 
-	set_FS_type___from_path $src_device
+	set_FS_type___from_path $src_device &&
 	[[ $FS_type == xfs ]] &&
 	   abort "after umount both, 'xfs_copy $src_device $dst_device <new-device-2>' then 'xfs_admin -L $dst_FS_label $dst_device' then mount both then 'xfs_growfs $dst_backup_dir'"
 
@@ -2184,6 +2184,10 @@ case $action in
    ###########################################################################
 
    ( test | t )
+	set_FS_block_size___from_path $1
+	echo $FS_block_size
+	exit
+
 	for dev in $(df | cut -d' ' -f1)
 	    do	[[ -b $dev ]] || continue
 		set_FS_label___from_FS_device $dev
