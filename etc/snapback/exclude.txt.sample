@@ -45,7 +45,8 @@
 # This is needed for small backup-disks or slow pruning.
 /var/log/
 # If you're security-sensitive and comment-out the above for forensics,
-# you should add 'dateext' and 'compress'  to /etc/logrotate.conf,
+# you should add 'dateext' and 'compress' and etc to /etc/logrotate.conf
+# (see etc/logrotate.conf.sample for a way to keep months of old logs),
 # then leave the following four records so the old rolled-logs get deleted.
 /var/log/**.[0-9]
 /var/log/**.[0-9].*[zZ]*
