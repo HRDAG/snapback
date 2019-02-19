@@ -1778,7 +1778,7 @@ case $action in
 	;;
 
    # avg-dir-size [-b bytes] [-o] name: stats for mkfs action; -o -> Old data
-   ( avg*dir*size | ads )
+   ( avg*dir*size | ads | avg*d* )
 	[[ ! $IfRun ]] || abort "-d unsupported, use '-T 1' or -t & _not_ sudo"
 	[[ $1 == -o ]] && { use_old_file=$true; shift ; }
 	[[ $1 == -b ]] && { bytes=$2; shift 2; } || bytes=
@@ -1787,6 +1787,7 @@ case $action in
 	set_backup_name $1
 
 	TraceV 1 use_old_file bytes backup_name
+	$Trace
 
 	if ! [[ ${use_old_file-} && $bytes ]]
 	   then backup_dir=$backup_dir_prefix$backup_name
@@ -1805,8 +1806,12 @@ case $action in
 
 	header $file
 	if [[ ${use_old_file-} ]]
-	   then [[ -s $file ]] || abort "no old file for -b $bytes"
+	   then [[ -s $file  ]] || {
+		 file=$file.old && [[ -s $file  ]] || abort "no old file"; }
 	   else [[ $UID == 0 ]] || abort "need to use sudo"
+		[[ -s $file  ]] &&
+		   warn "old file exists: can CTRL-C then re-run with -o"
+		cp -p $file $file.old
 		$IfRun rsync -n -v -r -R $exclude_opt \
 			     --exclude-from=$exclude_file  \
 			     --include='*/' --exclude='*'  \
@@ -1824,6 +1829,7 @@ case $action in
 	echo -e "\n$dir_count directories; median directory size is ${1}B\n"
 
 	$Trace
+	(( $# > 100 )) && {
 	declare -i decile_count=$(( ($dir_count + 5) / 10 )) i
 	declare -i decile_median_line=decile_count/2
 	for i in {0..9}
@@ -1832,6 +1838,7 @@ case $action in
 		decile_median_line+=decile_count
 	done
 	echo
+	}
 
 	awk '    { KB += $1; count += 1 }
 	     END { printf "Average dir size is %.1f KB\n\n", KB/count }' $file
