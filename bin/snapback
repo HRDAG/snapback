@@ -2017,13 +2017,16 @@ case $action in
 	cmd=$1; shift; opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
-		[[ $(which mkfs.xfs)   ]] || $IfRun abort "install xfsprogs"
+		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
 		# The above comment predicts size=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
-		[[ $opts == *-i*size=* ]] || add_words opts -i size=512
-		[[ $opts == *maxpct=*  ]] || add_words opts -i maxpct=0
+		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
+		[[ $opts == *"-s size="* ]] || add_words opts -s size=2048
+		[[ $opts == *"-b size="* ]] || add_words opts -b size=2048
+		[[ $opts == *"-n size="* ]] || add_words opts -n size=2048
+		[[ $opts == *maxpct=*    ]] || add_words opts -i maxpct=0
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
 		     set_FS_external_log $FS_label &&
