@@ -2012,10 +2012,10 @@ case $action in
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs)   ]] || $IfRun abort "install xfsprogs"
-		# size=256 seems best (see above); but 512 is needed for CRCs,
-		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
-		# for servers with bigger dirs (normal servers?), experiment
-		# with different mkfs opts and the dir-sizes action.
+		# The above comment predicts size=256; but CRCs need size=512,
+		# and 90% of HRDAG's server's dirs fit in a size=512 inode.
+		# For servers with bigger dirs, experiment with different
+		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		[[ $opts == *-i*size=* ]] || add_words opts -i size=512
 		[[ $opts == *maxpct=*  ]] || add_words opts -i maxpct=0
 		mount_opts="$XFS_mount_options"
