@@ -1461,7 +1461,7 @@ case $action in
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
    ( snapshot*size | ss )
-	[[ $# == 1 ]] || abort "pass directory, run: $_our_name -h"
+	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
 	dir=$1
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
 	warn "this could take hours"
@@ -1711,16 +1711,19 @@ case $action in
 
    # kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
    ( kill-backup* | kb )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
 	kill_locker_group run-backup $*
 	;;
    # kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
    ( kill-prune* | kp )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
 	kill_locker_group prune-backup $*
 	;;
    # kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
    ( kill-both | ka | kk )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-both
 	$Trace
 	kill_locker_group   run-backup $*
 	kill_locker_group prune-backup $*
@@ -1938,11 +1941,14 @@ case $action in
 	line_5="(which is not needed if the partition is auto-mounted)."
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
-	[[ ${1-} == -f ]] && shift ||
-	   abort "if this is your first or smallest disk, use the -f option; otherwise, use copy-backup instead; run: $_our_name -h"
+	[[ ${1-} == -f ]] && shift || {
+	   echo "if this is your first or smallest disk, use the -f option;"
+	   echo "otherwise, use action 'copy-backup' instead."
+	   abort_with_action_Usage mkfs
+	} >&2
 	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
 	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')
-	[[ $# == [12] ]] || abort "-f device [backup-name]; run: $_our_name -h"
+	[[ $# == [12] ]] || abort_with_action_Usage mkfs
 	device=$1 name=${2-}
 	TraceV 3 mkfs_opts device name
 	[[ $device = /* ]] || device=/dev/$device
@@ -2440,6 +2446,7 @@ case $action in
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
    ( test*prune | tp )
+	[[ $# == 0 ]] || abort_with_action_Usage test-prune
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
 
@@ -2502,6 +2509,7 @@ case $action in
    # WARNING: this should only be called by ourself or "snapcrypt close"
    # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u )			# umount
+	[[ $# != 0 ]] || abort "pass name(s)"
 	[[ $* == all ]] && set -- $(list_backups)
 
 	$Trace
