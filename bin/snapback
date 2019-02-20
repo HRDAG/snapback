@@ -1615,7 +1615,7 @@ case $action in
 	rm $tmp
 	# ------------------------------------------------------------------
 	[[ $cron_opt && $rsync_cmds && $watch_opt && $rows -lt $min_C_rows ]] || {
-	header "prune by run-prune"
+	header -E "prune by run-prune"
 	echo
 	> $tmp
 	[[ $prune_cmds ]] && {
@@ -1802,7 +1802,7 @@ case $action in
 	suffix=ls-s
 
 	if [[ $# == 0 ]]
-	   then echo -e "\nThe actual disk space consumed by a directory is"
+	   then echo -e "\nThe actual disk-space consumed by a directory is"
 		echo -e "the size of: its directory block(s) plus its inode:\n"
 		set -- *.$suffix
 		[[ -f $1 ]] ||
@@ -1913,11 +1913,11 @@ case $action in
 	echo -e "    ...\n"
 
 	set__total_dir_MB__avg_dir_KB $file
-	echo "BUT...  The actual disk space consumed by a directory is"
+	echo "BUT...  The actual disk-space consumed by a directory is"
 	echo "the size of its directory block(s) plus the size of its inode:"
 	space="$total_dir_MB MB/snapshot"
 	  avg="$avg_dir_KB KB/dir"
-	printf "\n  all directories consume $space ($avg)\n\n"
+	echo  "\n  all directories consume $space ($avg)\n\n"
 	;;
 
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
