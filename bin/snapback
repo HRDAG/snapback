@@ -1777,31 +1777,71 @@ case $action in
 	   abort "mount exited with $?"
 	;;
 
-   # dir-sizes {-f [file] | name}: stats for 'mkfs'; -f -> use/list old data
+   # dir-sizes [-f [file] | name]: stats for 'mkfs'; -f -> list/use old data
    ( dir*sizes | ds )
 	set__backup_log_dir__file_for_logging__admin_group__is_regression_test
 	readonly sizes_dir=$backup_log_dir/dir-sizes
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
 
+	set__total_dir_MB__avg_dir_KB() {
+		local file=$1
+
+		isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
+		set -- $(awk --assign isize=$isize --field-separator K \
+			 '{ space += ($1*1024) + isize; count += 1 }
+			    END { printf "%.1f %.1f\n",		\
+					  space/(1024*1024),	\
+					  space/(1024*count)}' $file)
+		total_dir_MB=$1 avg_dir_KB=$2
+	}
+
+	suffix=ls-s
+
+	if [[ $# == 0 ]]
+	   then echo -e "\nThe actual disk space consumed by a directory is"
+		echo -e "the size of: its directory block(s) plus its inode:\n"
+		set -- *.$suffix
+		[[ -f $1 ]] ||
+		   abort "no saved data files, you need to run: $our_name name"
+		for file
+		    do	set__total_dir_MB__avg_dir_KB $file || continue
+			space="all dirs use $total_dir_MB MB/snapshot"
+			  avg="$avg_dir_KB KB/dir"
+			printf "%45s: %s\n" "$space ($avg)" ${file%.$suffix}
+		done
+		echo
+		exit
+	fi
+
+	[[ $1 =~ ^[0-9]+\.?$ ]] && set -- -f $*
 	if [[ $1 == -f ]]
 	   then file=${2-}
-		set -- *.ls-s		# the saved files
+		set -- *.$suffix		# the saved files
 		if [[ $file ]]
-		   then if [[ $file =~ ^[0-9]+$ ]]
-			   then eval "file=\${$file}"
-			elif [[ ! -f $file ]]
-			   then abort "no file $file"
+		   then if [[  $file =~ ^[0-9]+\.?$ ]]
+			   then file=${file%.}
+				eval  "file=\${$file-}"
+				[[ -s $file ]] ||
+				   abort "invalid number:\n$($our_name -f)"
+			elif [[  ! -f $file ]]
+			   then err_msg="file '$file' doesn't exist"
+				if [[ $file != /* ]]
+				   then err_msg="$err_msg in $PWD/"
+					abort "$err_msg ; use absolute path??"
+				   else abort "$err_msg"
+				fi
 			fi
 		   else echo
 			for (( i = 1; i <= $#; i++ ))
 			    do	eval "echo $i. \${$i}"
 			done
-			echo -e "\nUse a filename or number with -f\n"
+			echo -e "\nUse a filename or above number with -f\n"
 			exit 1
 		fi
 	   else file=  name=${1-}
 		[[ $# == 1 && $name ]] || abort_with_action_Usage avg-dir-
+		is_OK_if_backup_dir_unmounted=$true
 		set_backup_name $1
 	fi
 
@@ -1809,16 +1849,19 @@ case $action in
 
 	backup_dir=$backup_dir_prefix$backup_name
 	if [[ -d $backup_dir/latest ]]
-	   then exclude_opt=   dirs_to_backup=$backup_dir/latest/.
+	   then exclude_opt=   dirs_to_backup=$backup_dir/latest/.  where=
 	   else exclude_opt=--exclude=$backup_dir_prefix*
+		 problem="didn't find a 'latest' snapshot symlink"
+		solution="using 'dirs_to_backup' variable on root drive"
+		warn "$problem, $solution (you can cancel with CTRL-C)"
+		where=-root
 	fi
-	is_backup_dir_mounted $backup_dir || abort "not mounted, use '-f file'"
 
 	dir=${dirs_to_backup%% *}
 	set_FS_type___from_path $dir
 	set__inode_size__data_block_size__dir_block_size___from_path $dir
 	type=$FS_type dirblock=$dir_block_size inode=$inode_size
-	file=$type-dirblock=$dirblock-inode=$inode-$backup_name.ls-s
+	file=$type-dirblock=$dirblock-inode=$inode-$backup_name$where.$suffix
 	TraceV 1 dirs_to_backup file
 
 	[[ ! $IfRun ]] ||
@@ -1831,7 +1874,7 @@ case $action in
 		--include='*/' --exclude='*'  \
 		      $dirs_to_backup  /tmp/  |
 	   grep '^/' |
-	   # head -n 1000 |		# uncomment to debug
+	   # head -n 100 |		# uncomment to debug
 	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
 	   sort -n > $file.partial && mv $file.partial $file
 	}
@@ -1865,6 +1908,13 @@ case $action in
 	echo "  ----- ----"
 	sed 's/^  *//; s@ */.*@@' $file | uniq -c | sort -nr | head
 	echo -e "    ...\n"
+
+	set__total_dir_MB__avg_dir_KB $file
+	echo "BUT...  The actual disk space consumed by a directory is"
+	echo "the size of its directory block(s) plus the size of its inode:"
+	space="$total_dir_MB MB/snapshot"
+	  avg="$avg_dir_KB KB/dir"
+	printf "\n  all directories consume $space ($avg)\n\n"
 	;;
 
    # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
