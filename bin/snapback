@@ -1622,7 +1622,7 @@ case $action in
 	echo "$cron_cmds" | sed -n 's/.*prune-backup/prune-backup/p' > $tmp_2
 	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
-	echo "$prune_cmds" | fgrep -v -w xargs
+	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
 	} | sort $prune_sort_opts > $tmp
 	if [[ -s $tmp ]]
 	   then echo "$hdr" | trim_ps_cols
@@ -1790,7 +1790,7 @@ case $action in
 		isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
 		set -- $(awk --assign isize=$isize --field-separator K \
 			 '{ space += ($1*1024) + isize; count += 1 }
-			    END { printf "%.1f %.1f\n",		\
+			    END { printf "%.1f %.2f\n",		\
 					  space/(1024*1024),	\
 					  space/(1024*count)}' $file)
 		total_dir_MB=$1 avg_dir_KB=$2
@@ -1808,8 +1808,8 @@ case $action in
 		    do	set__total_dir_MB__avg_dir_KB $file || continue
 			space="all dirs use $total_dir_MB MB/snapshot"
 			  avg="$avg_dir_KB KB/dir"
-			printf "%45s: %s\n" "$space ($avg)" ${file%.$suffix}
-		done
+			printf "%46s: %s\n" "$space ($avg)" ${file%.$suffix}
+		done | sort -k4n	# sort by total size
 		echo
 		exit
 	fi
@@ -2058,11 +2058,13 @@ case $action in
 
 	df -m | grep " $backup_dir$" &&
 	  $IfRun abort "there's already a filesystem mounted on $backup_dir"
+	[[ $FS_type == xfs && $opts == *' -N '* ]] || {
 	[[ -d $backup_dir ]] &&
 	  $IfRun abort "directory $backup_dir/ exists: is name '$name' in use?"
 	df -m | grep "^$device[ 	]" &&
 	  $IfRun abort "that device is mounted; to *DESTROY* its contents,
 			first run: umount $device"
+	}
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 

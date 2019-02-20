@@ -24,11 +24,23 @@
 # The default is "-i maxpct=0" & "-i size=256": you can override either / both.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 
-# Defaults to opts="-b 4096 -i 4096 -I 128 -m .1", you can override them.
-# but first read the long comments in the code for the 'mkfs' action );
+# Defaults to opts="-b 4096 -i 4096 -I 128 -m .1"; you can override them,
+# but first read the long comments in the code for the 'mkfs' action;
 # defaults to extent-based if new-enough kernel, override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
 readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # many tiny dirs (& SSD / flash?)
+
+# SSDs have no seek penalty, so can run rsync backup and deletion of pruned
+# snapshots simultaneously with no I/O penalty (the priority is controlled as
+# described later).  Hard disks are different, so you can change that policy.
+	 suspend_prune_when_backup=$true     # non-RAID hard-disk drive
+bkp_name2suspend_prune_when_backup[C]=$false # SSD or flash memory stick
+#
+# The above and the below are correlated.
+#
+# Used by set_FS_external_log .
+	 do_want_external_log=$true	# rotational disk, & have SSD for logs
+bkp_name2do_want_external_log[C]=$false # SSD
 
 # Optional function to allowcate an external filesystem log/journal
 # on fast storage (RAID, SSD, even flash memory stick).
@@ -89,18 +101,6 @@ readonly cmd_to_set_higher_CPU_priority="renice +13 -p"
 #
 readonly  cmd_to_set_lower_IO_priority="ionice -c 2 -n 6 -p"
 readonly cmd_to_set_higher_IO_priority="ionice -c 2 -n 5 -p"
-
-# SSDs have no seek penalty, so can run rsync backup and deletion of pruned
-# snapshots simultaneously with no I/O penalty (the priority is controlled as
-# described above).  Hard disks are different, so can change that policy.
-	 suspend_prune_when_backup=$true     # non-RAID hard-disk drive
-bkp_name2suspend_prune_when_backup[C]=$false # SSD
-#
-# The above and the below are correlated.
-#
-# Used by set_FS_external_log .
-	 do_want_external_log=$true	# rotational hard-disk drive
-bkp_name2do_want_external_log[C]=$false # SSD
 
 # ------------------------------------
 # variables that control run-backup* #
