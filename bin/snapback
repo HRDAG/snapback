@@ -8,6 +8,7 @@ readonly coder=sweikart@gmail.com
 
 # libsnap.sh has these funcs/vars: tmp_dir, our_name, our_path, true, false,
 # have_cmd, need_cmds, is_darwin, set_FS_type___from_path,
+# set__inode_size__data_block_size__dir_block_size___from_path,
 # set_FS_label___from_FS_device, label_drive,set_FS_device___from_FS_label,
 # set_FS_device___from_path, set_mount_dir___from_FS_device,
 # set_mount_dir___from_FS_label,  set_FS_label___from_mount_dir,
@@ -1191,7 +1192,7 @@ run_rsync() {
 	fi
 
 	case ${pass_opt#-p} in
-	   ('') ;;			     # not called by copy_pass
+	   ('') ;;			     # not called by copy_snapshot
 	   (0)	;;			     # single-pass
 	   (1)	$IfRun mkdir -p $partial_dst; return 1 ;; # for run_prune check
 	   (2)	$IfRun rmdir    $partial_dst &> /dev/null ;; # for touch, below
@@ -1273,6 +1274,8 @@ run_backup() {
 
 	set_backup_name $backup_name
 	set_backup_dir  $backup_name || return 1
+
+	# the following is similar to the second half of copy_snapshot
 
 	# grab lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
@@ -1373,11 +1376,11 @@ copy_snapshot() {
 	   return 1
 	TraceV 2 src_snapshot dst_snapshot
 
+	# the following is similar to the second half of run_backup_rsync
+
 	set_lock_file prune-backup $backup_name	# backup job can suspend us
 	run_lockpid $lock_file "copying to $dst_dir" > /dev/null ||
 	   exit 1
-
-	# the following is similar to run_backup_rsync
 
 	setup_merge_priority
 
@@ -1388,6 +1391,8 @@ copy_snapshot() {
 	cd $backup_dir || abort cd # can kill job with: fuser -k -M $backup_dir
 
 	run_rsync $pass_opt -E $src_snapshot/. $dst_snapshot
+
+	$IfRun lockpid -r $lock_file
 }
 
 ##############################################################################-
