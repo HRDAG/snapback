@@ -1724,6 +1724,24 @@ case $action in
 
 	# ------------------------------------------------------------------
 
+	# {copy,update,merge}-backup use prune lock (but not yet setid)
+	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
+	[[ $# == 0 ]] && rsync_cmds= ||
+	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+	[[ $rsync_cmds ]] ||
+	rsync_cmds=$(psc rsync -H ww | fgrep ' pts/' |
+			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+	[[ $rsync_cmds ]] && {
+	header "copy-snapshot, or ad-hoc rsync by sysadmin"
+	echo
+	echo "$hdr" | trim_ps_cols
+	echo "$rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
+	echo
+	}
+
+	# ------------------------------------------------------------------
+
 	set -- $(cat $lock_dir/run-backup-*.pid 2> /dev/null)
 	[[ $# == 0 ]] && rsync_cmds= ||
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
