@@ -1579,7 +1579,7 @@ case $action in
 		cmd="copy_snapshot -p0 $snapshot $backup_name"
 		[[ $IfRun ]] && header $cmd
 		$cmd || continue
-		break			# uncomment to debug
+		# break			# uncomment to debug
 	done
 
 	$IfRun sync --file-system $$backup_dir &> /dev/null
@@ -1724,34 +1724,17 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	# {copy,update,merge}-backup use prune lock (but not yet setid)
-	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
-	[[ $# == 0 ]] && rsync_cmds= ||
-	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
-			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
-	[[ $rsync_cmds ]] ||
-	rsync_cmds=$(psc rsync -H ww | fgrep ' pts/' |
-			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
-	[[ $rsync_cmds ]] && {
-	header "copy-snapshot, or ad-hoc rsync by sysadmin"
-	echo
-	echo "$hdr" | trim_ps_cols
-	echo "$rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
-	echo
-	}
-
-	# ------------------------------------------------------------------
-
 	set -- $(cat $lock_dir/run-backup-*.pid 2> /dev/null)
 	[[ $# == 0 ]] && rsync_cmds= ||
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 
-	psc rm w | grep "\b$snapshot_regex\b" | grep -v "\.rm\b" |
-	   sort $prune_sort_opts > $tmp
+	# -------
+
+	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
 	# could parameterize this restriction with 'stty' data
 	if [[ -s $tmp && ! ( $cron_opt && $rsync_cmds ) ]]
-	   then header "ad-hoc pruning by sysadmin (e.g. TTY != '?')"
+	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
 		sed 's@\([0-9] rm [^0-9]*[0-9][^ ]* \).*@\1...@' $tmp
@@ -1759,7 +1742,7 @@ case $action in
 	rm $tmp
 	# ------------------------------------------------------------------
 	[[ $cron_opt && $rsync_cmds && $watch_opt && $rows -lt $min_C_rows ]] || {
-	header -E "prune by run-prune"
+	header -E "cron's run-prune"
 	echo
 	> $tmp
 	[[ $prune_cmds ]] && {
@@ -1820,6 +1803,23 @@ case $action in
 
 	# ------------------------------------------------------------------
 
+	# {copy,update,merge}-backup use prune lock (but not yet setid)
+	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
+	[[ $# == 0 ]] && cp_rsync_cmds= ||
+	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+	[[ $cp_rsync_cmds ]] ||
+	cp_rsync_cmds=$(psc rsync -H ww | fgrep ' pts/' |
+			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+	[[ $cp_rsync_cmds ]] && {
+	header "copy-snapshot, or ad-hoc rsync by sysadmin (i.e. TTY != '?')"
+	echo
+	echo "$hdr" | trim_ps_cols
+	echo "$cp_rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
+	}
+
+	# ------------------------------------------------------------------
+
 	# for some reason, appending newlines does nothing?!
 	rsync_abbrev_msg="
 	  default opts=\"$rsync_backup_opts\" (\$rsync_backup_opts)
@@ -1828,13 +1828,15 @@ case $action in
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
 	[[ $cron_opt && $rows -lt $min_C_rows && $watch_opt ]] || {
-	    header "per-drive, primary rsync backup process (abbreviated)"
+	    header "cron's primary run-backup processes (abbreviated)"
 	    [[ $rsync_cmds ]] && {
 	    echo "$rsync_abbrev_msg"; echo
 	    echo "$hdr" | trim_ps_cols
 	    echo "$rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
 	    } || echo -e "\nNo backups are running."
 	}
+
+	# ------------------------------------------------------------------
 
 	# show process tree of master cron job(s)
 	[[ $cron_cmds ]] && {
@@ -1846,7 +1848,7 @@ case $action in
 	}
 
 	[[ $rsync_cmds ]] && {
-	header "per-drive, primary rsync backup process (full details)"
+	header "cron's primary run-backup processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$rsync_cmds" | sed "s@$HOME/@~/@g"
