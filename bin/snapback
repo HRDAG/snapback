@@ -1091,6 +1091,29 @@ set_link_dest_opts() {
 
 # -------------------------------------------------------
 
+record_rsync_time() {
+	local snapshot=$(basename $1)
+	declare -i start_secs=$2
+
+	declare -i end_secs=$(date '+%s')
+	declare -i minutes=$(( (30 + $end_secs - $start_secs) / 60 ))
+
+	local file=$backup_log_dir/stats/rsync-minutes/$snapshot.txt
+	$IfRun sudo mkdir -p $(dirname $file)
+
+	local cmd="echo $minutes > $file"
+	if [[ $IfRun ]]
+	   then echo "$cmd"
+	   else eval "$cmd"
+	fi || return 1
+
+	set -- $backup_log_dir/*.txt
+	declare -i days_worth_of_files=24/$backup_period
+	((  $# >  $days_worth_of_files )) && $IfRun rm $1
+}
+
+# -------------------------------------------------------
+
 _links_error_msg() {
 	local msg=$*
 
@@ -1137,6 +1160,7 @@ _handle_rsync_results() {
 	   then $IfRun mv  $new_snapshot.partial     $new_snapshot &&
 		[[ $new_snapshot != *.links ]] &&
 		$IfRun rm -f latest && $IfRun ln -s ${new_snapshot##*/} latest
+		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $IfRun ]] &&
 		$IfRun log "created $new_snapshot (at ${priority}er priority)"
@@ -1148,6 +1172,7 @@ _handle_rsync_results() {
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links_error_msg "$error_msg")
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
+			record_rsync_time $new_snapshot $start_seconds
 		fi
 		if is_arg1_in_arg2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
@@ -1219,6 +1244,8 @@ run_rsync() {
 				--exclude-from=$exclude_file"
 	   else local excludes=
 	fi
+
+	declare -i start_seconds=$(date '+%s')
 
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
