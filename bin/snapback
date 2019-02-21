@@ -46,6 +46,7 @@ Usage: $our_name action [args]
     list-backups: list all the mounted backups
     run-backups   [dir(s)]: dir(s) defaults to every mounted backup
     prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
+    copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
@@ -240,7 +241,7 @@ run_lockpid() {
 	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
 		log  "process $lock_holder_PID is $lock_holder_action"
 	   else log "$lock_cmd -> $lockpid_output (status=$status)"
-	fi
+	fi >&2
 	return 1
 }
 
@@ -436,6 +437,8 @@ set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
 	suspend_tracing
 	customize_and_validate_configuration_variables $backup_name
 	restore_tracing
+
+	return 0
 }
 
 # ---------------------------------
@@ -627,6 +630,15 @@ is_disk_usage_too_high() {
 }
 
 # -----------------------
+
+setup_merge_priority() {
+
+	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
+	$IfRun $sudo $cmd_to_set_merge_CPU_priority $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_merge_IO_priority  $BASHPID &>/dev/null
+}
+
+# --------------
 
 setup_lower_priority() {
 
@@ -971,7 +983,7 @@ _do_skip_newest_span_of_days() {
 prune_backup() {
 	local backup_name=$1 backup_dir
 
-	set_backup_name $backup_name &&
+	set_backup_name $backup_name
 	set_backup_dir  $backup_name || return 1
 
 	_is_time_to_prune_backup $backup_dir || return 0
@@ -1019,6 +1031,21 @@ prune_backup() {
 # Functions and variables used to create new backups.
 ##############################################################################-
 ##############################################################################-
+
+_is_time_to_run_backup() {
+	local dir=$1
+
+	[[ ! $is_cron ]] && return 0	# run by a person?
+
+	local  current_hour=$(date '+%k')
+	local excluded_hours=$(echo ${excluded_backup_hours-} | sed 's/\b0//g')
+	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
+	(( $current_hour % $backup_period == 0 )) && return 0
+
+	return 1
+}
+
+# -------------------------------------------------------
 
 declare -i num_link_dests=0
 
@@ -1088,11 +1115,13 @@ _links_error_msg() {
 	echo "$msg"
 }
 
+# ---------------------------------
+
 _handle_rsync_results() {
 	local new_snapshot=$1 status=$2 log=$3
 
 	if [[ -s $log ]]
-	   then [[ $is_interactive ]] && { bzcat $log; rm $log; }
+	   then [[ ${is_interactive-$IfRun} ]] && { bzcat $log; rm $log; }
 	   else rm $log
 	fi
 
@@ -1103,6 +1132,7 @@ _handle_rsync_results() {
 
 	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
 	   then $IfRun mv  $new_snapshot.partial     $new_snapshot &&
+		[[ $new_snapshot != *.links ]] &&
 		$IfRun rm -f latest && $IfRun ln -s ${new_snapshot##*/} latest
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $IfRun ]] &&
@@ -1133,28 +1163,84 @@ _handle_rsync_results() {
 	fi
 }
 
-# -------------------------------------------------------
+# ----------------------
 
-_is_time_to_run_backup() {
-	local dir=$1
+run_rsync() {
+	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
+	if [[ $1 == -E ]]
+	   then shift
+		local skip_excludes=$true
+	   else local skip_excludes=$false
+	fi
+	local dst_snapshot=${!#}
+	local src_dirs=${*%$dst_snapshot}
 
-	[[ ! $is_cron ]] && return 0	# run by a person?
+	local date_time=$(basename $dst_snapshot)
+	local log=$tmp_dir/$backup_name-${date_time%%.*}.bz2
 
-	local  current_hour=$(date '+%k')
-	local excluded_hours=$(echo ${excluded_backup_hours-} | sed 's/\b0//g')
-	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
-	(( $current_hour % $backup_period == 0 )) && return 0
+	if [[ $dst_snapshot == *.partial ]]
+	   then local partial_dst=$dst_snapshot
+	   else local partial_dst=$dst_snapshot.partial
+		# if earlier rsync exists, start with the earlier snapshot
+		local suffix
+		for   suffix in '' '.links'
+		    do	local  useful_dst=$dst_snapshot$suffix
+			[[ -d $useful_dst ]] &&
+			   $IfRun mv $useful_dst $partial_dst && break
+		done
+	fi
 
-	return 1
+	case ${pass_opt#-p} in
+	   ('') ;;			     # not called by copy_pass
+	   (0)	;;			     # single-pass
+	   (1)	$IfRun mkdir -p $partial_dst; return 1 ;; # for run_prune check
+	   (2)	$IfRun rmdir    $partial_dst &> /dev/null ;; # for touch, below
+	   (*)	abort "bad pass option: $pass_opt"
+	esac
+
+	{		     # ensure $dst_snapshot has current time
+	[[ $IfRun ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
+	until [[ -e  $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
+	$IfRun touch $partial_dst	# in case we crash; see next 'touch'
+	[[ -f $partial_dst ]] && rm $partial_dst # quick backup??
+	} &
+
+	suspend_tracing
+	local link_dest_opts=
+	set_link_dest_opts $dst_snapshot
+	restore_tracing link_dest_opts
+
+	# backup_dir_prefix and rsync_backup_opts come from $config_file
+	if [[ ! $skip_excludes ]]
+	   then local excludes="--exclude=$backup_dir_prefix*
+				--exclude-from=$exclude_file"
+	   else local excludes=
+	fi
+
+	$Trace
+	$IfRun rsync $rsync_backup_opts	\
+		     $our_rsync_opts	\
+		     --relative		\
+		     $link_dest_opts	\
+		     $excludes		\
+			$src_dirs $partial_dst/ |& bzip2 -9 > $log
+	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
+
+	$IfRun touch $partial_dst	# 'when we finished', not mdate of src
+
+	_handle_rsync_results $dst_snapshot $status $log
+
+	[[ $pass_opt ]] ||
+	$IfRun sync --file-system $dst_snapshot* &> /dev/null
+
+	return $status
 }
 
-# ----------------------
+# -------------------------------------------------------
 
 run_backup_rsync() {
 
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
-
-	setup_run_backup_priority && local priority=high || local priority=low
+	setup_run_backup_priority && priority=high || priority=low
 
 	if [[ -t 2 ]]
 	   then local is_interactive=$true
@@ -1171,57 +1257,13 @@ run_backup_rsync() {
 		echo " too late."
 	fi
 
-	local log=$tmp_dir/$backup_name-$date_time.bz2
-	if [[ -s $log ]]
-	   then bzip2 --test $log &> /dev/null || bzip2recover $log
-		bzip2 --test $log &> /dev/null || rm $log
-	fi
+	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
+	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
 	suspend_tracing
-	local link_dest_opts=
-	set_link_dest_opts $new_snapshot
-	restore_tracing link_dest_opts
-
-	local partial_snapshot=$new_snapshot.partial
-
-	# if earlier backup run this hour, start with the earlier snapshot
-	local suffix
-	for   suffix in '' '.links'
-	    do	if [[  -d  $new_snapshot$suffix ]]
-		   then $IfRun mv $new_snapshot$suffix $partial_snapshot
-			break
-		fi
-	done
-
-	{
-	[[ $IfRun ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
-	until [[ -e $partial_snapshot || -e $new_snapshot ]] ; do sleep 9; done
-	$IfRun touch  $partial_snapshot	# in case we crash; see next 'touch'
-	[[ -f $partial_snapshot ]] && rm $partial_snapshot # quick backup??
-	} &
-
-	suspend_tracing
-	eval "set -- $dirs_to_backup"
+	eval "run_rsync $dirs_to_backup $new_snapshot" # might need globbing
 	restore_tracing
-
-	$Trace
-
-	# rsync_backup_opts and backup_dir_prefix come from $config_file
-	$IfRun rsync $rsync_backup_opts		   \
-		     $our_rsync_opts		   \
-		     --relative $link_dest_opts	   \
-		     --exclude=$backup_dir_prefix* \
-		     --exclude-from=$exclude_file  \
-			$* $partial_snapshot/ |& bzip2 -9 >> $log
-	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
-
-	$IfRun touch $partial_snapshot	# 'when we finished', not mdate of src
-
-	_handle_rsync_results $new_snapshot $status $log
-
-	$IfRun sync --file-system $new_snapshot* &> /dev/null
-
-	return $status
 }
 
 # ----------------------
@@ -1231,8 +1273,6 @@ run_backup() {
 
 	set_backup_name $backup_name
 	set_backup_dir  $backup_name || return 1
-
-	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
 
 	# grab lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
@@ -1261,49 +1301,93 @@ run_backup() {
 ##############################################################################-
 ##############################################################################-
 
-_set_dst() {
-	local src_name=$1 dst_dir=$2
+bad_copy() {
+	local msg=$*
 
-	set -- $dst_dir/${src_name%%.*}*	# a version might exist
-	[[ $# == 1    ]] || abort "$* exist, (mv then) delete worse one(s)"
-	[[ $1 != *.rm ]] || abort "destination is waiting to be pruned"
-	dst=$1
+	[[ $pass_opt || $IfRun ]] || abort "$msg"
 
-	if [[ ! -d $dst ]]
-	   then dst=$dst_dir/${src_name%%.*}.partial
-		return
-	fi
+	[[ ! $IfRun ]] || echo "copy_snapshot: $msg"
 
-	local dst_name=$(basename $dst)
-	[[ $dst_name != $snapshot_pattern.* ]]  ||
-	   is_arg1_in_arg2 ${dst_name##*.} links partial || {
-	   local fix="change its suffix to .partial if you want to update it"
-	   abort "destination $dst exists, but has invalid suffix; $fix" ; }
-	local src_ext=${src_name#*.} ; src_ext=${src_ext%.rm}
-	local dst_ext=${dst_name##*.}
-	[[ $src_ext == $dst_ext &&  $dst_ext != partial ]] &&
-	   local fix="cd $dst_dir && mv $dst_name ${dst_name%%.*}.partial" &&
-	   abort "$dst has snapshot; if want to update it, run: $fix"
+	return 1
+}
+
+# ---------------------------------
+
+is_src_snapshot_useful() {
+	local src_snapshot=$1
+
+	[[ -d $src_snapshot ]] || bad_copy "no snapshot '$1'" || return 1
+	local  src_name=$(basename $src_snapshot)
+	[[ $src_name == $snapshot_pattern ||
+	   $src_name == $snapshot_pattern.links ]] ||
+	   bad_copy "$src_snapshot is not a reliable snapshot" || return 1
+	[[ $src_name != *.rm ]] && return 0
+	bad_copy "can't copy (partially deleted?) pruned snapshot $src_name"
+}
+
+# ---------------------------------
+
+is_dst_snapshot_needed() {
+	local dst_snapshot=$1
+
+	set -- ${dst_snapshot%.*}.*	# a version might exist
+	[[ $# == 1    ]] ||
+	   bad_copy "'$*' exist, (mv then) delete worst one" || return 1
+	[[ $1 != *.rm ]] ||
+	   bad_copy "destination is waiting to be pruned" || return 1
+
+	local junk_dir=$(dirname $dst_snapshot)/.junk
+	$IfRun mkdir -p $junk_dir > /dev/null
+
+	[[ -e $1 ]] || set -- $dst_snapshot
+	[[ -e $1 ]] || return 0
+	local ext=${1##*.}
+
+	[[ ! -d $1 ]] &&
+	   $IfRun mv $1 $junk_dir/ && { warn "junk in $junk_dir"; return 0; }
+	! [[ $(basename $1) != *.* || $ext == links || $ext == partial ]] &&
+	   $IfRun mv $1 $junk_dir/ && { warn "junk in $junk_dir"; return 0; }
+
+	[[ $1 !=  $dst_snapshot ]] && return 0
+	bad_copy "$dst_snapshot already exists"
 }
 
 # ---------------------------------
 
 copy_snapshot() {
-	[[ $# == 2 ]] || abort "$FUNCNAME src dst_dir"
-	local src=$1 dst_dir=$2
+	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
+	[[ $# ==  2  ]] || abort "$FUNCNAME src dst_backup_name"
+	local src_snapshot=$1 dst_backup_name=$2
 
-	[[ -d $src     ]] || abort "$FUNCNAME $*: $1 does not exist"
-	[[ -d $dst_dir ]] || abort "$FUNCNAME $*: dst_dir should be parent dir"
-	[[ $(basename $src) == $snapshot_pattern{,.{links,partial,rm}} ]] ||
-	   abort "$FUNCNAME $*: $src is not a valid snapshot name"
-	[[ $(basename $dst_dir) != $snapshot_pattern* ]] ||
-	   abort "$FUNCNAME $*: dst_dir should be (backup) dir, not snapshot"
+	[[ ! $pass_opt ]] && {		# if -p, caller ran following 2 funcs
+	set_backup_name $dst_backup_name
+	set_backup_dir $backup_name || abort "$dst_backup_name not mounted"; }
+	local  dst_dir=$backup_dir
 
-	warn "need -f if dst_dir is backup & excludes or dirs_to_backup differ"
+	is_src_snapshot_useful $src_snapshot || return 1
 
-	local src_name=$(basename $src)
-	_set_dst $src_name $dst_dir
-	TraceV 2 src dst
+	dst_snapshot=$dst_dir/$(basename $src_snapshot)
+	is_dst_snapshot_needed $dst_snapshot || return 1
+	[[ $src_snapshot != *.links || ! -d ${dst_snapshot%.*} ]] ||
+	   bad_copy "$src_snapshot is no better than dst $dst_snapshot" ||
+	   return 1
+	TraceV 2 src_snapshot dst_snapshot
+
+	set_lock_file prune-backup $backup_name	# backup job can suspend us
+	run_lockpid $lock_file "copying to $dst_dir" > /dev/null ||
+	   exit 1
+
+	# the following is similar to run_backup_rsync
+
+	setup_merge_priority
+
+	# lower nice value is higher priority
+	[[  $cmd_to_set_merge_IO_priority < \
+	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
+
+	cd $backup_dir || abort cd # can kill job with: fuser -k -M $backup_dir
+
+	run_rsync $pass_opt -E $src_snapshot/. $dst_snapshot
 }
 
 ##############################################################################-
@@ -1457,6 +1541,48 @@ case $action in
    ( pr*n*b*k*p* | pb* )
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
+	;;
+   # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
+   ( c*p*s*s* | cs* | cps )
+	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
+	dst_name=${!#}
+	src_snapshots=${*%$dst_name}
+
+	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
+	for snapshot in $src_snapshots
+	    do	copy_snapshot $snapshot $dst_name
+	done
+	;;
+  # update-backup name: 'name' mounted backup gets snapshots from other backups
+   (upd*b* | ub )
+	set_backup_name $1
+	set_backup_dir $backup_name
+
+	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+
+	prev_date_time=
+	for dir in $(list_backups | fgrep -v -w $backup_dir)
+	    do	suspend_tracing
+		echo $dir/$snapshot_pattern*
+		restore_tracing
+	done | tr ' ' '\n' | grep -v '\.rm$' |
+	sort --field-separator=/ --key=4 |
+	# cat				# uncomment to debug
+	while read snapshot
+	    do	date_time=$(basename $snapshot)
+		date_time=${date_time%%.*}
+		[[ $prev_date_time == $date_time ]] && continue
+		    prev_date_time=$date_time
+
+		cmd="copy_snapshot -p1 $snapshot $backup_name" # for debugging
+		cmd="copy_snapshot -p0 $snapshot $backup_name"
+		[[ $IfRun ]] && header $cmd
+		$cmd || continue
+		break			# uncomment to debug
+	done
+
+	$IfRun sync --file-system $$backup_dir &> /dev/null
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)

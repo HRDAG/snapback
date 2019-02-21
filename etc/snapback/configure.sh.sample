@@ -17,6 +17,11 @@
 # The command + options used by action 'mkfs' to create a brand new filesystem.
 # -----------------------------------------------------------------------------
 
+# --------------------------
+# To understand the defaults mentioned below, read the long comments in
+# the code for the 'mkfs' action.
+# --------------------------
+
 # Comment-out all-but-one of these sample values:
 
 # You'll need to add -f if the partition already has an *UNWANTED* filesystem.
@@ -98,9 +103,11 @@ declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 # A PID will be appended to these commands; if that's not adequate, then you'll
 # need to define a function that takes a PID as its final argument, and assign
 # that function (with optional initial arguments) to these variables.
+readonly  cmd_to_set_merge_CPU_priority="renice +15 -p"
 readonly  cmd_to_set_lower_CPU_priority="renice +15 -p"
 readonly cmd_to_set_higher_CPU_priority="renice +13 -p"
 #
+readonly  cmd_to_set_merge_IO_priority="ionice -c 2 -n 6 -p"
 readonly  cmd_to_set_lower_IO_priority="ionice -c 2 -n 6 -p"
 readonly cmd_to_set_higher_IO_priority="ionice -c 2 -n 5 -p"
 
