@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-version=9			# has to match version= in configure.sh.sample
+version=10			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -411,11 +411,13 @@ set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
 	TraceV 3 backup_log_dir
 	file_for_logging=$backup_log_dir/messages.log
 
+	suspend_tracing
 	local group
 	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
 	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
 	done
 	[[ $group == NoNe ]] && group= || admin_group=$group
+	restore_tracing group
 
 	[[ -d $log_dir ]] || {
 	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
@@ -1565,6 +1567,8 @@ case $action in
 	set_backup_dir $backup_name
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+
+	$Trace
 
 	prev_date_time=
 	for dir in $(list_backups | fgrep -v -w $backup_dir)
