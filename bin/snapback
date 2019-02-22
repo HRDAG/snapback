@@ -1639,16 +1639,36 @@ case $action in
    # watch [-f][-C] [watch opts]: 'watch w' (-f: full info; -C: show cron job)
    ( watch | wa* | wt* | w )
 	$Trace
-	watch_opt= ps_opt= cron_opt=
+	watch_opt= ps_opt= cron_opt= names=
 	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 	[[ $is_cron ]] && cron_opt=-C
 
-	[[ ${SSH_TTY-}  ]] && n=1 || n=0.1
+	all_opts="$ps_opt $cron_opt"
+	[[ $names ]] && add_words all_opts -N $names
+	[[ ${SSH_TTY-}  ]] && n=2 || n=0.1
 	[[ $action == w ]] ||
-	   exec watch ${*:- -n $n} $our_path $our_opts w -w $ps_opt $cron_opt
+	   exec watch ${*:- -n $n} $our_path $our_opts w -w $all_opts
+
+	drives= names_pat=
+	if [[ $names ]]
+	   then for name in ${names//,/ }
+		    do	set_backup_name  $name
+			add_words drives $backup_dir_prefix$backup_name
+			[[ $name = ? ]] && names_pat=$names_pat$backup_name
+		done
+		show_all=$true   cron_opt=-C
+	   else show_all=$false
+		drives=$(list_backups | tr '\n' ' ')
+	fi
+	[[ $names_pat ]] && names_pat=[$names_pat]
+
+	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
+
+	TraceV 1 names drives names_pat ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
 
@@ -1664,17 +1684,13 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	if [[ ! $watch_opt ]]
-	   then ps_opt=-f cron_opt=-C
-	fi
-
 	set -- $(stty -a | head -n1)
 	declare -i rows=${5%;} cols=${7%;}
 
 	# since the contents of $() are run in subshell, have to echo results
 	set -- $(
 	declare -i max_device_len=0 max_mount_len=0
-	df --block-size=G $(list_backups) |
+	df --block-size=G $drives |
 	while read device size used avail used mount junk
 	    do	declare -i device_len=${#device} mount_len=${#mount}
 		is_new_max=$false
@@ -1722,24 +1738,29 @@ case $action in
 
 	customize_and_validate_configuration_variables
 
-	rsync_cmds=$(ps -C rsync -H ww | grep "[0-9] rsync.*/$snapshot_regex")
+	eval \
+	"set -- \$(cat $lock_dir/run-backup-${names_pat:-?}.pid 2> /dev/null)"
+	[[ $# == 0 ]] && rsync_cmds= ||
+	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
 	declare -i num_drives=$(list_backups | wc -l)
 
-	if [[ ! $rsync_cmds && $cron_opt &&
-		! -s /etc/sudoers.d/$_our_name ]]
-	   then header "to not fill the log with frequent 'sudo ps'"
+	[[ $rsync_cmds || -s /etc/sudoers.d/$_our_name ]] || {
+		header "to not fill the log with frequent 'sudo ps'"
 		option_1="install etc/sudoers.d/$our_name"
 		option_2="put its contents into /etc/sudoers"
-		echo -e "\n$option_1, or $option_2"
-	fi
+		echo -e "\n$option_1, or $option_2\n"
+	}
 
-	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
-	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g') 2>/dev/null |
+	eval \
+	"set -- \$(cat $lock_dir/prune-backup-${names_pat:-?}.pid 2>/dev/null)"
+	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g')	  2>/dev/null |
 			trim_prune_rsync)
 	#
 	cron_job_regexp=' -C run-backups? *$' # put into configure.sh ??
 	set -- $(ps -u root w | egrep "$cron_job_regexp" | awk '{print $1}')
+
 	[[ ($cron_opt || ! $rsync_cmds) && $# != 0 ]] && {
 	set_PGID $*
 	cron_PGIDs=$PGID
@@ -1760,16 +1781,9 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	set -- $(cat $lock_dir/run-backup-*.pid 2> /dev/null)
-	[[ $# == 0 ]] && rsync_cmds= ||
-	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
-			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
-
-	# -------
-
 	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
 	# could parameterize this restriction with 'stty' data
-	if [[ -s $tmp && ! ( $cron_opt && $rsync_cmds ) ]]
+	if [[ -s $tmp && ( $show_all || ! ( $cron_opt && $rsync_cmds ) ) ]]
 	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
@@ -1777,13 +1791,13 @@ case $action in
 	fi
 	rm $tmp
 	# ------------------------------------------------------------------
-	[[ $cron_opt && $rsync_cmds && $watch_opt && $rows -lt $min_C_rows ]] || {
+	[[ $cron_opt && $rsync_cmds && ! $show_all && $rows -lt $min_C_rows ]] || {
 	header -E "cron's run-prune"
 	echo
 	> $tmp
 	[[ $prune_cmds ]] && {
 	echo "$cron_cmds" | sed -n 's/.*prune-backup/prune-backup/p' > $tmp_2
-	[[ $cron_opt && $rsync_cmds && $watch_opt ]] && # && $rows < ???
+	[[ $cron_opt && $rsync_cmds && ! $show_all ]] && # && $rows < ???
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
 	} | sort $prune_sort_opts > $tmp
@@ -1802,7 +1816,7 @@ case $action in
 	echo " Number of 'Too many links' snapshots:  $stats_number"
 	echo "    Days since 'Too many links' error:  $stats_newest_age"
 
-	[[ $rsync_cmds && $watch_opt ]] || { # && $rows < ???
+	[[ $rsync_cmds && ! $show_all ]] || { # && $rows < ???
 	echo
 	setup_snapshot_stats ''
 	echo "    Total number successful snapshots:  $stats_number"
@@ -1819,15 +1833,15 @@ case $action in
 
 	# ------------------------------------------------------------------
 
-	[[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows ]] || {
+	[[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows && ! $show_all ]] || {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
-	df --block-size=G --output=$df_fields  $(list_backups)
+	df --block-size=G --output=$df_fields  $drives
 	}
 
-	[[ $cron_opt || $rsync_cmds ]] || {
+	[[ ( $cron_opt || $rsync_cmds ) && ! $show_all ]] || {
 	devices=
-	for dir in $(list_backups)
+	for dir in $drives
 	    do	set_FS_device___from_path $dir &&
 		add_words devices $FS_device
 	done
@@ -1840,7 +1854,8 @@ case $action in
 	# ------------------------------------------------------------------
 
 	# {copy,update,merge}-backup use prune lock (but not yet setid)
-	set -- $(cat $lock_dir/prune-backup-*.pid 2> /dev/null)
+	eval \
+	"set -- \$(cat $lock_dir/prune-backup-${names_pat:-?}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
@@ -1863,7 +1878,7 @@ case $action in
 	"
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
-	[[ $cron_opt && $rows -lt $min_C_rows && $watch_opt ]] || {
+	[[ $cron_opt && $rows -lt $min_C_rows && ! $show_all ]] || {
 	    header "cron's primary run-backup processes (abbreviated)"
 	    [[ $rsync_cmds ]] && {
 	    echo "$rsync_abbrev_msg"; echo
