@@ -44,7 +44,7 @@ source $config_file || abort "$config_file broken"
 Usage="
 Usage: $our_name action [args]
   Current actions are:
-    list-backups: list all the mounted backups
+    list-drives: list all the mounted backup drives or partitions
     run-backups   [dir(s)]: dir(s) defaults to every mounted backup
     prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
     copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
@@ -250,7 +250,7 @@ run_lockpid() {
 
 locker_PIDs() {
 	local type=$1; shift
-	[[ $* == all ]] && set -- $(list_backups)
+	[[ $* == all ]] && set -- $(list_drives)
 
 	local backup
 	for backup
@@ -267,7 +267,7 @@ locker_PIDs() {
 kill_locker_group() {
 	local type=$1; shift
 	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
-	[[ $* == all ]] && set -- $(list_backups)
+	[[ $* == all ]] && set -- $(list_drives)
 
 	set_signal_is_kill $signal
 	local PGID pgid status=1
@@ -326,7 +326,7 @@ signal_job() {
 # miscellaneous
 ##############################################################################
 
-list_backups() {
+list_drives() {
 
 	suspend_tracing
 	customize_and_validate_configuration_variables Z # ensure have *pattern
@@ -377,7 +377,7 @@ function fix_snapshot_names {
 set_oldest_backup_snapshot() {
 
 	local oldest= FS
-	for FS in $(list_backups)
+	for FS in $(list_drives)
 	    do	suspend_tracing
 		set -- $FS/$snapshot_pattern
 		restore_tracing
@@ -1107,9 +1107,14 @@ record_rsync_time() {
 	   else eval "$cmd"
 	fi || return 1
 
-	set -- $backup_log_dir/*.txt
-	declare -i days_worth_of_files=24/$backup_period
-	((  $# >  $days_worth_of_files )) && $IfRun rm $1
+	declare -i days_to_keep=1
+	declare -i number_files_per_day=24/$backup_period
+	declare -i number_files_to_keep=$number_files_per_day*$days_to_keep
+	eval "set -- $(dirname $file)/$snapshot_pattern.txt"
+	while (( $# > $number_files_to_keep ))
+	    do	$IfRun rm $1
+		shift
+	done
 }
 
 # -------------------------------------------------------
@@ -1451,7 +1456,7 @@ run_jobs_in_parallel() {
 	fi
 
 	$Trace
-	for dir in ${*:-$(list_backups)}
+	for dir in ${*:-$(list_drives)}
 	    do	if [[ ! $IfRun ]]
 		   then trap '' HUP
 			# Can't "$function dir &", processes share $tmp* files.
@@ -1503,7 +1508,7 @@ setup_snapshot_stats() {
 
 	local cwd=$PWD nums= oldies= newies=
 	local dir backup_name
-	for dir in $(list_backups)
+	for dir in $(list_drives)
 	    do	set_backup_name $dir
 		local name=$backup_name
 		cd_ $dir
@@ -1562,9 +1567,9 @@ process_action() {
 stack_frame_to_show=0	     # show our line-number in action 'case- statement
 
 case $action in
-   # list-backups: list all the mounted backups
-   ( l*s*b*k*p* | l*s*d* | ls | lb )
-	list_backups
+   # list-drives: list all the mounted backup drives or partitions
+   ( l*s*dr*v* | ld | ls )
+	list_drives
 	;;
    # run-backups   [dir(s)]: dir(s) defaults to every mounted backup
    ( r*b*k*p* | rb* )
@@ -1598,7 +1603,7 @@ case $action in
 	$Trace
 
 	prev_date_time=
-	for dir in $(list_backups | fgrep -v -w $backup_dir)
+	for dir in $(list_drives | fgrep -v -w $backup_dir)
 	    do	suspend_tracing
 		echo $dir/$snapshot_pattern*
 		restore_tracing
@@ -1662,7 +1667,7 @@ case $action in
 		done
 		show_all=$true   cron_opt=-C
 	   else show_all=$false
-		drives=$(list_backups | tr '\n' ' ')
+		drives=$(list_drives | tr '\n' ' ')
 	fi
 	[[ $names_pat ]] && names_pat=[$names_pat]
 
@@ -1744,7 +1749,7 @@ case $action in
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
-	declare -i num_drives=$(list_backups | wc -l)
+	declare -i num_drives=$(list_drives | wc -l)
 
 	[[ $rsync_cmds || -s /etc/sudoers.d/$_our_name ]] || {
 		header "to not fill the log with frequent 'sudo ps'"
@@ -2371,7 +2376,7 @@ case $action in
 	is_arg1_in_arg2 -f $action_opts ||
 	for backup_dir in $src_backup_dir $dst_backup_dir; do
 	if is_backup_dir_mounted $backup_dir
-	   then set -- $(list_backups | 
+	   then set -- $(list_drives | 
 			 fgrep -v -w -e $src_backup_dir -e $dst_backup_dir)
 		[[ $# == 0 ]] &&
 		msg="
@@ -2710,7 +2715,7 @@ case $action in
    # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u )			# umount
 	[[ $# != 0 ]] || abort "pass name(s)"
-	[[ $* == all ]] && set -- $(list_backups)
+	[[ $* == all ]] && set -- $(list_drives)
 
 	$Trace
 	# do this early, since takes a while for processes to die
@@ -2764,7 +2769,7 @@ case $action in
 		fi
 	fi
 
-	set -- ${*:-$(list_backups)}	# for debugging: | tac
+	set -- ${*:-$(list_drives)}	# for debugging: | tac
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
 	declare -i secs_per_day=24*60*60
