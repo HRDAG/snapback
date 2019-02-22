@@ -1247,9 +1247,9 @@ run_rsync() {
 
 	# backup_dir_prefix and rsync_backup_opts come from $config_file
 	if [[ ! $skip_excludes ]]
-	   then local excludes="--exclude=$backup_dir_prefix*
-				--exclude-from=$exclude_file"
-	   else local excludes=
+	   then local r_opt=--relative  excludes="--exclude=$backup_dir_prefix*
+						  --exclude-from=$exclude_file"
+	   else local r_opt=		excludes=
 	fi
 
 	declare -i start_seconds=$(date '+%s')
@@ -1257,7 +1257,7 @@ run_rsync() {
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\
-		     --relative		\
+		     $r_opt		\
 		     $link_dest_opts	\
 		     $excludes		\
 			$src_dirs $partial_dst/ |& bzip2 -9 > $log
