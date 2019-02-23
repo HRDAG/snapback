@@ -9,7 +9,8 @@ readonly coder=sweikart@gmail.com
 # libsnap.sh has these funcs/vars: tmp_dir, our_name, our_path, true, false,
 # have_cmd, need_cmds, is_darwin, set_FS_type___from_path,
 # set__inode_size__data_block_size__dir_block_size___from_path,
-# set_FS_label___from_FS_device, label_drive,set_FS_device___from_FS_label,
+# FS_label, set_FS_label___from_FS_device, label_drive,
+# set_FS_device___from_FS_label, FS_device,
 # set_FS_device___from_path, set_mount_dir___from_FS_device,
 # set_mount_dir___from_FS_label,  set_FS_label___from_mount_dir,
 # warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
@@ -1876,133 +1877,8 @@ watch() {
 ##############################################################################-
 ##############################################################################-
 
-#############################################################################
-#############################################################################
-# Process the requested action with the above functions & global variables. #
-#############################################################################
-#############################################################################
-
-[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
-
-action=$1; shift
-_our_name="$our_name"
- our_name="$our_name $action"
-
-process_action() {
-
-stack_frame_to_show=0	     # show our line-number in action 'case- statement
-
-case $action in
-   # list-drives: list all the mounted backup drives or partitions
-   ( l*s*dr*v* | ld | ls )
-	list_drives
-	;;
-   # run-backups   [dir(s)]: dir(s) defaults to every mounted backup
-   ( r*b*k*p* | rb* )
-	run_jobs_in_parallel backup "$@"
-	[[ $is_cron ]] && wait		# so see master cron job in ps
-	;;
-   # prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
-   ( pr*n*b*k*p* | pb* )
-	run_jobs_in_parallel prune "$@"
-	[[ $is_cron ]] && wait		# so see master cron job in ps
-	;;
-   # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
-   ( c*p*s*s* | cs* | cps )
-	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
-	dst_name=${!#}
-	src_snapshots=${*%$dst_name}
-
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
-
-	for snapshot in $src_snapshots
-	    do	copy_snapshot $snapshot $dst_name
-	done
-	;;
-  # update-backup name: 'name' mounted backup gets snapshots from other backups
-   (upd*b* | ub )
-	set_backup_name $1
-	set_backup_dir $backup_name
-
-	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
-
-	$Trace
-
-	set -f
-	set -- $(echo root$backup_dir_prefix$anchored_backup_name_regex/snap |
-		 tr / ' ')
-	set +f
-	snapshot_sort_key=$#
-
-	prev_date_time=
-	for dir in $(list_drives | fgrep -v -w $backup_dir)
-	    do	suspend_tracing
-		echo $dir/$snapshot_pattern*
-		restore_tracing
-	done | tr ' ' '\n' | grep -v '\.rm$' |
-	sort --field-separator=/ --key=$snapshot_sort_key |
-	while read snapshot
-	    do	date_time=$(basename $snapshot)
-		date_time=${date_time%%.*}
-		[[ $prev_date_time == $date_time ]] && continue
-		    prev_date_time=$date_time
-
-		cmd="copy_snapshot -p1 $snapshot $backup_name" # for debugging
-		cmd="copy_snapshot -p0 $snapshot $backup_name"
-		[[ $IfRun ]] && header $cmd
-		$cmd || continue
-		# break			# uncomment to debug
-	done
-
-	$IfRun sync --file-system $$backup_dir &> /dev/null
-	;;
-
-  # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-   ( snapshot*size | ss )
-	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
-	dir=$1
-	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
-	warn "this could take hours"
-	$Trace
-	KB=$(sudo find $dir -links 1 -printf '%k\n' |
-		awk '{ total += $1 } ; END { print total }')
-	set_readable_du_size $KB
-	du_size=$readable_du_size
-	echo "$dir contains >= $du_size of files in no other directories"
-	;;
-
-   # w: show pruning & backup activity, and the status of pruning and backups
-   # watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
-   ( watch | wa* | wt* | w )
-	watch "$@"
-	;;
-
-   # kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
-   ( kill-backup* | kb )
-	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
-	$Trace
-	kill_locker_group run-backup $*
-	;;
-   # kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
-   ( kill-prune* | kp )
-	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
-	$Trace
-	kill_locker_group prune-backup $*
-	;;
-   # kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
-   ( kill-both | ka | kk )
-	[[ $# != 0 ]] || abort_with_action_Usage kill-both
-	$Trace
-	kill_locker_group   run-backup $*
-	kill_locker_group prune-backup $*
-	;;
-
-   ###########################################################################
-   # sysadmin maintenance actions
-   ###########################################################################
-
-   # add-extN-journal backup_name [FS_device]: current backup gets fast journal
-   ( add-extN-journal | aej )
+# add-extN-journal backup_name [FS_device]: current backup gets fast journal
+add_extN_journal() {
 	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	[[ $# == [1-4] ]] ||
 	   abort "{-l FS_label | backup_name} [device [VG-name]]"
@@ -2054,26 +1930,33 @@ case $action in
 	$IfRun \
 	mount -v -t ext4 -o ${mount_options%,} $FS_device $mount_dir ||
 	   abort "mount exited with $?"
-	;;
+}
 
-   # dir-sizes [-f [file] | name]: stats for 'mkfs'; -f -> list/use old data
-   ( dir*sizes | ds )
+# -----------------------------------------------------------------------------
+
+total_dir_MB=
+avg_dir_KB=
+
+set__total_dir_MB__avg_dir_KB() {
+	local file=$1
+
+	isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
+	set -- $(awk --assign isize=$isize --field-separator K \
+		 '{ space += ($1*1024) + isize; count += 1 }
+		    END { printf "%.1f %.2f\n",		\
+				  space/(1024*1024),	\
+				  space/(1024*count)}' $file)
+	total_dir_MB=$1 avg_dir_KB=$2
+}
+
+# --------------------------------------------
+
+# dir-sizes [-f [file] | name]: stats for 'mkfs'; -f -> list/use old data
+dir_sizes() {
 	set__backup_log_dir__file_for_logging__admin_group__is_regression_test
 	readonly sizes_dir=$backup_log_dir/dir-sizes
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
-
-	set__total_dir_MB__avg_dir_KB() {
-		local file=$1
-
-		isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
-		set -- $(awk --assign isize=$isize --field-separator K \
-			 '{ space += ($1*1024) + isize; count += 1 }
-			    END { printf "%.1f %.2f\n",		\
-					  space/(1024*1024),	\
-					  space/(1024*count)}' $file)
-		total_dir_MB=$1 avg_dir_KB=$2
-	}
 
 	suffix=ls-s
 
@@ -2194,21 +2077,25 @@ case $action in
 	space="$total_dir_MB MB/snapshot"
 	  avg="$avg_dir_KB KB/dir"
 	echo  "\n  all directories consume $space ($avg)\n\n"
-	;;
+}
 
-   # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
-   ( mkfs )
-	# If brand new drive, find its device name with: ls -lt /dev/sd?
-	# Save the device name and backup name: device=/dev/sdX  backup=Y
-	# Verify it's a new drive (which has partition table): fdisk -l $device
-	# See if someone is using it: fuser -v $device
-	# cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
-	#   (be SURE you type "YES" not "yes")
-	# Make sure encryption succeeded: fdisk -l $device # want no partitions
-	# Then run: snapcrypt open $device $backup (mount will fail).
-	# Then create new rule in /etc/snapcrypt/drives.rules .
-	# If have existing backup drives that are no bigger, use copy-backup .
+# -----------------------------------------------------------------------------
 
+# Here's how to setup a brand new drive to be an encrypted drive
+
+# If brand new drive, find its device name with: ls -lt /dev/sd?
+# Save the device name and backup name: device=/dev/sdX  backup=Y
+# Verify it's a new drive (which has partition table): fdisk -l $device
+# See if someone is using it: fuser -v $device
+# cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
+#   (be SURE you type "YES" not "yes")
+# Make sure encryption succeeded: fdisk -l $device # want no partitions
+# Then run: snapcrypt open $device $backup (mount will fail).
+# Then create new rule in /etc/snapcrypt/drives.rules .
+# If have existing backup drives that are no bigger, use copy-backup .
+
+# mkfs device [name]: prepare blank first- or smallest-drive (see comments)
+mkfs_backup() {
 	set_date_time
 	line_1="if you're using a partition or LV that already has backups,"
 	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
@@ -2366,9 +2253,36 @@ case $action in
 	$IfRun mkdir -p $backup_dir
 	cmd="$IfRun mount -v -t $FS_type -o $mount_opts $device $backup_dir"
 	$cmd || abort "$cmd exited with $?"
-	;;
-   # copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
-   ( c*p*b*k*p | cpb )
+}
+
+# -----------------------------------------------------------------------------
+
+# these 3 variables are global variables initialized elsewhere
+set__backup_name__FS_device__backup_dir__FS_label() {
+	device=$1 name=$2
+
+	[[ $device$name ]] || abort "need 1 non-null argument"
+
+	[[ $name ]] && set_backup_name $name && name=$backup_name
+	[[ !  $device ]] &&
+	   set_FS_label___from_mount_dir $backup_dir_prefix$name &&
+	   set_FS_device___from_FS_label $FS_label && device=$FS_device
+	[[ -b $device ]] || abort "$device is not a block device"
+
+	if [[ ! $name ]]
+	   then set_FS_label___from_FS_device $device
+		name=$FS_label
+	fi
+
+	set_backup_name $name
+	backup_dir=$backup_dir_prefix$backup_name
+	set_FS_label___from_mount_dir $backup_dir
+}
+
+# ---------------------------------
+
+# copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
+copy_backup_drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# != 0 ]] ||
@@ -2377,32 +2291,10 @@ case $action in
 
 	warn "the new device MUST be as-large as src_name's device"
 
-	set__name__device__backup_dir__FS_label() {
-		# save args in global variables
-		device=$1 name=$2
-
-		[[ $device$name ]] || abort "need 1 non-null argument"
-
-		[[ $name ]] && set_backup_name $name && name=$backup_name
-		[[ !  $device ]] &&
-		   set_FS_label___from_mount_dir $backup_dir_prefix$name &&
-		   set_FS_device___from_FS_label $FS_label && device=$FS_device
-		[[ -b $device ]] || abort "$device is not a block device"
-
-		if [[ ! $name ]]
-		   then set_FS_label___from_FS_device $device
-			name=$FS_label
-		fi
-
-		set_backup_name $name
-		name=$backup_name
-		backup_dir=$backup_dir_prefix$name
-		set_FS_label___from_mount_dir $backup_dir
-	}
-
-	set__name__device__backup_dir__FS_label "$dst_device" $dst_name
-	dst_name=$name
-	dst_device=$device
+	set__backup_name__FS_device__backup_dir__FS_label \
+	    "$dst_device" $dst_name
+	dst_name=$backup_name
+	dst_device=$FS_device
 	dst_backup_dir=$backup_dir
 	dst_FS_label=$FS_label
 
@@ -2411,9 +2303,9 @@ case $action in
 	set_backup_name $(dirname $oldest_backup_snapshot) &&
 	src_name=$backup_name
 
-	set__name__device__backup_dir__FS_label "" $src_name
-	src_name=$name
-	src_device=$device
+	set__backup_name__FS_device__backup_dir__FS_label "" $src_name
+	src_name=$backup_name
+	src_device=$FS_device
 	src_backup_dir=$backup_dir
 	src_FS_label=$FS_label
 
@@ -2437,9 +2329,12 @@ case $action in
 	"
 	nohup $cmd > $output_file &
 	sleep 0.1; set -x; exec tail -f $output_file
-	;;
-   # finish-copy-backup name: copy, label, fsck, mount, resize
-   ( f*c*p*b*k*p | f*c*p*b* | fcb  )
+}
+
+# -----------------------------------------------------------------------------
+
+# finish-copy-backup name: copy, label, replace journal, fsck, mount, resize
+finish_copy_backup_drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# == 4 ]] || 
@@ -2503,13 +2398,15 @@ case $action in
 	mount -t $FS_type -o $mount_options $dst_device $dst_backup_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
 	$IfRun resize2fs $dst_device	# do this _after_ mount, for speed
-	;;
-   # copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
-   ( copy-b*k*p-dump )
+}
+
+# -------------------------------------------------------
+
+copy_backup_drive_with_dump() {
 	abort "this is incredibly slow, use copy-backup instead"
 	abort "this code is out of date, needs to be rewritten"
 
-	# this is probably faster than dump, if use setup_RAM_FS_journal:
+	# cp is probably faster than dump, if use setup_RAM_FS_journal:
 	# cmd="cp -al $snapshot_pattern ${backup_dir_prefix}new/"
 
 	[[ $# == 1 && $1 == [a-zA-Z] ]] || abort "specify backup drive letter"
@@ -2548,6 +2445,153 @@ case $action in
 	}
 	$IfRun mount $device $backup_dir ||
 	   abort "mount $device $backup_dir -> $?"
+}
+
+#############################################################################
+#############################################################################
+# Process the requested action with the above functions & global variables. #
+#############################################################################
+#############################################################################
+
+[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
+
+action=$1; shift
+_our_name="$our_name"
+ our_name="$our_name $action"
+
+process_action() {
+
+stack_frame_to_show=0	     # show our line-number in action 'case- statement
+
+case $action in
+   # list-drives: list all the mounted backup drives or partitions
+   ( l*s*dr*v* | ld | ls )
+	list_drives
+	;;
+   # run-backups   [dir(s)]: dir(s) defaults to every mounted backup
+   ( r*b*k*p* | rb* )
+	run_jobs_in_parallel backup "$@"
+	[[ $is_cron ]] && wait		# so see master cron job in ps
+	;;
+   # prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
+   ( pr*n*b*k*p* | pb* )
+	run_jobs_in_parallel prune "$@"
+	[[ $is_cron ]] && wait		# so see master cron job in ps
+	;;
+   # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
+   ( c*p*s*s* | cs* | cps )
+	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
+	dst_name=${!#}
+	src_snapshots=${*%$dst_name}
+
+	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
+	for snapshot in $src_snapshots
+	    do	copy_snapshot $snapshot $dst_name
+	done
+	;;
+  # update-backup name: 'name' mounted backup gets snapshots from other backups
+   (upd*b* | ub )
+	set_backup_name $1
+	set_backup_dir $backup_name
+
+	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+
+	$Trace
+
+	set -f
+	set -- $(echo root$backup_dir_prefix$anchored_backup_name_regex/snap |
+		 tr / ' ')
+	set +f
+	snapshot_sort_key=$#
+
+	prev_date_time=
+	for dir in $(list_drives | fgrep -v -w $backup_dir)
+	    do	suspend_tracing
+		echo $dir/$snapshot_pattern*
+		restore_tracing
+	done | tr ' ' '\n' | grep -v '\.rm$' |
+	sort --field-separator=/ --key=$snapshot_sort_key |
+	while read snapshot
+	    do	date_time=$(basename $snapshot)
+		date_time=${date_time%%.*}
+		[[ $prev_date_time == $date_time ]] && continue
+		    prev_date_time=$date_time
+
+		cmd="copy_snapshot -p1 $snapshot $backup_name" # for debugging
+		cmd="copy_snapshot -p0 $snapshot $backup_name"
+		[[ $IfRun ]] && header $cmd
+		$cmd || continue
+		# break			# uncomment to debug
+	done
+
+	$IfRun sync --file-system $$backup_dir &> /dev/null
+	;;
+
+  # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
+   ( snapshot*size | ss )
+	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
+	dir=$1
+	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
+	warn "this could take hours"
+	$Trace
+	KB=$(sudo find $dir -links 1 -printf '%k\n' |
+		awk '{ total += $1 } ; END { print total }')
+	set_readable_du_size $KB
+	du_size=$readable_du_size
+	echo "$dir contains >= $du_size of files in no other directories"
+	;;
+
+   # w: show pruning & backup activity, and the status of pruning and backups
+   # watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
+   ( watch | wa* | wt* | w )
+	watch "$@"
+	;;
+
+   # kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
+   ( kill-backup* | kb )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
+	$Trace
+	kill_locker_group run-backup $*
+	;;
+   # kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
+   ( kill-prune* | kp )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
+	$Trace
+	kill_locker_group prune-backup $*
+	;;
+   # kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
+   ( kill-both | ka | kk )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-both
+	$Trace
+	kill_locker_group   run-backup $*
+	kill_locker_group prune-backup $*
+	;;
+
+   ###########################################################################
+   # filesystem maintenance actions
+   ###########################################################################
+
+   ( add-extN-journal | aej )
+     add_extN_journal "$@"
+	;;
+
+   ( dir*sizes | ds )
+     dir_sizes "$@"
+	;;
+
+   ( mkfs )
+     mkfs_backup "$@"
+	;;
+   ( c*p*b*k*p | cpb )
+     copy_backup_drive "$@"
+	;;
+   ( f*c*p*b*k*p | f*c*p*b* | fcb  )
+     finish_copy_backup_drive "$@"
+	;;
+   # copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
+   ( copy-b*k*p-dump )
+     copy_backup_drive_with_dump "$@"
 	;;
 
    ###########################################################################

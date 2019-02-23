@@ -19,7 +19,7 @@
 
 # --------------------------
 # To understand the defaults mentioned below, read the long comments in
-# the code for the 'mkfs' action.
+# mkfs_backup and it's helper functions.
 # --------------------------
 
 # Comment-out all-but-one of these sample values:
@@ -32,7 +32,7 @@
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 
 # Defaults to opts="-b 4096 -i 4096 -I 128 -m .1"; you can override them,
-# but first read the long comments in the code for the 'mkfs' action;
+# but first read the long comments in the mkfs_backup function (and helpers).
 # defaults to extent-based if new-enough kernel, override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
 readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # many tiny dirs (& SSD / flash?)
@@ -76,7 +76,6 @@ readonly    XFS_mount_options="logbsize=256k"	 # for performance
 # -------------------------------------------------
 
 # We append the backup name to this variable to get the mount point.
-# If change this, change comment at top of "snapback mkfs".
 # DON'T FORGET to add this directory to PRUNEPATHS in /etc/updatedb.conf !
 readonly backup_dir_prefix=/backup/
 
