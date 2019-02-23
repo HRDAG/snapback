@@ -1645,14 +1645,19 @@ case $action in
 
 	$Trace
 
+	set -f
+	set -- $(echo root$backup_dir_prefix$anchored_backup_name_regex/snap |
+		 tr / ' ')
+	set +f
+	snapshot_sort_key=$#
+
 	prev_date_time=
 	for dir in $(list_drives | fgrep -v -w $backup_dir)
 	    do	suspend_tracing
 		echo $dir/$snapshot_pattern*
 		restore_tracing
 	done | tr ' ' '\n' | grep -v '\.rm$' |
-	sort --field-separator=/ --key=4 |
-	# cat				# uncomment to debug
+	sort --field-separator=/ --key=$snapshot_sort_key |
 	while read snapshot
 	    do	date_time=$(basename $snapshot)
 		date_time=${date_time%%.*}
