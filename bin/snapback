@@ -16,6 +16,8 @@ readonly coder=sweikart@gmail.com
 # warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
 # log, file_for_logging, log_level, log_msg_prefix, header,
 # cd_ , add_words, confirm, is_arg1_in_arg2
+#
+# search for '####' in libsnap.sh to see environment and coding conventions
 source libsnap.sh || exit 1
 
 
@@ -525,7 +527,8 @@ set_backup_dir() {
 	if  is_backup_dir_mounted  $backup_dir
 	   then fix_snapshot_names $backup_dir # must call last
 	   else [[ $is_OK_if_backup_dir_unmounted ]] ||
-		    warn "no filesystem mounted on $backup_dir"
+		    warn "no filesystem mounted on $backup_dir" ||
+		    : print_call_stack
 		return 1
 	fi
 }
@@ -533,11 +536,11 @@ set_backup_dir() {
 # -----------------------------------------------------------------------------
 
 customize_config_variables() {
-	local dir=${1-}
+	local name=${1-}
 
-	[[ $dir ]] || return
+	[[ $name ]] || return
 
-	set_backup_name $dir ||
+	set_backup_name $name ||
 	   abort "$config_file needs set_backup_name function"
 
 	[[ $backup_name == Z ]] && is_regression_test=$true
@@ -597,23 +600,19 @@ validate_config_variables() {
 
 # ------------------------------------------------------------------
 
-_did_dir=
-
 customize_and_validate_configuration_variables() {
-	local dir=${1-}
+	local name=${1-}
 
-	[[ $dir && $dir != /* ]] &&
-	set_backup_dir  $dir && dir=$backup_dir
-
-	[[ $_did_dir == $dir ]] && return # avoid infinite loop
-	    _did_dir=$dir
+	# avoid infinite loop
+	set -- ${FUNCNAME[*]} ; shift
+	is_arg1_in_arg2 $FUNCNAME $* && return
 
 	suspend_tracing
 
 	type source_drive_specific_config_file &> /dev/null && # optional
-	source_drive_specific_config_file $dir
+	source_drive_specific_config_file $name
 
-	customize_config_variables $dir
+	customize_config_variables $name
 
 	validate_config_variables	# must do this last
 
@@ -1203,10 +1202,10 @@ _handle_rsync_results() {
 
 run_rsync() {
 	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
-	if [[ $1 == -E ]]
+	if [[ $1 == -c ]]
 	   then shift
-		local skip_excludes=$true
-	   else local skip_excludes=$false
+		local is_copy_snapshot=$true
+	   else local is_copy_snapshot=$false
 	fi
 	local dst_snapshot=${!#}
 	local src_dirs=${*%$dst_snapshot}
@@ -1247,18 +1246,16 @@ run_rsync() {
 	restore_tracing link_dest_opts
 
 	# backup_dir_prefix and rsync_backup_opts come from $config_file
-	if [[ ! $skip_excludes ]]
-	   then local r_opt=--relative  excludes="--exclude=$backup_dir_prefix*
-						  --exclude-from=$exclude_file"
-	   else local r_opt=		excludes=
-	fi
-
+	local relative_opt= excludes=
+	[[ ! $is_copy_snapshot ]] &&
+	relative_opt=--relative  excludes="--exclude=$backup_dir_prefix*
+					   --exclude-from=$exclude_file"
 	declare -i start_seconds=$(date '+%s')
 
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\
-		     $r_opt		\
+		     $relative_opt	\
 		     $link_dest_opts	\
 		     $excludes		\
 			$src_dirs $partial_dst/ |& bzip2 -9 > $log
@@ -1396,7 +1393,7 @@ is_dst_snapshot_needed() {
 
 copy_snapshot() {
 	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
-	[[ $# ==  2  ]] || abort "$FUNCNAME src dst_backup_name"
+	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_backup_name"
 	local src_snapshot=$1 dst_backup_name=$2
 
 	[[ ! $pass_opt ]] && {		# if -p, caller ran following 2 funcs
@@ -1427,7 +1424,7 @@ copy_snapshot() {
 
 	cd $backup_dir || abort cd # can kill job with: fuser -k -M $backup_dir
 
-	run_rsync $pass_opt -E $src_snapshot/. $dst_snapshot
+	run_rsync $pass_opt -c $src_snapshot/. $dst_snapshot
 
 	$IfRun lockpid -r $lock_file
 }
@@ -1879,6 +1876,7 @@ watch() {
 
 # add-extN-journal backup_name [FS_device]: current backup gets fast journal
 add_extN_journal() {
+	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
 	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	[[ $# == [1-4] ]] ||
 	   abort "{-l FS_label | backup_name} [device [VG-name]]"
@@ -1900,12 +1898,13 @@ add_extN_journal() {
 	[[ ${mount_dir-} ]] || set_mount_dir___from_FS_device $FS_device
 	TraceV 1 force_opt FS_label FS_device log_VG_name mount_dir
 
-	tune2fs -l $FS_device | grep -q '^Journal ' &&		  {
+	sudo tune2fs -l $FS_device | grep -q '^Journal ' &&	  {
 	warn "removing internal journal can take many minutes"
 	$IfRun tune2fs $force_opt -O ^has_journal $FS_device	; }
 
 	set_FS_external_log $force_opt $FS_label $log_VG_name ||
-	 abort "invalid set_FS_external_log, or $config_file says log unwanted"
+	warn "invalid set_FS_external_log, or $config_file says log unwanted"||
+	   { $IfRun tune2fs -j $FS_device; return $?; }
 	label=$(basename $FS_external_log)
 
 	$Trace
@@ -1925,6 +1924,9 @@ add_extN_journal() {
 	$IfRun tune2fs -J device=LABEL=$label $FS_device ||
 	   abort "tune2fs -J attempt to attach journal -> $?"
 	$IfRun tune2fs -l $FS_device | grep -i "journal [id]"
+	local status=${PIPESTATUS[0]}
+
+	[[ $do_mount ]] || return $status
 
 	mount_options=$common_mount_options,$ext4_mount_options
 	$IfRun \
@@ -2274,9 +2276,12 @@ set__backup_name__FS_device__backup_dir__FS_label() {
 		name=$FS_label
 	fi
 
+	FS_device=$device
 	set_backup_name $name
 	backup_dir=$backup_dir_prefix$backup_name
 	set_FS_label___from_mount_dir $backup_dir
+
+	TraceV 1 device name backup_name FS_device backup_dir FS_label
 }
 
 # ---------------------------------
@@ -2293,25 +2298,26 @@ copy_backup_drive() {
 
 	set__backup_name__FS_device__backup_dir__FS_label \
 	    "$dst_device" $dst_name
-	dst_name=$backup_name
-	dst_device=$FS_device
-	dst_backup_dir=$backup_dir
-	dst_FS_label=$FS_label
+	local dst_name=$backup_name
+	local dst_device=$FS_device
+	local dst_backup_dir=$backup_dir
+	local dst_FS_label=$FS_label
 
 	[[ ! $src_name ]] &&
 	set_oldest_backup_snapshot && 
 	set_backup_name $(dirname $oldest_backup_snapshot) &&
-	src_name=$backup_name
+	local src_name=$backup_name
 
 	set__backup_name__FS_device__backup_dir__FS_label "" $src_name
-	src_name=$backup_name
-	src_device=$FS_device
-	src_backup_dir=$backup_dir
-	src_FS_label=$FS_label
+	local src_name=$backup_name
+	local src_device=$FS_device
+	local src_backup_dir=$backup_dir
+	local src_FS_label=$FS_label
 
 	# show the user a sample fstab record
 	$our_path -d mkfs -f $dst_device $dst_name |&
-	   fgrep -B 3 -A 1 LABEL= | sed 's/.* mkfs: //'
+	   # search for the last two fields in the fstab record
+	   egrep -B 3 -A 1 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 
 	set --	$our_path $our_opts finish-$action $action_opts \
 		$src_device $src_backup_dir \
@@ -2324,14 +2330,14 @@ copy_backup_drive() {
 	output_file=$dst_FS_label.out
 	echo -e "
 	nohup'ing slow 'dd' to copy partition '$src_name' to '$dst_name',
-	followed by slow fsck: takes about a day per TB of SSD.  We'll
+	followed by slow fsck: takes about a day per TB of disk.  We'll
 	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
 	"
 	nohup $cmd > $output_file &
 	sleep 0.1; set -x; exec tail -f $output_file
 }
 
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------
 
 # finish-copy-backup name: copy, label, replace journal, fsck, mount, resize
 finish_copy_backup_drive() {
@@ -2339,8 +2345,8 @@ finish_copy_backup_drive() {
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# == 4 ]] || 
 	   abort "to see args, run: $_our_name -d cpbkp {src_name | ''} dev [dev_name]"
-	src_device=$1 src_backup_dir=$2
-	dst_device=$3 dst_backup_dir=$4
+	local src_device=$1 src_backup_dir=$2
+	local dst_device=$3 dst_backup_dir=$4
 
 	is_arg1_in_arg2 -f $action_opts ||
 	for backup_dir in $src_backup_dir $dst_backup_dir; do
@@ -2377,23 +2383,36 @@ finish_copy_backup_drive() {
 
 	$IfRun set -x
 
-	$IfRun dd if=$src_device of=$dst_device bs=1M status=progress ||
-	     abort "dd exited with $?"
+	$IfRun dd if=$src_device of=$dst_device bs=1M || abort "dd -> $?"
+
+	$IfRun tune2fs -U $(uuidgen) $dst_device
+
+	label_drive $dst_device $dst_backup_dir
+
+	local dst_name=${dst_backup_dir#$backup_dir_prefix}
+	suspend_tracing
+	customize_and_validate_configuration_variables $dst_name
+	restore_tracing dst_name
+
+	if sudo tune2fs -l $src_device | grep -q "^Journal device" || # extrnl?
+	   [[ $do_want_external_log ]]
+	    then add_extN_journal -M $dst_name $dst_device || abort aej
+	fi
+
+	local mount_options=$common_mount_options,$ext4_mount_options
+	mount_options=${mount_options%,}
 
 	is_arg1_in_arg2 -M $action_opts || {
 	cmd="$IfRun mount -t $FS_type -o $mount_options $src_device $src_backup_dir"
 	$cmd || abort "$cmd exited with $?"
 	}
 
-	$IfRun tune2fs -U $(uuidgen) $dst_device
-
-	label_drive $dst_device $dst_backup_dir
-
 	is_arg1_in_arg2 -F $action_opts || {
 	cmd="$IfRun e2fsck -f -p -t -t -E discard $dst_device"
 	$cmd || abort "$cmd exited with $?; better check $src_device ?!"
 	}
 
+	$IfRun mkdir -p $dst_backup_dir
 	$IfRun \
 	mount -t $FS_type -o $mount_options $dst_device $dst_backup_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
@@ -2599,6 +2618,22 @@ case $action in
    ###########################################################################
 
    ( test | t )
+	exit
+
+	wont_trace() {         foo=2
+		       suspend_tracing; echo untraced; restore_tracing foo; }
+	will_trace() { set -x; foo=1
+		       suspend_tracing; echo untraced; restore_tracing foo
+		       wont_trace; echo traced; set +x; }
+	will_trace
+	exit
+
+	log test 1
+	customize_and_validate_configuration_variables Z
+	echo $backup_name
+	log test 2
+	exit
+
 	set_FS_block_size___from_path $1
 	echo $FS_block_size
 	exit
@@ -2649,13 +2684,6 @@ case $action in
 	echo $FS_label
 	exit
 
-	log test 1
-	customize_and_validate_configuration_variables /backup/Z
-	echo $backup_name
-	log test 2
-
-	exit
-
 	set_backup_dir ${1^}
 	$Trace
 	is_disk_usage_too_high
@@ -2685,7 +2713,7 @@ case $action in
 	exit
 
 	echo $backup_period
-	customize_config_variables /backup/F
+	customize_config_variables F
 	echo $backup_period
 	backup_period+=1
 	echo $backup_period
@@ -2846,7 +2874,7 @@ case $action in
 		is_backup_dir_mounted $backup_dir || continue
 		/bin/ls $backup_dir |
 		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
-		sudo umount -h > /dev/null || warn "need sudo privs" || break
+		sudo umount -h &> /dev/null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $backup_dir"
 		for (( i = 1; i <= 30; i++ )) # wait for kill to finish
 		    do	$umount_cmd && break

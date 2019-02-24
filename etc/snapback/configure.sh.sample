@@ -45,7 +45,7 @@ bkp_name2suspend_prune_when_backup[C]=$false # SSD or flash memory stick
 #
 # The above and the below are correlated.
 #
-# Used by set_FS_external_log .
+# Used by set_FS_external_log: should it setup an external filesystem journal?
 	 do_want_external_log=$true	# rotational disk, & have SSD for logs
 bkp_name2do_want_external_log[C]=$false # SSD
 
@@ -59,10 +59,11 @@ set_FS_external_log() {
 	[[ $do_want_external_log ||	# defined later in this file
 	   $do_force                ]] || { FS_external_log= && return 1; }
 
-	local  log=/dev/$VG/${FS_label}_log
-	[[ -b $log ]] && FS_external_log=$log && return 0;	$IfRun  \
-	lvcreate --size 128M --name $log $VG || log=
-	FS_external_log=$log
+	       FS_external_log=/dev/$VG/${FS_label}_log
+	[[ -b $FS_external_log ]] && return 0
+
+	$IfRun lvcreate --size 128M --name $FS_external_log $VG ||
+	    FS_external_log=
 	[[ $FS_external_log ]]
 }
 
