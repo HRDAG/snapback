@@ -1,22 +1,22 @@
 WARNING: if you heavily use an application which generates lots of hard-linked
 files (like HRDAG's 'snap' aka 'snapshot'; or Red Hat's 'yum' package
 manager's /var/lib/yum/yumdb/, but that's excluded by default), you could run
-into the "Too many links" rsync error if you use a backup filesystem type that
-has too-small limits on the maximum number of hard-links per inode (when
-mounting NTFS via 'fuseblk', the max links is 8K; for ext4, the max is 65K).
-In this case, you'll ideally use a filesystem like XFS (or Btrfs if you're
-adventuresome) that uses a 32-bit word to hold the inode's link
-reference-count.
+into the "Too many links" rsync error if you use a backup-drive
+filesystem-type that has too-small limits on the maximum number of hard-links
+per inode (when mounting NTFS via 'fuseblk', the max links is 8K; for ext4,
+the max is 65K).  In this case, you'll ideally use a filesystem like XFS (or
+Btrfs if you're adventuresome) that uses a 32-bit word to hold the inode's
+link reference-count.
 
 NOTE: the following is heavily oriented towards a GNU/Linux system like
 Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
-'copy-backup' actions (see below) will eventually fully support XFS
+'copy-drive' actions (see below) will eventually fully support XFS
 filesystems, because HRDAG uses 'snap' aka 'snapshot' so we experience "Too
 many links" errors with our 4 years of backup snapshots.]
 
 A. Re-using existing backup drives and partitions
 
-If you have backup partitions with one or more existing snaphots, it's best to
+If you have drive partitions with one or more existing snaphots, it's best to
 use "cp -al" to copy all the snapshots onto one partition (ideally, the
 smallest partition that will hold all the fully-hard-linked files ...).
 Before each individual "cp -al", hard-link all the identical files on the
@@ -41,8 +41,7 @@ which will also indicate the label to use with e.g. 'e2label'.
 
 If you weren't able to use your smallest partition as the master, but the
 amount of disk space actually in-use on the master will fit in smaller backup
-partitions, after the final 'rmlint' on your master partition, run e.g. (for
-ext*):
+partitions, run e.g. (for ext*):
 
     device=/dev/xxxx
     sudo umount $device
@@ -63,23 +62,23 @@ think seriously about first encrypting the other partitions.  See HRDAG's
 (note that it currently encrypts the whole drive, overwriting the partition
 table).
 
-Now you can use "snapback copy-backup" (which will show you what arguments are
+Now you can use "snapback copy-drive" (which will show you what arguments are
 needed) to copy your master partition to each of the partitions large enough
 to hold its contents.  If the partitions are physically smaller than the
-master partition, "snapback copy-backup" runs a 'dd' command that will fail;
-but you can run a simulation with "snapback -d copy-backup <args>" to see what
+master partition, "snapback copy-drive" runs a 'dd' command that will fail;
+but you can run a simulation with "snapback -d copy-drive <args>" to see what
 commands you need to run to finish the job (it's best to 'nohup' the 'fsck'
 command, it will take a long time).  You can copy multiple partitions
 simultaneously (this is desired, since all the copies will share the same
 source contents in the page cache).  You don't need to use the 'nohup' command
-with "snapback copy-backup": it runs 'nohup' internally, and saves the output
+with "snapback copy-drive": it runs 'nohup' internally, and saves the output
 to $FS_label.out .
 
 If you copied your master partition to encrypted partitions, you now want to
-encrypt your master partition and use "snapback copy-backup" to copy the
+encrypt your master partition and use "snapback copy-drive" to copy the
 smallest partition back to your now-encrypted no-longer-master partition.
 
-Now you can mount all your backup partitions on $backup_dir_prefix (defined in
+Now you can mount all your backup partitions on $drive_dir_prefix (defined in
 configure.sh).
 
 
@@ -135,12 +134,12 @@ You can use:
 
 to prepare a new partition.  Unless your setup auto-mounts partitions
 (e.g. Darwin aka MacOS, or users of 'snapcrypt'), add a record to /etc/fstab
-(or equivalent), then mount the partition on $backup_dir_prefix (defined in
+(or equivalent), then mount the partition on $drive_dir_prefix (defined in
 configure.sh).
 
 You can test a single, mounted backup partition with:
 
-    sudo snapback run-backup <backup-name>
+    sudo snapback run-backup <drive-name>
 
 in a new window, and then in another window watch it by running:
 
@@ -212,7 +211,7 @@ and for studying how pruning works with the "-T 5" option to snapback).
 Instead of the above, you could edit exclude.txt (in same directory as
 configure.sh) to exclude pieces of your system.  Again, you'll need to wait an
 hour for the next prune job to start, and then wait until the partition's log
-(/var/log/snapback/<backup-name>/messages.log) reports:
+(/var/log/snapback/<drive-name>/messages.log) reports:
 
     pruned exclude-patterns from _all_ snapshots
 
@@ -222,6 +221,6 @@ categories of partitions.
 
 Note that you might be able to accomplish the same goal by changing
 'dirs_to_backup' in configure.sh, which is also convenient because it's easy
-to add separate per-backup values to configure.sh .  But, 'snapback' won't
+to add separate per-drive values to configure.sh .  But, 'snapback' won't
 currently delete the no-longer-backed-up-dirs from older snapshots; you'll
 need to do this manually.

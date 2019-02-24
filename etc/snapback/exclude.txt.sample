@@ -20,7 +20,7 @@
 
 /tmp/*
 
-# you can uncomment these if you're tight on backup disk space
+# you can uncomment these if you're tight on backup drive disk space
 # /usr/lib/jvm
 # /usr/lib64/eclipse
 # /usr/lib64/openoffice.org
@@ -42,7 +42,7 @@
 # from default /etc/updatedb.conf
 /var/lib/schroot/*
 
-# This is needed for small backup-disks or slow pruning.
+# This is needed for small backup-drives or slow pruning.
 /var/log/*
 # If you're security-sensitive and comment-out the above for forensics,
 # you should add 'dateext' and 'compress' and etc to /etc/logrotate.conf

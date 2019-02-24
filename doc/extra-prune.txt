@@ -7,12 +7,12 @@ automagically changing pruning/backup_period to manage high disk usage
    Do both of the following: start with 2, when exhausted switch to 1.a. or
    1.b (depends on extra_prune_auto_type).  Config vars called extra_prune_* .
 
-   All state is kept in $backup_log_dir/extra-state/ :
+   All state is kept in $drive_log_dir/extra-state/ :
       default-state.sh # source it; if current vars are different, rm *
       state.sh   # holds extra_prune_state=<num>\nbackup_period=NN ..
       states.txt # each line is: ___N: backup_period=NN month_span=I ...
 
-   Note that maintain full state if exclude.txt or backup_dirs are tightened
+   Note that maintain full state if exclude.txt or dirs_to_backup are tightened
    up, the hysteresis will adapt.
 
    Worst case of extra_prune is a month of dailies; might allow month_span=0

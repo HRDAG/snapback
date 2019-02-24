@@ -32,13 +32,13 @@ readonly  config_file_sample=${config_file%.sample}.sample
 
 # for each config var, create associative array for per-drive customization
 readonly uncustomizable_config_vars="
-		backup_dir_prefix old_crypt_name_prefixes drive_config_file"
+		drive_dir_prefix old_crypt_name_prefixes drive_config_file"
 readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
 		       sed -n -r 's/^[^#=]*\b(\w+)=.*$/\1/p' | sort -u)
-for var in $config_vars; do eval "declare -A bkp_name2$var"; done
+for var in $config_vars; do eval "declare -A drv_name2$var"; done
 #
 # this grabs variables that control backup and pruning, and may also hold
-# customizable functions set_backup_name & source_drive_specific_config_file
+# customizable functions set_drive_name & source_drive_specific_config_file
 source $config_file || abort "$config_file broken"
 
 [[ -s $exclude_file ]] ||
@@ -48,9 +48,9 @@ Usage="
 Usage: $our_name action [args]
   Current actions are:
     list-drives: list all the mounted backup drives or partitions
-    run-backups   [dir(s)]: dir(s) defaults to every mounted backup
-    prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
-    copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
+    run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
+    prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
+    copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
@@ -61,13 +61,13 @@ Usage: $our_name action [args]
     kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
     kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
 
-    add-extN-journal backup_name [FS_device]: current backup gets fast journal
+    add-extN-journal drive_name [FS_device]: could get fast external journal
     dir-sizes {-f [file] | name}: stats for 'mkfs'; -f -> use/list old data
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
-    copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
+    copy-drive {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
-    test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
+    test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
 
   NOTE: to see what an action would do, use -d option to simulate the action.
 
@@ -136,27 +136,26 @@ head -n1 $config_file_sample | fgrep -q -x "# version=$version" ||
 # $Trace
 
 ##############################################################################
-# miscellaneous variables used by for making and pruning backups
+# Miscellaneous variables used by for making and pruning backup snapshots.
 ##############################################################################
 
 # touched when prune ends; its time is compared to files in $config_dir/
 readonly pruned_timestamp=.pruned.ts
 
 readonly our_opts=${our_opts# }
-# if background prune_backup shell function, parent & child share $tmp* files?!
-readonly prune_backup_exe="$our_path $our_opts prune-backup"
-# if background   run_backup shell function, parent & child share $tmp* files?!
-readonly   run_backup_exe="$our_path $our_opts run-backup"
+# need to fork and exec ourselves for session control with 'setsid'
+readonly prune_drive_exe="$our_path $our_opts prune-drive"
+readonly  run_backup_exe="$our_path $our_opts run-backup"
 
 readonly hostname=${HOSTNAME%%.*}
 
 readonly log_dir=/var/log/$our_name
 
-file_for_logging=$log_dir/messages.log	     # set__backup_dir__* sets it
-log_msg_prefix=' ${action-} ${backup_name-}' # this gets eval'ed each time
+file_for_logging=$log_dir/messages.log	     # set__drive_dir__* sets it
+log_msg_prefix=' ${action-} ${drive_name-}' # this gets eval'ed each time
 
 ##############################################################################
-# miscellaneous functions used by for making and pruning backups
+# Miscellaneous functions used by for making and pruning backup snapshots.
 ##############################################################################
 
 set_readable_du_size() {
@@ -207,20 +206,20 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="prune-backup run-backup"
+readonly lock_types="prune-drive run-backup"
 
 readonly lock_dir=/var/lock/$our_name
 
 lock_file=
 
 set_lock_file() {
-	local type=$1 name=${2:-$backup_name}
+	local type=$1 name=${2:-$drive_name}
 
 	[[ -d $lock_dir ]] || sudo mkdir -p --mode=1777 $lock_dir
 
 	is_arg1_in_arg2 $type $lock_types || abort "lock: '$type' is unknown"
-	set_backup_name $name
-	lock_file=$lock_dir/$type-$backup_name.pid
+	set_drive_name $name
+	lock_file=$lock_dir/$type-$drive_name.pid
 }
 
 # ---------------------------------
@@ -255,9 +254,9 @@ locker_PIDs() {
 	local type=$1; shift
 	[[ $* == all ]] && set -- $(list_drives)
 
-	local backup
-	for backup
-	    do	set_lock_file $type $backup
+	local name
+	for name
+	    do	set_lock_file $type $name
 		if lockpid $lock_file >& /dev/null
 		   then lockpid -r $lock_file
 		   else echo $(< $lock_file)
@@ -311,7 +310,7 @@ set_signal_is_kill() {
 # ----------------------
 
 signal_job() {
-	local signal=${1#-} type=$2 name=${3:-$backup_name}
+	local signal=${1#-} type=$2 name=${3:-$drive_name}
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 
@@ -335,39 +334,39 @@ list_drives() {
 	customize_and_validate_configuration_variables Z # ensure have *pattern
 
 	if [[ -t 0 || -t 1 || -t 2 ]]
-	   then local regex=$anchored_backup_UI_name_regex
-	   else local regex=$anchored_backup_name_regex # for cron (& nohup)
+	   then local regex=$anchored_drive_UI_name_regex
+	   else local regex=$anchored_drive_name_regex # for cron (& nohup)
 	fi
 	df --output=target --no-sync |
-	   grep "^$backup_dir_prefix$regex$" | sort -u
+	   grep "^$drive_dir_prefix$regex$" | sort -u
 	restore_tracing
 }
 
 # ---------------------------------
 
-is_backup_dir_mounted() {
-	local backup_dir=$1
+is_drive_mounted() {
+	local drive_dir=$1
 
-	[[ $backup_dir ]] || return 1
-	df | grep -q " $backup_dir$" || [[ $backup_dir == *[-/]Z ]]
+	[[ $drive_dir ]] || return 1
+	df | grep -q " $drive_dir$" || [[ $drive_dir == *[-/]Z ]]
 }
 
 # -----------------------------------------------------------------------------
 
 function fix_snapshot_names {
-	local backup_dir=$1
+	local drive_dir=$1
 
-	set -- $backup_dir/$old_snapshot_pattern*
+	set -- $drive_dir/$old_snapshot_pattern*
 	[[ -d $1 ]] || return 0
 
 	# this --kill -9 is completely safe
-	$IfRun sudo fuser -k -9 -M $backup_dir
+	$IfRun sudo fuser -k -9 -M $drive_dir
 	local msg="$old_snapshot_pattern to $snapshot_pattern"
 	log "renaming snapshots from $msg, first waiting ..."
 	$IfRun sleep 5			# wait for kill
 
 	local old_name
-	cd_ $backup_dir
+	cd_ $drive_dir
 	for old_name in $old_snapshot_pattern*
 	    do	[[ -d $old_name ]] || continue
 		set_new_name $old_name
@@ -377,7 +376,7 @@ function fix_snapshot_names {
 
 # ----------------------------------------------------------------------------
 
-set_oldest_backup_snapshot() {
+set_oldest_snapshot() {
 
 	local oldest= FS
 	for FS in $(list_drives)
@@ -389,30 +388,30 @@ set_oldest_backup_snapshot() {
 		oldest=$1
 	done
 	[[ -d $oldest ]] || abort "no old backup drives are mounted"
-	oldest_backup_snapshot=$oldest
+	oldest_snapshot=$oldest
 }
 
 ##############################################################################-
 # Setup variables for working with a specific backup drive.
 ##############################################################################-
 
-backup_log_dir=
+drive_log_dir=
 
 admin_group=
 
 is_regression_test=$false
 
-# this is normally called by set_backup_name; but you can pass
-# a null backup_name to set default file_for_logging & backup_log_dir
-set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
-	local  backup_name=${1-}    # called from set_backup_name, so $1 valid
+# this is normally called by set_drive_name; but you can pass
+# a null drive_name to set default file_for_logging & drive_log_dir
+set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
+	local  drive_name=${1-}	     # called from set_drive_name, so $1 valid
 
-	if [[ $backup_name ]]
-	   then backup_log_dir=$log_dir/$backup_name
-	   else backup_log_dir=$log_dir
+	if [[ $drive_name ]]
+	   then drive_log_dir=$log_dir/$drive_name
+	   else drive_log_dir=$log_dir
 	fi
-	TraceV 3 backup_log_dir
-	file_for_logging=$backup_log_dir/messages.log
+	TraceV 3 drive_log_dir
+	file_for_logging=$drive_log_dir/messages.log
 
 	suspend_tracing
 	local group
@@ -429,19 +428,19 @@ set__backup_log_dir__file_for_logging__admin_group__is_regression_test() {
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
 
-	[[ $backup_name == Z ]] && is_regression_test=$true
+	[[ $drive_name == Z ]] && is_regression_test=$true
 
 	[[ $group ]] && group=:$group
-	if [[ ! -d $backup_log_dir ]]
-	   then sudo mkdir -p -m g+w,o-w $backup_log_dir
+	if [[ ! -d $drive_log_dir ]]
+	   then sudo mkdir -p -m g+w,o-w $drive_log_dir
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
-		sudo chown $LOGNAME$group $backup_log_dir $file_for_logging
+		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
 	fi
-	[[ -d $backup_log_dir ]] || abort "need sudo privs to setup new drive"
+	[[ -d $drive_log_dir ]] || abort "need sudo privs to setup new drive"
 
 	suspend_tracing
-	customize_and_validate_configuration_variables $backup_name
+	customize_and_validate_configuration_variables $drive_name
 	restore_tracing
 
 	return 0
@@ -456,10 +455,10 @@ source_drive_specific_config_file ||  # configure.sh can replace this function
 source_drive_specific_config_file() {
 	[[ $# == 0 ]] && return
 	local _name=$1  _main_config_file=${2:-${config_file-}}
-	set_backup_name $_name
+	set_drive_name $_name
 	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
 
-	local     _config_file=${_main_config_file/%.sh/-$backup_name.sh}
+	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
 	if [[ -s $_config_file ]]
 	   then drive_config_file=$_config_file	; source $_config_file
 	   else drive_config_file=		; true
@@ -468,66 +467,66 @@ source_drive_specific_config_file() {
 
 # ---------------------------------
 
-backup_name=				# global, used by log()
+drive_name=				# global, used by log()
 
 have_cmd \
-set_backup_name ||		      # configure.sh can replace this function
-set_backup_name() {
-	[[ $# == 1 && $1 ]] || abort "set_backup_name takes a single argument"
+set_drive_name ||		      # configure.sh can replace this function
+set_drive_name() {
+	[[ $# == 1 && $1 ]] || abort "set_drive_name takes a single argument"
 
 	local name=$1
 
-	if [[ ! $name =~ ^$anchored_backup_UI_name_regex$ ]]
+	if [[ ! $name =~ ^$anchored_drive_UI_name_regex$ ]]
 	   then if [[ $name == /dev/* ]]
 		   then set_FS_label___from_FS_device $name
 			set_mount_dir___from_FS_label $FS_label
-			backup_dir=$mount_dir
+			drive_dir=$mount_dir
 		elif [[ $name != /* ]]
 		   then set_mount_dir___from_FS_label $name
-			backup_dir=$mount_dir
-		   else backup_dir=$name
+			drive_dir=$mount_dir
+		   else drive_dir=$name
 		fi
-		[[  $backup_dir =~					\
-		   ^$backup_dir_prefix$anchored_backup_UI_name_regex$ ]] ||
-		   abort "$name is not backup-dir or FS-label or valid-name"
-		name=${backup_dir#$backup_dir_prefix}
+		[[  $drive_dir =~					\
+		   ^$drive_dir_prefix$anchored_drive_UI_name_regex$ ]] ||
+		   abort "$name is not drive-dir or FS-label or valid-name"
+		name=${drive_dir#$drive_dir_prefix}
 	fi
-	if [[ $is_backup_name_capitalized ]]
-	   then backup_name=${name^}
-	   else backup_name=$name
+	if [[ $is_drive_name_capitalized ]]
+	   then drive_name=${name^}
+	   else drive_name=$name
 	fi
-	TraceV 3 backup_name
+	TraceV 3 drive_name
 
-       set__backup_log_dir__file_for_logging__admin_group__is_regression_test \
-	   $backup_name
+       set__drive_log_dir__file_for_logging__admin_group__is_regression_test \
+	   $drive_name
 }
 
 # ---------------------------------
 
-backup_dir=				# global, just in case
+drive_dir=				# global, just in case
 
-is_OK_if_backup_dir_unmounted=$false
+is_OK_if_drive_dir_unmounted=$false
 
-set_backup_dir() {
-	local backup_name=$1		# result of set_backup_name, i.e. valid
+set_drive_dir() {
+	local drive_name=$1		# result of set_drive_name, i.e. valid
 
-	[[ $backup_name != */* ]] ||
-	   abort "'/' in backup name not supported, add to backup_dir_prefix"
+	[[ $drive_name != */* ]] ||
+	  abort "'/' in drive name not (yet)supported, add to drive_dir_prefix"
 
-	backup_dir=$backup_dir_prefix$backup_name
+	drive_dir=$drive_dir_prefix$drive_name
 
-	if [[ $is_regression_test && ! -d $backup_dir ]]
+	if [[ $is_regression_test && ! -d $drive_dir ]]
 	   then	[[ $admin_group ]] && local group=:$admin_group || local group=
-		sudo mkdir $backup_dir &&
-		sudo chmod g+s,g+w $backup_dir &&
-		sudo chown $LOGNAME$group $backup_dir ||
+		sudo mkdir $drive_dir &&
+		sudo chmod g+s,g+w $drive_dir &&
+		sudo chown $LOGNAME$group $drive_dir ||
 		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
 	fi
 
-	if  is_backup_dir_mounted  $backup_dir
-	   then fix_snapshot_names $backup_dir # must call last
-	   else [[ $is_OK_if_backup_dir_unmounted ]] ||
-		    warn "no filesystem mounted on $backup_dir" ||
+	if  is_drive_mounted  $drive_dir
+	   then fix_snapshot_names $drive_dir # must call last
+	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
+		    warn "no filesystem mounted on $drive_dir" ||
 		    : print_call_stack
 		return 1
 	fi
@@ -540,23 +539,23 @@ customize_config_variables() {
 
 	[[ $name ]] || return
 
-	set_backup_name $name ||
-	   abort "$config_file needs set_backup_name function"
+	set_drive_name $name ||
+	   abort "$config_file needs set_drive_name function"
 
-	[[ $backup_name == Z ]] && is_regression_test=$true
+	[[ $drive_name == Z ]] && is_regression_test=$true
 
 	local var_name
 	for var_name in $config_vars
-	    do	local array_name=bkp_name2$var_name
-		eval "local bkp_names=\${!$array_name[*]}"
-		is_arg1_in_arg2 $backup_name $bkp_names || continue
+	    do	local array_name=drv_name2$var_name
+		eval "local drv_names=\${!$array_name[*]}"
+		is_arg1_in_arg2 $drive_name $drv_names || continue
 
-		eval "local custom_value=\${$array_name[\$backup_name]-}"
+		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
 		eval "$var_name=\$custom_value"
 		set +x
-		Trace 2 "$array_name[$backup_name] -> $var_name=$custom_value"
+		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
 }
 
@@ -625,7 +624,7 @@ customize_and_validate_configuration_variables() {
 
 is_disk_usage_too_high() {
 
-	set -- $(df --output=pcent,ipcent $backup_dir | tail -n1)
+	set -- $(df --output=pcent,ipcent $drive_dir | tail -n1)
 	declare -i block_percent=${1%\%} inode_percent=${2%\%}
 	(( $block_percent <= $min_FS_usage_percent )) || return 0
 	(( $inode_percent <= $min_FS_usage_percent )) || return 0
@@ -672,7 +671,7 @@ setup_run_backup_priority() {
 
 # --------------
 
-setup_prune_backup_priority() {
+setup_prune_drive_priority() {
 
 	if is_disk_usage_too_high
 	   then setup_higher_priority
@@ -689,21 +688,21 @@ _backup_management_of_prune() {
 
 	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
 	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
-	   then $IfRun run_jobs_in_parallel prune $backup_dir
+	   then $IfRun run_jobs_in_parallel prune $drive_dir
 		return
 	fi
 
 	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
-	signal_job SIGSTOP prune-backup $name
+	signal_job SIGSTOP prune-drive $name
 }
 
 ##############################################################################-
 ##############################################################################-
-# Functions and variables used to prune old backups.
+# Functions and variables used to prune old backup snapshots.
 ##############################################################################-
 ##############################################################################-
 
-_is_time_to_prune_backup() {
+_is_time_to_prune_drive() {
 	local dir=$1
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
@@ -761,7 +760,7 @@ _rm_pruned_snapshots() {
 	suspend_tracing
 	# put newest ones first, since they have the most hardlinks.
 	# use absolute paths, so the 'ps' output is more clear.
-	set -- $(echo $backup_dir/*.rm | tr ' ' '\n' | sort -r)
+	set -- $(echo $drive_dir/*.rm | tr ' ' '\n' | sort -r)
 	[[ -d $1 ]] || shift
 	local number_pruned_snapshots=$#
 	restore_tracing number_pruned_snapshots
@@ -769,7 +768,7 @@ _rm_pruned_snapshots() {
 	$Trace
 	# just prune subdirs containing files with massive # of hard-links;
 	# except too-high disk usage is more critical than "Too many files".
-	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $backup_dir &&
+	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $drive_dir &&
 	for snapshot
 	    do	local subdir
 		for subdir in $hard_link_dirs
@@ -793,8 +792,8 @@ _rm_pruned_snapshots() {
 		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
 	fi
 
-	local pruned_TS=$backup_dir/$pruned_timestamp
-	[[ $backup_name == Z ||		# regression test?
+	local pruned_TS=$drive_dir/$pruned_timestamp
+	[[ $drive_name == Z ||		# regression test?
 	   ( ! $IfRun &&		# ... too slow for real drive
 	     # very slow: only run if exclude.txt changed since our last run
 	     ( ! -e $pruned_TS ||
@@ -802,7 +801,7 @@ _rm_pruned_snapshots() {
 	{
 	# prune exclude-patterns from _all_ snapshots, very slow
 	local exclude_pattern file
-	for snapshot in $backup_dir/$snapshot_pattern*
+	for snapshot in $drive_dir/$snapshot_pattern*
 	    do	[[ $snapshot == *.rm ]] && continue
 		grep '^ */' $exclude_file | fgrep -v '**' |
 		while read exclude_pattern
@@ -817,7 +816,7 @@ _rm_pruned_snapshots() {
 
 	$IfRun log "pruned exclude-patterns from _all_ snapshots"
 
-	$IfRun sync --file-system $backup_dir &> /dev/null
+	$IfRun sync --file-system $drive_dir &> /dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -916,7 +915,7 @@ prune_type_to_file() {
 	scale_date_span
 	local prune_type_patterns=${type2prune_type_patterns[$type]}
 	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
-	[[ $type == hour ]] && _oldest_snapshot=$backup_dir/${!#},00
+	[[ $type == hour ]] && _oldest_snapshot=$drive_dir/${!#},00
 
 	Trace 5 "\n==> $type prune <=="
 	declare -i period=$backup_period
@@ -944,7 +943,7 @@ prune_type_to_file() {
 		# skip over the snapshot prune-matches that aren't old enough
 		set -- $(echo $* | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
-		   do	[[ $1 == $backup_dir/[^1-9]* ]] && shift && continue
+		   do	[[ $1 == $drive_dir/[^1-9]* ]] && shift && continue
 			local day_hour=${1##*/}
 			local date=${day_hour%$date_suffix_pattern*}
 			[[   $date > $first_prune_date ]] || break
@@ -983,34 +982,34 @@ _do_skip_newest_span_of_days() {
 # ---------------------------------------------------------
 
 # for goals of this function, see prune-variable comments in configure.sh
-prune_backup() {
-	local backup_name=$1 backup_dir
+prune_drive() {
+	local drive_name=$1 drive_dir
 
-	set_backup_name $backup_name
-	set_backup_dir  $backup_name || return 1
+	set_drive_name $drive_name
+	set_drive_dir  $drive_name || return 1
 
-	_is_time_to_prune_backup $backup_dir || return 0
+	_is_time_to_prune_drive $drive_dir || return 0
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	local lock_file
-	set_lock_file prune-backup $backup_name
-	run_lockpid $lock_file "pruning $backup_dir" ||
+	set_lock_file prune-drive $drive_name
+	run_lockpid $lock_file "pruning $drive_dir" ||
 	    # since we're called, lock holder should be un-suspended
-	    { signal_job SIGCONT prune-backup $backup_name; return 1; }
+	    { signal_job SIGCONT prune-drive $drive_name; return 1; }
 
 	trap '' HUP
-	setup_prune_backup_priority
+	setup_prune_drive_priority
 
 	$Trace
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
 
-	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
+	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	# set -- <all the snapshot basenames, reverse sorted>
 	suspend_tracing
-	set -- $(cd $backup_dir &&
+	set -- $(cd $drive_dir &&
 		   echo $snapshot_pattern*  | # '*' for .links & .partial
 		   tr ' ' '\n' | sort -u -r |
 		   grep -v '\.rm$')	# _rm_pruned_snapshots handles *.rm
@@ -1024,14 +1023,14 @@ prune_backup() {
 	_rm_pruned_snapshots $snapshots_to_prune_file
 	rm $snapshots_to_prune_file
 
-	$IfRun touch $backup_dir/$pruned_timestamp # touch even if did nothing
+	$IfRun touch $drive_dir/$pruned_timestamp # touch even if did nothing
 
 	$IfRun lockpid -r $lock_file
 }
 
 ##############################################################################-
 ##############################################################################-
-# Functions and variables used to create new backups.
+# Functions and variables used to create new backup snapshots.
 ##############################################################################-
 ##############################################################################-
 
@@ -1059,7 +1058,7 @@ set_link_dest_opts() {
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $backup_dir/$snapshot_pattern{,.links,.partial} |
+	set -- $(echo $drive_dir/$snapshot_pattern{,.links,.partial} |
 		 tr ' ' '\n' | sort -r)
 	restore_tracing
 
@@ -1100,7 +1099,7 @@ record_rsync_time() {
 	declare -i end_secs=$(date '+%s')
 	declare -i minutes=$(( (30 + $end_secs - $start_secs) / 60 ))
 
-	local file=$backup_log_dir/$rsync_time_subdir/$snapshot.txt
+	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
 	$IfRun sudo mkdir -p $(dirname $file)
 
 	local cmd="echo $minutes > $file"
@@ -1129,7 +1128,7 @@ _links_error_msg() {
 	declare -i max_src_links=0
 	bzcat $log | tr -d '"' | cut -d' ' -f3 |
 	while read dst_file
-	    do	src_file=${dst_file#$backup_dir/$snapshot_pattern.partial}
+	    do	src_file=${dst_file#$drive_dir/$snapshot_pattern.partial}
 		[[ -f $src_file ]] || continue
 		set -- $(ls -l $src_file)
 		((   $max_src_links >= $2 )) && continue
@@ -1190,7 +1189,7 @@ _handle_rsync_results() {
 	fi
 
 	if [[  $error_msg ]]
-	   then	[[ $Trace || $backup_name == Z ]] && # Z = debug "drive"
+	   then	[[ $Trace || $drive_name == Z ]] && # Z = debug "drive"
 		log "$error_msg" ||
 		log "$error_msg" |& tee -a /dev/stderr | sed 's/; /\n/g' |
 		   $IfRun mail -s "$our_name: errors" $sysadmin_email_addresses
@@ -1211,7 +1210,7 @@ run_rsync() {
 	local src_dirs=${*%$dst_snapshot}
 
 	local date_time=$(basename $dst_snapshot)
-	local log=$tmp_dir/$backup_name-${date_time%%.*}.bz2
+	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
 
 	if [[ $dst_snapshot == *.partial ]]
 	   then local partial_dst=$dst_snapshot
@@ -1245,10 +1244,10 @@ run_rsync() {
 	set_link_dest_opts $dst_snapshot
 	restore_tracing link_dest_opts
 
-	# backup_dir_prefix and rsync_backup_opts come from $config_file
+	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
 	[[ ! $is_copy_snapshot ]] &&
-	relative_opt=--relative  excludes="--exclude=$backup_dir_prefix*
+	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
 	declare -i start_seconds=$(date '+%s')
 
@@ -1284,9 +1283,9 @@ run_backup_rsync() {
 
 	local date_time
 	set_date_time
-	local new_snapshot=$backup_dir/$date_time
+	local new_snapshot=$drive_dir/$date_time
 
-	if [[ $is_interactive && $backup_name != Z ]] # Z = debug "drive"
+	if [[ $is_interactive && $drive_name != Z ]] # Z = debug "drive"
 	   then echo -n "rsync $dirs_to_backup $new_snapshot/; can CTRL-C ..."
 		$IfRun sleep 5
 		echo " too late."
@@ -1294,7 +1293,7 @@ run_backup_rsync() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
-	cd_ $backup_dir	# so can safely kill job with: fuser -k -M $backup_dir
+	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	suspend_tracing
 	eval "run_rsync $dirs_to_backup $new_snapshot" # might need globbing
@@ -1304,28 +1303,28 @@ run_backup_rsync() {
 # ----------------------
 
 run_backup() {
-	local backup_name=$1 backup_dir
+	local drive_name=$1 drive_dir
 
-	set_backup_name $backup_name
-	set_backup_dir  $backup_name || return 1
+	set_drive_name $drive_name
+	set_drive_dir  $drive_name || return 1
 
 	# the following is similar to the second half of copy_snapshot
 
 	# grab lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
 	local lock_file
-	set_lock_file run-backup $backup_name
-	run_lockpid $lock_file "backing up $backup_dir" || return 1
+	set_lock_file run-backup $drive_name
+	run_lockpid $lock_file "backing up $drive_dir" || return 1
 
-	_backup_management_of_prune $backup_name pre-rsync
+	_backup_management_of_prune $drive_name pre-rsync
 
-	if _is_time_to_run_backup $backup_dir
+	if _is_time_to_run_backup $drive_dir
 	   then	run_backup_rsync
 		local status=$?
 	   else local status=1
 	fi
 
-	_backup_management_of_prune $backup_name post-rsync # last, for testing
+	_backup_management_of_prune $drive_name post-rsync # last, for testing
 
 	$IfRun lockpid -r $lock_file
 
@@ -1334,7 +1333,7 @@ run_backup() {
 
 ##############################################################################-
 ##############################################################################-
-# Functions and variables used to copy snapshots between backups.
+# Functions and variables used to copy snapshots between backup drives.
 ##############################################################################-
 ##############################################################################-
 
@@ -1393,13 +1392,13 @@ is_dst_snapshot_needed() {
 
 copy_snapshot() {
 	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
-	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_backup_name"
-	local src_snapshot=$1 dst_backup_name=$2
+	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_drive_name"
+	local src_snapshot=$1 dst_drive_name=$2
 
 	[[ ! $pass_opt ]] && {		# if -p, caller ran following 2 funcs
-	set_backup_name $dst_backup_name
-	set_backup_dir $backup_name || abort "$dst_backup_name not mounted"; }
-	local  dst_dir=$backup_dir
+	set_drive_name $dst_drive_name
+	set_drive_dir $drive_name || abort "$dst_drive_name not mounted"; }
+	local  dst_dir=$drive_dir
 
 	is_src_snapshot_useful $src_snapshot || return 1
 
@@ -1412,7 +1411,7 @@ copy_snapshot() {
 
 	# the following is similar to the second half of run_backup_rsync
 
-	set_lock_file prune-backup $backup_name	# backup job can suspend us
+	set_lock_file prune-drive $drive_name	# backup job can suspend us
 	run_lockpid $lock_file "copying to $dst_dir" > /dev/null ||
 	   exit 1
 
@@ -1422,7 +1421,7 @@ copy_snapshot() {
 	[[  $cmd_to_set_merge_IO_priority < \
 	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
 
-	cd $backup_dir || abort cd # can kill job with: fuser -k -M $backup_dir
+	cd $drive_dir || abort cd # can kill job with: fuser -k -M $drive_dir
 
 	run_rsync $pass_opt -c $src_snapshot/. $dst_snapshot
 
@@ -1443,8 +1442,8 @@ run_jobs_in_parallel() {
 	local type=$1; shift
 
 	case $type in
-	   ( backup ) function=run_backup   exe=$run_backup_exe   ;;
-	   ( prune  ) function=prune_backup exe=$prune_backup_exe ;;
+	   ( backup ) function=run_backup  exe=$run_backup_exe  ;;
+	   ( prune  ) function=prune_drive exe=$prune_drive_exe ;;
 	   (   *    ) abort "'$type' is not supported" ;;
 	esac
 
@@ -1489,11 +1488,11 @@ rsync_hour_maxs=
 set__rsync_hour_avgs__rsync_hour_maxs() {
 
 	local hour_avgs= hour_maxs=
-	local dir backup_name format=
+	local dir drive_name format=
 	for dir in $(list_drives)
-	    do	set_backup_name $dir
-		local name=$backup_name
-		local dir=$backup_log_dir/$rsync_time_subdir
+	    do	set_drive_name $dir
+		local name=$drive_name
+		local  dir=$drive_log_dir/$rsync_time_subdir
 		eval "set -- $dir/$snapshot_pattern.txt"
 		[[ -f $1 ]] || shift
 		if [[ $# != 0 ]]
@@ -1550,10 +1549,10 @@ setup_snapshot_stats() {
 	   local dates=$true || local dates=$false
 
 	local cwd=$PWD nums= oldies= newies=
-	local dir backup_name
+	local dir drive_name
 	for dir in $(list_drives)
-	    do	set_backup_name $dir
-		local name=$backup_name
+	    do	set_drive_name $dir
+		local name=$drive_name
 		cd_ $dir
 		ending=${type2date_suffix_pattern[$ignored_date_ending_type]}
 		ending_RE=${ending//\?/.}
@@ -1601,7 +1600,7 @@ trim_prune_rsync() {
 	    -e "s@ bash /@ /@"		\
 	    -e "s@ /usr/local/bin/@ @"	\
 	    -e "s@$HOME/@~/@g"		\
-	    -e "s@prune-backup -r @prune-backup @g" \
+	    -e "s@prune-drive -r @prune-drive @g" \
 	    -e "s@ --.* @ \$opts -R \$dirs @"
 }
 
@@ -1625,9 +1624,9 @@ watch() {
 	local drives= names_pat=
 	if [[ $names ]]
 	   then for name in ${names//,/ }
-		    do	set_backup_name  $name
-			add_words drives $backup_dir_prefix$backup_name
-			[[ $name = ? ]] && names_pat=$names_pat$backup_name
+		    do	set_drive_name  $name
+			add_words drives $drive_dir_prefix$drive_name
+			[[ $name = ? ]] && names_pat=$names_pat$drive_name
 		done
 		show_all=$true   cron_opt=-C
 	   else show_all=$false
@@ -1711,7 +1710,7 @@ watch() {
 	}
 
 	eval \
-	"set -- \$(cat $lock_dir/prune-backup-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
 	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g')	  2>/dev/null |
 			trim_prune_rsync)
 	#
@@ -1731,7 +1730,7 @@ watch() {
 	# -C + df: 25 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
 	#   (ignoring the ~500 characters for full-detail for: rsync /)
 	# includes basic pruning, but not parent of 'rm' process (since in -C)
-	declare -i PB_num=$(echo "$prune_cmds" | fgrep -c prune-backup)
+	declare -i PB_num=$(echo "$prune_cmds" | fgrep -c prune-drive)
 	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + 2*PB_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
@@ -1754,7 +1753,7 @@ watch() {
 	echo
 	> $tmp
 	[[ $prune_cmds ]] && {
-	echo "$cron_cmds" | sed -n 's/.*prune-backup/prune-backup/p' > $tmp_2
+	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
 	[[ $cron_opt && $rsync_cmds && ! $show_all ]] && # && $rows < ???
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
@@ -1815,9 +1814,9 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	# {copy,update,merge}-backup use prune lock (but not yet setid)
+	# {copy,update,merge}-drive use prune lock (but not yet setid)
 	eval \
-	"set -- \$(cat $lock_dir/prune-backup-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
@@ -1874,12 +1873,12 @@ watch() {
 ##############################################################################-
 ##############################################################################-
 
-# add-extN-journal backup_name [FS_device]: current backup gets fast journal
+# add-extN-journal drive_name [FS_device]: could get fast external journal
 add_extN_journal() {
 	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
 	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	[[ $# == [1-4] ]] ||
-	   abort "{-l FS_label | backup_name} [device [VG-name]]"
+	   abort "{-l FS_label | drive_name} [device [VG-name]]"
 	if [[ $1 == -l ]]
 	   then shift;  FS_label=$1
 	   else name=$1 FS_label=
@@ -1889,10 +1888,10 @@ add_extN_journal() {
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
 	[[ ! $FS_label ]] && {
-	is_OK_if_backup_dir_unmounted=$true
-	set_backup_name $1
-	set_backup_dir $backup_name
-	set_FS_label___from_mount_dir $backup_dir ; }
+	is_OK_if_drive_dir_unmounted=$true
+	set_drive_name $1
+	set_drive_dir $drive_name
+	set_FS_label___from_mount_dir $drive_dir ; }
 							[[ $FS_device ]] ||
 	set_FS_device___from_FS_label $FS_label
 	[[ ${mount_dir-} ]] || set_mount_dir___from_FS_device $FS_device
@@ -1914,9 +1913,9 @@ add_extN_journal() {
 
 	[[ ${name-} ]] && {
 	suspend_tracing
-	$our_path $our_opts umount $backup_dir |&
+	$our_path $our_opts umount $drive_dir |&
 	   grep -v -e ': no filesystem mounted on ' -e '^ *$'
-	is_backup_dir_mounted $backup_dir && $IfRun abort "umount $backup_dir"
+	is_drive_mounted $drive_dir && $IfRun abort "umount $drive_dir"
 	restore_tracing
 	} || $IfRun umount $FS_device &> /dev/null
 	mount  |  fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
@@ -1955,8 +1954,8 @@ set__total_dir_MB__avg_dir_KB() {
 
 # dir-sizes [-f [file] | name]: stats for 'mkfs'; -f -> list/use old data
 dir_sizes() {
-	set__backup_log_dir__file_for_logging__admin_group__is_regression_test
-	readonly sizes_dir=$backup_log_dir/dir-sizes
+	set__drive_log_dir__file_for_logging__admin_group__is_regression_test
+	readonly sizes_dir=$drive_log_dir/dir-sizes
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
 
@@ -2005,16 +2004,16 @@ dir_sizes() {
 		fi
 	   else file=  name=${1-}
 		[[ $# == 1 && $name ]] || abort_with_action_Usage avg-dir-
-		is_OK_if_backup_dir_unmounted=$true
-		set_backup_name $1
+		is_OK_if_drive_dir_unmounted=$true
+		set_drive_name $1
 	fi
 
 	[[ $file ]] || {
 
-	backup_dir=$backup_dir_prefix$backup_name
-	if [[ -d $backup_dir/latest ]]
-	   then exclude_opt=   dirs_to_backup=$backup_dir/latest/.  where=
-	   else exclude_opt=--exclude=$backup_dir_prefix*
+	drive_dir=$drive_dir_prefix$drive_name
+	if [[ -d $drive_dir/latest ]]
+	   then exclude_opt=   dirs_to_backup=$drive_dir/latest/.  where=
+	   else exclude_opt=--exclude=$drive_dir_prefix*
 		 problem="didn't find a 'latest' snapshot symlink"
 		solution="using 'dirs_to_backup' variable on root drive"
 		warn "$problem, $solution (you can cancel with CTRL-C)"
@@ -2025,7 +2024,7 @@ dir_sizes() {
 	set_FS_type___from_path $dir
 	set__inode_size__data_block_size__dir_block_size___from_path $dir
 	type=$FS_type dirblock=$dir_block_size inode=$inode_size
-	file=$type-dirblock=$dirblock-inode=$inode-$backup_name$where.$suffix
+	file=$type-dirblock=$dirblock-inode=$inode-$drive_name$where.$suffix
 	TraceV 1 dirs_to_backup file
 
 	[[ ! $IfRun ]] ||
@@ -2086,18 +2085,18 @@ dir_sizes() {
 # Here's how to setup a brand new drive to be an encrypted drive
 
 # If brand new drive, find its device name with: ls -lt /dev/sd?
-# Save the device name and backup name: device=/dev/sdX  backup=Y
+# Save the device name and drive name: device=/dev/sdX  drive=Y
 # Verify it's a new drive (which has partition table): fdisk -l $device
 # See if someone is using it: fuser -v $device
 # cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
 #   (be SURE you type "YES" not "yes")
 # Make sure encryption succeeded: fdisk -l $device # want no partitions
-# Then run: snapcrypt open $device $backup (mount will fail).
+# Then run: snapcrypt open $device $drive (mount will fail).
 # Then create new rule in /etc/snapcrypt/drives.rules .
-# If have existing backup drives that are no bigger, use copy-backup .
+# If have existing backup drives that are no bigger, use copy-drive .
 
 # mkfs device [name]: prepare blank first- or smallest-drive (see comments)
-mkfs_backup() {
+mkfs_backup_drive() {
 	set_date_time
 	line_1="if you're using a partition or LV that already has backups,"
 	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
@@ -2108,7 +2107,7 @@ mkfs_backup() {
 
 	[[ ${1-} == -f ]] && shift || {
 	   echo "if this is your first or smallest disk, use the -f option;"
-	   echo "otherwise, use action 'copy-backup' instead."
+	   echo "otherwise, use action 'copy-drive' instead."
 	   abort_with_action_Usage mkfs
 	} >&2
 	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
@@ -2119,17 +2118,17 @@ mkfs_backup() {
 	[[ $device = /* ]] || device=/dev/$device
 	[[ -b $device ]] || $IfRun abort "$device not a block device"
 
-	is_OK_if_backup_dir_unmounted=$true
+	is_OK_if_drive_dir_unmounted=$true
 	if [[ $name ]]
-	   then set_backup_name $name
-	   else set_backup_name $device
+	   then set_drive_name $name
+	   else set_drive_name $device
 	fi
-	name=$backup_name
-	backup_dir=$backup_dir_prefix$backup_name
+	name=$drive_name
+	drive_dir=$drive_dir_prefix$drive_name
 	_mkfs_cmd_opts=$mkfs_cmd_opts
 	add_words _mkfs_cmd_opts $mkfs_opts
 
-	set_FS_label___from_mount_dir $backup_dir
+	set_FS_label___from_mount_dir $drive_dir
 
 	# Since most files are shared between many snapshots, most of our
 	# inodes are directories (unless we only backup files that change
@@ -2137,8 +2136,8 @@ mkfs_backup() {
 	# large enough that their disk space usage overwhelms that of the
 	# inodes); the minimum directory size is 1 block, so we want 1-2
 	# blocks per inode.  To determine the actual average directory size,
-	# run: snapback avg-dir-size <backup-name>
-	# where the backup-name is used to set 'dirs_to_backup' and excludes.
+	# run: snapback avg-dir-size <drive-name>
+	# where the drive-name is used to set 'dirs_to_backup' and excludes.
 	# NOTE: you can over-ride bytes_per_inode on the command line.
 	# NOTE: if you make the block size smaller, you'll be able to
 	# have more inodes, see: https://askubuntu.com/a/1104944 ;
@@ -2230,11 +2229,11 @@ mkfs_backup() {
 		add_words opts -J device=LABEL=$log_label
 	fi
 
-	df -m | grep " $backup_dir$" &&
-	  $IfRun abort "there's already a filesystem mounted on $backup_dir"
+	df -m | grep " $drive_dir$" &&
+	  $IfRun abort "there's already a filesystem mounted on $drive_dir"
 	[[ $FS_type == xfs && $opts == *' -N '* ]] || {
-	[[ -d $backup_dir ]] &&
-	  $IfRun abort "directory $backup_dir/ exists: is name '$name' in use?"
+	[[ -d $drive_dir ]] &&
+	  $IfRun abort "directory $drive_dir/ exists: is name '$name' in use?"
 	df -m | grep "^$device[ 	]" &&
 	  $IfRun abort "that device is mounted; to *DESTROY* its contents,
 			first run: umount $device"
@@ -2244,7 +2243,7 @@ mkfs_backup() {
 
 	[[ $mount_opts ]] && mount_opts=,$mount_opts
 	mount_opts=$common_mount_options$mount_opts
-	rec="\n\n\tLABEL=$FS_label\t$backup_dir\t$FS_type\t$mount_opts 0 2"
+	rec="\n\n\tLABEL=$FS_label\t$drive_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
 	[[ $mkfs_debug_opt ]] && IfRun= opts=$(echo $opts | sed 's/ -J .*//')
@@ -2252,22 +2251,22 @@ mkfs_backup() {
 	header $cmd
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && IfRun=echo
-	$IfRun mkdir -p $backup_dir
-	cmd="$IfRun mount -v -t $FS_type -o $mount_opts $device $backup_dir"
+	$IfRun mkdir -p $drive_dir
+	cmd="$IfRun mount -v -t $FS_type -o $mount_opts $device $drive_dir"
 	$cmd || abort "$cmd exited with $?"
 }
 
 # -----------------------------------------------------------------------------
 
 # these 3 variables are global variables initialized elsewhere
-set__backup_name__FS_device__backup_dir__FS_label() {
+set__drive_name__FS_device__drive_dir__FS_label() {
 	device=$1 name=$2
 
 	[[ $device$name ]] || abort "need 1 non-null argument"
 
-	[[ $name ]] && set_backup_name $name && name=$backup_name
+	[[ $name ]] && set_drive_name $name && name=$drive_name
 	[[ !  $device ]] &&
-	   set_FS_label___from_mount_dir $backup_dir_prefix$name &&
+	   set_FS_label___from_mount_dir $drive_dir_prefix$name &&
 	   set_FS_device___from_FS_label $FS_label && device=$FS_device
 	[[ -b $device ]] || abort "$device is not a block device"
 
@@ -2277,16 +2276,16 @@ set__backup_name__FS_device__backup_dir__FS_label() {
 	fi
 
 	FS_device=$device
-	set_backup_name $name
-	backup_dir=$backup_dir_prefix$backup_name
-	set_FS_label___from_mount_dir $backup_dir
+	set_drive_name $name
+	drive_dir=$drive_dir_prefix$drive_name
+	set_FS_label___from_mount_dir $drive_dir
 
-	TraceV 1 device name backup_name FS_device backup_dir FS_label
+	TraceV 1 device name drive_name FS_device drive_dir FS_label
 }
 
 # ---------------------------------
 
-# copy-backup {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
+# copy-drive {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 copy_backup_drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
@@ -2296,22 +2295,22 @@ copy_backup_drive() {
 
 	warn "the new device MUST be as-large as src_name's device"
 
-	set__backup_name__FS_device__backup_dir__FS_label \
+	set__drive_name__FS_device__drive_dir__FS_label \
 	    "$dst_device" $dst_name
-	local dst_name=$backup_name
+	local dst_name=$drive_name
 	local dst_device=$FS_device
-	local dst_backup_dir=$backup_dir
+	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
 	[[ ! $src_name ]] &&
-	set_oldest_backup_snapshot && 
-	set_backup_name $(dirname $oldest_backup_snapshot) &&
-	local src_name=$backup_name
+	set_oldest_snapshot && 
+	set_drive_name $(dirname $oldest_snapshot) &&
+	local src_name=$drive_name
 
-	set__backup_name__FS_device__backup_dir__FS_label "" $src_name
-	local src_name=$backup_name
+	set__drive_name__FS_device__drive_dir__FS_label "" $src_name
+	local src_name=$drive_name
 	local src_device=$FS_device
-	local src_backup_dir=$backup_dir
+	local src_drive_dir=$drive_dir
 	local src_FS_label=$FS_label
 
 	# show the user a sample fstab record
@@ -2320,8 +2319,8 @@ copy_backup_drive() {
 	   egrep -B 3 -A 1 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 
 	set --	$our_path $our_opts finish-$action $action_opts \
-		$src_device $src_backup_dir \
-		$dst_device $dst_backup_dir
+		$src_device $src_drive_dir \
+		$dst_device $dst_drive_dir
 	cmd=$*
 
 	[[   $IfRun ]] && header "$_our_name ${cmd#* }"
@@ -2339,34 +2338,34 @@ copy_backup_drive() {
 
 # ------------------------------------------------------------------
 
-# finish-copy-backup name: copy, label, replace journal, fsck, mount, resize
+# finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
 finish_copy_backup_drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# == 4 ]] || 
-	   abort "to see args, run: $_our_name -d cpbkp {src_name | ''} dev [dev_name]"
-	local src_device=$1 src_backup_dir=$2
-	local dst_device=$3 dst_backup_dir=$4
+	   abort "to see args, run: $_our_name -d cpdrv {src_name | ''} dev [dev_name]"
+	local src_device=$1 src_drive_dir=$2
+	local dst_device=$3 dst_drive_dir=$4
 
 	is_arg1_in_arg2 -f $action_opts ||
-	for backup_dir in $src_backup_dir $dst_backup_dir; do
-	if is_backup_dir_mounted $backup_dir
+	for drive_dir in $src_drive_dir $dst_drive_dir; do
+	if is_drive_mounted $drive_dir
 	   then set -- $(list_drives | 
-			 fgrep -v -w -e $src_backup_dir -e $dst_backup_dir)
+			 fgrep -v -w -e $src_drive_dir -e $dst_drive_dir)
 		[[ $# == 0 ]] &&
 		msg="
 	There are no other backup partitions mounted besides the ones used to
-        copy $src_backup_dir to $dst_backup_dir ; if you let me unmount these
+        copy $src_drive_dir to $dst_drive_dir ; if you let me unmount these
 	partition(s), no new backups will be made for many hours (or days).
 
-	To use $backup_dir," ||	msg="
-	$backup_dir is mounted;"
+	To use $drive_dir," ||	msg="
+	$drive_dir is mounted;"
 		abort "\n$msg re-run copy-backup with -f to Force unmount."
 	fi; done
 
 	set_FS_type___from_path $src_device &&
 	[[ $FS_type == xfs ]] &&
-	   abort "after umount both, 'xfs_copy $src_device $dst_device <new-device-2>' then 'xfs_admin -L $dst_FS_label $dst_device' then mount both then 'xfs_growfs $dst_backup_dir'"
+	   abort "after umount both, 'xfs_copy $src_device $dst_device <new-device-2>' then 'xfs_admin -L $dst_FS_label $dst_device' then mount both then 'xfs_growfs $dst_drive_dir'"
 
 	trap '' HUP
 
@@ -2374,11 +2373,11 @@ finish_copy_backup_drive() {
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
-	for backup_dir in $src_backup_dir $dst_backup_dir
-	    do	$our_path $our_opts umount $backup_dir |&
+	for drive_dir in $src_drive_dir $dst_drive_dir
+	    do	$our_path $our_opts umount $drive_dir |&
 		   grep -v -e ': no filesystem mounted on ' -e '^ *$'
-		is_backup_dir_mounted $backup_dir &&
-		    $IfRun abort "umount $backup_dir"
+		is_drive_mounted $drive_dir &&
+		    $IfRun abort "umount $drive_dir"
 	done
 
 	$IfRun set -x
@@ -2387,9 +2386,9 @@ finish_copy_backup_drive() {
 
 	$IfRun tune2fs -U $(uuidgen) $dst_device
 
-	label_drive $dst_device $dst_backup_dir
+	label_drive $dst_device $dst_drive_dir
 
-	local dst_name=${dst_backup_dir#$backup_dir_prefix}
+	local dst_name=${dst_drive_dir#$drive_dir_prefix}
 	suspend_tracing
 	customize_and_validate_configuration_variables $dst_name
 	restore_tracing dst_name
@@ -2403,7 +2402,7 @@ finish_copy_backup_drive() {
 	mount_options=${mount_options%,}
 
 	is_arg1_in_arg2 -M $action_opts || {
-	cmd="$IfRun mount -t $FS_type -o $mount_options $src_device $src_backup_dir"
+	cmd="$IfRun mount -t $FS_type -o $mount_options $src_device $src_drive_dir"
 	$cmd || abort "$cmd exited with $?"
 	}
 
@@ -2412,58 +2411,59 @@ finish_copy_backup_drive() {
 	$cmd || abort "$cmd exited with $?; better check $src_device ?!"
 	}
 
-	$IfRun mkdir -p $dst_backup_dir
+	$IfRun mkdir -p $dst_drive_dir
 	$IfRun \
-	mount -t $FS_type -o $mount_options $dst_device $dst_backup_dir ||
+	mount -t $FS_type -o $mount_options $dst_device $dst_drive_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
 	$IfRun resize2fs $dst_device	# do this _after_ mount, for speed
 }
 
 # -------------------------------------------------------
 
+# copy-backup-drive-dump name: dump oldest mounted backup to $1: SLOW
 copy_backup_drive_with_dump() {
 	abort "this is incredibly slow, use copy-backup instead"
 	abort "this code is out of date, needs to be rewritten"
 
 	# cp is probably faster than dump, if use setup_RAM_FS_journal:
-	# cmd="cp -al $snapshot_pattern ${backup_dir_prefix}new/"
+	# cmd="cp -al $snapshot_pattern ${drive_dir_prefix}new/"
 
 	[[ $# == 1 && $1 == [a-zA-Z] ]] || abort "specify backup drive letter"
 	letter=${1^}
-	new_device=/dev/mapper$backup_dir_prefix$letter
+	new_device=/dev/mapper$drive_dir_prefix$letter
 	[[ -b $new_device ]] || abort "can't find device for $letter"
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
 	have_cmd dump && have_cmd restore ||
 	    abort "need to run: sudo apt-get install dump"
 
-	set_oldest_backup_snapshot
-	backup_dir=$(dirname $oldest_backup_snapshot)
-	device=$(df --output=source $backup_dir | fgrep /dev/)
+	set_oldest_snapshot
+	drive_dir=$(dirname $oldest_snapshot)
+	device=$(df --output=source $drive_dir | fgrep /dev/)
 	cd_ /tmp/root
-	$our_path $our_opts umount  $backup_dir
+	$our_path $our_opts umount  $drive_dir
 
 	$IfRun umount $new_device &> /dev/null
-	$IfRun mkdir -p		${backup_dir_prefix}new
-	$IfRun mount  $new_device ${backup_dir_prefix}new ||
+	$IfRun mkdir -p		${drive_dir_prefix}new
+	$IfRun mount  $new_device ${drive_dir_prefix}new ||
 	   abort "mount $new_device -> $?"
 
-	cmd="cp -al $snapshot_pattern ${backup_dir_prefix}new/" # only if setup_RAM_FS_journal
+	cmd="cp -al $snapshot_pattern ${drive_dir_prefix}new/" # only if setup_RAM_FS_journal
 	# see Part 3 of: https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
 	$IfRun set -x
-	$IfRun cd_ ${backup_dir_prefix}new
+	$IfRun cd_ ${drive_dir_prefix}new
 	$IfRun dump -a0f - $device | $IfRun restore -rf - ||
 	   warn "dump | restore"
 	exit_status=$?
 	$IfRun set +x
 	$IfRun cd_ /tmp
 	[[ $exit_status == 0 ]] && {
-	$IfRun umount ${backup_dir_prefix}new
+	$IfRun umount ${drive_dir_prefix}new
 	label_drive $new_device $mount_dir
 	$IfRun mount  $new_device $mount_dir || warn "mount $new_device"
 	}
-	$IfRun mount $device $backup_dir ||
-	   abort "mount $device $backup_dir -> $?"
+	$IfRun mount $device $drive_dir ||
+	   abort "mount $device $drive_dir -> $?"
 }
 
 #############################################################################
@@ -2487,17 +2487,17 @@ case $action in
    ( l*s*dr*v* | ld | ls )
 	list_drives
 	;;
-   # run-backups   [dir(s)]: dir(s) defaults to every mounted backup
+   # run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
    ( r*b*k*p* | rb* )
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   # prune-backups [dir(s)]: dir(s) defaults to every backup; see configure.sh
-   ( pr*n*b*k*p* | pb* )
+   # prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
+   ( pr*n*dr*v* | pd* )
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup
+   # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
 	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
 	dst_name=${!#}
@@ -2509,23 +2509,23 @@ case $action in
 	    do	copy_snapshot $snapshot $dst_name
 	done
 	;;
-  # update-backup name: 'name' mounted backup gets snapshots from other backups
-   (upd*b* | ub )
-	set_backup_name $1
-	set_backup_dir $backup_name
+  # update-drive name: 'name' mounted drive gets snapshots from other drives
+   (upd*b* | ud )
+	set_drive_name $1
+	set_drive_dir $drive_name
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
 	$Trace
 
 	set -f
-	set -- $(echo root$backup_dir_prefix$anchored_backup_name_regex/snap |
+	set -- $(echo root$drive_dir_prefix$anchored_drive_name_regex/snap |
 		 tr / ' ')
 	set +f
 	snapshot_sort_key=$#
 
 	prev_date_time=
-	for dir in $(list_drives | fgrep -v -w $backup_dir)
+	for dir in $(list_drives | fgrep -v -w $drive_dir)
 	    do	suspend_tracing
 		echo $dir/$snapshot_pattern*
 		restore_tracing
@@ -2537,14 +2537,14 @@ case $action in
 		[[ $prev_date_time == $date_time ]] && continue
 		    prev_date_time=$date_time
 
-		cmd="copy_snapshot -p1 $snapshot $backup_name" # for debugging
-		cmd="copy_snapshot -p0 $snapshot $backup_name"
+		cmd="copy_snapshot -p1 $snapshot $drive_name" # for debugging
+		cmd="copy_snapshot -p0 $snapshot $drive_name"
 		[[ $IfRun ]] && header $cmd
 		$cmd || continue
 		# break			# uncomment to debug
 	done
 
-	$IfRun sync --file-system $$backup_dir &> /dev/null
+	$IfRun sync --file-system $drive_dir &> /dev/null
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
@@ -2577,14 +2577,14 @@ case $action in
    ( kill-prune* | kp )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
-	kill_locker_group prune-backup $*
+	kill_locker_group prune-drive $*
 	;;
    # kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
    ( kill-both | ka | kk )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-both
 	$Trace
 	kill_locker_group   run-backup $*
-	kill_locker_group prune-backup $*
+	kill_locker_group prune-drive $*
 	;;
 
    ###########################################################################
@@ -2600,15 +2600,17 @@ case $action in
 	;;
 
    ( mkfs )
-     mkfs_backup "$@"
+     mkfs_backup_drive "$@"
 	;;
-   ( c*p*b*k*p | cpb )
+   # copy-drive
+   ( c*p*d*r*v | cpd )
      copy_backup_drive "$@"
 	;;
+   # finish-copy-drive
    ( f*c*p*b*k*p | f*c*p*b* | fcb  )
      finish_copy_backup_drive "$@"
 	;;
-   # copy-backup-dump letter: dump oldest mounted backup to letter backup: SLOW
+   # copy-backup-drive-dump
    ( copy-b*k*p-dump )
      copy_backup_drive_with_dump "$@"
 	;;
@@ -2630,7 +2632,7 @@ case $action in
 
 	log test 1
 	customize_and_validate_configuration_variables Z
-	echo $backup_name
+	echo $drive_name
 	log test 2
 	exit
 
@@ -2654,8 +2656,8 @@ case $action in
 	print_call_stack 1
 	abort test
 
-	set_backup_name ${1:-a}
-	TraceV 0 backup_name file_for_logging log_msg_prefix
+	set_drive_name ${1:-a}
+	TraceV 0 drive_name file_for_logging log_msg_prefix
 	echo  test1
 	echoE test2
 	log 0 test3
@@ -2678,19 +2680,19 @@ case $action in
 	foo
 	exit
 
-	set_backup_name ${1:-a}
-	set_backup_dir $backup_name
-	set_FS_label___from_mount_dir $backup_dir
+	set_drive_name ${1:-a}
+	set_drive_dir $drive_name
+	set_FS_label___from_mount_dir $drive_dir
 	echo $FS_label
 	exit
 
-	set_backup_dir ${1^}
+	set_drive_dir ${1^}
 	$Trace
 	is_disk_usage_too_high
 	abort $?
 
-	set_oldest_backup_snapshot
-	echo $oldest_backup_snapshot
+	set_oldest_snapshot
+	echo $oldest_snapshot
 	exit
 
 	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
@@ -2698,17 +2700,17 @@ case $action in
 	done
 	exit
 
-	backup_dir=/backup/F
-	cd $backup_dir
+	drive_dir=/backup/F
+	cd $drive_dir
 	log=/tmp/root/F-190126-15.bz2
 	_links_error_msg "nnn 'Too many links'"
 	exit
 
-	set_backup_dir F
+	set_drive_dir F
 	exit
 
 	$Trace
-	set_backup_dir ${1-''}
+	set_drive_dir ${1-''}
 	log "test with drive ${1-}"
 	exit
 
@@ -2736,8 +2738,8 @@ case $action in
 
 	umask=02
 
-	set_backup_dir Z
-	cd_ $backup_dir
+	set_drive_dir Z
+	cd_ $drive_dir
 	[[ $IfRun ]] ||
 	rm -rf *
 
@@ -2764,7 +2766,7 @@ case $action in
 		done
 	done | xargs -r $IfRun mkdir || abort mkdir
 
-	# setup partial backups mid-date, to test pruning
+	# setup partial snapshots mid-date, to test pruning
 	declare -i mid_secs=start_secs+(end_secs-start_secs)/2
 	set_day $mid_secs; mid_day=$day
 	TraceV 7 start_date mid_day end_date
@@ -2795,7 +2797,7 @@ case $action in
 	cp -al *    .mk-Z/
 	;;
 
-   # test-prune: use mk-Z to run pruning regression test in the Z pseudo-backup
+   # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
    ( test*prune | tp )
 	[[ $# == 0 ]] || abort_with_action_Usage test-prune
 
@@ -2806,7 +2808,7 @@ case $action in
 	cmd_dirs="/usr/local/bin/ ~/git/$_our_name/bin/"
 	echo -e "\nComparing prune results using '$_our_name' in:
 	${cmd_dirs/ / vs }"
-	set_backup_dir Z
+	set_drive_dir Z
 
 	# see the comment at the top of the mk-Z option, above
 	declare -A prune_type2mk_Z_args=(
@@ -2824,7 +2826,7 @@ case $action in
 	}
 
 	$Trace
-	cd_ $backup_dir
+	cd_ $drive_dir
 	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
 	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
 		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
@@ -2837,8 +2839,8 @@ case $action in
 		for dir in $cmd_dirs
 		    do	eval "dir=$dir"	# expand ~
 			$IfRun clone_stashed_mk_Z $type
-			$IfRun $dir$_our_name $our_opts prune-backup Z |&
-			   fgrep -v ' prune-backup Z: pruned '
+			$IfRun $dir$_our_name $our_opts prune-drive Z |&
+			   fgrep -v ' prune-drive Z: pruned '
 			[[ $dir == /usr/* ]] && cmd=old || cmd=new
 			ls > $stash.$cmd.ls
 		done
@@ -2869,18 +2871,18 @@ case $action in
 
 	[[ $IfRun ]] && output=/dev/stdout || output=/dev/null
 	for name
-	    do	set_backup_name $name
-		set_backup_dir $backup_name
-		is_backup_dir_mounted $backup_dir || continue
-		/bin/ls $backup_dir |
-		   grep "^$snapshot_regex" > $log_dir/$backup_name/snapshots.ls
+	    do	set_drive_name $name
+		set_drive_dir $drive_name
+		is_drive_mounted $drive_dir || continue
+		/bin/ls $drive_dir |
+		   grep "^$snapshot_regex" > $log_dir/$drive_name/snapshots.ls
 		sudo umount -h &> /dev/null || warn "need sudo privs" || break
-		umount_cmd="$IfRun sudo umount -v $backup_dir"
+		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		for (( i = 1; i <= 30; i++ )) # wait for kill to finish
 		    do	$umount_cmd && break
 			$IfRun sleep 0.1
 		done &> $output
-		is_backup_dir_mounted $backup_dir &&
+		is_drive_mounted $drive_dir &&
 		$umount_cmd		# this time, show user error message
 	done
 	;;
@@ -2890,7 +2892,7 @@ case $action in
 	[[ $drive == *Z ]] && exit 0	# for debugging
 
 	$Trace
-	is_backup_dir_mounted $drive || exit 0
+	is_drive_mounted $drive || exit 0
 	suspend_tracing
 	set -- $drive/$snapshot_pattern	# all the _successful_ snapshots
 	restore_tracing
@@ -2906,11 +2908,11 @@ case $action in
 	    abort "$drive has no (successful) backups since $latest_day"
 	;;
    # for "snapcrypt close": find drive with max # snapshots since last mounted
-   ( max-backup | mb )
+   ( max-backup* | mb )
 	if [[ $# == 1 ]]
-	   then set_backup_name $1 2>/dev/null
-		if [[ ${backup_name-} ]]
-		   then echo "$backup_dir_prefix$backup_name"
+	   then set_drive_name $1 2>/dev/null
+		if [[ ${drive_name-} ]]
+		   then echo "$drive_dir_prefix$drive_name"
 			exit 0
 		fi
 	fi
@@ -2940,8 +2942,8 @@ case $action in
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
-	set_backup_name $1
-	echo $backup_dir_prefix$backup_name
+	set_drive_name $1
+	echo $drive_dir_prefix$drive_name
 	;;
 
    ( * )
