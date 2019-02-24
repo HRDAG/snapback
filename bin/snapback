@@ -2360,7 +2360,7 @@ finish_copy_backup_drive() {
 
 	To use $drive_dir," ||	msg="
 	$drive_dir is mounted;"
-		abort "\n$msg re-run copy-backup with -f to Force unmount."
+		abort "\n$msg re-run copy-drive with -f to Force unmount."
 	fi; done
 
 	set_FS_type___from_path $src_device &&
@@ -2422,7 +2422,7 @@ finish_copy_backup_drive() {
 
 # copy-backup-drive-dump name: dump oldest mounted backup to $1: SLOW
 copy_backup_drive_with_dump() {
-	abort "this is incredibly slow, use copy-backup instead"
+	abort "this is incredibly slow, use copy-drive instead"
 	abort "this code is out of date, needs to be rewritten"
 
 	# cp is probably faster than dump, if use setup_RAM_FS_journal:
@@ -2603,15 +2603,15 @@ case $action in
      mkfs_backup_drive "$@"
 	;;
    # copy-drive
-   ( c*p*d*r*v | cpd )
+   ( c*p*dr*v* | cpd )
      copy_backup_drive "$@"
 	;;
    # finish-copy-drive
-   ( f*c*p*b*k*p | f*c*p*b* | fcb  )
+   ( f*c*p*dr*v* | f*c*p*d* | fcd )
      finish_copy_backup_drive "$@"
 	;;
-   # copy-backup-drive-dump
-   ( copy-b*k*p-dump )
+   # copy-drive-dump
+   ( copy-dr*v*-dump )
      copy_backup_drive_with_dump "$@"
 	;;
 
