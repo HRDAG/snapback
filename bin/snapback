@@ -2139,17 +2139,26 @@ mkfs_backup_drive() {
 	# amount of directory space usage (and 4 KB results in 20% more),
 	# since most directories need 0 disk blocks because their contents
 	# will fit in the inode; so 2 KB blocks are optimal, since they'll
-	# result in better performance.  To determine the actual average
-	# directory size, you should create a backup drive on your fastest
-	# drive, run 'snapback run-backup <drive-name>', then run 'snapback
-	# dir-sizes -b 1024 <drive-name>' where the drive-name is used to set
-	# 'dirs_to_backup' and excludes.  ALSO, by making the block size
-	# smaller, you'll be able to have more inodes if you have a lot of
-	# small files, see: https://askubuntu.com/a/1104944 .  Having small
-	# blocks might reduce performance on a rotational hard disk (unless
-	# you're using extents and rsync's --preallocate), but probably won't
-	# affect performance on an SSD or flash memory stick unless you have
-	# lots of files with indirect blocks.
+	# result in better performance.
+
+	# To determine your actual average directory size, e.g. for ext4:
+	#    # choose a filesystem type with mkfs_cmd_opts= in configure.sh
+	#    snapback mkfs -b 1024 <drive-name>	# first time, use smallest -b
+	#    # configure dirs_to_backup= and excludes
+	#    snapback run-backup <drive-name>
+	#    snapback dir-sizes  <drive-name>
+	#
+	#    snapback mkfs -b 2048 <drive-name> # overwrite older FS
+	#    ...
+	# If the FS stores small dirs in the inode, you might mess with isize.
+
+	# ALSO, by making the block size smaller with ext*, you'll be able to
+	# have more inodes if you have a lot of small files, see:
+	# https://askubuntu.com/a/1104944 .  Having small blocks might reduce
+	# performance on a rotational hard disk (unless you're using extents
+	# and rsync's --preallocate), but probably won't affect performance on
+	# an SSD or flash memory stick (unless you're using ext* and you have
+	# lots of files with indirect blocks).
 
 	# this block of code is only relevant to ext*
 	[[ $_mkfs_cmd_opts != mkfs.[^e]* ]] && {
@@ -2507,16 +2516,69 @@ case $action in
 	;;
    # run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
    ( r*b*k*p* | rb* )
+	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
    ( pr*n*dr*v* | pd* )
+	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
+   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
+   ( c*s*h*l* )
+	[[ $# == 1 ]] || abort_with_action_Usage find-broken-
+
+	[[ ${very_old_immutable_files-} ]] ||
+	   abort "setup very_old_immutable_files= in $config_file"
+
+	set_drive_name $1
+	set_drive_dir  $drive_name
+	cd_ $drive_dir
+
+	set_inum() {
+		[[ -r $1 ]] || abort "run with sudo"
+		set -- $(ls -i -d $1 2>/dev/null)
+		inum=$1
+		[[ $inum ]]
+	}
+
+	set -- $snapshot_pattern*
+
+	declare -A file2inum
+	for old_file in $very_old_immutable_files
+	    do	$IfRun sudo chattr +i $old_file &> /dev/null
+		file=$1$old_file
+		set_inum $file ||
+		  abort "$file doesn't exist in oldest snapshot"
+		file2inum[$old_file]=$inum
+	done
+	$Trace
+	partials=
+	while [[ $# != 0 ]]
+	    do	found_good_link=$false
+		for old_file in $very_old_immutable_files
+		    do	old_inum=${file2inum[$old_file]}
+			set_inum $1$old_file
+			[[ $old_inum == $inum ]] || continue
+			found_good_link=$true
+			break
+		done
+		[[ $found_good_link ]] && partials= && shift && continue
+		[[ $1 == *.partial ]] && add_words partials $1 &&
+		   shift && continue
+
+		$IfRun mkdir -p .rm
+		set -- $partials $*
+		warn "the following have broken hard-links: $*"
+		exit 1
+	done
+	echo "no broken hard-links!"
+	;;
    # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
+	(( $# >= 2 )) || abort_with_action_Usage copy-snap
 	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
@@ -2529,6 +2591,7 @@ case $action in
 	;;
   # update-drive name: 'name' mounted drive gets snapshots from other drives
    (upd*b* | ud )
+	[[ $# == 1 ]] || abort_with_action_Usage update-drive
 	set_drive_name $1
 	set_drive_dir $drive_name
 
@@ -2741,58 +2804,6 @@ case $action in
 	echo $backup_period
 	;;
 
-   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
-   ( c*s*h*l* )
-	[[ $# == 1 ]] || abort_with_action_Usage find-broken-
-
-	[[ ${very_old_immutable_files-} ]] ||
-	   abort "setup very_old_immutable_files= in $config_file"
-
-	set_drive_name $1
-	set_drive_dir  $drive_name
-	cd_ $drive_dir
-
-	set_inum() {
-		if [[ -r $1 ]]
-		   then set -- $(     ls -i -d $1 2>/dev/null)
-		   else set -- $(sudo ls -i -d $1 2>/dev/null)
-		fi
-		inum=$1
-		[[ $inum ]]
-	}
-
-	set -- $snapshot_pattern*
-
-	declare -A file2inum
-	for old_file in $very_old_immutable_files
-	    do	$IfRun sudo chattr +i $old_file &> /dev/null
-		file=$1$old_file
-		set_inum $file ||
-		  abort "$file doesn't exist in oldest snapshot"
-		file2inum[$old_file]=$inum
-	done
-	$Trace
-	partials=
-	while [[ $# != 0 ]]
-	    do	found_good_link=$false
-		for old_file in $very_old_immutable_files
-		    do	old_inum=${file2inum[$old_file]}
-			set_inum $1$old_file
-			[[ $old_inum == $inum ]] || continue
-			found_good_link=$true
-			break
-		done
-		[[ $found_good_link ]] && partials= && shift && continue
-		[[ $1 == *.partial ]] && add_words partials $1 &&
-		   shift && continue
-
-		$IfRun mkdir -p .rm
-		set -- $partials $*
-		warn "the following have broken hard-links: $*"
-		exit 1
-	done
-	echo "no broken hard-links!"
-	;;
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
    ( mk*[Zz] | mkz )
 	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
