@@ -769,6 +769,11 @@ _rm_pruned_snapshots() {
 	$Trace
 	# just prune subdirs containing files with massive # of hard-links;
 	# except too-high disk usage is more critical than "Too many files".
+	set_FS_type___from_path $PWD
+	case ${FS_type,,} in
+	    ( ext? | ntfs ) ;;
+	    ( * ) hard_link_dirs= ;;	# e.g. XFS supports a zillion links
+	esac
 	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $drive_dir &&
 	for snapshot
 	    do	local subdir
