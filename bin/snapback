@@ -2758,14 +2758,21 @@ case $action in
    ( f*b*l*s* )
 	[[ $# == 1 ]] || abort_with_action_Usage find-broken-
 
-	[[ $very_old_immutable_files ]] ||
-	   abort "setup very_old_immutable_files"
+	[[ ${very_old_immutable_files-} ]] ||
+	   abort "setup very_old_immutable_files= in $config_file"
 
 	set_drive_name $1
 	set_drive_dir  $drive_name
 	cd_ $drive_dir
 
-	set_inum() { set -- $(ls -i -d $1); inum=$1; }
+	set_inum() {
+		if [[ -r $1 ]]
+		   then set -- $(     ls -i -d $1 2>/dev/null)
+		   else set -- $(sudo ls -i -d $1 2>/dev/null))
+		fi
+		inum=$1
+		[[ $inum ]]
+	}
 
 	set -- $snapshot_pattern*
 
@@ -2773,7 +2780,8 @@ case $action in
 	for old_file in $very_old_immutable_files
 	    do	$IfRun sudo chattr +i $old_file &> /dev/null
 		file=$1$old_file
-		set_inum $file
+		set_inum $file ||
+		  abort "$file doesn't exist in oldest snapshot"
 		file2inum[$old_file]=$inum
 	done
 	$Trace
