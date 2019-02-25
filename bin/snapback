@@ -66,7 +66,7 @@ Usage: $our_name action [args]
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-drive {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
-    find-broken-link-snapshots drv-name: show snapshots with broken hard links
+    check-snapshot-hard-links drv-name: show snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
 
@@ -1233,6 +1233,7 @@ run_rsync() {
 	   (*)	abort "bad pass option: $pass_opt"
 	esac
 
+	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
 	[[ $IfRun ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
 	until [[ -e  $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
@@ -1261,6 +1262,7 @@ run_rsync() {
 			$src_dirs $partial_dst/ |& bzip2 -9 > $log
 	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
 
+	[[ ! $is_copy_snapshot ]] &&
 	$IfRun touch $partial_dst	# 'when we finished', not mdate of src
 
 	_handle_rsync_results $dst_snapshot $status $log
@@ -2184,7 +2186,7 @@ mkfs_backup_drive() {
 		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
-		# using isize=1024 resulted in 20% more directory disk space.
+		# using isize=1024 resulted in 40% more directory disk space.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
@@ -2733,8 +2735,8 @@ case $action in
 	echo $backup_period
 	;;
 
-   # find-broken-link-snapshots drv-name: show snapshots with broken hard links
-   ( f*b*l*s* )
+   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
+   ( c*s*h*l* )
 	[[ $# == 1 ]] || abort_with_action_Usage find-broken-
 
 	[[ ${very_old_immutable_files-} ]] ||

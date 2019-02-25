@@ -207,11 +207,11 @@ declare -i decades_per_span_for_year_prune=4	# prune-drive* can change
 drv_name2pruning_span_scale_factor[G]=1.5 # G is 50% bigger than other drives
 drv_name2pruning_span_scale_factor[Z]=1	  # Z used for pruning regression tests
 
-# Action 'find-broken-link-snapshots' uses this optional list to find the
+# Action 'check-snapshot-hard-links' uses this optional list to find the
 # first (and subsequent) snapshot that has a different inode for all
 # of these files (and the action will make all these files immutable).
 # Include files that should exist unchanged in every single snapshot.
-# [Action 'find-broken-link-snapshots' shows the snapshots that can
+# [Action 'check-snapshot-hard-links' shows the snapshots that can
 #  be moved into .rm/ and then deleted, to be replaced by running
 #  'update-drive' and rebuilding those snapshots (with correct hard links)
 #  from another backup drive that had the missing snapshots.]
