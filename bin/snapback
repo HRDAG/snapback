@@ -1968,7 +1968,7 @@ dir_sizes() {
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
 
-	suffix=ls-s
+	suffix=ls-s-d
 
 	if [[ $# == 0 ]]
 	   then echo -e "\nThe actual disk-space consumed by a directory is"
@@ -1985,9 +1985,10 @@ dir_sizes() {
 		echo
 		exit
 	fi
-	[[ $1 =~ ^[0-9]+\.?$ ]] && set -- -f $*
+
 	if [[ $1 == -f ]]
 	   then set -- $(/bin/ls *.$suffix.bz2 | sed 's/\.bz2//')
+		[[ -f $1.bz2 ]] || abort "don't have any old data files"
 		PS3="specify file number: "
 		select file
 		   do	[[ $file ]] && break
