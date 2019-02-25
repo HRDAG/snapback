@@ -66,6 +66,7 @@ Usage: $our_name action [args]
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-drive {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 
+    find-broken-link-snapshots drv-name: show snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
 
@@ -2146,17 +2147,22 @@ mkfs_backup_drive() {
 	# usage by directories (unless we only backup files that change often,
 	# and they're large enough that ext* needs to use indirect blocks).
 	# On my Ubuntu laptop, 1 KB blocks result in half the disk space used
-	# by 2 KB blocks, so the default block size is 1KB; on HRDAG's Ubuntu
-	# server using XFS, 1 KB blocks are also optimal.  To determine the
-	# actual average directory size, you should create a default backup
-	# drive, run 'run-backup <drive-name>, then run 'snapback dir-sizes
-	# <drive-name>' where the drive-name is used to set 'dirs_to_backup'
-	# and excludes.  ALSO, by making the block size smaller, you'll be
-	# able to have more inodes, see: https://askubuntu.com/a/1104944 .
-	# Having small blocks might reduce performance on a rotational hard
-	# disk (unless you're using extents and rsync's --preallocate), but
-	# probably won't affect performance on an SSD or flash memory stick
-	# unless you have lots of files with indirect blocks.
+	# by 2 KB blocks, so the default block size is 1KB.  On HRDAG's Ubuntu
+	# server using XFS, 1 KB blocks and 2 KB blocks result in the same
+	# amount of directory space usage (and 4 KB results in 20% more),
+	# since most directories need 0 disk blocks because their contents
+	# will fit in the inode; so 2 KB blocks are optimal, since they'll
+	# result in better performance.  To determine the actual average
+	# directory size, you should create a backup drive on your fastest
+	# drive, run 'snapback run-backup <drive-name>', then run 'snapback
+	# dir-sizes -b 1024 <drive-name>' where the drive-name is used to set
+	# 'dirs_to_backup' and excludes.  ALSO, by making the block size
+	# smaller, you'll be able to have more inodes if you have a lot of
+	# small files, see: https://askubuntu.com/a/1104944 .  Having small
+	# blocks might reduce performance on a rotational hard disk (unless
+	# you're using extents and rsync's --preallocate), but probably won't
+	# affect performance on an SSD or flash memory stick unless you have
+	# lots of files with indirect blocks.
 
 	# this block of code is only relevant to ext*
 	[[ $_mkfs_cmd_opts != mkfs.[^e]* ]] && {
@@ -2197,11 +2203,13 @@ mkfs_backup_drive() {
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
-		# The above comment predicts size=256; but CRCs need size=512,
-		# and 90% of HRDAG's server's dirs fit in a size=512 inode.
+		# The above comment predicts isize=256; but CRCs need size=512,
+		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
+		# using isize=1024 resulted in 20% more directory disk space.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
+		# See much-earlier long comment for discussion of block size.
 		[[ $opts == *"-s size="* ]] || add_words opts -s size=2048
 		[[ $opts == *"-b size="* ]] || add_words opts -b size=2048
 		[[ $opts == *"-n size="* ]] || add_words opts -n size=2048
@@ -2643,6 +2651,8 @@ case $action in
    ###########################################################################
 
    ( test | t )
+	set__OS_release_file__OS_release
+	TraceV 0 OS_release_file OS_release
 	exit
 
 	wont_trace() {         foo=2
@@ -2744,6 +2754,50 @@ case $action in
 	echo $backup_period
 	;;
 
+   # find-broken-link-snapshots drv-name: show snapshots with broken hard links
+   ( f*b*l*s* )
+	[[ $# == 1 ]] || abort_with_action_Usage find-broken-
+
+	[[ $very_old_immutable_files ]] ||
+	   abort "setup very_old_immutable_files"
+
+	set_drive_name $1
+	set_drive_dir  $drive_name
+	cd_ $drive_dir
+
+	set_inum() { set -- $(ls -i -d $1); inum=$1; }
+
+	set -- $snapshot_pattern*
+
+	declare -A file2inum
+	for old_file in $very_old_immutable_files
+	    do	$IfRun sudo chattr +i $old_file &> /dev/null
+		file=$1$old_file
+		set_inum $file
+		file2inum[$old_file]=$inum
+	done
+	$Trace
+	partials=
+	while [[ $# != 0 ]]
+	    do	found_good_link=$false
+		for old_file in $very_old_immutable_files
+		    do	old_inum=${file2inum[$old_file]}
+			set_inum $1$old_file
+			[[ $old_inum == $inum ]] || continue
+			found_good_link=$true
+			break
+		done
+		[[ $found_good_link ]] && partials= && shift && continue
+		[[ $1 == *.partial ]] && add_words partials $1 &&
+		   shift && continue
+
+		$IfRun mkdir -p .rm
+		set -- $partials $*
+		warn "the following have broken hard-links: $*"
+		exit 1
+	done
+	echo "no broken hard-links!"
+	;;
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
    ( mk*[Zz] | mkz )
 	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
