@@ -19,7 +19,7 @@
 
 # --------------------------
 # To understand the defaults mentioned below, read the long comments in
-# mkfs_drive and it's helper functions.
+# mkfs_backup_drive and it's helper functions.
 # --------------------------
 
 # Comment-out all-but-one of these sample values:
@@ -31,11 +31,11 @@
 # that you can over-ride any of these individual defaults.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 
-# Defaults to opts="-b 4096 -i 4096 -I 128 -m .1"; you can override them,
-# but first read the long comments in the mkfs_drive function (and helpers).
-# defaults to extent-based if new-enough kernel, override with "-O ^extent".
+# Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
+# but first read the long comments in the mkfs_backup_drive function & helpers.
+# Defaults to extent-based if new-enough kernel, override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
-readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # many tiny dirs (& SSD / flash?)
+readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # if action 'dir-sizes' suggests
 
 # SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
