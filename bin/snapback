@@ -2768,7 +2768,7 @@ case $action in
 	set_inum() {
 		if [[ -r $1 ]]
 		   then set -- $(     ls -i -d $1 2>/dev/null)
-		   else set -- $(sudo ls -i -d $1 2>/dev/null))
+		   else set -- $(sudo ls -i -d $1 2>/dev/null)
 		fi
 		inum=$1
 		[[ $inum ]]
