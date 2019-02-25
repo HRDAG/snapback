@@ -51,6 +51,7 @@ Usage: $our_name action [args]
     run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
     prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
     copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
+    update-drive name: 'name' mounted drive gets snapshots from other drives
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
@@ -330,11 +331,14 @@ signal_job() {
 ##############################################################################
 
 list_drives() {
+	[[ ${1-} == -a ]] &&
+	   local list_all_drives=$true && shift ||
+	   local list_all_drives=$false
 
 	suspend_tracing
 	customize_and_validate_configuration_variables Z # ensure have *pattern
 
-	if [[ -t 0 || -t 1 || -t 2 ]]
+	if [[ -t 0 || -t 1 || -t 2 || $list_all_drives ]]
 	   then local regex=$anchored_drive_UI_name_regex
 	   else local regex=$anchored_drive_name_regex # for cron (& nohup)
 	fi
@@ -2493,47 +2497,19 @@ copy_backup_drive_with_dump() {
 	   abort "mount $device $drive_dir -> $?"
 }
 
-#############################################################################
-#############################################################################
-# Process the requested action with the above functions & global variables. #
-#############################################################################
-#############################################################################
+##############################################################################-
+##############################################################################-
+# Random maintenance functions.
+##############################################################################-
+##############################################################################-
 
-[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
-
-action=$1; shift
-_our_name="$our_name"
- our_name="$our_name $action"
-
-process_action() {
-
-stack_frame_to_show=0	     # show our line-number in action 'case- statement
-
-case $action in
-   # list-drives: list all the mounted backup drives or partitions
-   ( l*s*dr*v* | ld | ls )
-	list_drives
-	;;
-   # run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
-   ( r*b*k*p* | rb* )
-	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
-	run_jobs_in_parallel backup "$@"
-	[[ $is_cron ]] && wait		# so see master cron job in ps
-	;;
-   # prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
-   ( pr*n*dr*v* | pd* )
-	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
-	run_jobs_in_parallel prune "$@"
-	[[ $is_cron ]] && wait		# so see master cron job in ps
-	;;
-   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
-   ( c*s*h*l* )
-	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
+check-snapshot-hard-links() {
+	local name=$1
 
 	[[ ${very_old_immutable_files-} ]] ||
 	   abort "setup very_old_immutable_files= in $config_file"
 
-	set_drive_name $1
+	set_drive_name $name
 	set_drive_dir  $drive_name
 	cd_ $drive_dir
 
@@ -2575,6 +2551,45 @@ case $action in
 		exit 1
 	done
 	echo "no broken hard-links!"
+}
+
+#############################################################################
+#############################################################################
+# Process the requested action with the above functions & global variables. #
+#############################################################################
+#############################################################################
+
+[[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
+
+action=$1; shift
+_our_name="$our_name"
+ our_name="$our_name $action"
+
+process_action() {
+
+stack_frame_to_show=0	     # show our line-number in action 'case- statement
+
+case $action in
+   # list-drives: list all the mounted backup drives or partitions
+   ( l*s*dr*v* | ld | ls )
+	list_drives
+	;;
+   # run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
+   ( r*b*k*p* | rb* )
+	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
+	run_jobs_in_parallel backup "$@"
+	[[ $is_cron ]] && wait		# so see master cron job in ps
+	;;
+   # prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
+   ( pr*n*dr*v* | pd* )
+	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
+	run_jobs_in_parallel prune "$@"
+	[[ $is_cron ]] && wait		# so see master cron job in ps
+	;;
+   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
+   ( c*s*h*l* )
+	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
+	check-snapshot-hard-links "$@"
 	;;
    # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
@@ -2606,7 +2621,7 @@ case $action in
 	snapshot_sort_key=$#
 
 	prev_date_time=
-	for dir in $(list_drives | fgrep -v -w $drive_dir)
+	for dir in $(list_drives -a | fgrep -v -w $drive_dir)
 	    do	suspend_tracing
 		echo $dir/$snapshot_pattern*
 		restore_tracing
@@ -2945,7 +2960,7 @@ case $action in
    # WARNING: this should only be called by ourself or "snapcrypt close"
    # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u )			# umount
-	[[ $# != 0 ]] || abort "pass name(s)"
+	[[ $# != 0 ]] || abort "pass drive name(s)"
 	[[ $* == all ]] && set -- $(list_drives)
 
 	$Trace

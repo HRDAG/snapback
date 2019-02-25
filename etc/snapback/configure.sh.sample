@@ -233,8 +233,12 @@ readonly snapshot_date_time_separator=','
 
 # Default policy: drives are named as a single capitalized letter; you can
 # usually set your own policy by simply changing anchored_drive_*name_regex= ,
-# instead of defining your own 'set_drive_name' function in here.
-readonly    anchored_drive_name_regex='[A-Z]'
+# Instead of defining your own 'set_drive_name' function in here.
+# If you want cron to skip a drive (because you're doing maintenance
+# on it), then remove that drive from anchored_drive_name_regex (only); better
+# yet, only match production backup-drives (and Z, the pseudo-drive
+# used for regression tests) in anchored_drive_name_regex .
+readonly    anchored_drive_name_regex='[A-CZ]' # production drives, and testing
 readonly anchored_drive_UI_name_regex='[A-Za-z]'
 readonly is_drive_name_capitalized=$true
 
