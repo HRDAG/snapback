@@ -1991,7 +1991,7 @@ dir_sizes() {
 		PS3="specify file number: "
 		select file
 		   do	[[ $file ]] && break
-		done
+		done || exit 1
 	   else file=  name=${1-}
 		[[ $# == 1 && $name && $name != -* ]] ||
 		   abort_with_action_Usage dir-size
