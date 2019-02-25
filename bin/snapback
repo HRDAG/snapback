@@ -2528,7 +2528,7 @@ case $action in
 	;;
    # check-snapshot-hard-links drv-name: show snapshots with broken hard links
    ( c*s*h*l* )
-	[[ $# == 1 ]] || abort_with_action_Usage find-broken-
+	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
 
 	[[ ${very_old_immutable_files-} ]] ||
 	   abort "setup very_old_immutable_files= in $config_file"
@@ -3001,6 +3001,7 @@ case $action in
 	fi
 
 	set -- ${*:-$(list_drives)}	# for debugging: | tac
+	[[  -d $1  ]] || shift
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
 	declare -i secs_per_day=24*60*60
