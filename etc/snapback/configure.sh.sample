@@ -237,7 +237,7 @@ readonly snapshot_date_time_separator=','
 # If you want cron to skip a drive (because you're doing maintenance
 # on it), then remove that drive from anchored_drive_name_regex (only); better
 # yet, only match production backup-drives (and Z, the pseudo-drive
-# used for regression tests) in anchored_drive_name_regex .
+# used for regression tests) in anchored_drive_name_regex, so no surprises.
 readonly    anchored_drive_name_regex='[A-CZ]' # production drives, and testing
 readonly anchored_drive_UI_name_regex='[A-Za-z]'
 readonly is_drive_name_capitalized=$true

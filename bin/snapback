@@ -254,7 +254,7 @@ run_lockpid() {
 
 locker_PIDs() {
 	local type=$1; shift
-	[[ $* == all ]] && set -- $(list_drives)
+	[[ $* == all ]] && set -- $(list_drives -a)
 
 	local name
 	for name
@@ -271,7 +271,7 @@ locker_PIDs() {
 kill_locker_group() {
 	local type=$1; shift
 	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
-	[[ $* == all ]] && set -- $(list_drives)
+	[[ $* == all ]] && set -- $(list_drives -a)
 
 	set_signal_is_kill $signal
 	local PGID pgid status=1
@@ -1501,7 +1501,7 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
-	for dir in $(list_drives)
+	for dir in $(list_drives -a)
 	    do	set_drive_name $dir
 		local name=$drive_name
 		local  dir=$drive_log_dir/$rsync_time_subdir
@@ -1562,7 +1562,7 @@ setup_snapshot_stats() {
 
 	local cwd=$PWD nums= oldies= newies=
 	local dir drive_name
-	for dir in $(list_drives)
+	for dir in $(list_drives -a)
 	    do	set_drive_name $dir
 		local name=$drive_name
 		cd_ $dir
@@ -1642,7 +1642,7 @@ watch() {
 		done
 		show_all=$true   cron_opt=-C
 	   else show_all=$false
-		drives=$(list_drives | tr '\n' ' ')
+		drives=$(list_drives -a | tr '\n' ' ')
 	fi
 	[[ $names_pat ]] && names_pat=[$names_pat]
 
@@ -1712,7 +1712,7 @@ watch() {
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
-	declare -i num_drives=$(list_drives | wc -l)
+	declare -i num_drives=$(set -- $drives; echo $#)
 
 	[[ $rsync_cmds || -s /etc/sudoers.d/$_our_name ]] || {
 		header "to not fill the log with frequent 'sudo ps'"
@@ -2277,6 +2277,9 @@ mkfs_backup_drive() {
 	$IfRun mkdir -p $drive_dir
 	cmd="$IfRun mount -v -t $FS_type -o $mount_opts $device $drive_dir"
 	$cmd || abort "$cmd exited with $?"
+
+	warn "DON'T FORGET to add $name to anchored_drive_name_regex= in $config_file"
+	return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -2410,6 +2413,7 @@ finish_copy_backup_drive() {
 		is_drive_mounted $drive_dir &&
 		    $IfRun abort "umount $drive_dir"
 	done
+	local dst_name=${dst_drive_dir#$drive_dir_prefix}
 
 	$IfRun set -x
 
@@ -2419,7 +2423,6 @@ finish_copy_backup_drive() {
 
 	label_drive $dst_device $dst_drive_dir
 
-	local dst_name=${dst_drive_dir#$drive_dir_prefix}
 	suspend_tracing
 	customize_and_validate_configuration_variables $dst_name
 	restore_tracing dst_name
@@ -2446,6 +2449,9 @@ finish_copy_backup_drive() {
 	$IfRun \
 	mount -t $FS_type -o $mount_options $dst_device $dst_drive_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
+
+	warn "DON'T FORGET to add $dst_name to anchored_drive_name_regex= in $config_file"
+
 	$IfRun resize2fs $dst_device	# do this _after_ mount, for speed
 }
 
