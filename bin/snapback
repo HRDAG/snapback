@@ -1725,13 +1725,6 @@ watch() {
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
 	declare -i num_drives=$(set -- $drives; echo $#)
 
-	[[ $rsync_cmds || -s /etc/sudoers.d/$_our_name ]] || {
-		header "to not fill the log with frequent 'sudo ps'"
-		option_1="install etc/sudoers.d/$our_name"
-		option_2="put its contents into /etc/sudoers"
-		echo -e "\n$option_1, or $option_2\n"
-	}
-
 	eval \
 	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
 	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g')	  2>/dev/null |
@@ -1757,6 +1750,17 @@ watch() {
 	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + 2*PB_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
+
+	# ------------------------------------------------------------------
+	# now we're ready to start showing stuff to the user
+	# ------------------------------------------------------------------
+
+	[[ $rsync_cmds || -s /etc/sudoers.d/$_our_name ]] || {
+		header "to not fill the log with frequent 'sudo ps'"
+		option_1="install etc/sudoers.d/$our_name"
+		option_2="put its contents into /etc/sudoers"
+		echo -e "\n$option_1, or $option_2\n"
+	}
 
 	# ------------------------------------------------------------------
 
