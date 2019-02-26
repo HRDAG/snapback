@@ -60,7 +60,7 @@ Usage: $our_name action [args]
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
     kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
-    kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
+    kill-all    [-sig] name(s): for each name (can be 'all'), kill all jobs
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -208,7 +208,7 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="prune-drive run-backup"
+readonly lock_types="prune-drive run-backup" # used by kill_all_jobs
 
 readonly lock_dir=/var/lock/$our_name
 
@@ -268,7 +268,7 @@ locker_PIDs() {
 
 # ---------------------------------
 
-kill_locker_group() {
+kill_job() {
 	local type=$1; shift
 	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
 	[[ $* == all ]] && set -- $(list_drives -a)
@@ -283,6 +283,17 @@ kill_locker_group() {
 	done
 
 	return $status
+}
+
+# ---------------------------------
+
+kill_all_jobs() {
+	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
+
+	local type
+	for type in $lock_types
+	    do	kill_job $opt $type "$@"
+	done
 }
 
 # -------------------------------------------------------
@@ -1885,6 +1896,34 @@ watch() {
 ##############################################################################-
 ##############################################################################-
 
+# for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
+unmount_drives() {
+	[[ $* == all ]] && set -- $(list_drives)
+
+	$Trace
+	# do this early, since takes a while for processes to die
+	$IfRun kill_all_jobs "$@"
+
+	[[ $IfRun ]] && local output=/dev/stdout || local output=/dev/null
+	local name drive_name drive_dir status=0
+	for name
+	    do	set_drive_name $name
+		set_drive_dir $drive_name
+		is_drive_mounted $drive_dir || continue
+		/bin/ls $drive_dir |
+		   grep "^$snapshot_regex" > $log_dir/$drive_name/snapshots.ls
+		sudo umount -h &> /dev/null || warn "need sudo privs" || break
+		umount_cmd="$IfRun sudo umount -v $drive_dir"
+		for (( i = 1; i <= 99; i++ )) # wait for kill to finish
+		    do	$umount_cmd && break
+			$IfRun sleep 0.1
+		done &> $output
+		is_drive_mounted $drive_dir || continue
+		$umount_cmd || status=$? # this time, show the error message
+	done
+	return $status
+}
+
 # add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
 add_extN_journal() {
 	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
@@ -1923,13 +1962,11 @@ add_extN_journal() {
 	$IfRun mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log ||
 	   abort "mke2fs -O journal_dev -> $?"
 
-	[[ ${name-} ]] && {
 	suspend_tracing
-	$our_path $our_opts umount $drive_dir |&
+	unmount_drives ${drive_dir:-$FS_device} |&
 	   grep -v -e ': no filesystem mounted on ' -e '^ *$'
 	is_drive_mounted $drive_dir && $IfRun abort "umount $drive_dir"
 	restore_tracing
-	} || $IfRun umount $FS_device &> /dev/null
 	mount  |  fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
 
 	$IfRun tune2fs -J device=LABEL=$label $FS_device ||
@@ -2407,13 +2444,13 @@ finish_copy_backup_drive() {
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
-	for drive_dir in $src_drive_dir $dst_drive_dir
-	    do	$our_path $our_opts umount $drive_dir |&
-		   grep -v -e ': no filesystem mounted on ' -e '^ *$'
-		is_drive_mounted $drive_dir &&
-		    $IfRun abort "umount $drive_dir"
-	done
+	unmount_drives $src_drive_dir $dst_drive_dir ||
+	   $IfRun abort "unmount the drive that failed to 'umount'"
+
 	local dst_name=${dst_drive_dir#$drive_dir_prefix}
+	suspend_tracing
+	customize_and_validate_configuration_variables $dst_name
+	restore_tracing dst_name
 
 	$IfRun set -x
 
@@ -2422,10 +2459,6 @@ finish_copy_backup_drive() {
 	$IfRun tune2fs -U $(uuidgen) $dst_device
 
 	label_drive $dst_device $dst_drive_dir
-
-	suspend_tracing
-	customize_and_validate_configuration_variables $dst_name
-	restore_tracing dst_name
 
 	if sudo tune2fs -l $src_device | grep -q "^Journal device" || # extrnl?
 	   [[ $do_want_external_log ]]
@@ -2478,7 +2511,7 @@ copy_backup_drive_with_dump() {
 	drive_dir=$(dirname $oldest_snapshot)
 	device=$(df --output=source $drive_dir | fgrep /dev/)
 	cd_ /tmp/root
-	$our_path $our_opts umount  $drive_dir
+	unmount_drive $drive_dir || abort "need to: umount $drive_dir"
 
 	$IfRun umount $new_device &> /dev/null
 	$IfRun mkdir -p		${drive_dir_prefix}new
@@ -2673,20 +2706,19 @@ case $action in
    ( kill-backup* | kb )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
-	kill_locker_group run-backup $*
+	kill_job run-backup $*
 	;;
    # kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
    ( kill-prune* | kp )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
-	kill_locker_group prune-drive $*
+	kill_job prune-drive $*
 	;;
-   # kill-both   [-sig] name(s): for each name (can be 'all'), kill both jobs
-   ( kill-both | ka | kk )
-	[[ $# != 0 ]] || abort_with_action_Usage kill-both
+   # kill-all    [-sig] name(s): for each name (can be 'all'), kill all jobs
+   ( kill-all | ka | kk )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-all
 	$Trace
-	kill_locker_group   run-backup $*
-	kill_locker_group prune-drive $*
+	kill_all_jobs $*
 	;;
 
    ###########################################################################
@@ -2963,32 +2995,11 @@ case $action in
    # actions for snapcrypt to call
    ###########################################################################
 
-   # WARNING: this should only be called by ourself or "snapcrypt close"
+   # WARNING: this should only be called by "snapcrypt close"
    # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u )			# umount
 	[[ $# != 0 ]] || abort "pass drive name(s)"
-	[[ $* == all ]] && set -- $(list_drives)
-
-	$Trace
-	# do this early, since takes a while for processes to die
-	$IfRun $our_path $our_opts kill-both $*
-
-	[[ $IfRun ]] && output=/dev/stdout || output=/dev/null
-	for name
-	    do	set_drive_name $name
-		set_drive_dir $drive_name
-		is_drive_mounted $drive_dir || continue
-		/bin/ls $drive_dir |
-		   grep "^$snapshot_regex" > $log_dir/$drive_name/snapshots.ls
-		sudo umount -h &> /dev/null || warn "need sudo privs" || break
-		umount_cmd="$IfRun sudo umount -v $drive_dir"
-		for (( i = 1; i <= 30; i++ )) # wait for kill to finish
-		    do	$umount_cmd && break
-			$IfRun sleep 0.1
-		done &> $output
-		is_drive_mounted $drive_dir &&
-		$umount_cmd		# this time, show user error message
-	done
+     unmount_drives "$@"
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today
    ( has-new-snapshots | hsn )
