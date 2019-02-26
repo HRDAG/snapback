@@ -65,7 +65,7 @@ Usage: $our_name action [args]
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
-    copy-drive {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
+    copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
 
     check-snapshot-hard-links drv-name: show snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
@@ -1360,6 +1360,20 @@ run_backup() {
 ##############################################################################-
 ##############################################################################-
 
+assert_not_in_cron_jobs() {
+
+	local name  drive_name cron_regex_var=anchored_drive_name_regex
+	for name
+	    do	set_drive_name $name
+		[[ $drive_name =~ ^${!cron_regex_var}$ ]] || continue
+		local var=${!cron_regex_var}
+		$IfRun abort "remove $drive_name from $var= in $config_file"
+	done
+	return 0
+}
+
+# -----------------------------------------------------------------------------
+
 bad_copy() {
 	local msg=$*
 
@@ -1902,6 +1916,7 @@ watch() {
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
 unmount_drives() {
+	[[ $1 == -q  ]] && { shift; is_OK_if_drive_dir_unmounted=$true; }
 	[[ $* == all ]] && set -- $(list_drives)
 
 	$Trace
@@ -1935,10 +1950,10 @@ add_extN_journal() {
 	[[ $# == [1-4] ]] ||
 	   abort "{-l FS_label | drive_name} [device [VG-name]]"
 	if [[ $1 == -l ]]
-	   then shift;  FS_label=$1
-	   else name=$1 FS_label=
+	   then shift;  local FS_label=$1
+	   else local name=$1 FS_label=
 	fi
-	FS_device=${2-} VG_name=${3-}
+	local FS_device=${2-} VG_name=${3-}
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
@@ -1967,9 +1982,8 @@ add_extN_journal() {
 	   abort "mke2fs -O journal_dev -> $?"
 
 	suspend_tracing
-	unmount_drives ${drive_dir:-$FS_device} |&
-	   grep -v -e ': no filesystem mounted on ' -e '^ *$'
-	is_drive_mounted $drive_dir && $IfRun abort "umount $drive_dir"
+	unmount_drives -q ${drive_dir:-$FS_device} ||
+	   $IfRun abort "umount $drive_dir"
 	restore_tracing
 	mount  |  fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
 
@@ -1980,7 +1994,7 @@ add_extN_journal() {
 
 	[[ $do_mount ]] || return $status
 
-	mount_options=$common_mount_options,$ext4_mount_options
+	mount_options=$common_mount_options,$extN_mount_options
 	$IfRun \
 	mount -v -t ext4 -o ${mount_options%,} $FS_device $mount_dir ||
 	   abort "mount exited with $?"
@@ -2284,7 +2298,7 @@ mkfs_backup_drive() {
 		[[ $opts != *-m* ]]	&& add_words opts -m .1
 		[[ $opts != *extent* ]] && add_words opts $ext4_extent_opt
 		[[ $FS_type == ext4  ]] &&
-		mount_opts="$ext4_mount_options"
+		mount_opts="$extN_mount_options"
 		type set_FS_external_log &> /dev/null	&& # optional
 		     set_FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
@@ -2327,9 +2341,11 @@ mkfs_backup_drive() {
 
 # these 3 variables are global variables initialized elsewhere
 set__drive_name__FS_device__drive_dir__FS_label() {
-	device=$1 name=$2
+	local name=$1 device=${2-}
 
 	[[ $device$name ]] || abort "need 1 non-null argument"
+
+	[[ $name == /dev/* ]] && device=$name && name=
 
 	[[ $name ]] && set_drive_name $name && name=$drive_name
 	[[ !  $device ]] &&
@@ -2352,40 +2368,33 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 
 # ---------------------------------
 
-# copy-drive {src_name | ''} dst_name dst_dev: copy (default oldest) to dst
 copy_backup_drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# != 0 ]] ||
-	abort "[-f] [-M] [-F] {src_name | ''} {dst_name dst_dev | '' dst_dev | dst_name}"
-	src_name=$1 dst_name=$2 dst_device=${3-}
+	abort "[-f] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
+	local src=$1 dst_name=$2 dst_device=${3-}
 
 	[[ -t 1 ]] || abort "don't use 'nohup', we'll run 'nohup'"
 
-	warn "the new device MUST be as-large as src_name's device"
-
-	set__drive_name__FS_device__drive_dir__FS_label \
-	    "$dst_device" $dst_name
-	local dst_name=$drive_name
-	local dst_device=$FS_device
-	local dst_drive_dir=$drive_dir
-	local dst_FS_label=$FS_label
-
-	[[ ! $src_name ]] &&
-	set_oldest_snapshot && 
-	set_drive_name $(dirname $oldest_snapshot) &&
-	local src_name=$drive_name
-
-	set__drive_name__FS_device__drive_dir__FS_label "" $src_name
+	set__drive_name__FS_device__drive_dir__FS_label $src
 	local src_name=$drive_name
 	local src_device=$FS_device
 	local src_drive_dir=$drive_dir
 	local src_FS_label=$FS_label
 
+	set__drive_name__FS_device__drive_dir__FS_label "$dst_name" $dst_device
+	local dst_name=$drive_name
+	local dst_device=$FS_device
+	local dst_drive_dir=$drive_dir
+	local dst_FS_label=$FS_label
+
+	warn "the new $dst_device MUST be as-large as $src_name's $src_device"
+
 	# show the user a sample fstab record
-	$our_path -d mkfs -f $dst_device $dst_name |&
+	IfRun=echo mkfs_backup_drive -f $dst_device $dst_name |&
 	   # search for the last two fields in the fstab record
-	   egrep -B 3 -A 1 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
+	   egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 
 	set --	$our_path $our_opts finish-$action $action_opts \
 		$src_device $src_drive_dir \
@@ -2407,14 +2416,26 @@ copy_backup_drive() {
 
 # ------------------------------------------------------------------
 
-# finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
-finish_copy_backup_drive() {
-	action_opts=
-	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
-	[[ $# == 4 ]] || 
-	   abort "to see args, run: $_our_name -d cpdrv {src_name | ''} dev [dev_name]"
-	local src_device=$1 src_drive_dir=$2
-	local dst_device=$3 dst_drive_dir=$4
+_copy_xfs_backup_drive() {
+
+	assert_not_in_cron_jobs $src_name $dst_name
+
+	local drive
+	for drive in $src_drive_dir $dst_drive_dir
+	    do	is_drive_mounted $drive || $IfRun abort "mount drive $drive"
+	done
+
+	kill_all_jobs $src_name $dst_name
+
+	$IfRun set -x
+
+	time  $IfRun xfsdump -J - $src_drive_dir |
+	   $IfRun xfsrestore -J - $dst_drive_dir
+}
+
+# --------------------------------------------
+
+_copy_extN_backup_drive() {
 
 	is_arg1_in_arg2 -f $action_opts ||
 	for drive_dir in $src_drive_dir $dst_drive_dir; do
@@ -2438,58 +2459,76 @@ finish_copy_backup_drive() {
 		abort "\n$msg re-run copy-drive with -f to Force unmount."
 	fi; done
 
-	set_FS_type___from_path $src_device &&
-	[[ $FS_type == xfs ]] &&
-	   abort "build and mount $dst_drive_dir with '$_our_name mkfs', then put 'xfsdump -J - $src_drive_dir | xfsrestore -J - $dst_drive_dir' in a script and run it with 'nohup'"
-
-	trap '' HUP
-
-	$Trace
-
-	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
-
-	unmount_drives $src_drive_dir $dst_drive_dir ||
+	unmount_drives -q $src_drive_dir $dst_drive_dir ||
 	   $IfRun abort "unmount the drive that failed to 'umount'"
 
-	local dst_name=${dst_drive_dir#$drive_dir_prefix}
-	suspend_tracing
-	customize_and_validate_configuration_variables $dst_name
-	restore_tracing dst_name
+	# -------------------------------------------------------
 
 	$IfRun set -x
 
-	$IfRun dd if=$src_device of=$dst_device bs=1M || abort "dd -> $?"
+	time $IfRun dd if=$src_device of=$dst_device bs=1M || abort "dd -> $?"
 
 	$IfRun tune2fs -U $(uuidgen) $dst_device
 
 	label_drive $dst_device $dst_drive_dir
 
-	if sudo tune2fs -l $src_device | grep -q "^Journal device" || # extrnl?
+	if sudo tune2fs -l $src_device | grep -q "^Journal dev" || # external?
 	   [[ $do_want_external_log ]]
-	    then add_extN_journal -M $dst_name $dst_device || abort aej
+	   then add_extN_journal -M $dst_name $dst_device ||
+		   abort "try again to add journal with: $_our_name aej"
 	fi
 
-	local mount_options=$common_mount_options,$ext4_mount_options
+	local mount_options=$common_mount_options,$extN_mount_options
 	mount_options=${mount_options%,}
 
-	is_arg1_in_arg2 -M $action_opts || {
+	is_arg1_in_arg2 -M $action_opts || { # don't want to re-Mount src?
 	cmd="$IfRun mount -t $FS_type -o $mount_options $src_device $src_drive_dir"
 	$cmd || abort "$cmd exited with $?"
 	}
 
-	is_arg1_in_arg2 -F $action_opts || {
-	cmd="$IfRun e2fsck -f -p -t -t -E discard $dst_device"
-	$cmd || abort "$cmd exited with $?; better check $src_device ?!"
-	}
+	is_arg1_in_arg2 -F $action_opts || # don't want Fsck?
+	time $IfRun e2fsck -f -p -t -t $dst_device ||
+	   abort "e2fsck exited with $?; better check $src_device ?!"
 
 	$IfRun mkdir -p $dst_drive_dir
 	$IfRun \
 	mount -t $FS_type -o $mount_options $dst_device $dst_drive_dir ||
 	   abort "mount exited with $?; make mount happen, then run resize2fs"
 
-	warn "DON'T FORGET to add $dst_name to anchored_drive_name_regex= in $config_file"
-
 	$IfRun resize2fs $dst_device	# do this _after_ mount, for speed
+}
+
+# --------------------------------------------
+
+# finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
+finish_copy_backup_drive() {
+	action_opts=
+	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
+	local cmd=$(echo "$Usage" |
+		    grep copy-drive | sed "s/^ */$_our_name -d /; s/:.*//")
+	[[ $# == 4 ]] || abort "to see args, run: $cmd"
+
+	local src_device=$1 src_drive_dir=$2
+	local dst_device=$3 dst_drive_dir=$4
+
+	local src_name=${src_drive_dir#$drive_dir_prefix}
+	local dst_name=${dst_drive_dir#$drive_dir_prefix}
+
+	suspend_tracing
+	customize_and_validate_configuration_variables $dst_name
+	restore_tracing dst_name
+
+	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+
+	set_FS_type___from_path $src_device
+	case $FS_type in
+	   ( ext?) _copy_extN_backup_drive ;;
+	   ( xfs ) _copy_xfs_backup_drive  ;;
+	   (  *  ) abort "write FS function call for $FUNCNAME, email $coder";;
+	esac
+
+	local var=anchored_drive_name_regex
+	warn "DON'T FORGET: add $src_name & $dst_name to $var= in $config_file"
 }
 
 # -------------------------------------------------------
@@ -2641,6 +2680,8 @@ case $action in
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
 
+	assert_not_in_cron_jobs $dst_name # awaiting new set_link_dest_opts
+
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	for snapshot in $src_snapshots
@@ -2652,6 +2693,8 @@ case $action in
 	[[ $# == 1 ]] || abort_with_action_Usage update-drive
 	set_drive_name $1
 	set_drive_dir $drive_name
+
+	assert_not_in_cron_jobs $drive_name # awaiting new set_link_dest_opts
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
@@ -2740,15 +2783,15 @@ case $action in
    ( mkfs )
      mkfs_backup_drive "$@"
 	;;
-   # copy-drive
-   ( c*p*dr*v* | cpd )
+   # copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
+   ( c*p**dr*v* | cpd )
      copy_backup_drive "$@"
 	;;
-   # finish-copy-drive
+   # finish-copy-drive: only used internally
    ( f*c*p*dr*v* | f*c*p*d* | fcd )
      finish_copy_backup_drive "$@"
 	;;
-   # copy-drive-dump
+   # copy-drive-dump: outmoded, unmaintained
    ( copy-dr*v*-dump )
      copy_backup_drive_with_dump "$@"
 	;;

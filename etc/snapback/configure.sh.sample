@@ -69,7 +69,7 @@ set_FS_external_log() {
 
 # You probably won't need to change these.
 readonly common_mount_options="nodev,nosuid,relatime,nodiratime"
-readonly   ext4_mount_options="journal_checksum" # for reliability
+readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
 readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
 # ------------------------------------------------
