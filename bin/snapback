@@ -809,7 +809,8 @@ _rm_pruned_snapshots() {
 	# except too-high disk usage is more critical than "Too many files".
 	set_FS_type___from_path $PWD
 	case ${FS_type,,} in
-	    ( xfs ) hard_link_dirs= ;;	# any FS that supports a zillion links
+	    ( xfs | btrfs )		# any FS that supports a zillion links
+		hard_link_dirs= ;;
 	esac
 	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $drive_dir &&
 	for snapshot
@@ -2219,13 +2220,13 @@ mkfs_backup_drive() {
 	# we should choose a block size that will result in the smallest space
 	# usage by directories (unless we only backup files that change often,
 	# and they're large enough that ext* needs to use indirect blocks).
-	# On my Ubuntu laptop, 1 KB blocks result in half the disk space used
-	# by 2 KB blocks, so the default block size is 1KB.  On HRDAG's Ubuntu
-	# server using XFS, 1 KB blocks and 2 KB blocks result in the same
-	# amount of directory space usage (and 4 KB results in 20% more),
-	# since most directories need 0 disk blocks because their contents
-	# will fit in the inode; so 2 KB blocks are optimal, since they'll
-	# result in better performance.
+	# On my Ubuntu laptop, 1 KB blocks result in roughly half the
+	# directory disk space used by 2 KB blocks, so the default block size
+	# is 1KB.  On HRDAG's Ubuntu server using XFS, 1 KB blocks and 2 KB
+	# blocks result in the same amount of directory space usage (and 4 KB
+	# results in 20% more), since most directories need 0 disk blocks
+	# (because their contents fit in the inode); so 2 KB blocks are
+	# optimal for XFS, since they'll result in better performance.
 
 	# To determine your actual average directory size, e.g. for ext4:
 	#    # choose a filesystem type with mkfs_cmd_opts= in configure.sh
