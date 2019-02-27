@@ -1785,11 +1785,11 @@ watch() {
 	cron_cmds=$($sudo ps www f -o pid,stat$wchan,bsdtime,command $*)
 	} || cron_cmds=
 
-	# -C + df: 25 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
+	# -C + df: 30 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
 	#   (ignoring the ~500 characters for full-detail for: rsync /)
 	# includes basic pruning, but not parent of 'rm' process (since in -C)
 	declare -i PB_num=$(echo "$prune_cmds" | fgrep -c prune-drive)
-	declare -i min_C_rows=$(( 27 + num_drives + 5*num_rsyncs + 2*PB_num ))
+	declare -i min_C_rows=$(( 30 + num_drives + 5*num_rsyncs + 2*PB_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
 
