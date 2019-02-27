@@ -1,4 +1,4 @@
-# version=10
+# version=11
 
 ################################################################
 ################################################################
@@ -232,14 +232,20 @@ readonly very_old_immutable_files=
 readonly snapshot_date_time_separator=','
 
 # Default policy: drives are named as a single capitalized letter; you can
-# usually set your own policy by simply changing anchored_drive_*name_regex= ,
+# usually set your own policy by simply changing *drive_name_regex= ,
 # Instead of defining your own 'set_drive_name' function in here.
-# If you want cron to skip a drive (because you're doing maintenance
-# on it), then remove that drive from anchored_drive_name_regex (only); better
-# yet, only match production backup-drives (and Z, the pseudo-drive
-# used for regression tests) in anchored_drive_name_regex, so no surprises.
-readonly    anchored_drive_name_regex='[A-CZ]' # production drives, and testing
-readonly anchored_drive_UI_name_regex='[A-Za-z]'
+#
+# These regex variables are extended regular expressions; they're anchored when
+# used ( e.g. ^$drive_name_regex$ ).
+#
+# Note that drive_name_regex is used by action 'list-drives' to generate the
+# list of "all" drives for jobs whose std(in|out|err) is not a terminal
+# (i.e. cron jobs and nohup jobs); admin_drive_name_regex is used when
+# the sysadmin runs a command, or for the 'watch' action ('list-drives -a').
+# So, when you want to do maintenance on a drive, so want to suspend
+# backups and pruning, remove the drive's name from drive_name_regex= (only).
+readonly       drive_name_regex='[AD]'
+readonly admin_drive_name_regex='[A-Za-z]'
 readonly is_drive_name_capitalized=$true
 
 # -----------------------------------------------------------------------------

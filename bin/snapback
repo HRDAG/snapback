@@ -1,10 +1,8 @@
 #! /usr/bin/env bash
 
-version=10			# has to match version= in configure.sh.sample
+version=11			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
-
-[[ ${1-} == -s ]] && { shift; sample_suffix=.sample; } || sample_suffix=
 
 # libsnap.sh has these funcs/vars: tmp_dir, our_name, our_path, true, false,
 # have_cmd, need_cmds, is_darwin, set_FS_type___from_path,
@@ -23,9 +21,14 @@ source libsnap.sh || exit 1
 
 for dir in /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
 readonly   config_dir=$dir/$our_name
-readonly exclude_file=$config_dir/exclude.txt$sample_suffix
-readonly  config_file=$config_dir/configure.sh$sample_suffix
-readonly  config_file_sample=${config_file%.sample}.sample
+readonly exclude_file=$config_dir/exclude.txt
+readonly  config_file=$config_dir/configure.sh
+
+config_file_sample=$config_file.sample
+if [[ $our_path == */$our_name/bin/$our_name ]]
+   then git_home=$(dirname $(dirname $our_path))
+	config_file_sample=$git_home$config_file_sample
+fi ;						readonly config_file_sample
 
 [[ -s $config_file_sample ]] ||
    abort "have to install $config_file_sample"
@@ -350,11 +353,11 @@ list_drives() {
 	customize_and_validate_configuration_variables Z # ensure have *pattern
 
 	if [[ -t 0 || -t 1 || -t 2 || $list_all_drives ]]
-	   then local regex=$anchored_drive_UI_name_regex
-	   else local regex=$anchored_drive_name_regex # for cron (& nohup)
+	   then local regex=$admin_drive_name_regex
+	   else local regex=$drive_name_regex # for cron & nohup
 	fi
 	df --output=target --no-sync |
-	   grep "^$drive_dir_prefix$regex$" | sort -u
+	   egrep "^$drive_dir_prefix$regex$" | sort -u
 	restore_tracing
 }
 
@@ -492,7 +495,7 @@ set_drive_name() {
 
 	local name=$1
 
-	if [[ ! $name =~ ^$anchored_drive_UI_name_regex$ ]]
+	if [[ ! $name =~ ^$admin_drive_name_regex$ ]]
 	   then if [[ $name == /dev/* ]]
 		   then set_FS_label___from_FS_device $name
 			set_mount_dir___from_FS_label $FS_label
@@ -503,7 +506,7 @@ set_drive_name() {
 		   else drive_dir=$name
 		fi
 		[[  $drive_dir =~					\
-		   ^$drive_dir_prefix$anchored_drive_UI_name_regex$ ]] ||
+		   ^$drive_dir_prefix$admin_drive_name_regex$ ]] ||
 		   abort "$name is not drive-dir or FS-label or valid-name"
 		name=${drive_dir#$drive_dir_prefix}
 	fi
@@ -611,6 +614,14 @@ validate_config_variables() {
 
 	is_arg1_in_arg2 0 $successful_rsync_exit_statuses ||
 	   abort "'successful_rsync_exit_statuses=$successful_rsync_exit_statuses' must contain 0 in $*"
+
+	for var_name in drive_name_regex admin_drive_name_regex
+	    do	# we'll anchor these variable's values ourselves, when needed
+		[[ ${!var_name} != ^* ]] ||
+		   abort "remove  leading '^' from $var_name="
+		[[ ${!var_name} != *$ ]] ||
+		   abort "remove trailing '$' from $var_name="
+	done
 }
 
 # ------------------------------------------------------------------
@@ -1362,12 +1373,12 @@ run_backup() {
 
 assert_not_in_cron_jobs() {
 
-	local name  drive_name cron_regex_var=anchored_drive_name_regex
+	local name  drive_name
 	for name
 	    do	set_drive_name $name
-		[[ $drive_name =~ ^${!cron_regex_var}$ ]] || continue
-		local var=${!cron_regex_var}
-		$IfRun abort "remove $drive_name from $var= in $config_file"
+		[[ $drive_name =~ ^$drive_name_regex$ ]] || continue
+		local regex=$drive_name_regex
+		$IfRun abort "remove $drive_name from $regex= in $config_file"
 	done
 	return 0
 }
@@ -1437,6 +1448,9 @@ copy_snapshot() {
 	set_drive_dir $drive_name || abort "$dst_drive_name not mounted"; }
 	local  dst_dir=$drive_dir
 
+	local absolute_path
+	set_absolute_path $src_snapshot
+	src_snapshot=$absolute_path
 	is_src_snapshot_useful $src_snapshot || return 1
 
 	dst_snapshot=$dst_dir/$(basename $src_snapshot)
@@ -2333,7 +2347,7 @@ mkfs_backup_drive() {
 	cmd="$IfRun mount -v -t $FS_type -o $mount_opts $device $drive_dir"
 	$cmd || abort "$cmd exited with $?"
 
-	warn "DON'T FORGET to add $name to anchored_drive_name_regex= in $config_file"
+	warn "DON'T FORGET to add $name to drive_name_regex= in $config_file"
 	return 0
 }
 
@@ -2475,7 +2489,7 @@ _copy_extN_backup_drive() {
 	if sudo tune2fs -l $src_device | grep -q "^Journal dev" || # external?
 	   [[ $do_want_external_log ]]
 	   then add_extN_journal -M $dst_name $dst_device ||
-		   abort "try again to add journal with: $_our_name aej"
+		   abort "need to fix journal on $src_device: $_our_name aej"
 	fi
 
 	local mount_options=$common_mount_options,$extN_mount_options
@@ -2527,7 +2541,7 @@ finish_copy_backup_drive() {
 	   (  *  ) abort "write FS function call for $FUNCNAME, email $coder";;
 	esac
 
-	local var=anchored_drive_name_regex
+	local var=drive_name_regex
 	warn "DON'T FORGET: add $src_name & $dst_name to $var= in $config_file"
 }
 
@@ -2654,7 +2668,7 @@ stack_frame_to_show=0	     # show our line-number in action 'case- statement
 case $action in
    # list-drives: list all the mounted backup drives or partitions
    ( l*s*dr*v* | ld | ls )
-	list_drives
+	list_drives "$@"
 	;;
    # run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
    ( r*b*k*p* | rb* )
@@ -2680,8 +2694,6 @@ case $action in
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
 
-	assert_not_in_cron_jobs $dst_name # awaiting new set_link_dest_opts
-
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	for snapshot in $src_snapshots
@@ -2701,13 +2713,13 @@ case $action in
 	$Trace
 
 	set -f
-	set -- $(echo root$drive_dir_prefix$anchored_drive_name_regex/snap |
+	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
 		 tr / ' ')
 	set +f
 	snapshot_sort_key=$#
 
 	prev_date_time=
-	for dir in $(list_drives -a | fgrep -v -w $drive_dir)
+	for dir in $(list_drives | fgrep -v -w $drive_dir)
 	    do	suspend_tracing
 		echo $dir/$snapshot_pattern*
 		restore_tracing
@@ -2725,6 +2737,9 @@ case $action in
 		$cmd || continue
 		# break			# uncomment to debug
 	done
+
+	local var=drive_name_regex
+	warn "DON'T FORGET: re-add $drive_name to $var= in $config_file"
 
 	$IfRun sync --file-system $drive_dir &> /dev/null
 	;;
@@ -2801,6 +2816,7 @@ case $action in
    ###########################################################################
 
    ( test | t )
+	validate_config_variables
 	set__OS_release_file__OS_release
 	TraceV 0 OS_release_file OS_release
 	exit
