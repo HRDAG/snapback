@@ -1,7 +1,7 @@
 Why snapback not rsnapshot:
 
    Designed to support many USB drives, some plugged in and some off-site;
-      efficiently runs simultaneous backups (making cheap SSDs "safe"),
+      efficiently runs simultaneous backups (making cheap USB drives "safe"),
       with separate logs and policies for each flexibly-named drive.
    Every config variable can have a per-drive value, in-line or separate-file
       (can use smaller drives (e.g. memory sticks) to backup subset of system).
@@ -12,7 +12,7 @@ Why snapback not rsnapshot:
      hours vs days vs months vs years (high -T debug_level shows how it works).
    Prunes and rsyncs simultaneously (separate nice/ionice): never miss a backup
       (no seek penalty with SSDs; can optionally suspend prune on disk drives);
-      when disk usage threshold is exceeded, pruning gets the higher priority.
+      when FS usage threshold is exceeded, pruning gets the higher priority.
    Manages rsync's "Too many links" error (admin solves by adjusting pruning);
      such errors are emailed to (per-drive) sysadmin(s).
    Has 'watch' action, to watch current backups and see status of pruning.

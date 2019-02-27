@@ -235,7 +235,7 @@ readonly snapshot_date_time_separator=','
 
 # Default policy: drives are named as a single capitalized letter; you can
 # usually set your own policy by simply changing *drive_name_regex= ,
-# Instead of defining your own 'set_drive_name' function in here.
+# instead of defining your own 'set_drive_name' function in here.
 #
 # These regex variables are extended regular expressions; they're anchored when
 # used ( e.g. ^$drive_name_regex$ ).

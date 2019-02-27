@@ -360,7 +360,7 @@ list_drives() {
 	   local list_all_drives=$false
 
 	suspend_tracing
-	customize_and_validate_configuration_variables Z # ensure have *pattern
+	customize_and_validate_configuration_variables # need *drive_name_regex
 
 	if [[ -t 0 || -t 1 || -t 2 || $list_all_drives ]]
 	   then local regex=$admin_drive_name_regex
