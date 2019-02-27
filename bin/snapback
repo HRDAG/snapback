@@ -182,6 +182,16 @@ set_readable_du_size() {
 	readable_du_size=$size${suffix}B
 }
 
+# -----------------------------------------------------------------------------
+
+assert_drive_dir_writable() {
+	local dir=${1:-$drive_dir}
+
+	[[ -f $dir ]] && dir=$(dirname $dir)
+	$IfRun touch $dir/. ||
+	   abort "$dir mounted read-only??  Maybe corrupted, run fsck."
+}
+
 ##############################################################################
 # process and lock management
 ##############################################################################
@@ -756,6 +766,8 @@ _rm_pruned_snapshots() {
 
 	local snapshot
 
+	assert_drive_dir_writable $PWD
+
 	suspend_tracing
 	set -- $(< $snapshots_file)
 
@@ -797,8 +809,7 @@ _rm_pruned_snapshots() {
 	# except too-high disk usage is more critical than "Too many files".
 	set_FS_type___from_path $PWD
 	case ${FS_type,,} in
-	    ( ext? | ntfs ) ;;
-	    ( * ) hard_link_dirs= ;;	# e.g. XFS supports a zillion links
+	    ( xfs ) hard_link_dirs= ;;	# any FS that supports a zillion links
 	esac
 	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $drive_dir &&
 	for snapshot
@@ -1243,6 +1254,8 @@ run_rsync() {
 
 	local date_time=$(basename $dst_snapshot)
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
+
+	assert_drive_dir_writable $(dirname $dst_snapshot)
 
 	if [[ $dst_snapshot == *.partial ]]
 	   then local partial_dst=$dst_snapshot
@@ -2443,8 +2456,12 @@ _copy_xfs_backup_drive() {
 
 	$IfRun set -x
 
-	time  $IfRun xfsdump -J - $src_drive_dir |
-	   $IfRun xfsrestore -J - $dst_drive_dir
+	$IfRun xfs_freeze -f $src_drive_dir
+
+	time $IfRun    xfsdump -J - $src_drive_dir |
+	     $IfRun xfsrestore -J - $dst_drive_dir
+
+	$IfRun xfs_freeze -u $src_drive_dir
 }
 
 # --------------------------------------------

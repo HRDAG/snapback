@@ -34,7 +34,7 @@ readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
 # but first read the long comments in the mkfs_backup_drive function & helpers.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
-readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
+readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
 readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # if action 'dir-sizes' suggests
 
 # SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
@@ -169,7 +169,9 @@ declare -i backup_period=1		# need much RAM for small period
 # Dirs that contain files with massive numbers of hard-links; don't
 # need to set this if using a filesystem (like XFS) that supports a zillion
 # hard-links per inode.
-readonly hard_link_dirs="/var/repos/snap*"
+# Don't mark this 'readonly', we clear it if the backup drive has an
+# FS which supports a zillion hard-links per inode.
+hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
 
 # The following description of how pruning works is hard to follow.
 # If you prefer examples, run the command "snapback test-prune",
