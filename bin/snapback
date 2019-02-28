@@ -1738,8 +1738,8 @@ trim() {
 trim_backup() {
 
 	trim |
-	sed -e "s@run-backup -r @run-backup @g" \
-	    -e "s@ --.* @ \$opts -R \$dirs @"
+	sed -e 's@run-backup -r @run-backup @g' \
+	    -e 's@ --.* @ $opts -R $dirs @'
 }
 
 # --------------------------------------------
@@ -1747,7 +1747,7 @@ trim_backup() {
 trim_prune() {
 
 	trim |
-	sed -e "s@prune-drive -r @prune-drive @g"
+	sed -e 's@prune-drive -r @prune-drive @g'
 }
 
 # --------------------------------------------
@@ -1755,9 +1755,9 @@ trim_prune() {
 trim_update() {
 
 	trim |
-	sed -e "s@update-drive -r @update-drive @g" \
-	    -e "s@ --.* --link-dest=[^ ]* /@ \$opts /@" \
-	    -e "s@/[^/]*/\. /@/... /@"
+	sed -e 's@update-drive -r @update-drive @g' \
+	    -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
+	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
 
 # ------------------------------------------------------------------
@@ -1777,19 +1777,21 @@ watch() {
 	[[ $action == w ]] ||
 	   exec watch ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
-	local drives= names_pat=
+	local drives= names_pat= fixed_names=
 	if [[ $names ]]
 	   then for name in ${names//,/ }
 		    do	set_drive_name  $name
 			add_words drives $drive_dir_prefix$drive_name
 			[[ $name = ? ]] && names_pat=$names_pat$drive_name
+			fixed_names=$fixed_names,$drive_name
 		done
+		names=${fixed_names#,}
 		show_all=$true   cron_opt=-C
 	   else show_all=$false
 		drives=$(list_drives -a | tr '\n' ' ')
 	fi
 	[[ $names_pat ]] && names_pat=[$names_pat] &&
-	    names_msg=" for ${names^^} " || names_msg=
+	    names_msg=" for $names " || names_msg=
 
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
@@ -2806,6 +2808,7 @@ case $action in
 	[[ ${!#} == [cC] ]] || abort "currently, only works on new drive: C"
 	run_jobs_in_parallel update "$@"
 	;;
+   # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links drv-name: show snapshots with broken hard links
    ( c*s*h*l* )
 	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
