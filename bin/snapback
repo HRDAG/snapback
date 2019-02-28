@@ -128,6 +128,7 @@ readonly tmp_5=$tmp_dir/$our_name-5-$BASHPID
 need_cmds lockpid
 
 shopt -s extglob
+shopt -s lastpipe			# for 'while' loop at end of pipeline
 
 umask 02				# log dirs are setgid sudo
 
@@ -149,8 +150,9 @@ readonly pruned_timestamp=.pruned.ts
 
 readonly our_opts=${our_opts# }
 # need to fork and exec ourselves for session control with 'setsid'
-readonly prune_drive_exe="$our_path $our_opts prune-drive"
-readonly  run_backup_exe="$our_path $our_opts run-backup"
+readonly   run_backup_exe="$our_path $our_opts run-backup"
+readonly  prune_drive_exe="$our_path $our_opts prune-drive"
+readonly update_drive_exe="$our_path $our_opts update-drive"
 
 readonly hostname=${HOSTNAME%%.*}
 
@@ -221,7 +223,7 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="prune-drive run-backup" # used by kill_all_jobs
+readonly lock_types="run-backup prune-drive update-drive" # for kill_all_jobs
 
 readonly lock_dir=/var/lock/$our_name
 
@@ -1493,6 +1495,57 @@ copy_snapshot() {
 	$IfRun lockpid -r $lock_file
 }
 
+# -----------------------------------------------------------------------------
+
+update_drive() {
+
+	set_drive_name $1
+	set_drive_dir $drive_name
+
+	assert_not_in_cron_jobs $drive_name # awaiting new set_link_dest_opts
+
+	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+
+	local lock_file
+	set_lock_file update-drive $drive_name
+	run_lockpid $lock_file "updating $drive_dir" || return 1
+
+	$Trace
+
+	set -f
+	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
+		 tr / ' ')
+	set +f
+	snapshot_sort_key=$#
+
+	prev_date_time=
+	for dir in $(list_drives | fgrep -v -w $drive_dir)
+	    do	suspend_tracing
+		echo $dir/$snapshot_pattern*
+		restore_tracing
+	done | tr ' ' '\n' | grep -v '\.rm$' |
+	sort --field-separator=/ --key=$snapshot_sort_key |
+	while read snapshot
+	    do	date_time=$(basename $snapshot)
+		date_time=${date_time%%.*}
+		[[ $prev_date_time == $date_time ]] && continue
+		    prev_date_time=$date_time
+
+		cmd="copy_snapshot -p1 $snapshot $drive_name" # for debugging
+		cmd="copy_snapshot -p0 $snapshot $drive_name"
+		[[ $IfRun ]] && header $cmd
+		$cmd || continue
+		# break			# uncomment to debug
+	done
+
+	$IfRun lockpid -r $lock_file
+
+	local var=drive_name_regex
+	warn "DON'T FORGET: re-add $drive_name to $var= in $config_file"
+
+	$IfRun sync --file-system $drive_dir &> /dev/null
+}
+
 ##############################################################################-
 ##############################################################################-
 # Run multiple jobs, each in a separate session (unique PGID, stored in lock).
@@ -1507,8 +1560,9 @@ run_jobs_in_parallel() {
 	local type=$1; shift
 
 	case $type in
-	   ( backup ) function=run_backup  exe=$run_backup_exe  ;;
-	   ( prune  ) function=prune_drive exe=$prune_drive_exe ;;
+	   ( backup ) function=run_backup   exe=$run_backup_exe  ;;
+	   ( prune  ) function=prune_drive  exe=$prune_drive_exe ;;
+	   ( update ) function=update_drive exe=$update_drive_exe ;;
 	   (   *    ) abort "'$type' is not supported" ;;
 	esac
 
@@ -2701,47 +2755,9 @@ case $action in
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
   # update-drives [names]: copy missing snapshots from other drives to names
-   (upd*b* | ud )
-	[[ $# == 1 ]] || abort "currently, only supports a single named drive"
-	set_drive_name $1
-	set_drive_dir $drive_name
-
-	assert_not_in_cron_jobs $drive_name # awaiting new set_link_dest_opts
-
-	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
-
-	$Trace
-
-	set -f
-	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
-		 tr / ' ')
-	set +f
-	snapshot_sort_key=$#
-
-	prev_date_time=
-	for dir in $(list_drives | fgrep -v -w $drive_dir)
-	    do	suspend_tracing
-		echo $dir/$snapshot_pattern*
-		restore_tracing
-	done | tr ' ' '\n' | grep -v '\.rm$' |
-	sort --field-separator=/ --key=$snapshot_sort_key |
-	while read snapshot
-	    do	date_time=$(basename $snapshot)
-		date_time=${date_time%%.*}
-		[[ $prev_date_time == $date_time ]] && continue
-		    prev_date_time=$date_time
-
-		cmd="copy_snapshot -p1 $snapshot $drive_name" # for debugging
-		cmd="copy_snapshot -p0 $snapshot $drive_name"
-		[[ $IfRun ]] && header $cmd
-		$cmd || continue
-		# break			# uncomment to debug
-	done
-
-	local var=drive_name_regex
-	warn "DON'T FORGET: re-add $drive_name to $var= in $config_file"
-
-	$IfRun sync --file-system $drive_dir &> /dev/null
+   (upd*dr*v* | ud* )
+	[[ ${!#} == [cC] ]] || abort "currently, only works on new drive: C"
+	run_jobs_in_parallel update "$@"
 	;;
    # copy-snapshots snapshots name: copy to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
