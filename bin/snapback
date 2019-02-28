@@ -223,7 +223,7 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="run-backup prune-drive update-drive" # for kill_all_jobs
+readonly lock_types="run-backup prune-drive" # kill_all_jobs also uses
 
 readonly lock_dir=/var/lock/$our_name
 
@@ -1506,10 +1506,6 @@ update_drive() {
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
-	local lock_file
-	set_lock_file update-drive $drive_name
-	run_lockpid $lock_file "updating $drive_dir" || return 1
-
 	$Trace
 
 	set -f
@@ -1537,8 +1533,6 @@ update_drive() {
 		$cmd || continue
 		# break			# uncomment to debug
 	done
-
-	$IfRun lockpid -r $lock_file
 
 	local var=drive_name_regex
 	warn "DON'T FORGET: re-add $drive_name to $var= in $config_file"
@@ -1713,14 +1707,39 @@ setup_snapshot_stats() {
 
 # -----------------------------------------------------------------------------
 
-trim_prune_rsync() {
+trim() {
 
 	sed -e "s@/bin/bash /@/@"	\
 	    -e "s@ bash /@ /@"		\
 	    -e "s@ /usr/local/bin/@ @"	\
-	    -e "s@$HOME/@~/@g"		\
-	    -e "s@prune-drive -r @prune-drive @g" \
+	    -e "s@$HOME/@~/@g"
+}
+
+# --------------------------------------------
+
+trim_backup() {
+
+	trim |
+	sed -e "s@run-backup -r @run-backup @g"
+}
+
+# --------------------------------------------
+
+trim_prune() {
+
+	trim |
+	sed -e "s@prune-drive -r @prune-drive @g" \
 	    -e "s@ --.* @ \$opts -R \$dirs @"
+}
+
+# --------------------------------------------
+
+trim_update() {
+
+	trim |
+	sed -e "s@update-drive -r @update-drive @g" \
+	    -e "s@ --.* --link-dest=[^ ]* /@ \$opts /@" \
+	    -e "s@/[^/]*/\. /@/... /@"
 }
 
 # ------------------------------------------------------------------
@@ -1823,8 +1842,15 @@ watch() {
 
 	eval \
 	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
-	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g')	  2>/dev/null |
-			trim_prune_rsync)
+	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
+			fgrep -e ' rm ' -e ' prune-' | trim_prune)
+	#
+	eval \
+	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
+	[[ $# == 0 ]] && cp_rsync_cmds= ||
+	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+			  grep -e update-drive -e "[0-9]   rsync" | 
+			  sed 's/   rsync/ rsync/')
 	#
 	cron_job_regexp=' -C run-backups? *$' # put into configure.sh ??
 	set -- $(ps -u root w | egrep "$cron_job_regexp" | awk '{print $1}')
@@ -1841,9 +1867,9 @@ watch() {
 
 	# -C + df: 30 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
 	#   (ignoring the ~500 characters for full-detail for: rsync /)
-	# includes basic pruning, but not parent of 'rm' process (since in -C)
-	declare -i PB_num=$(echo "$prune_cmds" | fgrep -c prune-drive)
-	declare -i min_C_rows=$(( 30 + num_drives + 5*num_rsyncs + 2*PB_num ))
+	# has basic pruning (PD), but not parent of 'rm' process (its in -C)
+	declare -i PD_num=$(echo "$prune_cmds" | fgrep -c prune-drive)
+	declare -i min_C_rows=$(( 30 + num_drives + 5*num_rsyncs + 2*PD_num ))
 	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
 	# echo $rows $min_C_df_rows
 
@@ -1937,20 +1963,23 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	# {copy,update,merge}-drive use prune lock (but not yet setid)
-	eval \
-	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
-	[[ $# == 0 ]] && cp_rsync_cmds= ||
-	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
-			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
-	[[ $cp_rsync_cmds ]] ||
+	# copy-snapshots (& update-drives) uses prune lock
+	[[ $cp_rsync_cmds ]] && {
+	header "copy-snapshot (which is run from update-drives)"
+	echo
+	echo "$hdr" | trim_ps_cols
+	echo "$cp_rsync_cmds" | trim_update | sort $prune_sort_opts
+	}
+
+	# ------------------------------------------------------------------
+
 	cp_rsync_cmds=$(psc rsync -H ww | fgrep ' pts/' |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	[[ $cp_rsync_cmds ]] && {
-	header "copy-snapshot, or ad-hoc rsync by sysadmin (i.e. TTY != '?')"
+	header "ad-hoc rsync by sysadmin (i.e. TTY != '?')"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$cp_rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
+	echo "$cp_rsync_cmds" | trim_backup | sort $rsync_sort_opts
 	}
 
 	# ------------------------------------------------------------------
@@ -1967,7 +1996,7 @@ watch() {
 	    [[ $rsync_cmds ]] && {
 	    echo "$rsync_abbrev_msg"; echo
 	    echo "$hdr" | trim_ps_cols
-	    echo "$rsync_cmds" | trim_prune_rsync | sort $rsync_sort_opts
+	    echo "$rsync_cmds" | trim_backup | sort $rsync_sort_opts
 	    } || echo -e "\nNo backups are running."
 	}
 
@@ -1979,7 +2008,7 @@ watch() {
 	regex=${cron_job_regexp%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows < $min_C_rows )) && echo "${rsync_abbrev_msg#?}" && echo
-	echo "$cron_cmds" | trim_prune_rsync
+	echo "$cron_cmds" | trim_backup
 	}
 
 	[[ $rsync_cmds ]] && {
