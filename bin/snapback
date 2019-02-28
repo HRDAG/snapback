@@ -2806,6 +2806,11 @@ case $action in
 	[[ ${!#} == [cC] ]] || abort "currently, only works on new drive: C"
 	run_jobs_in_parallel update "$@"
 	;;
+   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
+   ( c*s*h*l* )
+	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
+	check-snapshot-hard-links "$@"
+	;;
    # copy-snapshots snapshots name: copy to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
 	(( $# >= 2 )) || abort_with_action_Usage copy-snap
@@ -2820,11 +2825,6 @@ case $action in
 	done
 	;;
 
-   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
-   ( c*s*h*l* )
-	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
-	check-snapshot-hard-links "$@"
-	;;
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
    ( snapshot*size | ss )
 	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
