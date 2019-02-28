@@ -137,7 +137,7 @@ set -u					# abort if access unset variable
 FUNCNEST=100				# catch coding errors
 
 head -n1 $config_file_sample | fgrep -q -x "# version=$version" ||
-  $IfRun abort "$config_file_sample version does not match $our_name"
+  $IfRun abort "$config_file_sample version= does not match $our_path"
 
 # $Trace
 
