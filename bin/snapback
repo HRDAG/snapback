@@ -50,20 +50,20 @@ source $config_file || abort "$config_file broken"
 Usage="
 Usage: $our_name action [args]
   Current actions are:
-    list-drives: list all the mounted backup drives or partitions
-    run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
-    prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
-    copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
-    update-drive name: 'name' mounted drive gets snapshots from other drives
+    list-drives [-a]: list mounted backup drives/partitions; -a -> hidden ones
+    run-backups   [names]: names defaults to every mounted backup drive
+    prune-drives  [names]: names defaults to every "" "" ""; see configure.sh
+    update-drives [names]: copy missing snapshots from other drives to names
+    copy-snapshots snapshots name: copy to 'name' mounted backup drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
 
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
-    kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
-    kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
-    kill-all    [-sig] name(s): for each name (can be 'all'), kill all jobs
+    kill-backup [-sig] names: for each name (can be 'all'), kill backup job
+    kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
+    kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -2684,43 +2684,25 @@ process_action() {
 stack_frame_to_show=0	     # show our line-number in action 'case- statement
 
 case $action in
-   # list-drives: list all the mounted backup drives or partitions
+   # list-drives [-a]: list mounted backup drives/partitions; -a -> hidden ones
    ( l*s*dr*v* | ld | ls )
 	list_drives "$@"
 	;;
-   # run-backups  [dir(s)]: dir(s) defaults to every mounted backup drive
+   # run-backups   [names]: names defaults to every mounted backup drive
    ( r*b*k*p* | rb* )
 	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   # prune-drives [dir(s)]: dir(s) defaults to every "" "" ""; see configure.sh
+   # prune-drives  [names]: names defaults to every "" "" ""; see configure.sh
    ( pr*n*dr*v* | pd* )
 	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
-   ( c*s*h*l* )
-	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
-	check-snapshot-hard-links "$@"
-	;;
-   # copy-snapshots src(s) name: copy src(s) to 'name' mounted backup drive
-   ( c*p*s*s* | cs* | cps )
-	(( $# >= 2 )) || abort_with_action_Usage copy-snap
-	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
-	dst_name=${!#}
-	src_snapshots=${*%$dst_name}
-
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
-
-	for snapshot in $src_snapshots
-	    do	copy_snapshot $snapshot $dst_name
-	done
-	;;
-  # update-drive name: 'name' mounted drive gets snapshots from other drives
+  # update-drives [names]: copy missing snapshots from other drives to names
    (upd*b* | ud )
-	[[ $# == 1 ]] || abort_with_action_Usage update-drive
+	[[ $# == 1 ]] || abort "currently, only supports a single named drive"
 	set_drive_name $1
 	set_drive_dir $drive_name
 
@@ -2761,7 +2743,25 @@ case $action in
 
 	$IfRun sync --file-system $drive_dir &> /dev/null
 	;;
+   # copy-snapshots snapshots name: copy to 'name' mounted backup drive
+   ( c*p*s*s* | cs* | cps )
+	(( $# >= 2 )) || abort_with_action_Usage copy-snap
+	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
+	dst_name=${!#}
+	src_snapshots=${*%$dst_name}
 
+	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
+	for snapshot in $src_snapshots
+	    do	copy_snapshot $snapshot $dst_name
+	done
+	;;
+
+   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
+   ( c*s*h*l* )
+	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
+	check-snapshot-hard-links "$@"
+	;;
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
    ( snapshot*size | ss )
 	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
@@ -2782,19 +2782,19 @@ case $action in
 	watch "$@"
 	;;
 
-   # kill-backup [-sig] name(s): for each name (can be 'all'), kill backup job
+   # kill-backup [-sig] names: for each name (can be 'all'), kill backup job
    ( kill-backup* | kb )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
 	kill_job run-backup $*
 	;;
-   # kill-prune  [-sig] name(s): for each name (can be 'all'), kill prune job
+   # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
    ( kill-prune* | kp )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
 	kill_job prune-drive $*
 	;;
-   # kill-all    [-sig] name(s): for each name (can be 'all'), kill all jobs
+   # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-all
 	$Trace
@@ -3077,9 +3077,9 @@ case $action in
    ###########################################################################
 
    # WARNING: this should only be called by "snapcrypt close"
-   # unmount name(s): for each name (can be 'all'), kill backup & unmount drive
+   # unmount names: for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u )			# umount
-	[[ $# != 0 ]] || abort "pass drive name(s)"
+	[[ $# != 0 ]] || abort "pass drive names"
      unmount_drives "$@"
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today
