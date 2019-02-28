@@ -1788,7 +1788,8 @@ watch() {
 	   else show_all=$false
 		drives=$(list_drives -a | tr '\n' ' ')
 	fi
-	[[ $names_pat ]] && names_pat=[$names_pat]
+	[[ $names_pat ]] && names_pat=[$names_pat] &&
+	    names_msg=" for ${names^^} " || names_msg=
 
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
@@ -1904,35 +1905,7 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
-	# could parameterize this restriction with 'stty' data
-	if [[ -s $tmp && ( $show_all || ! ( $cron_opt && $rsync_cmds ) ) ]]
-	   then header -E "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
-		echo
-		echo "$hdr" | trim_ps_cols
-		sed 's@\([0-9] rm [^0-9]*[0-9][^ ]* \).*@\1...@' $tmp
-		echo
-	fi
-	rm $tmp
-	# ------------------------------------------------------------------
 	[[ $cron_opt && $rsync_cmds && ! $show_all && $rows -lt $min_C_rows ]] || {
-	header -E "cron's run-prune"
-	echo
-	> $tmp
-	[[ $prune_cmds ]] && {
-	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
-	[[ $cron_opt && $rsync_cmds && ! $show_all ]] && # && $rows < ???
-	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
-	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
-	} | sort $prune_sort_opts > $tmp
-	if [[ -s $tmp ]]
-	   then echo "$hdr" | trim_ps_cols
-		cat $tmp
-	   else echo -e "No pruning is being done."
-	fi
-	rm $tmp
-
-	echo
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
@@ -1943,7 +1916,7 @@ watch() {
 	setup_snapshot_stats .links
 	echo "  Number of 'Too many links' snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
-
+	# ------------------------------------------------------------------
 	[[ $rsync_cmds && ! $show_all ]] || { # && $rows < ???
 	echo
 	setup_snapshot_stats ''
@@ -1957,10 +1930,7 @@ watch() {
 	setup_snapshot_stats '' month
 	echo "  Total number years  w/good snapshots:  $stats_number"
 	}
-	}
-
 	# ------------------------------------------------------------------
-
 	[[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows && ! $show_all ]] || {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
@@ -1977,6 +1947,34 @@ watch() {
 	lsblk_fields=name,fstype,type,size,state,sched,mountpoint
 	type lsblk &>/dev/null && echo &&
 	lsblk --output=$lsblk_fields $devices
+	}
+	# ------------------------------------------------------------------
+	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
+	# could parameterize this restriction with 'stty' data
+	if [[ -s $tmp && ( $show_all || ! ( $cron_opt && $rsync_cmds ) ) ]]
+	   then header -E "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
+		echo
+		echo "$hdr" | trim_ps_cols
+		sed 's@\([0-9] rm [^0-9]*[0-9][^ ]* \).*@\1...@' $tmp
+		echo
+	fi
+	rm $tmp
+	# ------------------------------------------------------------------
+	header "cron's run-prune"
+	echo
+	> $tmp
+	[[ $prune_cmds ]] && {
+	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
+	[[ $cron_opt && $rsync_cmds && ! $show_all ]] && # && $rows < ???
+	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
+	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
+	} | sort $prune_sort_opts > $tmp
+	if [[ -s $tmp ]]
+	   then echo "$hdr" | trim_ps_cols
+		cat $tmp
+	   else echo -e "No pruning is being done$names_msg."
+	fi
+	rm $tmp
 	}
 
 	# ------------------------------------------------------------------
@@ -2015,7 +2013,7 @@ watch() {
 	    echo "$rsync_abbrev_msg"; echo
 	    echo "$hdr" | trim_ps_cols
 	    echo "$rsync_cmds" | trim_backup | sort $rsync_sort_opts
-	    } || echo -e "\nNo backups are running."
+	    } || echo -e "\nNo backups are running$names_msg."
 	}
 
 	# ------------------------------------------------------------------
