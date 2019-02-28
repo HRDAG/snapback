@@ -1,10 +1,10 @@
 Why snapback not rsnapshot:
 
-   Designed to support many USB drives, some plugged in and some off-site;
-      efficiently runs simultaneous backups (making cheap USB drives "safe"),
-      with separate logs and policies for each flexibly-named drive.
+   Supports many USB disk/flash drives (plugged in and off-site): efficiently
+      runs simultaneous backups (system of cheap USB drives is reliable through
+      redundancy); separate logs & policies for each flexibly-named drive ...
    Every config variable can have a per-drive value, in-line or separate-file
-      (can use smaller drives (e.g. memory sticks) to backup subset of system).
+      (can use smaller drives (e.g. flash memory) to backup subset of system).
    Integrated with 'snapcrypt', for easy use of encrypted, named drives.
    Easy control over backup frequency (& can exclude list of off-peak hours).
    Snapshots named by date (similar to rsync-snapshot), for transparency.

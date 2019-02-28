@@ -2615,6 +2615,8 @@ finish_copy_backup_drive() {
 
 	local var=drive_name_regex
 	warn "DON'T FORGET: add $src_name & $dst_name to $var= in $config_file"
+
+	return 0
 }
 
 # -------------------------------------------------------
