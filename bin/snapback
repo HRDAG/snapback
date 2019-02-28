@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-#     snapback is a utility to backup a system to multiple disk drives
+#     snapback is a utility to backup a system to multiple drives
 #
 #     Copyright (C) 2018-2019, Human Rights Data Analysis Group (HRDAG)
 #     https://hrdag.org
@@ -1738,7 +1738,8 @@ trim() {
 trim_backup() {
 
 	trim |
-	sed -e "s@run-backup -r @run-backup @g"
+	sed -e "s@run-backup -r @run-backup @g" \
+	    -e "s@ --.* @ \$opts -R \$dirs @"
 }
 
 # --------------------------------------------
@@ -1746,8 +1747,7 @@ trim_backup() {
 trim_prune() {
 
 	trim |
-	sed -e "s@prune-drive -r @prune-drive @g" \
-	    -e "s@ --.* @ \$opts -R \$dirs @"
+	sed -e "s@prune-drive -r @prune-drive @g"
 }
 
 # --------------------------------------------
