@@ -1727,10 +1727,12 @@ setup_snapshot_stats() {
 
 trim() {
 
-	sed -e "s@/bin/bash /@/@"	\
-	    -e "s@ bash /@ /@"		\
-	    -e "s@ /usr/local/bin/@ @"	\
-	    -e "s@$HOME/@~/@g"
+	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
+	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@' \
+	    -e 's@/bin/bash /@/@'	\
+	    -e 's@ bash /@ /@'		\
+	    -e 's@ /usr/local/bin/@ @'	\
+	    -e "s@ $HOME/@ ~/@g"
 }
 
 # --------------------------------------------
@@ -1863,7 +1865,7 @@ watch() {
 
 	eval \
 	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
-	prune_cmds=$(ps_ w h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
+	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
 			fgrep -e ' rm ' -e ' prune-' | trim_prune)
 	#
 	eval \
@@ -1957,7 +1959,7 @@ watch() {
 	   then header -E "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
-		sed 's@\([0-9] rm [^0-9]*[0-9][^ ]* \).*@\1...@' $tmp
+		trim_prune < $tmp
 		echo
 	fi
 	rm $tmp
@@ -2033,7 +2035,7 @@ watch() {
 	header "cron's primary run-backup processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$rsync_cmds" | sed "s@$HOME/@~/@g"
+	echo "$rsync_cmds" | sed "s@ $HOME/@ ~/@g"
 	}
 }
 
@@ -2518,7 +2520,17 @@ copy_backup_drive() {
 	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
-	warn "the new $dst_device MUST be as-large as $src_name's $src_device"
+	if set_device_KB___from_block_device $src_device
+	   then declare -i src_KB=$device_KB
+		set_device_KB___from_block_device $dst_device
+		declare -i KB_missing=$(( src_KB - device_KB ))
+		(( KB_missing > 0 )) &&
+		declare -i MB=KB_missing/1024 &&
+		declare -i GB=MB/1024 &&
+		abort "$dst_name's $dst_device is too-small by $MB MB ($GB GB)"
+	   else msg="$dst_device MUST be as-large as $src_name's $src_device"
+		warn "the new $msg"
+	fi
 
 	# show the user a sample fstab record
 	IfRun=echo mkfs_backup_drive -f $dst_device $dst_name |&
