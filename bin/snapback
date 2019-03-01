@@ -88,7 +88,7 @@ Usage: $our_name action [args]
     mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
 
-    check-snapshot-hard-links drv-name: show snapshots with broken hard links
+    check-snapshot-hard-links name(s): find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
 
@@ -2756,7 +2756,7 @@ check-snapshot-hard-links() {
 	    do	$IfRun sudo chattr +i $old_file &> /dev/null
 		file=$1$old_file
 		set_inum $file ||
-		  abort "$file doesn't exist in oldest snapshot"
+		  abort "$drive_name: $file missing from oldest snapshot $1"
 		file2inum[$old_file]=$inum
 	done
 	$Trace
@@ -2776,10 +2776,10 @@ check-snapshot-hard-links() {
 
 		$IfRun mkdir -p .rm
 		set -- $partials $*
-		warn "the following have broken hard-links: $*"
+		warn "$drive_name: the following have broken hard-links: $*"
 		exit 1
 	done
-	echo "no broken hard-links!"
+	echo "$drive_name: no broken hard-links!"
 }
 
 #############################################################################
@@ -2821,10 +2821,12 @@ case $action in
 	run_jobs_in_parallel update "$@"
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
-   # check-snapshot-hard-links drv-name: show snapshots with broken hard links
+   # check-snapshot-hard-links name(s): find snapshots with broken hard links
    ( c*s*h*l* )
-	[[ $# == 1 ]] || abort_with_action_Usage check-snapshot-
-	check-snapshot-hard-links "$@"
+	[[ $# != 0 ]] || abort_with_action_Usage check-snapshot-
+	for drive
+	    do	check-snapshot-hard-links $drive
+	done
 	;;
    # copy-snapshots snapshots name: copy to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
