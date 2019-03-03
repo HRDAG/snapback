@@ -957,12 +957,12 @@ declare -A backup_period2minimal_snapshot_regex=(
 )
 #
 declare -A backup_period2minimal_snapshot_pattern=(
-    [1]=$snapshot_pattern
-    [2]=$snapshot_day_pattern,?[02468]
-    [4]=$snapshot_day_pattern,{[02][048],1[26]}
-    [8]=$snapshot_day_pattern,{00,08,16}
-   [12]=$snapshot_day_pattern,{00,12}
-   [24]=$snapshot_day_pattern,00
+    [1]="$snapshot_pattern"
+    [2]="$snapshot_day_pattern,?[02468]"
+    [4]="$snapshot_day_pattern,{[02][048],1[26]}"
+    [8]="$snapshot_day_pattern,{00,08,16}"
+   [12]="$snapshot_day_pattern,{00,12}"
+   [24]="$snapshot_day_pattern,00"
 )
 #
 # the [hour] chunks are the complement of the previous map's values
