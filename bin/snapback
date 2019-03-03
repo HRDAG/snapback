@@ -2016,7 +2016,7 @@ watch() {
 	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
 	# could parameterize this restriction with 'stty' data
 	if [[ -s $tmp && ( $show_all || ! ( $cron_opt && $rsync_cmds ) ) ]]
-	   then header -E "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
+	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
 		trim_prune < $tmp
