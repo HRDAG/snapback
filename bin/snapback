@@ -1568,6 +1568,7 @@ copy_snapshot() {
 # -----------------------------------------------------------------------------
 
 update_drive() {
+	[[ $# == 1 ]] || abort "need to specify one drive name"
 
 	set_drive_name $1
 	set_drive_dir  $drive_name
