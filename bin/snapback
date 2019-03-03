@@ -2888,6 +2888,8 @@ case $action in
 	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
+	set_drive_name $dst_name	# also called by copy_snapshot ...
+	dst_name=$drive_name		# ... so have to save its result
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
