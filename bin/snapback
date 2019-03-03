@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=11			# has to match version= in configure.sh.sample
+version=12			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -583,25 +583,33 @@ set_drive_dir() {
 
 # -----------------------------------------------------------------------------
 
+declare -A config_var2default_value
+
 customize_config_variables() {
 	local name=${1-}
 
 	[[ $name ]] || return
 
-	set_drive_name $name ||
-	   abort "$config_file needs set_drive_name function"
-
 	[[ $drive_name == Z ]] && is_regression_test=$true
 
 	local var_name
+	[[ ${config_var2default_value[*]-} ]] ||
+	for var_name in $config_vars
+	    do	config_var2default_value[$var_name]=${!var_name}
+	done
+
 	for var_name in $config_vars
 	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
-		is_arg1_in_arg2 $drive_name $drv_names || continue
+		is_arg1_in_arg2 $drive_name $drv_names ||
+		   { [[ $drv_names ]] &&
+		     eval "$var_name=\${config_var2default_value[$var_name]}"
+		     continue; }
 
-		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
+
+		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		eval "$var_name=\$custom_value"
 		set +x
 		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
@@ -620,7 +628,7 @@ validate_config_variables() {
 	[[ ${!var} == ',' ]] ||
 	   abort "$var is not implemented, email $coder"
 	#
-	local var=extra_includes
+	local var=extra_excludes
 	[[ ! ${!var} ]] ||
 	   abort "$var is not implemented, email $coder"
 	#
@@ -1444,7 +1452,7 @@ assert_not_in_cron_jobs() {
 bad_copy() {
 	local msg=$*
 
-	[[ $pass_opt || $IfRun ]] || abort "$msg"
+	[[ $is_quiet || $pass_opt || $IfRun ]] || abort "$msg"
 
 	[[ ! $IfRun ]] || echo "copy_snapshot: $msg"
 
@@ -1455,6 +1463,9 @@ bad_copy() {
 
 dst_minimal_snapshot_regex=
 
+dst_backup_type=
+declare -A src_name2backup_type
+
 is_src_snapshot_useful() {
 	local src_snapshot=$1
 
@@ -1464,7 +1475,19 @@ is_src_snapshot_useful() {
 	   $src_name == $snapshot_pattern.links ]] ||
 	   bad_copy "$src_snapshot is not a reliable snapshot" || return 1
 	[[ $src_name =~ $dst_minimal_snapshot_regex(|\.*) ]] ||
-	   bad_copy "$src_snapshot doesn't fit dst backup_period" || return 1
+	   bad_copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
+	   return 1
+
+	local    src_backup_type=${src_name2backup_type[$src_name]-}
+	if [[ ! $src_backup_type ]]
+	   then set_drive_name $(dirname $src_snapshot)
+		src_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
+		src_name2backup_type[$src_name]=$src_backup_type
+	fi
+	[[ $src_backup_type == $dst_backup_type ]] ||
+	   bad_copy "$src_snapshot & $dst_name backup characteristics differ"||
+	   return 1
+
 	[[ $src_name != *.rm ]] && return 0
 	bad_copy "can't copy (partially deleted?) pruned snapshot $src_name"
 }
@@ -1499,14 +1522,16 @@ is_dst_snapshot_needed() {
 # ---------------------------------
 
 copy_snapshot() {
+	[[ $1 == -q  ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
 	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_drive_name"
-	local src_snapshot=$1 dst_drive_name=$2
+	local src_snapshot=${1%/} dst_drive_name=$2
 
 	[[ ! $pass_opt ]] && {		# if -p, caller ran following 2 funcs
 	set_drive_name $dst_drive_name
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
 	dst_minimal_snapshot_regex=$regex
+	dst_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
 	set_drive_dir $drive_name || abort "$dst_drive_name not mounted"; }
 	local dst_dir=$drive_dir
 
