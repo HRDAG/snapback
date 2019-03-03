@@ -1151,7 +1151,7 @@ set_link_dest_opts() {
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $snapshot_pattern{,.links,.partial} |
+	set -- $(echo $PWD/$snapshot_pattern{,.links,.partial} |
 		 tr ' ' '\n' | sort -r)
 	restore_tracing
 
