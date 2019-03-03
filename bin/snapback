@@ -2617,12 +2617,13 @@ copy_backup_drive() {
 
 	output_file=$dst_FS_label.out
 	echo -e "
-	nohup'ing slow 'dd' to copy partition '$src_name' to '$dst_name',
-	followed by slow fsck: takes about a day per TB of disk.  We'll
+	nohup'ing commands to copy partition '$src_name' to '$dst_name';
+	this takes about a day per TB of drive space.  Now running
 	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
 	"
 	nohup $cmd > $output_file &
-	sleep 0.1; set -x; exec tail -f $output_file
+	local copy_PID=$!
+	sleep 0.1; set -x; exec tail --pid=$copy_PID -f $output_file
 }
 
 # ------------------------------------------------------------------
@@ -2663,7 +2664,7 @@ _dump_restore_xfs_backup_drives() {
 
 _dump_restore_extN_backup_drives() {
 
-	_prepare_for_dump_restore
+	_prepare_for_dump_restore -S
 
 	have_cmd dump || abort "need to install the 'dump' command"
 
@@ -2671,7 +2672,7 @@ _dump_restore_extN_backup_drives() {
 
 	# https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
 	cd_ $dst_drive_dir
-	time $IfRun    dump -a0f - $src_drive_dir |
+	time $IfRun   dump -a0f - $src_device |
 	     $IfRun restore -rf -
 }
 
@@ -2880,8 +2881,9 @@ case $action in
 	    do	check-snapshot-hard-links $drive
 	done
 	;;
-   # copy-snapshots snapshots name: copy to 'name' mounted backup drive
+   # copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
+	[[ $1 == -q ]] && { quiet_opt=$1; shift; } || quiet_opt=
 	(( $# >= 2 )) || abort_with_action_Usage copy-snap
 	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
 	dst_name=${!#}
@@ -2890,7 +2892,7 @@ case $action in
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	for snapshot in $src_snapshots
-	    do	copy_snapshot $snapshot $dst_name
+	    do	copy_snapshot $quiet_opt $snapshot $dst_name
 	done
 	;;
 
