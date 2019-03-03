@@ -85,7 +85,7 @@ Usage: $our_name action [args]
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
-    mkfs [mkfs-opts] device [name]: prepare first/smallest drive (see comments)
+    mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
 
     check-snapshot-hard-links name(s): find snapshots with broken hard links
@@ -1411,7 +1411,7 @@ assert_not_in_cron_jobs() {
 	for name
 	    do	set_drive_name $name
 		[[ $drive_name =~ ^$drive_name_regex$ ]] || continue
-		local regex=$drive_name_regex
+		local regex=drive_name_regex
 		$IfRun abort "remove $drive_name from $regex= in $config_file"
 	done
 	return 0
@@ -2284,7 +2284,7 @@ dir_sizes() {
 # Then create new rule in /etc/snapcrypt/drives.rules .
 # If have existing backup drives that are no bigger, use copy-drive .
 
-# mkfs device [name]: prepare blank first- or smallest-drive (see comments)
+# mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
 mkfs_backup_drive() {
 	set_date_time
 	line_1="if you're using a partition or LV that already has backups,"
@@ -2470,6 +2470,25 @@ mkfs_backup_drive() {
 
 # -----------------------------------------------------------------------------
 
+_assert_dst_big_enough() {
+
+	local msg
+	if set_device_KB___from_block_device $src_device
+	   then declare -i src_KB=$device_KB
+		set_device_KB___from_block_device $dst_device
+		declare -i KB_missing=$(( src_KB - device_KB ))
+		(( KB_missing > 0 )) || return 1
+		declare -i MB=KB_missing/1024
+		declare -i GB=MB/1024 &&
+		msg="$dst_name's $dst_device is too-small by $MB MB ($GB GB)"
+		abort "$msg;\n  specify -D to *not* use 'dd' (use dump/retore)"
+	   else msg="$dst_device MUST be as-large as $src_name's $src_device"
+		warn "the new $msg"
+	fi
+}
+
+# --------------------------------------------
+
 # these 3 variables are global variables initialized elsewhere
 set__drive_name__FS_device__drive_dir__FS_label() {
 	local name=$1 device=${2-}
@@ -2503,7 +2522,7 @@ copy_backup_drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
 	[[ $# != 0 ]] ||
-	abort "[-f] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
+	abort "[-f] [-D] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
 	local src=$1 dst_name=$2 dst_device=${3-}
 
 	[[ -t 1 ]] || abort "don't use 'nohup', we'll run 'nohup'"
@@ -2520,22 +2539,13 @@ copy_backup_drive() {
 	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
-	if set_device_KB___from_block_device $src_device
-	   then declare -i src_KB=$device_KB
-		set_device_KB___from_block_device $dst_device
-		declare -i KB_missing=$(( src_KB - device_KB ))
-		(( KB_missing > 0 )) &&
-		declare -i MB=KB_missing/1024 &&
-		declare -i GB=MB/1024 &&
-		abort "$dst_name's $dst_device is too-small by $MB MB ($GB GB)"
-	   else msg="$dst_device MUST be as-large as $src_name's $src_device"
-		warn "the new $msg"
+	if ! is_arg1_in_arg2 -D $action_opts # using 'dd'?
+	   then _assert_dst_big_enough
+		# show the user a sample fstab record
+		IfRun=echo mkfs_backup_drive -f $dst_device $dst_name |&
+		  # search for the last two fields in the fstab record
+		  egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 	fi
-
-	# show the user a sample fstab record
-	IfRun=echo mkfs_backup_drive -f $dst_device $dst_name |&
-	   # search for the last two fields in the fstab record
-	   egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 
 	set --	$our_path $our_opts finish-$action $action_opts \
 		$src_device $src_drive_dir \
@@ -2557,7 +2567,11 @@ copy_backup_drive() {
 
 # ------------------------------------------------------------------
 
-_copy_xfs_backup_drive() {
+_prepare_for_dump_restore() {
+	if [[ ${1-} == -S ]]		# src doesn't need to be mounted?
+	   then is_drive_mounted $src_drive_dir || local src_name=
+		local src_drive_dir=
+	fi
 
 	assert_not_in_cron_jobs $src_name $dst_name
 
@@ -2567,6 +2581,13 @@ _copy_xfs_backup_drive() {
 	done
 
 	kill_all_jobs $src_name $dst_name
+}
+
+# ---------------------------------
+
+_dump_restore_xfs_backup_drives() {
+
+	_prepare_for_dump_restore
 
 	$IfRun set -x
 
@@ -2576,6 +2597,22 @@ _copy_xfs_backup_drive() {
 	     $IfRun xfsrestore -J - $dst_drive_dir
 
 	$IfRun xfs_freeze -u $src_drive_dir
+}
+
+# ---------------------------------
+
+_dump_restore_extN_backup_drives() {
+
+	_prepare_for_dump_restore
+
+	have_cmd dump || abort "need to install the 'dump' command"
+
+	$IfRun set -x
+
+	# https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
+	cd_ $dst_drive_dir
+	time $IfRun    dump -a0f - $src_drive_dir |
+	     $IfRun restore -rf -
 }
 
 # --------------------------------------------
@@ -2667,8 +2704,11 @@ finish_copy_backup_drive() {
 
 	set_FS_type___from_path $src_device
 	case $FS_type in
-	   ( ext?) _copy_extN_backup_drive ;;
-	   ( xfs ) _copy_xfs_backup_drive  ;;
+	   ( ext?) if is_arg1_in_arg2 -D $action_opts
+		      then _dump_restore_extN_backup_drives
+		      else _copy_extN_backup_drive
+		   fi ;;
+	   ( xfs ) _dump_restore_xfs_backup_drives  ;;
 	   (  *  ) abort "write FS function call for $FUNCNAME, email $coder";;
 	esac
 
@@ -2676,54 +2716,6 @@ finish_copy_backup_drive() {
 	warn "DON'T FORGET: add $src_name & $dst_name to $var= in $config_file"
 
 	return 0
-}
-
-# -------------------------------------------------------
-
-# copy-backup-drive-dump name: dump oldest mounted backup to $1: SLOW
-copy_backup_drive_with_dump() {
-	abort "this is incredibly slow, use copy-drive instead"
-	abort "this code is out of date, needs to be rewritten"
-
-	# cp is probably faster than dump, if use setup_RAM_FS_journal:
-	# cmd="cp -al $snapshot_pattern ${drive_dir_prefix}new/"
-
-	[[ $# == 1 && $1 == [a-zA-Z] ]] || abort "specify backup drive letter"
-	letter=${1^}
-	new_device=/dev/mapper$drive_dir_prefix$letter
-	[[ -b $new_device ]] || abort "can't find device for $letter"
-	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
-
-	have_cmd dump && have_cmd restore ||
-	    abort "need to run: sudo apt-get install dump"
-
-	set_oldest_snapshot
-	drive_dir=$(dirname $oldest_snapshot)
-	device=$(df --output=source $drive_dir | fgrep /dev/)
-	cd_ /tmp/root
-	unmount_drive $drive_dir || abort "need to: umount $drive_dir"
-
-	$IfRun umount $new_device &> /dev/null
-	$IfRun mkdir -p		${drive_dir_prefix}new
-	$IfRun mount  $new_device ${drive_dir_prefix}new ||
-	   abort "mount $new_device -> $?"
-
-	cmd="cp -al $snapshot_pattern ${drive_dir_prefix}new/" # only if setup_RAM_FS_journal
-	# see Part 3 of: https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
-	$IfRun set -x
-	$IfRun cd_ ${drive_dir_prefix}new
-	$IfRun dump -a0f - $device | $IfRun restore -rf - ||
-	   warn "dump | restore"
-	exit_status=$?
-	$IfRun set +x
-	$IfRun cd_ /tmp
-	[[ $exit_status == 0 ]] && {
-	$IfRun umount ${drive_dir_prefix}new
-	label_drive $new_device $mount_dir
-	$IfRun mount  $new_device $mount_dir || warn "mount $new_device"
-	}
-	$IfRun mount $device $drive_dir ||
-	   abort "mount $device $drive_dir -> $?"
 }
 
 ##############################################################################-
@@ -2903,10 +2895,6 @@ case $action in
    # finish-copy-drive: only used internally
    ( f*c*p*dr*v* | f*c*p*d* | fcd )
      finish_copy_backup_drive "$@"
-	;;
-   # copy-drive-dump: outmoded, unmaintained
-   ( copy-dr*v*-dump )
-     copy_backup_drive_with_dump "$@"
 	;;
 
    ###########################################################################
