@@ -1614,7 +1614,7 @@ update_drive() {
 	done
 
 	local var=drive_name_regex
-	warn "DON'T FORGET: re-add $drive_name to $var= in $config_file"
+	warn "DON'T FORGET: re-add $dst_name_name to $var= in $config_file"
 
 	$IfRun sync --file-system $dst_dir &> /dev/null
 }
