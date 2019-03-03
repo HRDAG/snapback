@@ -72,7 +72,7 @@ Usage: $our_name action [args]
     run-backups   [names]: names defaults to every mounted backup drive
     prune-drives  [names]: names defaults to every "" "" ""; see configure.sh
     update-drives [names]: copy missing snapshots from other drives to names
-    copy-snapshots snapshots name: copy to 'name' mounted backup drive
+    copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
@@ -1485,8 +1485,7 @@ is_src_snapshot_useful() {
 		src_name2backup_type[$src_name]=$src_backup_type
 	fi
 	[[ $src_backup_type == $dst_backup_type ]] ||
-	   bad_copy "$src_snapshot & $dst_name backup characteristics differ"||
-	   return 1
+	   bad_copy "$src_snapshot & $dst_drive_name backup characteristics differ" || return 1
 
 	[[ $src_name != *.rm ]] && return 0
 	bad_copy "can't copy (partially deleted?) pruned snapshot $src_name"
