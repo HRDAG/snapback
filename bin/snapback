@@ -1976,7 +1976,7 @@ watch() {
 	# now we're ready to start showing stuff to the user
 	# ------------------------------------------------------------------
 
-	[[ -s /etc/sudoers.d/$_our_name ]] || 
+	[[ ! -s /etc/sudoers.d/$_our_name ]] &&
 	(( $rows > ( $min_df_rows + 6 ) )) && {
 		header -E "to not fill the log with frequent 'sudo ps'"
 		echo
