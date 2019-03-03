@@ -146,7 +146,6 @@ readonly tmp_5=$tmp_dir/$our_name-5-$BASHPID
 need_cmds lockpid
 
 shopt -s extglob
-shopt -s lastpipe			# for 'while' loop at end of pipeline
 
 umask 02				# log dirs are setgid sudo
 
@@ -1656,7 +1655,7 @@ update_drive() {
 	done
 
 	local var=drive_name_regex
-	warn "DON'T FORGET: re-add $dst_name_name to $var= in $config_file"
+	warn "DON'T FORGET: re-add $dst_name to $var= in $config_file"
 
 	$IfRun sync --file-system $dst_dir &> /dev/null
 }
