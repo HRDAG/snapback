@@ -1961,7 +1961,7 @@ watch() {
 	let PD=PD*2			# add in 'rm'
 	declare -i UD=$(echo "$cp_rsync_cmds" | egrep -c '(update|copy)-drive')
 	let UD=UD*2			# add in 'rsync'
-	declare -i RB=$(echo    "$rsync_cmds" | wc -l)
+	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
 	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
 	TraceV 1 PD UD RB && let rows-=3
 	# min overhead is 'hours to create', no pruning, no abbrev rsync: 4*3
@@ -1976,8 +1976,9 @@ watch() {
 	# now we're ready to start showing stuff to the user
 	# ------------------------------------------------------------------
 
-	[[ ! -s /etc/sudoers.d/$_our_name ]] &&
-	(( $rows > ( $min_df_rows + 6 ) )) && {
+	declare -i min_for_rare=$(( min_df_rows + 6 + 5 + 7 ))
+	[[ ! -s /etc/sudoers.d/$_our_name &&
+	   ( $rows -gt $min_for_rare || $show_all ) ]] && {
 		header -E "to not fill the log with frequent 'sudo ps'"
 		echo
 		option_1="install etc/sudoers.d/$our_name"
@@ -2034,7 +2035,7 @@ watch() {
 
 	# --------------------------------------------
 
-	(( $rows >= ($min_df_rows + $num_drives + 2) )) || [[ $show_all ]] && {
+	[[ $rows -ge $min_df_rows || $show_all ]] && {
 	devices=
 	for dir in $drives
 	    do	set_FS_device___from_path $dir &&
