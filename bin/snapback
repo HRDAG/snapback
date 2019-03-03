@@ -1588,6 +1588,8 @@ update_drive() {
 	period=$backup_period
 	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
 
+	cd_ $drive_dir	 # so can safely kill job with: fuser -k -M $drive_dir
+
 	prev_date_time=
 	for dir in $(list_drives | fgrep -v -w $drive_dir)
 	    do	suspend_tracing
