@@ -1151,7 +1151,7 @@ set_link_dest_opts() {
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $drive_dir/$snapshot_pattern{,.links,.partial} |
+	set -- $(echo $snapshot_pattern{,.links,.partial} |
 		 tr ' ' '\n' | sort -r)
 	restore_tracing
 
@@ -1480,7 +1480,8 @@ is_src_snapshot_useful() {
 
 	local    src_backup_type=${src_name2backup_type[$src_name]-}
 	if [[ ! $src_backup_type ]]
-	   then set_drive_name $(dirname $src_snapshot)
+	   then local drive_name
+		set_drive_name $(dirname $src_snapshot)
 		src_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
 		src_name2backup_type[$src_name]=$src_backup_type
 	fi
@@ -1526,13 +1527,12 @@ copy_snapshot() {
 	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=$2
 
-	[[ ! $pass_opt ]] && {		# if -p, caller ran following 2 funcs
-	set_drive_name $dst_drive_name
+	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
+	local dst_dir=$drive_dir
+	[[ $dst_minimal_snapshot_regex ]] || {
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
 	dst_minimal_snapshot_regex=$regex
-	dst_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
-	set_drive_dir $drive_name || abort "$dst_drive_name not mounted"; }
-	local dst_dir=$drive_dir
+	dst_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"; }
 
 	local absolute_path
 	set_absolute_path $src_snapshot
@@ -1558,7 +1558,7 @@ copy_snapshot() {
 	[[  $cmd_to_set_merge_IO_priority < \
 	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
 
-	cd $drive_dir || abort cd # can kill job with: fuser -k -M $drive_dir
+	cd_ $dst_dir		   # can kill job with: fuser -k -M $dst_dir
 
 	run_rsync $pass_opt -c $src_snapshot/. $dst_snapshot
 
@@ -1570,9 +1570,11 @@ copy_snapshot() {
 update_drive() {
 
 	set_drive_name $1
-	set_drive_dir $drive_name
+	set_drive_dir  $drive_name
+	local dst_name=$drive_name	# copy_snapshot changes drive_name
+	local  dst_dir=$drive_dir	# copy_snapshot changes drive_dir
 
-	assert_not_in_cron_jobs $drive_name # awaiting new set_link_dest_opts
+	assert_not_in_cron_jobs $dst_name # awaiting new set_link_dest_opts
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
@@ -1587,10 +1589,10 @@ update_drive() {
 	period=$backup_period
 	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
 
-	cd_ $drive_dir	 # so can safely kill job with: fuser -k -M $drive_dir
+	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
 
 	prev_date_time=
-	for dir in $(list_drives | fgrep -v -w $drive_dir)
+	for dir in $(list_drives | fgrep -v -w $dst_dir)
 	    do	suspend_tracing
 		eval "echo $dir/$min_snapshot_pattern*"
 		restore_tracing
@@ -1603,8 +1605,8 @@ update_drive() {
 		[[ $prev_date_time == $date_time ]] && continue
 		    prev_date_time=$date_time
 
-		cmd="copy_snapshot -p1 $snapshot $drive_name" # for debugging
-		cmd="copy_snapshot -p0 $snapshot $drive_name"
+		cmd="copy_snapshot -p1 $snapshot $dst_name" # for debugging
+		cmd="copy_snapshot -p0 $snapshot $dst_name"
 		[[ $IfRun ]] && header $cmd
 		$cmd || continue
 		# break			# uncomment to debug
@@ -1613,7 +1615,7 @@ update_drive() {
 	local var=drive_name_regex
 	warn "DON'T FORGET: re-add $drive_name to $var= in $config_file"
 
-	$IfRun sync --file-system $drive_dir &> /dev/null
+	$IfRun sync --file-system $dst_dir &> /dev/null
 }
 
 ##############################################################################-
