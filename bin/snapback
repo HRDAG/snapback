@@ -896,6 +896,7 @@ readonly     snapshot_pattern="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
 readonly snapshot_day_pattern=${snapshot_pattern%,??}	  # Year-Mo-Da
 set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
 readonly     snapshot_regex=${snapshot_pattern//\?/.}
+readonly snapshot_day_regex=${snapshot_regex%,??}
 
 set_date_time() { date_time=$(date '+%Y-%m-%d,%H'); }
 set_day      () {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
@@ -938,6 +939,15 @@ set_prune_pattern() {
 
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
+declare -A backup_period2minimal_snapshot_regex=(
+    [1]="$snapshot_regex"
+    [2]="$snapshot_day_regex,.[02468]"
+    [4]="$snapshot_day_regex,([02][048]|1[26])"
+    [8]="$snapshot_day_regex,(00|08|16)"
+   [12]="$snapshot_day_regex,(00|12)"
+   [24]="$snapshot_day_regex,00"
+)
+#
 declare -A backup_period2minimal_snapshot_pattern=(
     [1]=$snapshot_pattern
     [2]=$snapshot_day_pattern,?[02468]
@@ -1442,6 +1452,8 @@ bad_copy() {
 
 # ---------------------------------
 
+dst_minimal_snapshot_regex=
+
 is_src_snapshot_useful() {
 	local src_snapshot=$1
 
@@ -1450,6 +1462,8 @@ is_src_snapshot_useful() {
 	[[ $src_name == $snapshot_pattern ||
 	   $src_name == $snapshot_pattern.links ]] ||
 	   bad_copy "$src_snapshot is not a reliable snapshot" || return 1
+	[[ $src_name =~ $dst_minimal_snapshot_regex(|\.*) ]] ||
+	   bad_copy "$src_snapshot doesn't fit dst backup_period" || return 1
 	[[ $src_name != *.rm ]] && return 0
 	bad_copy "can't copy (partially deleted?) pruned snapshot $src_name"
 }
@@ -1490,8 +1504,10 @@ copy_snapshot() {
 
 	[[ ! $pass_opt ]] && {		# if -p, caller ran following 2 funcs
 	set_drive_name $dst_drive_name
+	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
+	dst_minimal_snapshot_regex=$regex
 	set_drive_dir $drive_name || abort "$dst_drive_name not mounted"; }
-	local  dst_dir=$drive_dir
+	local dst_dir=$drive_dir
 
 	local absolute_path
 	set_absolute_path $src_snapshot
