@@ -1864,7 +1864,7 @@ watch() {
 
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
-	TraceV 1 names drives names_pat ps_opt cron_opt show_all
+	TraceV 2 names drives names_pat ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
 
@@ -1955,31 +1955,37 @@ watch() {
 	cron_cmds=$($sudo ps www f -o pid,stat$wchan,bsdtime,command $*)
 	} || cron_cmds=
 
-	# -C + df: 30 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
-	#   (ignoring the ~500 characters for full-detail for: rsync /)
-	# min overhead is hours to create snapshots, pruning, abbrev rsync: 4*3
 	#  prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	# update-drive (UD) includes parent of 'rsync' process (also in -C)
 	declare -i PD=$(echo    "$prune_cmds" | egrep -c  '(prune|copy)-drive')
 	let PD=PD*2			# add in 'rm'
 	declare -i UD=$(echo "$cp_rsync_cmds" | egrep -c '(update|copy)-drive')
 	let UD=UD*2			# add in 'rsync'
-	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c run-backup)
-	(( RB > 0 )) && let RB+=4	# add in 'default ...' lines
+	declare -i RB=$(echo    "$rsync_cmds" | wc -l)
+	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
+	TraceV 1 PD UD RB && let rows-=3
+	# min overhead is 'hours to create', no pruning, no abbrev rsync: 4*3
 	declare -i min_rows=$(( 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
 		   min_rows=$(( min_rows + 5*num_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
+	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
 
 	# ------------------------------------------------------------------
 	# now we're ready to start showing stuff to the user
 	# ------------------------------------------------------------------
 
-	[[ $rsync_cmds || -s /etc/sudoers.d/$_our_name ]] || {
-		header "to not fill the log with frequent 'sudo ps'"
+	[[ -s /etc/sudoers.d/$_our_name ]] || 
+	(( $rows < ( $min_df_rows + 6 ) )) || {
+		header -E "to not fill the log with frequent 'sudo ps'"
+		echo
 		option_1="install etc/sudoers.d/$our_name"
 		option_2="put its contents into /etc/sudoers"
-		echo -e "\n$option_1, or $option_2\n"
+		echo -e "$option_1, or $option_2"
+
+		header "statistics"
+		echo
+		let rows-=6
 	}
 
 	# ------------------------------------------------------------------
@@ -1987,9 +1993,9 @@ watch() {
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
-	echo
 
-	(( $rows < ($min_rows + 5) )) && [[ ! $show_all ]] || {
+	(( $rows >= ($min_rows + 5) )) || [[ $show_all ]] && {
+	echo
 	setup_snapshot_stats .rm
 	echo " Number pruned snapshots awaiting 'rm':  $stats_number"
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
@@ -2001,7 +2007,7 @@ watch() {
 
 	# --------------------------------------------
 
-	(( $rows < ($min_df_rows + 7) )) && [[ ! $show_all ]] || {
+	(( $rows >= ($min_df_rows + 7) )) || [[ $show_all ]] && {
 	echo
 	setup_snapshot_stats ''
 	echo "     Total number successful snapshots:  $stats_number"
@@ -2018,7 +2024,7 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	[[ $rows -lt $min_df_rows && ! $show_all ]] || {
+	[[ $rows -ge $min_df_rows || $show_all ]] && {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	df --block-size=G --output=$df_fields  $drives
@@ -2027,7 +2033,7 @@ watch() {
 
 	# --------------------------------------------
 
-	(( $rows < ($min_df_rows + $num_drives +2) )) && [[ ! $show_all ]] || {
+	(( $rows >= ($min_df_rows + $num_drives + 2) )) || [[ $show_all ]] && {
 	devices=
 	for dir in $drives
 	    do	set_FS_device___from_path $dir &&
@@ -2035,22 +2041,23 @@ watch() {
 	done
 	# fields that don't work: rm,model,opt-io,rota
 	lsblk_fields=name,fstype,type,size,state,sched,mountpoint
-	type lsblk &>/dev/null && echo &&
-	lsblk --output=$lsblk_fields $devices
+	type lsblk &>/dev/null && 
+	echo &&
+	lsblk --output=$lsblk_fields $devices &&
 	let rows-=num_drives+2
 	}
 
 	# ------------------------------------------------------------------
 
 	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
-	if [[ -s $tmp && ( $show_all || $rows -ge $min_rows ) ]]
+	declare -i admin_PD=$(wc -l < $tmp)+3 # 3 is the overhead
+	declare -i ad_hoc_min_rows=$min_rows+$admin_PD
+	if [[ -s $tmp && ( $rows -ge $ad_hoc_min_rows || $show_all ) ]]
 	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
 		trim_prune < $tmp
-		echo
-		declare -i admin_PD=$(wc -l < $tmp)
-		let rows-=$admin_PD+3
+		let rows-=$admin_PD
 	fi
 	rm $tmp
 
@@ -2062,7 +2069,8 @@ watch() {
 	[[ $prune_cmds ]] && {
 	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
 	[[ $rows -lt $min_rows && ! $show_all ]] &&
-	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
+	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2) &&
+	   let min_rows+=PD/2
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
 	} | sort $prune_sort_opts > $tmp
 	if [[ -s $tmp ]]
