@@ -1965,8 +1965,9 @@ watch() {
 	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
 	TraceV 1 PD UD RB && let rows-=3
 	# min overhead is 'hours to create', no pruning, no abbrev rsync: 4*3
-	declare -i min_rows=$(( 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
-		   min_rows=$(( min_rows + 5*num_rsyncs + PD ))
+	#   (plus 2 watch lies)
+	declare -i min_rows=$(( 2 + 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
+		   min_rows=$(( min_rows + 4 + 5*num_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
@@ -1976,7 +1977,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	[[ -s /etc/sudoers.d/$_our_name ]] || 
-	(( $rows < ( $min_df_rows + 6 ) )) || {
+	(( $rows > ( $min_df_rows + 6 ) )) && {
 		header -E "to not fill the log with frequent 'sudo ps'"
 		echo
 		option_1="install etc/sudoers.d/$our_name"
