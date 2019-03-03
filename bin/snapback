@@ -1250,7 +1250,8 @@ _handle_rsync_results() {
 	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
 	   then $IfRun mv  $new_snapshot.partial     $new_snapshot &&
 		[[ $new_snapshot != *.links ]] &&
-		$IfRun rm -f latest && $IfRun ln -s ${new_snapshot##*/} latest
+		set -- $snapshot_pattern &&
+		$IfRun rm -f latest && $IfRun ln -s ${!#} latest
 		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $IfRun ]] &&
