@@ -26,7 +26,7 @@ readonly coder=sweikart@gmail.com
 # have_cmd, need_cmds, is_darwin, set_FS_type___from_path,
 # set__inode_size__data_block_size__dir_block_size___from_path,
 # FS_label, set_FS_label___from_FS_device, label_drive,
-# set_FS_device___from_FS_label, FS_device,
+# set_FS_device___from_FS_label, set_device_KB___from_block_device, FS_device,
 # set_FS_device___from_path, set_mount_dir___from_FS_device,
 # set_mount_dir___from_FS_label,  set_FS_label___from_mount_dir,
 # warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
@@ -893,6 +893,7 @@ _rm_pruned_snapshots() {
 #			       _Year_MoDa-Hr
 readonly old_snapshot_pattern="[1-9]?????-??"
 readonly     snapshot_pattern="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
+readonly snapshot_day_pattern=${snapshot_pattern%,??}	  # Year-Mo-Da
 set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
 readonly     snapshot_regex=${snapshot_pattern//\?/.}
 
@@ -937,16 +938,26 @@ set_prune_pattern() {
 
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
-function load_type_maps {
-
-    type2prune_type_patterns=(
+declare -A backup_period2minimal_snapshot_pattern=(
+    [1]=$snapshot_pattern
+    [2]=$snapshot_day_pattern,?[02468]
+    [4]=$snapshot_day_pattern,{[02][048],1[26]}
+    [8]=$snapshot_day_pattern,{00,08,16}
+   [12]=$snapshot_day_pattern,{00,12}
+   [24]=$snapshot_day_pattern,00
+)
+#
+# the [hour] chunks are the complement of the previous map's values
+declare -A type2prune_type_patterns=(
 # the ones these patterns skip: hour=00, day=01, month=01, year=00
-# period after prune: 2                   4                ~8         ~12   all
+# period after prune: 2                4                 ~8          ~12   all
    [hour]=",?[13579]         ,{[02][26],1[048]}       ,{04,20}    ,{08,16} ,12"
     [day]="-{?[3579],[1-3]1} -{[02][26],1[048],30} -{04,12,20,28} -{08,24} -16"
   [month]="-{0[3579],11}          -{02,06,10}        -{04,08,12}"
    [year]="  [13579]                 {2,6}              {4,8}"
-    )
+)
+
+function load_type2date_span {
 
     type2date_span=(
 	 [hour]=$days_per_span_for_hour_prune
@@ -973,8 +984,8 @@ prune_type_to_file() {
 	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten_date $type)
 	local remaining_reverse_sorted_snapshot_dates=$*
 
-	declare -A type2prune_type_patterns type2date_span
-	load_type_maps		# run after call to customize_config_variables
+	declare -A type2date_span
+	load_type2date_span	# run after call to customize_config_variables
 	local date_span=${type2date_span[$type]}
 	scale_date_span
 	local prune_type_patterns=${type2prune_type_patterns[$type]}
@@ -1532,13 +1543,17 @@ update_drive() {
 	set +f
 	snapshot_sort_key=$#
 
+	period=$backup_period
+	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
+
 	prev_date_time=
 	for dir in $(list_drives | fgrep -v -w $drive_dir)
 	    do	suspend_tracing
-		echo $dir/$snapshot_pattern*
+		eval "echo $dir/$min_snapshot_pattern*"
 		restore_tracing
 	done | tr ' ' '\n' | grep -v '\.rm$' |
 	sort --field-separator=/ --key=$snapshot_sort_key |
+	# cat; exit		     # uncomment to debug min_snapshot_pattern
 	while read snapshot
 	    do	date_time=$(basename $snapshot)
 		date_time=${date_time%%.*}
