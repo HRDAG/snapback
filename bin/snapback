@@ -1957,11 +1957,19 @@ watch() {
 
 	# -C + df: 30 lines of overhead; 2 lines/drive; 9 lines per rsync+rm
 	#   (ignoring the ~500 characters for full-detail for: rsync /)
-	# has basic pruning (PD), but not parent of 'rm' process (its in -C)
-	declare -i PD_num=$(echo "$prune_cmds" | fgrep -c prune-drive)
-	declare -i min_C_rows=$(( 30 + num_drives + 5*num_rsyncs + 2*PD_num ))
-	declare -i min_C_df_rows=$(( min_C_rows + 2 + num_drives ))
-	# echo $rows $min_C_df_rows
+	# min overhead is hours to create snapshots, pruning, abbrev rsync: 4*3
+	#  prune-drive (PD) includes parent of  'rm'   process (also in -C)
+	# update-drive (UD) includes parent of 'rsync' process (also in -C)
+	declare -i PD=$(echo    "$prune_cmds" | egrep -c  '(prune|copy)-drive')
+	let PD=PD*2			# add in 'rm'
+	declare -i UD=$(echo "$cp_rsync_cmds" | egrep -c '(update|copy)-drive')
+	let UD=UD*2			# add in 'rsync'
+	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c run-backup)
+	(( RB > 0 )) && let RB+=4	# add in 'default ...' lines
+	declare -i min_rows=$(( 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
+		   min_rows=$(( min_rows + 5*num_rsyncs + PD ))
+	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
+	TraceV 1 rows min_rows min_df_rows
 
 	# ------------------------------------------------------------------
 	# now we're ready to start showing stuff to the user
@@ -1976,19 +1984,24 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	[[ $cron_opt && $rsync_cmds && ! $show_all && $rows -lt $min_C_rows ]] || {
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
 	echo
+
+	(( $rows < ($min_rows + 5) )) && [[ ! $show_all ]] || {
 	setup_snapshot_stats .rm
 	echo " Number pruned snapshots awaiting 'rm':  $stats_number"
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
 	setup_snapshot_stats .links
 	echo "  Number of 'Too many links' snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
-	# ------------------------------------------------------------------
-	[[ $rsync_cmds && ! $show_all ]] || { # && $rows < ???
+	let rows-=5
+	}
+
+	# --------------------------------------------
+
+	(( $rows < ($min_df_rows + 7) )) && [[ ! $show_all ]] || {
 	echo
 	setup_snapshot_stats ''
 	echo "     Total number successful snapshots:  $stats_number"
@@ -2000,15 +2013,21 @@ watch() {
 	echo "  Total number months w/good snapshots:  $stats_number"
 	setup_snapshot_stats '' month
 	echo "  Total number years  w/good snapshots:  $stats_number"
+	let rows-=7
 	}
+
 	# ------------------------------------------------------------------
-	[[ $cron_opt && $rsync_cmds && $rows -lt $min_C_df_rows && ! $show_all ]] || {
+
+	[[ $rows -lt $min_df_rows && ! $show_all ]] || {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	df --block-size=G --output=$df_fields  $drives
+	let rows-=num_drives+2
 	}
 
-	[[ ( $cron_opt || $rsync_cmds ) && ! $show_all ]] || {
+	# --------------------------------------------
+
+	(( $rows < ($min_df_rows + $num_drives +2) )) && [[ ! $show_all ]] || {
 	devices=
 	for dir in $drives
 	    do	set_FS_device___from_path $dir &&
@@ -2018,25 +2037,31 @@ watch() {
 	lsblk_fields=name,fstype,type,size,state,sched,mountpoint
 	type lsblk &>/dev/null && echo &&
 	lsblk --output=$lsblk_fields $devices
+	let rows-=num_drives+2
 	}
+
 	# ------------------------------------------------------------------
+
 	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
-	# could parameterize this restriction with 'stty' data
-	if [[ -s $tmp && ( $show_all || ! ( $cron_opt && $rsync_cmds ) ) ]]
+	if [[ -s $tmp && ( $show_all || $rows -ge $min_rows ) ]]
 	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
 		trim_prune < $tmp
 		echo
+		declare -i admin_PD=$(wc -l < $tmp)
+		let rows-=$admin_PD+3
 	fi
 	rm $tmp
+
 	# ------------------------------------------------------------------
+
 	header "cron's run-prune"
 	echo
 	> $tmp
 	[[ $prune_cmds ]] && {
 	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
-	[[ $cron_opt && $rsync_cmds && ! $show_all ]] && # && $rows < ???
+	[[ $rows -lt $min_rows && ! $show_all ]] &&
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2)
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
 	} | sort $prune_sort_opts > $tmp
@@ -2046,7 +2071,6 @@ watch() {
 	   else echo -e "No pruning is being done$names_msg."
 	fi
 	rm $tmp
-	}
 
 	# ------------------------------------------------------------------
 
@@ -2078,7 +2102,7 @@ watch() {
 	"
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
-	[[ $cron_opt && $rows -lt $min_C_rows && ! $show_all ]] || {
+	[[ $rows -lt $min_rows && ! $show_all ]] || {
 	    header "cron's primary run-backup processes (abbreviated)"
 	    [[ $rsync_cmds ]] && {
 	    echo "$rsync_abbrev_msg"; echo
@@ -2094,7 +2118,7 @@ watch() {
 	stime=$(set -- $(ps h -o stime $cron_PGIDs | sort -u); echo $*)
 	regex=${cron_job_regexp%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
-	(( $rows < $min_C_rows )) && echo "${rsync_abbrev_msg#?}" && echo
+	(( $rows < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
 	echo "$cron_cmds" | trim_backup
 	}
 
