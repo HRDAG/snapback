@@ -1134,20 +1134,13 @@ prune_drive() {
 declare -i num_link_dests=0
 
 set_link_dest_opts() {
-	local new_snapshot=$1
-
-	suspend_tracing
-	# want the .links snapshots too, so quickly recover from
-	#    'Too many links' by just copying the file
-	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $PWD/$snapshot_pattern{,.links,.partial} |
-		 tr ' ' '\n' | sort -r)
-	restore_tracing
+	local new_snapshot=$1; shift
 
 	while [[ ! -d ${1-} || ${1-} == $new_snapshot* ]]
 	   do	[[ $# != 0 ]] || return	# we might not have any snapshots
 		shift
 	done
+	[[ -d ${1-} ]] || return
 
 	# need at least 2 --link-dest args in case the sysadmnin borked one,
 	# and a few hours worth in case a file was deleted then recovered;
@@ -1157,17 +1150,59 @@ set_link_dest_opts() {
 	   else num_link_dests=2
 	fi
 
-	if [[ -d ${1-} ]]
-	   then declare -i snapshots_used=0
-		suspend_tracing
-		for snapshot
-		    do	[[ -d $snapshot ]] || continue
-			link_dest_opts="$link_dest_opts --link-dest=$snapshot"
-			[[ $snapshot != *.partial ]] && snapshots_used+=1
-			(( snapshots_used >= num_link_dests )) && break
-		done
-		restore_tracing link_dest_opts
-	fi
+	declare -i snapshots_used=0
+	suspend_tracing
+	for snapshot
+	    do	[[ -d $snapshot ]] || continue
+		link_dest_opts="$link_dest_opts --link-dest=$PWD/$snapshot"
+		[[ $snapshot != *.partial ]] && snapshots_used+=1
+		(( snapshots_used >= num_link_dests )) && break
+	done
+	restore_tracing link_dest_opts
+}
+
+# ------------------------------------------------------------------
+
+set_link_dest_opts___for_run_backup() {
+	local new_snapshot=$(basename $1)
+
+	suspend_tracing
+	# want the .links snapshots too, so quickly recover from
+	#    'Too many links' by just copying the file
+	# want a .partial to get the latest stuff, but won't "count" it
+	set -- $(echo $snapshot_pattern{,.links,.partial} |
+		 tr ' ' '\n' | sort -r)
+	restore_tracing
+
+	set_link_dest_opts $new_snapshot $*
+}
+
+# ------------------------------------------------------------------
+
+set_link_dest_opts___for_copy_snapshot() {
+	local new_snapshot=$(basename $1)
+
+	suspend_tracing
+	# want the .links snapshots too, so quickly recover from
+	#    'Too many links' by just copying the file
+	# want a .partial to get the latest stuff, but won't "count" it
+	set -- $(echo $snapshot_pattern{,.links,.partial} |
+		 tr ' ' '\n' | sort -r |
+		 while  read  snapshot
+		    do	[[   $snapshot < $new_snapshot ]] || continue
+			echo $snapshot
+		 done)
+	restore_tracing
+	set_link_dest_opts $new_snapshot $* # newest to oldest
+
+	set -- $(echo $snapshot_pattern{,.links,.partial} |
+		 tr ' ' '\n' |
+		 while  read  snapshot
+		    do	[[   $snapshot > $new_snapshot ]] || continue
+			echo $snapshot
+		 done)
+	restore_tracing
+	set_link_dest_opts $new_snapshot $* # oldest to newest
 }
 
 # -----------------------------------------------------------------------------
@@ -1344,7 +1379,10 @@ run_rsync() {
 
 	suspend_tracing
 	local link_dest_opts=
-	set_link_dest_opts $dst_snapshot
+	if [[ ! $is_copy_snapshot ]]
+	   then set_link_dest_opts___for_run_backup    $dst_snapshot
+	   else set_link_dest_opts___for_copy_snapshot $dst_snapshot
+	fi
 	restore_tracing link_dest_opts
 
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
@@ -1552,6 +1590,8 @@ copy_snapshot() {
 	   return 1
 	TraceV 2 src_snapshot dst_snapshot
 
+	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
 	# the following is similar to the second half of run_backup_rsync
 
 	set_lock_file prune-drive $drive_name	# backup job can suspend us
@@ -1580,10 +1620,6 @@ update_drive() {
 	set_drive_dir  $drive_name
 	local dst_name=$drive_name	# copy_snapshot changes drive_name
 	local  dst_dir=$drive_dir	# copy_snapshot changes drive_dir
-
-	assert_not_in_cron_jobs $dst_name # awaiting new set_link_dest_opts
-
-	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
 	$Trace
 
@@ -1987,7 +2023,7 @@ watch() {
 
 		header "statistics"
 		echo
-		let rows-=6
+		let rows-=6		# only adjust for optional sections
 	}
 
 	# ------------------------------------------------------------------
@@ -2069,11 +2105,14 @@ watch() {
 	echo
 	> $tmp
 	[[ $prune_cmds ]] && {
+
 	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
-	[[ $rows -lt $min_rows && ! $show_all ]] &&
+	[[ ! $show_all ]] &&
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2) &&
-	   let min_rows+=PD/2
-	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr
+	   let rows+=$(wc -l < $tmp_2)
+	(( $rows < ( $min_rows + $PD/2 ) )) &&
+	   fgrep_opt="-e prune-drive" && let rows+=$PD/2 || fgrep_opt=
+	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr $fgrep_opt
 	} | sort $prune_sort_opts > $tmp
 	if [[ -s $tmp ]]
 	   then echo "$hdr" | trim_ps_cols
@@ -2112,14 +2151,12 @@ watch() {
 	"
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
-	[[ $rows -lt $min_rows && ! $show_all ]] || {
-	    header "cron's primary run-backup processes (abbreviated)"
-	    [[ $rsync_cmds ]] && {
-	    echo "$rsync_abbrev_msg"; echo
-	    echo "$hdr" | trim_ps_cols
-	    echo "$rsync_cmds" | trim_backup | sort $rsync_sort_opts
-	    } || echo -e "\nNo backups are running$names_msg."
-	}
+	header "cron's primary run-backup processes (abbreviated)"
+	[[ $rsync_cmds ]] && {
+	echo "$rsync_abbrev_msg"; echo
+	echo "$hdr" | trim_ps_cols
+	echo "$rsync_cmds" | trim_backup | sort $rsync_sort_opts
+	} || echo -e "\nNo backups are running$names_msg."
 
 	# ------------------------------------------------------------------
 
@@ -2926,13 +2963,11 @@ case $action in
    ( c*p*s*s* | cs* | cps )
 	[[ $1 == -q ]] && { quiet_opt=$1; shift; } || quiet_opt=
 	(( $# >= 2 )) || abort_with_action_Usage copy-snap
-	warn "fix: require -f if src/dst excludes or dirs_to_backup differ"
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
+
 	set_drive_name $dst_name	# also called by copy_snapshot ...
 	dst_name=$drive_name		# ... so have to save its result
-
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	for snapshot in $src_snapshots
 	    do	copy_snapshot $quiet_opt $snapshot $dst_name
