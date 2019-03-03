@@ -1127,20 +1127,9 @@ prune_drive() {
 ##############################################################################-
 ##############################################################################-
 
-_is_time_to_run_backup() {
-	local dir=$1
-
-	[[ ! $is_cron ]] && return 0	# run by a person?
-
-	local  current_hour=$(date '+%k')
-	local excluded_hours=$(echo ${excluded_backup_hours-} | sed 's/\b0//g')
-	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
-	(( $current_hour % $backup_period == 0 )) && return 0
-
-	return 1
-}
-
-# -------------------------------------------------------
+# -----------------------------------------------------------------------------
+# functions to setup --link-dest args to rsync
+# -----------------------------------------------------------------------------
 
 declare -i num_link_dests=0
 
@@ -1179,6 +1168,23 @@ set_link_dest_opts() {
 		done
 		restore_tracing link_dest_opts
 	fi
+}
+
+# -----------------------------------------------------------------------------
+# misc functions to support run_rsync
+# -----------------------------------------------------------------------------
+
+_is_time_to_run_backup() {
+	local dir=$1
+
+	[[ ! $is_cron ]] && return 0	# run by a person?
+
+	local  current_hour=$(date '+%k')
+	local excluded_hours=$(echo ${excluded_backup_hours-} | sed 's/\b0//g')
+	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
+	(( $current_hour % $backup_period == 0 )) && return 0
+
+	return 1
 }
 
 # -------------------------------------------------------
