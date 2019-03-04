@@ -1582,12 +1582,13 @@ copy_snapshot() {
 	[[ $src_snapshot != *.links || ! -d ${dst_snapshot%.*} ]] ||
 	   bad_copy "$src_snapshot is no better than dst $dst_snapshot" ||
 	   return 1
-	TraceV 2 src_snapshot dst_snapshot
 
 	local absolute_path
 	set_absolute_path $src_snapshot
 	src_snapshot=$absolute_path
 	is_src_snapshot_useful $src_snapshot || return 1
+
+	TraceV 2 src_snapshot dst_snapshot
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
