@@ -1577,17 +1577,17 @@ copy_snapshot() {
 	dst_minimal_snapshot_regex=$regex
 	dst_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"; }
 
-	local absolute_path
-	set_absolute_path $src_snapshot
-	src_snapshot=$absolute_path
-	is_src_snapshot_useful $src_snapshot || return 1
-
 	dst_snapshot=$dst_dir/$(basename $src_snapshot)
 	is_dst_snapshot_needed $dst_snapshot || return 1
 	[[ $src_snapshot != *.links || ! -d ${dst_snapshot%.*} ]] ||
 	   bad_copy "$src_snapshot is no better than dst $dst_snapshot" ||
 	   return 1
 	TraceV 2 src_snapshot dst_snapshot
+
+	local absolute_path
+	set_absolute_path $src_snapshot
+	src_snapshot=$absolute_path
+	is_src_snapshot_useful $src_snapshot || return 1
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
@@ -1636,9 +1636,9 @@ update_drive() {
 	prev_date_time=
 	for dir in $(list_drives | fgrep -v -w $dst_dir)
 	    do	suspend_tracing
-		eval "echo $dir/$min_snapshot_pattern*"
+		eval "echo $dir/$min_snapshot_pattern{,.links}" # useful ones
 		restore_tracing
-	done | tr ' ' '\n' | grep -v '\.rm$' |
+	done | tr ' ' '\n' |
 	sort --field-separator=/ --key=$snapshot_sort_key |
 	# cat; exit		     # uncomment to debug min_snapshot_pattern
 	while read snapshot
