@@ -1346,6 +1346,8 @@ run_rsync() {
 	local date_time=$(basename $dst_snapshot)
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
 
+	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
 	assert_drive_dir_writable $(dirname $dst_snapshot)
 
 	if [[ $dst_snapshot == *.partial ]]
@@ -1431,8 +1433,6 @@ run_backup_rsync() {
 		$IfRun sleep 5
 		echo " too late."
 	fi
-
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
@@ -1589,8 +1589,6 @@ copy_snapshot() {
 	is_src_snapshot_useful $src_snapshot || return 1
 
 	TraceV 2 src_snapshot dst_snapshot
-
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	# the following is similar to the second half of run_backup_rsync
 
