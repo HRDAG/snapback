@@ -588,17 +588,20 @@ custom_config_vars=
 declare -A config_var2default_value
 
 customize_config_variables() {
-	local name=${1-}
+	local drive_name=${1-}
 
-	[[ $name ]] || return
+	[[ $drive_name ]] || return
 
 	[[ $drive_name == Z ]] && is_regression_test=$true
 
+	remember_tracing		# since suspend_tracing maybe not run
 	local var_name
 	[[ ${config_var2default_value[*]-} ]] ||
 	for var_name in $config_vars
 	    do	config_var2default_value[$var_name]=${!var_name}
+		suspend_tracing
 	done
+	restore_tracing
 
 	custom_config_vars=
 	for var_name in config_file exclude_file
@@ -606,7 +609,6 @@ customize_config_variables() {
 		add_words custom_config_vars $var_name
 	done
 
-	remember_tracing		# since suspend_tracing maybe not run
 	for var_name in $config_vars
 	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
@@ -1260,7 +1262,7 @@ record_rsync_time() {
 	declare -i days_to_keep=3     # make sure don't just have weekend data
 	declare -i number_files_per_day=24/$backup_period
 	declare -i number_files_to_keep=$number_files_per_day*$days_to_keep
-	eval "set -- $(dirname $file)/$snapshot_pattern.txt"
+	set -- $(dirname $file)/$snapshot_pattern.txt
 	while (( $# > $number_files_to_keep ))
 	    do	$IfRun rm $1
 		shift
@@ -1791,11 +1793,11 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 	    do	set_drive_name $dir
 		local name=$drive_name
 		local  dir=$drive_log_dir/$rsync_time_subdir
-		eval "set -- $dir/$snapshot_pattern.txt"
+		set -- $dir/$snapshot_pattern.txt
 		[[ -f $1 ]] || shift
 		if [[ $# != 0 ]]
 		   then local sum=$(cat $* | tr '\n' '+' | sed 's/+$//')
-			eval "declare -i total=$sum"
+			declare -i total=$sum
 			hour_avg=$(echo $total $# |
 				   awk '{ printf "%.1f", $1/($2*60) }')
 			hour_max=$(sort -n $* | tail -n1 |
@@ -1946,6 +1948,7 @@ watch() {
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
+	# FIXME: handle multi-character names by using {name1,$name2,..,$nameN}
 	local drives= names_pat= fixed_names=
 	if [[ $names ]]
 	   then for name in ${names//,/ }
@@ -3339,6 +3342,10 @@ case $action in
    # -------------------------------------------------------------
 
    ( test | t )
+	$Trace
+	customize_config_variables ${1:-G}
+	exit
+
 	validate_config_variables
 	set__OS_release_file__OS_release
 	TraceV 0 OS_release_file OS_release
