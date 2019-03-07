@@ -2010,7 +2010,7 @@ watch() {
 	#
 	eval \
 	"set -- \$(cat $lock_dir/update-drive-${names_pat:-?}.pid 2>/dev/null)"
-	[[ $# == 0 ]] && cp_rsync_cmds= ||
+	[[ $# == 0 ]] && ud_rsync_cmds= ||
 	ud_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			  grep -e "[0-9] [/a-z].* update-drive" \
 			       -e "[0-9]     rsync" | 
