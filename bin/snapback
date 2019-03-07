@@ -546,7 +546,7 @@ set_drive_name() {
 	fi
 	TraceV 3 drive_name
 
-       set__drive_log_dir__file_for_logging__admin_group__is_regression_test \
+	set__drive_log_dir__file_for_logging__admin_group__is_regression_test \
 	   $drive_name
 }
 
@@ -606,6 +606,7 @@ customize_config_variables() {
 		add_words custom_config_vars $var_name
 	done
 
+	remember_tracing		# since suspend_tracing maybe not run
 	for var_name in $config_vars
 	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
