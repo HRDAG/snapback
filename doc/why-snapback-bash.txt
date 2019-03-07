@@ -5,6 +5,8 @@ Why snapback not rsnapshot:
       redundancy); separate logs & policies for each flexibly-named drive ...
    Every config variable can have a per-drive value, in-line or separate-file
       (can use smaller drives (e.g. flash memory) to backup subset of system).
+   When an off-site drive is returned and plugged in, it us updated with
+      all the snapshots that other drives have but it doesn't.
    Integrated with 'snapcrypt', for easy use of encrypted, named drives.
    Easy control over backup frequency (& can exclude list of off-peak hours).
    Snapshots named by date (similar to rsync-snapshot), for transparency.
@@ -15,6 +17,7 @@ Why snapback not rsnapshot:
       when FS usage threshold is exceeded, pruning gets the higher priority.
    Manages rsync's "Too many links" error (admin solves by adjusting pruning);
      such errors are emailed to (per-drive) sysadmin(s).
+   Built-in statistical tool to optimize filesystem inode-size and block-size.
    Has 'watch' action, to watch current backups and see status of pruning.
    Can safely and easily kill any backup or prune job, e.g. to eject drive.
    Maintains history of snapshots on each ejected drive (for offsite requests).
@@ -24,12 +27,13 @@ Why snapback not rsnapshot:
 Why write such a serious program in bash:
 
    Language efficiency is irrelevant, all the time is spent in 'rsync' & 'rm.
+   It has needed features: lists, regular arrays, associative arrages, regex.
+   Simple support of background processes with control of session groups.
    Config file holds shell commands (eg functions, arrays, maps, computation).
    Automagically maintain list of config variables:
       easy/reliable validation that all config variables were set;
       per-variable customization: associative array maps drive name to value.
    Supports simulation, which allows trivial creation of fast regression tests.
    Supports tracing of all commands, for deep debugging, or learning new code.
-   Can start as a simple script, and evolve it into a reliable, featureful one
+   Can start as a simple script, and evolve into a reliable, featureful one
       (with regression-testing after each change).
-   Simple support of background processes with control of session groups.
