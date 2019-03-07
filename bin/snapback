@@ -611,6 +611,7 @@ customize_config_variables() {
 	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
 		[[ $drv_names ]] || continue
+		suspend_tracing
 
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
@@ -623,7 +624,6 @@ customize_config_variables() {
 
 		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		eval "$var_name=\$custom_value"
-		suspend_tracing
 		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
 	restore_tracing custom_config_vars
