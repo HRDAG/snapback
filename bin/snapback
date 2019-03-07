@@ -622,9 +622,10 @@ customize_config_variables() {
 
 		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		eval "$var_name=\$custom_value"
-		set +x
+		suspend_tracing
 		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
+	restore_tracing custom_config_vars
 }
 
 # ------------------------------------------------------------------
@@ -857,15 +858,16 @@ _rm_pruned_snapshots() {
 		for subdir in $hard_link_dirs
 		    do	$IfRun rm -rf $snapshot$subdir
 		done
-		[[ $IfRun ]] && set +x
+		suspend_tracing
 	done
+	restore_tracing
 
-	$Trace
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
 	    do	$IfRun rm -rf $snapshot
-		[[ $IfRun ]] && set +x
+		suspend_tracing
 	done
+	restore_tracing
 
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
@@ -893,9 +895,10 @@ _rm_pruned_snapshots() {
 			   do	[[ -e "$file" ]] && echo "$file"
 			done
 		done
-		[[ $IfRun ]] && set +x
+		suspend_tracing
 	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
 	}
+	restore_tracing
 
 	$IfRun log "pruned exclude-patterns from _all_ snapshots"
 
@@ -1518,24 +1521,41 @@ bad_copy() {
 # ---------------------------------
 
 backup_type=
-declare -A _name2backup_type
+declare -A drive_name2backup_type
 
 set_backup_type() {
-	local name=$1
+	local drive_name=$1	  # fastest if it's a drive_name not drive_dir
 
-	backup_type=${_name2backup_type[$name]-}
+	backup_type=${drive_name2backup_type[$drive_name]-}
 	[[ $backup_type ]] && return
 
 	local $custom_config_vars
-	set_drive_name $name		# customizes vars
+	if [[ $drive_name =~ ^$admin_drive_name_regex$ ]]
+	   then [[ $is_drive_name_capitalized ]] && drive_name=${drive_name^}
+		suspend_tracing
+		customize_config_variables $drive_name
+		restore_tracing
+	   else set_drive_name $drive_name # calls customize_config_variables
+	fi
 	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
-	_name2backup_type[$name]=$backup_type
+	drive_name2backup_type[$drive_name]=$backup_type
 }
 
 # ---------------------------------
 
-dst_minimal_snapshot_regex=
 dst_backup_type=
+
+matches_dst_backup_type() {
+	local drive_dir=$1
+
+	local drive_name=${drive_dir#$drive_dir_prefix}
+	set_backup_type $drive_name
+	[[ $backup_type == $dst_backup_type ]]
+}
+
+# ----------------------
+
+dst_minimal_snapshot_regex=
 
 is_src_snapshot_useful() {
 	local src_snapshot=$1
@@ -1549,8 +1569,8 @@ is_src_snapshot_useful() {
 	   bad_copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
 	   return 1
 
-	set_backup_type ${src_snapshot%/*}
-	[[ $backup_type == $dst_backup_type ]] && return 0
+	matches_dst_backup_type ${src_snapshot%/*} && return 0
+
        bad_copy "$src_snapshot & $dst_drive_name backup characteristics differ"
 }
 
@@ -1618,8 +1638,7 @@ copy_snapshot() {
 
 	local lock_file
 	set_lock_file prune-drive $dst_drive_name # backup job can suspend us
-	run_lockpid $lock_file "copying to $dst_dir" > /dev/null ||
-	   exit 1
+	run_lockpid $lock_file "copying to $dst_dir" || exit 1
 
 	setup_merge_priority
 
@@ -1644,16 +1663,28 @@ update_drive() {
 	local dst_name=$drive_name
 	local  dst_dir=$drive_dir
 
-	$Trace
+	set_backup_type $dst_name
+	dst_backup_type=$backup_type
+	local drive_dirs=$(
+		set -- $(
+		for drive_dir in $(list_drives | fgrep -v -x $dst_dir)
+		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
+		done # | tac		# uncomment to test sort_args
+		)
+		echo $*
+	)
+
+	period=$backup_period
+	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
 
 	set -f
 	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
 		 tr / ' ')
 	set +f
-	snapshot_sort_key=$#
+	let snapshot_key=$# drive_name_key=$#-1
+	local sort_key_args="--key=$snapshot_key --key=$drive_name_key"
 
-	period=$backup_period
-	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
+	TraceV 1 drive_dirs min_snapshot_pattern sort_key_args
 
 	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
 
@@ -1662,14 +1693,16 @@ update_drive() {
 	run_lockpid $lock_file "updating $dst_dir" > /dev/null ||
 	   exit 1
 
+	$Trace
+
 	prev_date_time=
-	for dir in $(list_drives | fgrep -v -w $dst_dir)
+	for dir in $drive_dirs
 	    do	suspend_tracing
 		eval "echo $dir/$min_snapshot_pattern{,.links}" # useful ones
 		restore_tracing
 	done | tr ' ' '\n' |
-	sort --field-separator=/ --key=$snapshot_sort_key |
-	# cat; exit		     # uncomment to debug min_snapshot_pattern
+	sort --field-separator=/ $sort_key_args |
+	# cat; exit # uncomment to debug drive_dirs, min_snapshot_pattern, sort
 	while read snapshot
 	    do	date_time=$(basename $snapshot)
 		date_time=${date_time%%.*}
@@ -1908,9 +1941,9 @@ watch() {
 
 	local all_opts="$ps_opt $cron_opt"
 	[[ $names ]] && add_words all_opts -N $names
-	[[ ${SSH_TTY-}  ]] && n=2 || n=0.1
+	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.1
 	[[ $action == w ]] ||
-	   exec watch ${*:- -n $n} $our_path $our_opts w -w $all_opts
+	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
 	local drives= names_pat= fixed_names=
 	if [[ $names ]]
