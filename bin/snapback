@@ -81,6 +81,7 @@ Usage: $our_name action [args]
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] names: for each name (can be 'all'), kill backup job
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
+    kill-update [-sig] names: for each name (can be 'all'), kill update job
     kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
@@ -240,7 +241,7 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="run-backup prune-drive" # kill_all_jobs also uses
+readonly lock_types="run-backup prune-drive update-drive" # kill_all_jobs uses
 
 readonly lock_dir=/var/lock/$our_name
 
@@ -582,6 +583,8 @@ set_drive_dir() {
 
 # -----------------------------------------------------------------------------
 
+custom_config_vars=
+
 declare -A config_var2default_value
 
 customize_config_variables() {
@@ -597,16 +600,25 @@ customize_config_variables() {
 	    do	config_var2default_value[$var_name]=${!var_name}
 	done
 
+	custom_config_vars=
+	for var_name in config_file exclude_file
+	    do	[[ $(declare -p $var_name) == "declare -r "* ]] ||
+		add_words custom_config_vars $var_name
+	done
+
 	for var_name in $config_vars
 	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
-		is_arg1_in_arg2 $drive_name $drv_names ||
-		   { [[ $drv_names ]] &&
-		     eval "$var_name=\${config_var2default_value[$var_name]}"
-		     continue; }
+		[[ $drv_names ]] || continue
 
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
+
+		add_words custom_config_vars $var_name
+
+		is_arg1_in_arg2 $drive_name $drv_names ||
+		   { eval "$var_name=\${config_var2default_value[$var_name]}"
+		     continue; }
 
 		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		eval "$var_name=\$custom_value"
@@ -1495,7 +1507,8 @@ assert_not_in_cron_jobs() {
 bad_copy() {
 	local msg=$*
 
-	[[ $is_quiet || $pass_opt || $IfRun ]] || abort "$msg"
+	[[ $is_quiet || $pass_opt || $IfRun ]] ||
+	   abort "$msg; use -q to avoid 'destination exists' failures"
 
 	[[ ! $IfRun ]] || echo "copy_snapshot: $msg"
 
@@ -1504,35 +1517,41 @@ bad_copy() {
 
 # ---------------------------------
 
-dst_minimal_snapshot_regex=
+backup_type=
+declare -A _name2backup_type
 
+set_backup_type() {
+	local name=$1
+
+	backup_type=${_name2backup_type[$name]-}
+	[[ $backup_type ]] && return
+
+	local $custom_config_vars
+	set_drive_name $name		# customizes vars
+	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
+	_name2backup_type[$name]=$backup_type
+}
+
+# ---------------------------------
+
+dst_minimal_snapshot_regex=
 dst_backup_type=
-declare -A src_name2backup_type
 
 is_src_snapshot_useful() {
 	local src_snapshot=$1
 
 	[[ -d $src_snapshot ]] || bad_copy "no snapshot '$1'" || return 1
-	local  src_name=$(basename $src_snapshot)
-	[[ $src_name == $snapshot_pattern ||
-	   $src_name == $snapshot_pattern.links ]] ||
+	local  src_basename=${src_snapshot##*/}
+	[[ $src_basename == $snapshot_pattern ||
+	   $src_basename == $snapshot_pattern.links ]] ||
 	   bad_copy "$src_snapshot is not a reliable snapshot" || return 1
-	[[ $src_name =~ $dst_minimal_snapshot_regex(|\.*) ]] ||
+	[[ $src_basename =~ $dst_minimal_snapshot_regex(|\..*) ]] ||
 	   bad_copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
 	   return 1
 
-	local    src_backup_type=${src_name2backup_type[$src_name]-}
-	if [[ ! $src_backup_type ]]
-	   then local drive_name
-		set_drive_name $(dirname $src_snapshot)
-		src_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
-		src_name2backup_type[$src_name]=$src_backup_type
-	fi
-	[[ $src_backup_type == $dst_backup_type ]] ||
-	   bad_copy "$src_snapshot & $dst_drive_name backup characteristics differ" || return 1
-
-	[[ $src_name != *.rm ]] && return 0
-	bad_copy "can't copy (partially deleted?) pruned snapshot $src_name"
+	set_backup_type ${src_snapshot%/*}
+	[[ $backup_type == $dst_backup_type ]] && return 0
+       bad_copy "$src_snapshot & $dst_drive_name backup characteristics differ"
 }
 
 # ---------------------------------
@@ -1546,7 +1565,7 @@ is_dst_snapshot_needed() {
 	[[ $1 != *.rm ]] ||
 	   bad_copy "destination is waiting to be pruned" || return 1
 
-	local junk_dir=$(dirname $dst_snapshot)/.junk
+	local junk_dir=${dst_snapshot%/*}/.junk
 	$IfRun mkdir -p $junk_dir > /dev/null
 
 	[[ -e $1 ]] || set -- $dst_snapshot
@@ -1555,7 +1574,7 @@ is_dst_snapshot_needed() {
 
 	[[ ! -d $1 ]] &&
 	   $IfRun mv $1 $junk_dir/ && { warn "junk in $junk_dir"; return 0; }
-	! [[ $(basename $1) != *.* || $ext == links || $ext == partial ]] &&
+	! [[ ${1##*/} != *.* || $ext == links || $ext == partial ]] &&
 	   $IfRun mv $1 $junk_dir/ && { warn "junk in $junk_dir"; return 0; }
 
 	[[ $1 !=  $dst_snapshot ]] && return 0
@@ -1564,35 +1583,41 @@ is_dst_snapshot_needed() {
 
 # ---------------------------------
 
+dst_dir=
+
 copy_snapshot() {
 	[[ $1 == -q  ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
 	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=$2
 
-	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
-	local dst_dir=$drive_dir
 	[[ $dst_minimal_snapshot_regex ]] || {
+	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
+	dst_dir=$drive_dir
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
 	dst_minimal_snapshot_regex=$regex
-	dst_backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"; }
+	set_backup_type $dst_drive_name
+	dst_backup_type=$backup_type	   ; }
 
-	dst_snapshot=$dst_dir/$(basename $src_snapshot)
+	local  dst_snapshot=$dst_dir/${src_snapshot##*/}
+	[[ -d $dst_snapshot || -d ${dst_snapshot%.*} ]] &&
+	   { [[ ${FUNCNAME[1]} != update_drive ]] &&
+	     bad_copy "don't need $src_snapshot: it exists on $dst_drive_name"
+	     return 1; }
+
 	is_dst_snapshot_needed $dst_snapshot || return 1
-	[[ $src_snapshot != *.links || ! -d ${dst_snapshot%.*} ]] ||
-	   bad_copy "$src_snapshot is no better than dst $dst_snapshot" ||
-	   return 1
 
 	local absolute_path
 	set_absolute_path $src_snapshot
-	src_snapshot=$absolute_path
+	local src_snapshot=$absolute_path
 	is_src_snapshot_useful $src_snapshot || return 1
 
 	TraceV 2 src_snapshot dst_snapshot
 
 	# the following is similar to the second half of run_backup_rsync
 
-	set_lock_file prune-drive $drive_name	# backup job can suspend us
+	local lock_file
+	set_lock_file prune-drive $dst_drive_name # backup job can suspend us
 	run_lockpid $lock_file "copying to $dst_dir" > /dev/null ||
 	   exit 1
 
@@ -1616,8 +1641,8 @@ update_drive() {
 
 	set_drive_name $1
 	set_drive_dir  $drive_name
-	local dst_name=$drive_name	# copy_snapshot changes drive_name
-	local  dst_dir=$drive_dir	# copy_snapshot changes drive_dir
+	local dst_name=$drive_name
+	local  dst_dir=$drive_dir
 
 	$Trace
 
@@ -1631,6 +1656,11 @@ update_drive() {
 	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
 
 	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
+
+	local lock_file
+	set_lock_file update-drive $dst_name
+	run_lockpid $lock_file "updating $dst_dir" > /dev/null ||
+	   exit 1
 
 	prev_date_time=
 	for dir in $(list_drives | fgrep -v -w $dst_dir)
@@ -1652,6 +1682,8 @@ update_drive() {
 		$cmd || continue
 		# break			# uncomment to debug
 	done
+
+	$IfRun lockpid -r $lock_file
 
 	local var=drive_name_regex
 	warn "DON'T FORGET: re-add $dst_name to $var= in $config_file"
@@ -1940,7 +1972,7 @@ watch() {
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
 	if [[ $ps_opt ]]
 	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
-		trim_ps_cols() { cut -c "10-21,24-37,40-44,46-"; }
+		trim_ps_cols() { cut -c "10-21,24-36,40-44,46-"; }
 		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
 		#    123456789012345678901234567890123456789012345678901234567
 		#             1         2         3         4         5
@@ -1973,7 +2005,15 @@ watch() {
 	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
-			  grep -e update-drive -e "[0-9]   rsync" | 
+			  grep -e update-drive -e "[0-9]   rsync" |
+			  sed 's/   rsync/ rsync/')
+	#
+	eval \
+	"set -- \$(cat $lock_dir/update-drive-${names_pat:-?}.pid 2>/dev/null)"
+	[[ $# == 0 ]] && cp_rsync_cmds= ||
+	ud_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+			  grep -e "[0-9] [/a-z].* update-drive" \
+			       -e "[0-9]     rsync" | 
 			  sed 's/   rsync/ rsync/')
 	#
 	cron_job_regexp=' -C run-backups? *$' # put into configure.sh ??
@@ -1993,7 +2033,7 @@ watch() {
 	# update-drive (UD) includes parent of 'rsync' process (also in -C)
 	declare -i PD=$(echo    "$prune_cmds" | egrep -c  '(prune|copy)-drive')
 	let PD=PD*2			# add in 'rm'
-	declare -i UD=$(echo "$cp_rsync_cmds" | egrep -c '(update|copy)-drive')
+	declare -i UD=$(echo "$ud_rsync_cmds" | egrep -c 'update-drive')
 	let UD=UD*2			# add in 'rsync'
 	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
 	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
@@ -2121,12 +2161,21 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	# copy-snapshots (& update-drives) uses prune lock
+	# copy-snapshots uses prune lock
 	[[ $cp_rsync_cmds ]] && {
-	header "copy-snapshot (which is run from update-drives)"
+	header "copy-snapshot"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$cp_rsync_cmds" | trim_update | sort $prune_sort_opts
+	}
+
+	# ------------------------------------------------------------------
+
+	[[ $ud_rsync_cmds ]] && {
+	header "update-drive"
+	echo
+	echo "$hdr" | trim_ps_cols
+	echo "$ud_rsync_cmds" | trim_update | sort $prune_sort_opts
 	}
 
 	# ------------------------------------------------------------------
@@ -2964,8 +3013,8 @@ case $action in
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
 
-	set_drive_name $dst_name	# also called by copy_snapshot ...
-	dst_name=$drive_name		# ... so have to save its result
+	set_drive_name $dst_name
+	dst_name=$drive_name
 
 	for snapshot in $src_snapshots
 	    do	copy_snapshot $quiet_opt $snapshot $dst_name
@@ -3003,6 +3052,12 @@ case $action in
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
 	kill_job prune-drive $*
+	;;
+   # kill-update [-sig] names: for each name (can be 'all'), kill update job
+   ( kill-update* | ku )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-update
+	$Trace
+	kill_job update-drive $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk )
