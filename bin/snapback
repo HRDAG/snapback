@@ -1467,6 +1467,9 @@ run_backup() {
 	set_drive_name $drive_name
 	set_drive_dir  $drive_name || return 1
 
+	# we must _always_ create the ,00 snapshots, they're saved forever
+	[[ $(date +%H) == 00 ]] && kill_job run-backup $drive_name
+
 	# the following is similar to the second half of copy_snapshot
 
 	# grab lock before prune, so don't suspend prune if the sysadmin
