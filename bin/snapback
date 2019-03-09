@@ -318,7 +318,7 @@ signal_job() {
 
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
-	$IfRun $sudo kill -s ${signal^^} -$1 &> /dev/null || return 1
+	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 	set_signal_is_kill    $signal &&
 	$IfRun $sudo lockpid -r $lock_file
 
