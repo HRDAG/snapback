@@ -2066,13 +2066,13 @@ watch() {
 	declare -i PD=$(echo    "$prune_cmds" | egrep -c  '(prune|copy)-drive')
 	let PD=PD*2			# add in 'rm'
 	declare -i UD=$(echo "$ud_rsync_cmds" | egrep -c 'update-drive')
-	let UD=UD*2			# add in 'rsync'
+	let UD=UD*2+4			# add in 'rsync' and section-overhead
 	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
 	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
 	TraceV 1 PD UD RB && let rows-=3
 	# min overhead is 'hours to create', no pruning, no abbrev rsync: 4*3
-	#   (plus 2 watch lies)
-	declare -i min_rows=$(( 2 + 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
+	#   (plus 1 watch line)
+	declare -i min_rows=$(( 1 + 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
 		   min_rows=$(( min_rows + 4 + 5*num_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
@@ -2511,8 +2511,8 @@ mkfs_backup_drive() {
 	line_5="(which is not needed if the partition is auto-mounted)."
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
-	[[ ${1-} == -f ]] && shift || {
-	   echo "if this is your first or smallest disk, use the -f option;"
+	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts == mkfs.xfs* ]] || {
+	   echo "If this is your first or smallest disk, use the -f option;"
 	   echo "otherwise, use action 'copy-drive' instead."
 	   abort_with_action_Usage mkfs
 	} >&2
@@ -2674,7 +2674,7 @@ mkfs_backup_drive() {
 
 	[[ $mkfs_debug_opt ]] && IfRun= opts=$(echo $opts | sed 's/ -J .*//')
 	cmd="$IfRun $cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
-	header $cmd
+	header ${cmd#$IfRun}
 	$cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
@@ -2791,6 +2791,13 @@ _prepare_for_dump_restore() {
 	   then is_drive_mounted $src_drive_dir || local src_name=
 		local src_drive_dir=
 	fi
+
+	local FS_type src_FS_type
+	set_FS_type___from_path $src_device
+	src_FS_type=$FS_type
+	set_FS_type___from_path $dst_device
+	[[ $src_FS_type == $FS_type ]] ||
+	   $IfRun abort "FS_type of $dst_device must be '$src_FS_type'"
 
 	assert_not_in_cron_jobs $src_name $dst_name
 
