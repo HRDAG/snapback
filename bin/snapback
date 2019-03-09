@@ -253,7 +253,12 @@ set_lock_file() {
 	[[ -d $lock_dir ]] || sudo mkdir -p --mode=1777 $lock_dir
 
 	is_arg1_in_arg2 $type $lock_types || abort "lock: '$type' is unknown"
+
+	[[    $custom_config_vars ]] &&
+	local $custom_config_vars
+	suspend_tracing
 	set_drive_name $name
+	restore_tracing
 	lock_file=$lock_dir/$type-$drive_name.pid
 }
 
@@ -285,34 +290,24 @@ run_lockpid() {
 
 # -----------------------------------------------------------
 
-locker_PIDs() {
-	local type=$1; shift
-	[[ $* == all ]] && set -- $(list_drives -a)
-
-	local name
-	for name
-	    do	set_lock_file $type $name
-		if lockpid $lock_file >& /dev/null
-		   then lockpid -r $lock_file
-		   else echo $(< $lock_file)
-		fi
-	done
-}
-
-# ---------------------------------
-
+# this needs to be merged with signal_job
 kill_job() {
 	local type=$1; shift
 	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
 	[[ $* == all ]] && set -- $(list_drives -a)
 
-	set_signal_is_kill $signal
-	local PGID pgid status=1
-	set_PGID $(locker_PIDs $type $*)
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	for pgid in $PGID
-	    do	$IfRun $sudo kill $signal -$pgid && status=0 || continue
-		[[ $signal_is_kill ]] && $IfRun $sudo lockpid -r $lock_file
+	set_signal_is_kill $signal
+	local name lock_file status=1
+	for name
+	    do	set_lock_file $type $name
+		if lockpid $lock_file >& /dev/null
+		   then lockpid -r $lock_file
+		   else set -- $(< $lock_file) && [[ $# != 0 ]] &&
+			$IfRun $sudo kill $signal -$1 && status=0 &&
+			[[ $signal_is_kill ]] &&
+			$IfRun $sudo lockpid -r $lock_file
+		fi
 	done
 
 	return $status
@@ -327,16 +322,6 @@ kill_all_jobs() {
 	for type in $lock_types
 	    do	kill_job $opt $type "$@"
 	done
-}
-
-# -------------------------------------------------------
-
-# you don't generally need this: instead, use negative lock pid to run ps
-# on a job, and use signal_job for signaling
-job_PIDs() {
-	local type=$1; shift
-
-	process_group_PIDs $(locker_PIDs $type $*)
 }
 
 # ---------------------------------
@@ -355,6 +340,7 @@ set_signal_is_kill() {
 
 # ----------------------
 
+# this needs to be merged with kill_job
 signal_job() {
 	local signal=${1#-} type=$2 name=${3:-$drive_name}
 
@@ -450,10 +436,18 @@ admin_group=
 
 is_regression_test=$false
 
+readonly none=NoNe
+_last_initialized_drive_name=
+
 # this is normally called by set_drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
 set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	local  drive_name=${1-}	     # called from set_drive_name, so $1 valid
+
+	if  [[ $_last_initialized_drive_name != ${drive_name:-$none} ]]
+	   then _last_initialized_drive_name=${drive_name:-$none}
+	   else return 0		# skip very-long, duplicative setup
+	fi
 
 	if [[ $drive_name ]]
 	   then drive_log_dir=$log_dir/$drive_name
@@ -603,7 +597,9 @@ customize_config_variables() {
 	done
 	restore_tracing
 
-	custom_config_vars=
+	# set__drive_log_dir__file_for_logging__admin_group__is_regression_test
+	custom_config_vars="drive_log_dir file_for_logging"
+
 	for var_name in config_file exclude_file
 	    do	[[ $(declare -p $var_name) == "declare -r "* ]] ||
 		add_words custom_config_vars $var_name
@@ -2751,8 +2747,9 @@ copy_backup_drive() {
 	abort "[-f] [-D] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
 	local src=$1 dst_name=$2 dst_device=${3-}
 
-	[[ -t 1 ]] || abort "don't use 'nohup', we'll run 'nohup'"
+	[[ -t 1 ]] || $IfRun abort "don't use 'nohup', we'll run 'nohup'"
 
+	$Trace
 	set__drive_name__FS_device__drive_dir__FS_label $src
 	local src_name=$drive_name
 	local src_device=$FS_device
@@ -3458,7 +3455,8 @@ case $action in
 	;;
 
    ( * )
-	abort "'$action' is not a recognized action, run: $_our_name -h"
+	warn "'$action' is not a recognized action, run: $_our_name -h"
+	exit 1
 	;;
 esac
 
