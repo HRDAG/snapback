@@ -2807,6 +2807,12 @@ _prepare_for_dump_restore() {
 	done
 
 	kill_all_jobs $src_name $dst_name
+
+	if [[ ${drive_name_regex-} ]]
+	   then local where=drive_name_regex=
+	   else local where=cron
+	fi
+	warn "as soon as dump finishes, you can add it back to $where"
 }
 
 # ---------------------------------
