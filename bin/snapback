@@ -31,7 +31,7 @@ readonly coder=sweikart@gmail.com
 # set_mount_dir___from_FS_label,  set_FS_label___from_mount_dir,
 # warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
 # log, file_for_logging, log_level, log_msg_prefix, header,
-# cd_ , add_words, confirm, is_arg1_in_arg2
+# cd_ , add_words, confirm, is_arg1_in_arg2, abort_with_action_Usage
 #
 # search for '####' in libsnap.sh to see environment and coding conventions
 source libsnap.sh || exit 1
