@@ -241,7 +241,7 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="run-backup prune-drive update-drive" # kill_all_jobs uses
+readonly lock_types="backup prune copy update" # kill_all_jobs uses
 
 readonly lock_dir=/var/lock/$our_name
 
@@ -773,7 +773,7 @@ _backup_management_of_prune() {
 	fi
 
 	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
-	signal_job SIGSTOP prune-drive $name
+	signal_job SIGSTOP prune $name
 }
 
 ##############################################################################-
@@ -1103,10 +1103,10 @@ prune_drive() {
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	local lock_file
-	set_lock_file prune-drive $drive_name
+	set_lock_file prune $drive_name
 	run_lockpid $lock_file "pruning $drive_dir" ||
 	    # since we're called, lock holder should be un-suspended
-	    { signal_job SIGCONT prune-drive $drive_name; return 1; }
+	    { signal_job SIGCONT prune $drive_name; return 1; }
 
 	trap '' HUP
 	setup_prune_drive_priority
@@ -1468,14 +1468,14 @@ run_backup() {
 	set_drive_dir  $drive_name || return 1
 
 	# we must _always_ create the ,00 snapshots, they're saved forever
-	[[ $(date +%H) == 00 ]] && kill_job run-backup $drive_name
+	[[ $(date +%H) == 00 ]] && kill_job backup $drive_name
 
 	# the following is similar to the second half of copy_snapshot
 
 	# grab lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
 	local lock_file
-	set_lock_file run-backup $drive_name
+	set_lock_file backup $drive_name
 	run_lockpid $lock_file "backing up $drive_dir" || return 1
 
 	_backup_management_of_prune $drive_name pre-rsync
@@ -1643,7 +1643,7 @@ copy_snapshot() {
 	# the following is similar to the second half of run_backup_rsync
 
 	local lock_file
-	set_lock_file prune-drive $dst_drive_name # backup job can suspend us
+	set_lock_file prune $dst_drive_name # backup job can suspend us
 	run_lockpid $lock_file "copying to $dst_dir" || exit 1
 
 	setup_merge_priority
@@ -1695,7 +1695,7 @@ update_drive() {
 	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
 
 	local lock_file
-	set_lock_file update-drive $dst_name
+	set_lock_file update $dst_name
 	run_lockpid $lock_file "updating $dst_dir" > /dev/null ||
 	   exit 1
 
@@ -2029,7 +2029,7 @@ watch() {
 	customize_and_validate_configuration_variables
 
 	eval \
-	"set -- \$(cat $lock_dir/run-backup-${names_pat:-?}.pid 2> /dev/null)"
+	"set -- \$(cat $lock_dir/backup-${names_pat:-?}.pid 2> /dev/null)"
 	[[ $# == 0 ]] && rsync_cmds= ||
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
@@ -2037,19 +2037,19 @@ watch() {
 	declare -i num_drives=$(set -- $drives; echo $#)
 
 	eval \
-	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/prune-${names_pat:-?}.pid 2>/dev/null)"
 	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
 			fgrep -e ' rm ' -e ' prune-' | trim_prune)
 	#
 	eval \
-	"set -- \$(cat $lock_dir/prune-drive-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/prune-${names_pat:-?}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			  grep -e update-drive -e "[0-9]   rsync" |
 			  sed 's/   rsync/ rsync/')
 	#
 	eval \
-	"set -- \$(cat $lock_dir/update-drive-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/update-${names_pat:-?}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && ud_rsync_cmds= ||
 	ud_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			  grep -e "[0-9] [/a-z].* update-drive" \
@@ -3085,19 +3085,19 @@ case $action in
    ( kill-backup* | kb )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
-	kill_job run-backup $*
+	kill_job backup $*
 	;;
    # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
    ( kill-prune* | kp )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
-	kill_job prune-drive $*
+	kill_job prune $*
 	;;
    # kill-update [-sig] names: for each name (can be 'all'), kill update job
    ( kill-update* | ku )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-update
 	$Trace
-	kill_job update-drive $*
+	kill_job update $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk )
