@@ -288,43 +288,9 @@ run_lockpid() {
 	return 1
 }
 
-# -----------------------------------------------------------
-
-# this needs to be merged with signal_job
-kill_job() {
-	local type=$1; shift
-	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
-	[[ $* == all ]] && set -- $(list_drives -a)
-
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	set_signal_is_kill $signal
-	local name lock_file status=1
-	for name
-	    do	set_lock_file $type $name
-		if lockpid $lock_file >& /dev/null
-		   then lockpid -r $lock_file
-		   else set -- $(< $lock_file) && [[ $# != 0 ]] &&
-			$IfRun $sudo kill $signal -$1 && status=0 &&
-			[[ $signal_is_kill ]] &&
-			$IfRun $sudo lockpid -r $lock_file
-		fi
-	done
-
-	return $status
-}
-
-# ---------------------------------
-
-kill_all_jobs() {
-	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
-
-	local type
-	for type in $lock_types
-	    do	kill_job $opt $type "$@"
-	done
-}
-
-# ---------------------------------
+# --------------------------------
+# signaling/killing process groups
+# --------------------------------
 
 signal_is_kill=
 
@@ -340,20 +306,49 @@ set_signal_is_kill() {
 
 # ----------------------
 
-# this needs to be merged with kill_job
 signal_job() {
 	local signal=${1#-} type=$2 name=${3:-$drive_name}
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 
 	local lock_file
-	set_lock_file $type $name &&
-	[[ -s $lock_file ]] &&
+	set_lock_file $type $name
+	[[  -s  $lock_file ]] || return 1 # could be stale lock-file ...
+	lockpid $lock_file >& /dev/null && lockpid -r $lock_file && return 1
+
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 &> /dev/null || return 1
 	set_signal_is_kill    $signal &&
 	$IfRun $sudo lockpid -r $lock_file
+
+	return 0
+}
+
+# ---------------------------------
+
+kill_jobs() {
+	local type=$1; shift
+	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
+	[[ $* == all ]] && set -- $(list_drives -a)
+
+	local name status=1
+	for name
+	    do	signal_job $signal $type $name && status=0
+	done
+
+	return $status
+}
+
+# ---------------------------------
+
+kill_all_jobs() {
+	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
+
+	local type
+	for type in $lock_types
+	    do	kill_jobs $opt $type "$@"
+	done
 }
 
 ##############################################################################
@@ -1464,7 +1459,7 @@ run_backup() {
 	set_drive_dir  $drive_name || return 1
 
 	# we must _always_ create the ,00 snapshots, they're saved forever
-	[[ $(date +%H) == 00 ]] && kill_job backup $drive_name
+	[[ $(date +%H) == 00 ]] && kill_jobs backup $drive_name
 
 	# the following is similar to the second half of copy_snapshot
 
@@ -3086,19 +3081,19 @@ case $action in
    ( kill-backup* | kb )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
-	kill_job backup $*
+	kill_jobs backup $*
 	;;
    # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
    ( kill-prune* | kp )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
-	kill_job prune $*
+	kill_jobs prune $*
 	;;
    # kill-update [-sig] names: for each name (can be 'all'), kill update job
    ( kill-update* | ku )
 	[[ $# != 0 ]] || abort_with_action_Usage kill-update
 	$Trace
-	kill_job update $*
+	kill_jobs update $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk )
