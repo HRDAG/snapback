@@ -5,8 +5,8 @@ Why snapback not rsnapshot:
       redundancy); separate logs & policies for each flexibly-named drive ...
    Every config variable can have a per-drive value, in-line or separate-file
       (can use smaller drives (e.g. flash memory) to backup subset of system).
-   When an off-site drive is returned and plugged in, it us updated with
-      all the snapshots that other drives have but it doesn't.
+   When an off-site drive is returned and plugged in, missing snapshots are
+     copied from all other drives (without slowing down any regular backups).
    Integrated with 'snapcrypt', for easy use of encrypted, named drives.
    Easy control over backup frequency (& can exclude list of off-peak hours).
    Snapshots named by date (similar to rsync-snapshot), for transparency.
