@@ -14,4 +14,4 @@ HOME=/root
 # |  |   |  |   |
 # *  *   *  *   *   user   command-to-be-executed
 #-- --- -- --- ---  ----   ----------------------
-  0  *   *  *   *   root   setsid snapback -C run-backups &>> /var/log/snapback/cron.log
+  0  *   *  *   *   root   setsid snapback -C run-backups all &>> /var/log/snapback/cron.log

@@ -2057,7 +2057,7 @@ watch() {
 			       -e "[0-9]     rsync" | 
 			  sed 's/   rsync/ rsync/')
 	#
-	cron_job_regexp=' -C run-backups? *$' # put into configure.sh ??
+	cron_job_regexp=' -C run-backups? ' # put into configure.sh ??
 	set -- $(ps -u root w | egrep "$cron_job_regexp" | awk '{print $1}')
 
 	[[ ($cron_opt || ! $rsync_cmds) && $# != 0 ]] && {
