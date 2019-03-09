@@ -68,10 +68,10 @@ source $config_file || abort "$config_file broken"
 Usage="
 Usage: $our_name action [args]
   Current actions are:
-    list-drives [-a]: list mounted backup drives/partitions; -a -> hidden ones
-    run-backups   [names]: names defaults to every mounted backup drive
-    prune-drives  [names]: names defaults to every "" "" ""; see configure.sh
-    update-drives [names]: copy missing snapshots from other drives to names
+    list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
+    run-backups   names: backup names ('all' for every mounted backup drive)
+    prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
+    update-drives names: copy missing snapshots from other drives to names
     copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
@@ -89,7 +89,7 @@ Usage: $our_name action [args]
     mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
 
-    check-snapshot-hard-links name(s): find snapshots with broken hard links
+    check-snapshot-hard-links names: find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
 
@@ -1742,6 +1742,7 @@ update_drive() {
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive.
 run_jobs_in_parallel() {
 	local type=$1; shift
+	[[ $1 == all ]] && set -- $(list_drives)
 
 	case $type in
 	   ( backup ) function=run_backup   exe=$run_backup_exe  ;;
@@ -1758,7 +1759,7 @@ run_jobs_in_parallel() {
 	fi
 
 	$Trace
-	for dir in ${*:-$(list_drives)}
+	for dir
 	    do	if [[ ! $IfRun ]]
 		   then trap '' HUP
 			# Can't "$function dir &", processes share $tmp* files.
@@ -3017,31 +3018,34 @@ process_action() {
 stack_frame_to_show=0	     # show our line-number in action 'case- statement
 
 case $action in
-   # list-drives [-a]: list mounted backup drives/partitions; -a -> hidden ones
+  # list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
    ( l*s*dr*v* | ld | ls )
 	list_drives "$@"
 	;;
-   # run-backups   [names]: names defaults to every mounted backup drive
+   # run-backups   names: backup names ('all' for every mounted backup drive)
    ( r*b*k*p* | rb* )
-	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
+	[[ $# != 0 ]] || abort_with_action_Usage run-backup
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   # prune-drives  [names]: names defaults to every "" "" ""; see configure.sh
+  # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* )
-	# if require 'all': [[ $# != 0 ]] || abort_with_action_Usage run-backup
+	[[ $# != 0 ]] || abort_with_action_Usage prune-drive
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-  # update-drives [names]: copy missing snapshots from other drives to names
-   (upd*dr*v* | ud* )
+   # update-drives names: copy missing snapshots from other drives to names
+   ( upd*dr*v* | ud* )
 	[[ ${!#} == [cC] ]] || abort "currently, only works on new drive: C"
+	[[ $# != 0 ]] || abort_with_action_Usage update-drive
 	run_jobs_in_parallel update "$@"
+	# [[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
-   # check-snapshot-hard-links name(s): find snapshots with broken hard links
+   # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* )
-	[[ $# != 0 ]] || abort_with_action_Usage check-snapshot-
+	[[ $# != 0   ]] || abort_with_action_Usage check-snapshot-
+	[[ $1 == all ]] && set -- $(list_drives)
 	for drive
 	    do	check-snapshot-hard-links $drive
 	done
