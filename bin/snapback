@@ -2825,8 +2825,13 @@ _dump_restore_xfs_backup_drives() {
 
 	$IfRun xfs_freeze -f $src_drive_dir
 
-	time $IfRun    xfsdump -J - $src_drive_dir |
-	     $IfRun xfsrestore -J - $dst_drive_dir
+	if [[ -d $dst_drive_dir/xfsrestorehousekeepingdir ]]
+	   then local restore_opt=-R
+	   else local restore_opt=
+	fi
+
+	time $IfRun    xfsdump -J	       - $src_drive_dir |
+	     $IfRun xfsrestore -J $restore_opt - $dst_drive_dir
 
 	$IfRun xfs_freeze -u $src_drive_dir
 }
