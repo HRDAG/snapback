@@ -2652,7 +2652,7 @@ mkfs_backup_drive() {
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
-		add_words opts -J device=LABEL=$log_label
+		log_opt="-J device=LABEL=$log_label"
 	fi
 
 	df -m | grep " $drive_dir$" &&
@@ -2672,7 +2672,7 @@ mkfs_backup_drive() {
 	rec="\n\n\tLABEL=$FS_label\t$drive_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
-	[[ $mkfs_debug_opt ]] && IfRun= opts=$(echo $opts | sed 's/ -J .*//')
+	[[ $mkfs_debug_opt ]] && IfRun=
 	cmd="$IfRun $cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header ${cmd#$IfRun}
 	$cmd || abort "$cmd exited with $?"
