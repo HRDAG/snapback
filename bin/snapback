@@ -2652,7 +2652,7 @@ mkfs_backup_drive() {
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
-		log_opt="-J device=LABEL=$log_label"
+		log_opt="-J device=$FS_external_log"
 	fi
 
 	df -m | grep " $drive_dir$" &&
