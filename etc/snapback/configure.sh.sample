@@ -7,6 +7,8 @@
 ################################################################
 ################################################################
 
+renice 1 $$ &> /dev/null		# lower priority than logins
+
 ##############################################################################
 # Most variables can have per-drive values (must remove -r or readonly label),
 #   using either source_drive_specific_config_file (which can be modified) or
