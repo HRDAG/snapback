@@ -1693,7 +1693,7 @@ update_drive() {
 
 	$Trace
 
-	prev_date_time=
+	prev_date_time= cmd
 	for dir in $drive_dirs
 	    do	suspend_tracing
 		eval "echo $dir/$min_snapshot_pattern{,.links}" # useful ones
@@ -2525,7 +2525,7 @@ mkfs_backup_drive() {
 	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
 	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')
 	[[ $# == [12] ]] || abort_with_action_Usage mkfs
-	device=$1 name=${2-}
+	local device=$1 name=${2-}
 	TraceV 3 mkfs_opts device name
 	[[ $device = /* ]] || device=/dev/$device
 	[[ -b $device ]] || $IfRun abort "$device not a block device"
@@ -2534,9 +2534,9 @@ mkfs_backup_drive() {
 	   then set_drive_name $name
 	   else set_drive_name $device
 	fi
-	name=$drive_name
-	drive_dir=$drive_dir_prefix$drive_name
-	_mkfs_cmd_opts=$mkfs_cmd_opts
+	local name=$drive_name
+	local drive_dir=$drive_dir_prefix$drive_name
+	local _mkfs_cmd_opts=$mkfs_cmd_opts
 	add_words _mkfs_cmd_opts $mkfs_opts
 
 	set_FS_label___from_mount_dir $drive_dir
@@ -2575,18 +2575,18 @@ mkfs_backup_drive() {
 
 	# this block of code is only relevant to ext*
 	[[ $_mkfs_cmd_opts != mkfs.[^e]* ]] && {
-	block_size=1024			# optimal, see above long comment
+	local block_size=1024		# optimal, see above long comment
 	set -- $_mkfs_cmd_opts
 	while [[ $# != 0 ]]
 	   do	[[ $1 == -b       ]] && block_size=${2-}
 		[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
 		shift
 	done
-	valid_block_sizes="1024 2048 4096"
+	local valid_block_sizes="1024 2048 4096"
 	is_arg1_in_arg2 $block_size $valid_block_sizes ||
 	   abort "ext* block size must be one of: $valid_block_sizes"
-	blocks_per_inode=1
-	let  bytes_per_inode=$blocks_per_inode*$block_size
+	local blocks_per_inode=1
+	let    bytes_per_inode=$blocks_per_inode*$block_size
 	TraceV 3 block_size bytes_per_inode
 	}
 
@@ -2603,12 +2603,12 @@ mkfs_backup_drive() {
 	# https://lwn.net/Articles/645722/ : 4/15: fixed ext4 extent corruption
 	# https://en.wikipedia.org/wiki/Linux_kernel#Releases_4.x.y
 	if [[ $FS_type == ext4 && $(uname -r) > 4.2.7 ]]
-	   then ext4_extent_opt="-O extent"
-	   else ext4_extent_opt=
+	   then local ext4_extent_opt="-O extent"
+	   else local ext4_extent_opt=
 	fi
 
 	set -- $_mkfs_cmd_opts
-	cmd=$1; shift; opts=$*  log_opt=
+	local cmd=$1; shift; local opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
@@ -2639,8 +2639,8 @@ mkfs_backup_drive() {
 	fi
 	#
 	if ! [[ $FS_type == ext? && $IfRun && $UID == 0 ]]
-	   then mkfs_debug_opt=
-	   else mkfs_debug_opt=-n
+	   then local mkfs_debug_opt=
+	   else local mkfs_debug_opt=-n
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
@@ -2774,12 +2774,12 @@ copy_backup_drive() {
 	set --	$our_path $our_opts finish-$action $action_opts \
 		$src_device $src_drive_dir \
 		$dst_device $dst_drive_dir
-	cmd=$*
+	local cmd=$*
 
 	[[   $IfRun ]] && header "$_our_name ${cmd#* }"
 	[[ ! $IfRun ]] || exec $cmd || abort "$IfRun $cmd -> $?"
 
-	output_file=$dst_FS_label.out
+	local output_file=$dst_FS_label.out
 	echo -e "
 	nohup'ing commands to copy partition '$src_name' to '$dst_name';
 	this takes about a day per TB of drive space.  Now running
@@ -2927,7 +2927,7 @@ _copy_extN_backup_drive() {
 	mount_options=${mount_options%,}
 
 	is_arg1_in_arg2 -M $action_opts || { # don't want to re-Mount src?
-	cmd="$IfRun
+	local cmd="$IfRun
 	mount -v -t $FS_type -o $mount_options $src_device $src_drive_dir"
 	$cmd || abort "'$cmd' exited with $?"
 	}
