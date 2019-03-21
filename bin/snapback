@@ -909,6 +909,7 @@ _rm_pruned_snapshots() {
 #			       _Year_MoDa-Hr
 readonly old_snapshot_pattern="[1-9]?????-??"
 readonly     snapshot_pattern="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
+readonly max_snapshot_pattern="9999-12-31,23"		  # max supported value
 readonly snapshot_day_pattern=${snapshot_pattern%,??}	  # Year-Mo-Da
 set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
 readonly     snapshot_regex=${snapshot_pattern//\?/.}
@@ -983,7 +984,7 @@ declare -A type2prune_type_patterns=(
    [year]="  [13579]                 {2,6}              {4,8}"
 )
 
-function load_type2date_span {
+function load__type2date_span {
 
     type2date_span=(
 	 [hour]=$days_per_span_for_hour_prune
@@ -1011,7 +1012,7 @@ prune_type_to_file() {
 	local remaining_reverse_sorted_snapshot_dates=$*
 
 	declare -A type2date_span
-	load_type2date_span	# run after call to customize_config_variables
+	load__type2date_span	# run after call to customize_config_variables
 	local date_span=${type2date_span[$type]}
 	scale_date_span
 	local prune_type_patterns=${type2prune_type_patterns[$type]}
@@ -1605,8 +1606,8 @@ dst_dir=
 copy_snapshot() {
 	[[ $1 == -q  ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
-	[[ $# ==  2  ]] || abort "call as: $FUNCNAME src dst_drive_name"
-	local src_snapshot=${1%/} dst_drive_name=$2
+	(( $# >=  2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
+	local src_snapshot=${1%/} dst_drive_name=${!#}
 
 	[[ $dst_minimal_snapshot_regex ]] || {
 	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
@@ -1693,10 +1694,11 @@ update_drive() {
 
 	$Trace
 
-	prev_date_time= cmd
+	local prev_date_time= snapshots= cmd
 	for dir in $drive_dirs
 	    do	suspend_tracing
 		eval "echo $dir/$min_snapshot_pattern{,.links}" # useful ones
+		      echo $dir/$max_snapshot_pattern # token to terminate loop
 		restore_tracing
 	done | tr ' ' '\n' |
 	sort --field-separator=/ $sort_key_args |
@@ -1704,12 +1706,19 @@ update_drive() {
 	while read snapshot
 	    do	date_time=$(basename $snapshot)
 		date_time=${date_time%%.*}
-		[[ $prev_date_time == $date_time ]] && continue
-		    prev_date_time=$date_time
+		if [[  $prev_date_time &&
+		       $prev_date_time != $date_time ]]
+		   then prev_date_time=$date_time # new date, process prev ones
+		   else [[ $prev_date_time ]] ||
+			prev_date_time=$date_time
+			add_words snapshots $snapshot
+			continue
+		fi
 
-		cmd="copy_snapshot -p1 $snapshot $dst_name" # for debugging
-		cmd="copy_snapshot -p0 $snapshot $dst_name"
-		[[ $IfRun ]] && header $cmd
+		cmd="copy_snapshot -p1 $snapshots $dst_name" # for debugging
+		cmd="copy_snapshot -p0 $snapshots $dst_name"
+		snapshots=$snapshot	# prepare to process new date
+		# [[ $IfRun ]] && header $cmd
 		$cmd || continue
 		# break			# uncomment to debug
 	done
