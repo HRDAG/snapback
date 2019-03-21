@@ -1664,7 +1664,8 @@ update_drive() {
 	dst_backup_type=$backup_type
 	local drive_dirs=$(
 		set -- $(
-		for drive_dir in $(list_drives | fgrep -v -x $dst_dir)
+		# include drives excluded from backups
+		for drive_dir in $(list_drives -a | fgrep -v -x $dst_dir)
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
 		done # | tac		# uncomment to test sort_args
 		)
@@ -1920,9 +1921,12 @@ trim_prune() {
 
 trim_update() {
 
+	set -- $rsync_backup_opts	# standardize whitespace
+
 	trim |
 	sed -e 's@update-drive -r @update-drive @g' \
 	    -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
+	    -e "s@ $* /@ \$opts /@" \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
 
@@ -2004,7 +2008,7 @@ watch() {
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
 	if [[ $ps_opt ]]
 	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
-		trim_ps_cols() { cut -c "10-21,24-36,40-44,46-"; }
+		trim_ps_cols() { cut -c "10-21,25-37,40-43,46-"; }
 		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
 		#    123456789012345678901234567890123456789012345678901234567
 		#             1         2         3         4         5
@@ -2148,6 +2152,7 @@ watch() {
 	    do	set_FS_device___from_path $dir &&
 		add_words devices $FS_device
 	done
+
 	# fields that don't work: rm,model,opt-io,rota
 	lsblk_fields=name,fstype,type,size,state,sched,mountpoint
 	type lsblk &>/dev/null && 
@@ -2839,12 +2844,16 @@ _dump_restore_xfs_backup_drives() {
 	   else local restore_opt=
 	fi
 
+	trap '' INT			# don't interrupt xfsdump or xfsrestore
 	show_iostat $dst_device
-	time $IfRun    xfsdump -J	       - $src_drive_dir |
+	time $IfRun    xfsdump -J -p 600       - $src_drive_dir |
 	     $IfRun xfsrestore -J $restore_opt - $dst_drive_dir
+	local status=$?
 	show_iostat $dst_device
 
 	$IfRun xfs_freeze -u $src_drive_dir
+
+	return $status
 }
 
 # ---------------------------------
@@ -2859,10 +2868,14 @@ _dump_restore_extN_backup_drives() {
 
 	# https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
 	cd_ $dst_drive_dir
+	trap '' INT			# don't interrupt dump or restore
 	show_iostat $dst_device
 	time $IfRun   dump -a0f - $src_device |
 	     $IfRun restore -rf -
+	local status=$?
 	show_iostat $dst_device
+
+	return $status
 }
 
 # --------------------------------------------
@@ -2897,8 +2910,8 @@ _copy_extN_backup_drive() {
 	# -------------------------------------------------------
 
 	$IfRun set -x
-
 	time $IfRun dd if=$src_device of=$dst_device bs=1M || abort "dd -> $?"
+	[[ $Trace ]] || set +x
 
 	$IfRun tune2fs -U $(uuidgen) $dst_device
 
@@ -2914,8 +2927,9 @@ _copy_extN_backup_drive() {
 	mount_options=${mount_options%,}
 
 	is_arg1_in_arg2 -M $action_opts || { # don't want to re-Mount src?
-	cmd="$IfRun mount -t $FS_type -o $mount_options $src_device $src_drive_dir"
-	$cmd || abort "$cmd exited with $?"
+	cmd="$IfRun
+	mount -v -t $FS_type -o $mount_options $src_device $src_drive_dir"
+	$cmd || abort "'$cmd' exited with $?"
 	}
 
 	is_arg1_in_arg2 -F $action_opts || # don't want Fsck?
@@ -2923,9 +2937,10 @@ _copy_extN_backup_drive() {
 	   abort "e2fsck exited with $?; better check $src_device ?!"
 
 	$IfRun mkdir -p $dst_drive_dir
-	$IfRun \
-	mount -t $FS_type -o $mount_options $dst_device $dst_drive_dir ||
-	   abort "mount exited with $?; make mount happen, then run resize2fs"
+	cmd="$IfRun
+	mount -v -t $FS_type -o $mount_options $dst_device $dst_drive_dir"
+	$cmd ||
+	   abort "'$cmd' exited with $?; make mount happen, then run resize2fs"
 
 	$IfRun resize2fs $dst_device	# do this _after_ mount, for speed
 }
@@ -2960,7 +2975,8 @@ finish_copy_backup_drive() {
 		   fi ;;
 	   ( xfs ) _dump_restore_xfs_backup_drives  ;;
 	   (  *  ) abort "write FS function call for $FUNCNAME, email $coder";;
-	esac
+	esac ||
+	   abort "the copy seems to have failed with $?, check .out file"
 	set +x
 
 	local var=drive_name_regex
@@ -3060,7 +3076,7 @@ case $action in
 	;;
    # update-drives names: copy missing snapshots from other drives to names
    ( upd*dr*v* | ud* )
-	[[ ${!#} == [cC] ]] || abort "currently, only works on new drive: C"
+	[[ ${!#} == [gG] ]] || abort "currently, only works on new drive: G"
 	[[ $# != 0 ]] || abort_with_action_Usage update-drive
 	run_jobs_in_parallel update "$@"
 	# [[ $is_cron ]] && wait		# so see master cron job in ps
