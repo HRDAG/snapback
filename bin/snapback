@@ -53,7 +53,8 @@ fi ;						readonly config_file_sample
 
 # for each config var, create associative array for per-drive customization
 readonly uncustomizable_config_vars="
-		drive_dir_prefix old_crypt_name_prefixes drive_config_file"
+	     drive_dir_prefix old_crypt_name_prefixes drive_config_file
+	     drive_name_regex admin_drive_name_regex is_drive_name_capitalized"
 readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
 		       sed -n -r 's/^[^#=]*\b(\w+)=.*$/\1/p' | sort -u)
 for var in $config_vars; do eval "declare -A drv_name2$var"; done
@@ -356,12 +357,10 @@ kill_all_jobs() {
 ##############################################################################
 
 list_drives() {
+	suspend_tracing
 	[[ ${1-} == -a ]] &&
 	   local list_all_drives=$true && shift ||
 	   local list_all_drives=$false
-
-	suspend_tracing
-	customize_and_validate_configuration_variables # need *drive_name_regex
 
 	if [[ -t 0 || -t 1 || -t 2 || $list_all_drives ]]
 	   then local regex=$admin_drive_name_regex
@@ -954,6 +953,7 @@ set_prune_pattern() {
 	prune_pattern=$pp
 }
 
+# if support period > 24, change load__drive_name2backup_period
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
 declare -A backup_period2minimal_snapshot_regex=(
@@ -1653,6 +1653,57 @@ copy_snapshot() {
 
 # -----------------------------------------------------------------------------
 
+declare -A drive_name2backup_period
+
+load__drive_name2backup_period() {
+
+	local $custom_config_vars	# for customize_config_variables
+
+	local drive
+	for drive in $(list_drives -a)
+	    do	local name=${drive#$drive_dir_prefix}
+		suspend_tracing
+		customize_config_variables $name
+		restore_tracing
+		if [[ $name =~ ^$drive_name_regex$ ]]
+		   then local period=$backup_period
+		   else local period=25	# > all numbers in valid_backup_periods
+		fi
+		drive_name2backup_period[$name]=$period
+	done
+}
+
+# ---------------------------------
+
+set_backup_period___from_snapshot() {
+	local snapshot=$1
+
+	local drive=${snapshot%/$snapshot_pattern*}
+	local  name=${drive#$drive_dir_prefix}
+	backup_period=${drive_name2backup_period[$name]}
+}
+
+# ---------------------------------
+
+# "fastest" snapshot is one ignored by cron, else largest backup_period,
+# since using this snapshot reduces chance we're killed for a needed backup
+fastest_snapshots() {
+
+	local      backup_period snapshot
+	declare -a backup_period2snapshots
+	for snapshot
+	    do	set_backup_period___from_snapshot $snapshot
+		add_words -k $backup_period backup_period2snapshots $snapshot
+	done
+
+	set -- $(echo ${!backup_period2snapshots[*]} | tr ' ' '\n' |sort -n -r)
+	for backup_period
+	    do	echo ${backup_period2snapshots[$backup_period]}
+	done
+}
+
+# --------------------------------------------
+
 update_drive() {
 	[[ $# == 1 ]] || abort "need to specify one drive name"
 
@@ -1682,6 +1733,8 @@ update_drive() {
 	set +f
 	let snapshot_key=$# drive_name_key=$#-1
 	local sort_key_args="--key=$snapshot_key --key=$drive_name_key"
+
+	load__drive_name2backup_period
 
 	TraceV 1 drive_dirs min_snapshot_pattern sort_key_args
 
@@ -1715,10 +1768,11 @@ update_drive() {
 			continue
 		fi
 
-		cmd="copy_snapshot -p1 $snapshots $dst_name" # for debugging
-		cmd="copy_snapshot -p0 $snapshots $dst_name"
+		set -- $(fastest_snapshots $snapshots)
+		cmd="copy_snapshot -p1 $* $dst_name" # for debugging
+		cmd="copy_snapshot -p0 $* $dst_name"
 		snapshots=$snapshot	# prepare to process new date
-		# [[ $IfRun ]] && header $cmd
+		[[ $IfRun ]] && header $cmd
 		$cmd || continue
 		# break			# uncomment to debug
 	done
