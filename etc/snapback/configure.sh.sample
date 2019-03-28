@@ -1,4 +1,4 @@
-# version=12
+# version=13
 
 ################################################################
 ################################################################
@@ -102,16 +102,16 @@ declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 
 # Normally, backups run at higher priority and pruning runs at lower priority;
 # but, if the min_FS_usage_percent is exceeded, those priorities are inverted
-# (so for this reason, it's safest to give merge the lowest priority, so you
+# (so for this reason, it's safest to give update the lowest priority, so you
 #  don't skip backups).
 # A PID will be appended to these commands; if that's not adequate, then you'll
 # need to define a function that takes a PID as its final argument, and assign
 # that function (with optional initial arguments) to these variables.
-readonly  cmd_to_set_merge_CPU_priority="renice +16 -p"
+readonly cmd_to_set_update_CPU_priority="renice +16 -p"
 readonly  cmd_to_set_lower_CPU_priority="renice +15 -p"
 readonly cmd_to_set_higher_CPU_priority="renice +13 -p"
 #
-readonly  cmd_to_set_merge_IO_priority="ionice -c 2 -n 7 -p"
+readonly cmd_to_set_update_IO_priority="ionice -c 2 -n 7 -p"
 readonly  cmd_to_set_lower_IO_priority="ionice -c 2 -n 6 -p"
 readonly cmd_to_set_higher_IO_priority="ionice -c 2 -n 5 -p"
 
@@ -143,9 +143,9 @@ readonly no_log_rsync_exit_statuses="20" # add 31 after address all issues
 # older snapshots, freeing up space.
 #
 # NOTE: using this variable (or dirs_to_backup) has a big disadvantage: such
-# drives can't be merged with bigger drives (e.g. after a drive was off-site):
+# drives can't be updated with bigger drives (e.g. after a drive was off-site):
 # If you keep drives off-site, it's better to use a bigger backup_period
-# or faster pruning for smaller drives, which still allows for merging.
+# or faster pruning for smaller drives, which still allows for updating.
 #
 # After you change this variable, touch excludes.txt to alert run-prune that
 # a full exclude-style prune run is needed, so new excludes delete files.

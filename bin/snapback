@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=12			# has to match version= in configure.sh.sample
+version=13			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -870,25 +870,12 @@ _is_time_to_prune_drive() {
 	[[ ! -e $pruned_TS ]] && return 0 # never finished a prune?
 	[[ $pruned_TS -ot $config_file   ]] && return 0 # newer config?
 	[[ $pruned_TS -ot $exclude_file  ]] && return 0 # newer excludes?
-	[[ $(find $pruned_TS ! -mtime 0) ]] && return 0	# older prune?
+	[[ $(find $pruned_TS ! -mtime 0) ]] && return 0	# not pruned recently?
 
 	return 1			# not time to prune
 }
 
 # ----------------------
-
-# the old snapshots contain /.keep so won't be pruned; all are ,00
-declare -a old_new_snapshot_dates=(
-	"2016-08-01 2016-06-01"
-	"2017-03-28 2017-04-01"
-	"2017-05-24 2017-06-01"
-	"2017-07-16 2017-08-01"
-	"2017-09-16 2017-09-01"
-	"2017-10-24 2018-01-01"
-	"2018-04-22 2018-04-01"
-	"2018-05-03 2018-06-01"
-	"2019-01-13 2019-01-01"
-)
 
 _rm_pruned_snapshots() {
 	local snapshots_file=$1
@@ -1191,10 +1178,8 @@ prune_drive() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
-	local lock_file
-	set_lock_file prune $drive_name
-	run_lockpid $lock_file "pruning $drive_dir" ||
-	    # since we're called, lock holder should be un-suspended
+	lock prune $drive_name ||
+	    # since we're called, the old lock holder should be un-suspended
 	    { signal_job SIGCONT prune $drive_name; return 1; }
 
 	trap '' HUP
@@ -1224,7 +1209,7 @@ prune_drive() {
 
 	$IfRun touch $drive_dir/$pruned_timestamp # touch even if did nothing
 
-	$IfRun lockpid -r $lock_file
+	unlock prune
 }
 
 ##############################################################################-
@@ -1321,7 +1306,8 @@ _is_time_to_run_backup() {
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
 	local  current_hour=$(date '+%k')
-	local excluded_hours=$(echo ${excluded_backup_hours-} | sed 's/\b0//g')
+	local excluded_hours=$(echo ${excluded_backup_hours-} |
+				sed 's/\b0\b//g') # pruning needs midnight
 	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
 
@@ -1561,11 +1547,9 @@ run_backup() {
 
 	# the following is similar to the second half of copy_snapshot
 
-	# grab lock before prune, so don't suspend prune if the sysadmin
+	# grab backup lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
-	local lock_file
-	set_lock_file backup $drive_name
-	run_lockpid $lock_file "backing up $drive_dir" || return 1
+	lock backup $drive_name || return 1
 
 	_backup_management_of_prune $drive_name pre-rsync
 
@@ -1577,7 +1561,7 @@ run_backup() {
 
 	_backup_management_of_prune $drive_name post-rsync # last, for testing
 
-	$IfRun lockpid -r $lock_file
+	unlock backup
 
 	return $status
 }
@@ -1731,9 +1715,8 @@ copy_snapshot() {
 
 	# the following is similar to the second half of run_backup_rsync
 
-	local lock_file
-	set_lock_file prune $dst_drive_name # backup job can suspend us
-	run_lockpid $lock_file "copying to $dst_dir" || exit 1
+	# grab prune lock, so backup job can suspend us
+	lock -w prune $dst_drive_name || exit 1
 
 	setup_merge_priority
 
@@ -1745,7 +1728,7 @@ copy_snapshot() {
 
 	run_rsync $pass_opt -c $src_snapshot/. $dst_snapshot
 
-	$IfRun lockpid -r $lock_file
+	unlock -s prune
 }
 
 # -----------------------------------------------------------------------------
@@ -1837,10 +1820,7 @@ update_drive() {
 
 	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
 
-	local lock_file
-	set_lock_file update $dst_name
-	run_lockpid $lock_file "updating $dst_dir" > /dev/null ||
-	   exit 1
+	lock update $dst_name > /dev/null || exit 1 # normal to run for days
 
 	$Trace
 
@@ -1874,7 +1854,7 @@ update_drive() {
 		# break			# uncomment to debug
 	done
 
-	$IfRun lockpid -r $lock_file
+	unlock update
 
 	local var=drive_name_regex
 	warn "DON'T FORGET: re-add $dst_name to $var= in $config_file"
@@ -3549,9 +3529,20 @@ case $action in
    # -------------------------------------------------------------
 
    ( run | r )
-	run_function "$@"		# can pass: -v varname(s)
+	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t )
+	lock backup x
+	lock backup x || abort badness 1
+	unlock backup
+	unlock backup && abort badness 2
+	exit
+
+	lock backup x
+	lock backup x || abort badness 1
+	lock backup y && abort badness 2
+	exit
+
 	declare -a digit2name=(zero one two three)
 	echoEV action digit2name[2]
 	exit
