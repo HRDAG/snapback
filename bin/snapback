@@ -290,6 +290,15 @@ readonly lock_share_secs=0.5
 declare -A _lock_type2lock_file
 declare -A  lock_type2locked_resource
 
+function _save_locked_state {
+
+	_lock_type2lock_file[$type]=$lock_file
+	 lock_type2locked_resource[$type]=$resource
+	return 0
+}
+
+# --------------------------------------------
+
 # Usage: lock [-C | -w] type resource(s)
 #    Grab a lock of 'type' on any one of the resources (drive-dir or snapshot).
 #    If -C and want 'backup' lock but it's held by a Copy job, kill copy job.
@@ -317,12 +326,13 @@ lock() {
 			   abort "hold $prev_lock_file, can't grab $lock_file"
 
 			if [[ $type == backup && $steal_copys_backup_lock ]]
-			   then $IfRun lockpid $lock_file && return 0
+			   then $IfRun lockpid $lock_file 2> /dev/null &&
+				   _save_locked_state && return 0
 				local bPID=$(< $lock_file)
 				[[ $(fgrep -w $bPID $lock_dir/copy-*.pid) ]] &&
 				    { kill_jobs backup $drive
 				      do_wait=$true; } # wait for copy to die
-			fi >& /dev/null
+			fi
 
 			if [[ $type == prune && $suspend_prune_when_backup ]]
 			   then $IfRun lockpid    $backup_lock_file || continue
@@ -333,10 +343,7 @@ lock() {
 			if [[ $do_wait ]]
 			   then $IfRun lockpid $lock_file >& /dev/null
 			   else    run_lockpid $lock_file "$action_msg"
-			fi &&
-			    _lock_type2lock_file[$type]=$lock_file &&
-			     lock_type2locked_resource[$type]=$resource &&
-			    return 0
+			fi && _save_locked_state && return 0
 		done
 		[[ $do_wait ]] || return 1
 		$IfRun sleep $lock_wait_secs
