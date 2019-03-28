@@ -786,11 +786,11 @@ is_disk_usage_too_high() {
 
 # -----------------------
 
-setup_merge_priority() {
+setup_update_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_merge_CPU_priority $BASHPID &>/dev/null
-	$IfRun $sudo $cmd_to_set_merge_IO_priority  $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_update_CPU_priority $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_update_IO_priority  $BASHPID &>/dev/null
 }
 
 # --------------
@@ -1718,10 +1718,10 @@ copy_snapshot() {
 	# grab prune lock, so backup job can suspend us
 	lock -w prune $dst_drive_name || exit 1
 
-	setup_merge_priority
+	setup_update_priority
 
 	# lower nice value is higher priority
-	[[  $cmd_to_set_merge_IO_priority < \
+	[[ $cmd_to_set_update_IO_priority < \
 	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
 
 	cd_ $dst_dir		   # can kill job with: fuser -k -M $dst_dir
