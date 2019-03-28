@@ -2186,7 +2186,7 @@ watch() {
 	customize_and_validate_configuration_variables
 
 	eval \
-	"set -- \$(cat $lock_dir/backup-${names_pat:-?}.pid 2> /dev/null)"
+	"set -- \$(cat $lock_dir/backup-${names_pat:-*}.pid 2> /dev/null)"
 	[[ $# == 0 ]] && rsync_cmds= ||
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
@@ -2194,21 +2194,14 @@ watch() {
 	declare -i num_drives=$(set -- $drives; echo $#)
 
 	eval \
-	"set -- \$(cat $lock_dir/prune-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/prune-${names_pat:-*}.pid 2>/dev/null)"
 	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
 			fgrep -e ' rm ' -e ' prune-' | trim_prune)
 	#
 	eval \
-	"set -- \$(cat $lock_dir/prune-${names_pat:-?}.pid 2>/dev/null)"
+	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
-			  grep -e update-drive -e "[0-9]   rsync" |
-			  sed 's/   rsync/ rsync/')
-	#
-	eval \
-	"set -- \$(cat $lock_dir/update-${names_pat:-?}.pid 2>/dev/null)"
-	[[ $# == 0 ]] && ud_rsync_cmds= ||
-	ud_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			  grep -e "[0-9] [/a-z].* update-drive" \
 			       -e "[0-9]     rsync" | 
 			  sed 's/   rsync/ rsync/')
@@ -2231,14 +2224,14 @@ watch() {
 	# update-drive (UD) includes parent of 'rsync' process (also in -C)
 	declare -i PD=$(echo    "$prune_cmds" | egrep -c  '(prune|copy)-drive')
 	let PD=PD*2			# add in 'rm'
-	declare -i UD=$(echo "$ud_rsync_cmds" | egrep -c 'update-drive')
-	let UD=UD*2+4			# add in 'rsync' and section-overhead
+	declare -i CP=$(echo "$cp_rsync_cmds" | egrep -c 'update-drive')
+	let CP=CP*2+4			# add in 'rsync' and section-overhead
 	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
 	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
-	TraceV 1 PD UD RB && let rows-=3
+	TraceV 1 PD CP RB && let rows-=3
 	# min overhead is 'hours to create', no pruning, no abbrev rsync: 4*3
 	#   (plus 1 watch line)
-	declare -i min_rows=$(( 1 + 4*3 + PD + UD + RB )); [[ $cron_opt ]] &&
+	declare -i min_rows=$(( 1 + 4*3 + PD + CP + RB )); [[ $cron_opt ]] &&
 		   min_rows=$(( min_rows + 4 + 5*num_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
@@ -2362,19 +2355,10 @@ watch() {
 
 	# copy-snapshots uses prune lock
 	[[ $cp_rsync_cmds ]] && {
-	header "copy-snapshot"
+	header "copy-snapshot or update-drive"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$cp_rsync_cmds" | trim_update | sort $prune_sort_opts
-	}
-
-	# ------------------------------------------------------------------
-
-	[[ $ud_rsync_cmds ]] && {
-	header "update-drive"
-	echo
-	echo "$hdr" | trim_ps_cols
-	echo "$ud_rsync_cmds" | trim_update | sort $prune_sort_opts
 	}
 
 	# ------------------------------------------------------------------
