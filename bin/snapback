@@ -290,15 +290,6 @@ readonly lock_share_secs=0.5
 declare -A _lock_type2lock_file
 declare -A  lock_type2locked_resource
 
-function _save_locked_state {
-
-	_lock_type2lock_file[$type]=$lock_file
-	 lock_type2locked_resource[$type]=$resource
-	return 0
-}
-
-# --------------------------------------------
-
 # Usage: lock [-C | -w] type resource(s)
 #    Grab a lock of 'type' on any one of the resources (drive-dir or snapshot).
 #    If -C and want 'backup' lock but it's held by a Copy job, kill copy job.
@@ -327,7 +318,7 @@ lock() {
 
 			if [[ $type == backup && $steal_copys_backup_lock ]]
 			   then $IfRun lockpid $lock_file 2> /dev/null &&
-				   _save_locked_state && return 0
+				   break 2
 				local bPID=$(< $lock_file)
 				[[ $(fgrep -w $bPID $lock_dir/copy-*.pid) ]] &&
 				    { kill_jobs backup $drive
@@ -343,11 +334,15 @@ lock() {
 			if [[ $do_wait ]]
 			   then $IfRun lockpid $lock_file >& /dev/null
 			   else    run_lockpid $lock_file "$action_msg"
-			fi && _save_locked_state && return 0
+			fi && break 2
 		done
 		[[ $do_wait ]] || return 1
 		$IfRun sleep $lock_wait_secs
 	done
+
+	_lock_type2lock_file[$type]=$lock_file
+	 lock_type2locked_resource[$type]=$resource
+	return 0
 }
 
 # ---------------------------------
@@ -1923,6 +1918,26 @@ run_jobs_in_parallel() {
 		   else $exe -r $dir	# run in foreground, for testing
 			echo
 		fi
+	done
+}
+
+# -----------------------------------------------------------------------------
+
+# a backup job to our destination drive can kill us, so we need to restart
+run_copy_job() {
+	local dst_name=${!#}
+
+	if [[ ${1-} == -r ]]		# are we recursing?
+	   then shift
+		$Trace
+		copy_snapshot "$@"
+		exit $?
+	fi
+
+	$Trace
+	until setsid $copy_snapshot_exe -r "$@" # backup $dst_name can kill us
+	   do	lock -w backup			# so wait for it to finish
+		unlock  backup			# (copy_snapshot grabs lock)
 	done
 }
 
