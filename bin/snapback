@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=13			# has to match version= in configure.sh.sample
+version=14			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -232,7 +232,7 @@ rm_stale_locks() {
 
 # -----------------------------------------------------------------------------
 
-readonly lock_types="backup prune copy update" # kill_all_jobs uses
+readonly lock_types="backup prune copy" # kill_all_jobs uses
 
 lock_file=
 
@@ -805,11 +805,11 @@ is_disk_usage_too_high() {
 
 # -----------------------
 
-setup_update_priority() {
+setup_copy_priority() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_update_CPU_priority $BASHPID &>/dev/null
-	$IfRun $sudo $cmd_to_set_update_IO_priority  $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_copy_CPU_priority $BASHPID &>/dev/null
+	$IfRun $sudo $cmd_to_set_copy_IO_priority  $BASHPID &>/dev/null
 }
 
 # --------------
@@ -1739,10 +1739,10 @@ copy_snapshot() {
 	# grab prune lock, so backup job can suspend us
 	lock -w prune $dst_drive_name || exit 1
 
-	setup_update_priority
+	setup_copy_priority
 
 	# lower nice value is higher priority
-	[[ $cmd_to_set_update_IO_priority < \
+	[[   $cmd_to_set_copy_IO_priority < \
 	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
 
 	cd_ $dst_dir		   # can kill job with: fuser -k -M $dst_dir
@@ -1841,7 +1841,7 @@ update_drive() {
 
 	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
 
-	lock update $dst_name > /dev/null || exit 1 # normal to run for days
+	lock copy $dst_name > /dev/null || exit 1 # normal to run for days
 
 	$Trace
 
@@ -1875,7 +1875,7 @@ update_drive() {
 		# break			# uncomment to debug
 	done
 
-	unlock update
+	unlock copy
 
 	local var=drive_name_regex
 	warn "DON'T FORGET: re-add $dst_name to $var= in $config_file"
@@ -3260,9 +3260,11 @@ case $action in
 	set_drive_name $dst_name
 	dst_name=$drive_name
 
+	lock copy $dst_name || exit 1
 	for snapshot in $src_snapshots
 	    do	copy_snapshot $quiet_opt $snapshot $dst_name
 	done
+	unlock copy
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
