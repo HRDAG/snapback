@@ -328,7 +328,7 @@ lock() {
 			if [[ $type == prune && $suspend_prune_when_backup ]]
 			   then $IfRun lockpid    $backup_lock_file || continue
 				$IfRun lockpid -r $backup_lock_file
-			fi >& /dev/null
+			fi 2> /dev/null
 
 			local action_msg="holds '$type' lock for $drive"
 			if [[ $do_wait ]]
