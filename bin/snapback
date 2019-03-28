@@ -218,31 +218,6 @@ assert_drive_dir_writable() {
 # lock management
 ##############################################################################
 
-set_PGID() {
-
-	if [[ $# == 0 ]]
-	   then PGID=
-	   else PGID=$(set -- $(ps h -o pgid $* | sort -u); echo $*)
-	fi
-	[[ $PGID ]]
-}
-
-# ---------------------------------
-
-process_group_PIDs() {
-
-	local PGID
-	for PGID
-	    do	# I don't know why this didn't work
-		# ps -u root -o pid,pgid | grep " $PGID$" | awk '{ print $1 }'
-
-		# "pstree -p -a" lines start with: <command>,<PID> ...
-		pstree -p -a $PGID | sed 's/^[^,]*,\([0-9]*\).*/\1/'
-	done
-}
-
-# ----------------------------------------------------------------------------
-
 readonly lock_dir=/var/lock/$our_name
 
 rm_stale_locks() {
@@ -385,8 +360,33 @@ unlock() {
 }
 
 ##############################################################################
-# signaling/killing process groups
+# enumerating/showing/signaling/killing process groups
 ##############################################################################
+
+set_PGID() {
+
+	if [[ $# == 0 ]]
+	   then PGID=
+	   else PGID=$(set -- $(ps h -o pgid $* | sort -u); echo $*)
+	fi
+	[[ $PGID ]]
+}
+
+# ---------------------------------
+
+process_group_PIDs() {
+
+	local PGID
+	for PGID
+	    do	# I don't know why this didn't work
+		# ps -u root -o pid,pgid | grep " $PGID$" | awk '{ print $1 }'
+
+		# "pstree -p -a" lines start with: <command>,<PID> ...
+		pstree -p -a $PGID | sed 's/^[^,]*,\([0-9]*\).*/\1/'
+	done
+}
+
+# ----------------------------------------------------------------------------
 
 signal_is_kill=
 
