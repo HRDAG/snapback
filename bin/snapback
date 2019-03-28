@@ -230,7 +230,7 @@ rm_stale_locks() {
 	done
 }
 
-# ---------------------------------
+# -----------------------------------------------------------------------------
 
 readonly lock_types="backup prune copy update" # kill_all_jobs uses
 
@@ -1408,10 +1408,12 @@ _handle_rsync_results() {
 	local error_msg=
 
 	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
-	   then $IfRun mv  $new_snapshot.partial     $new_snapshot &&
+	   then $IfRun mv $new_snapshot.partial $new_snapshot &&
 		[[ $new_snapshot != *.links ]] &&
 		set -- $snapshot_pattern &&
-		$IfRun rm -f latest && $IfRun ln -s ${!#} latest
+		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
+		echo $snapshot_pattern |
+		    tr ' ' '\n' > $drive_log_dir/snapshots.ls
 		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $IfRun ]] &&
@@ -2442,8 +2444,6 @@ unmount_drives() {
 	    do	set_drive_name $name
 		set_drive_dir $drive_name
 		is_drive_mounted $drive_dir || continue
-		/bin/ls $drive_dir |
-		   grep "^$snapshot_regex" > $log_dir/$drive_name/snapshots.ls
 		sudo umount -h &> /dev/null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		for (( i = 1; i <= 99; i++ )) # wait for kill to finish
