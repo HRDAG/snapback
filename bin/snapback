@@ -83,7 +83,7 @@ Usage: $our_name action [args]
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] names: for each name (can be 'all'), kill backup job
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
-    kill-update [-sig] names: for each name (can be 'all'), kill update job
+    kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
     kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
@@ -296,12 +296,12 @@ declare -A  lock_type2locked_resource
 #    If -w and all locks are held by other jobs, Wait for a lock to be freed.
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
 lock() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local steal_copys_backup_lock=$false
 	[[ $1 == -C ]] && { shift; steal_copys_backup_lock=$true; }
 	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	local type=$1; shift
 
-	$Trace
 	while true
 	    do	local resource lock_file
 		for resource
@@ -312,7 +312,7 @@ lock() {
 
 			local prev_lock_file=${_lock_type2lock_file[$type]-}
 			[[   $prev_lock_file == $lock_file ]] &&
-			   { warn "already hold $lock_file"; return 0; }
+			  { warn "already hold $lock_file"; $xtrace;return 0; }
 			[[ ! $prev_lock_file ]] ||
 			   abort "hold $prev_lock_file, can't grab $lock_file"
 
@@ -336,18 +336,20 @@ lock() {
 			   else    run_lockpid $lock_file "$action_msg"
 			fi && break 2
 		done
-		[[ $do_wait ]] || return 1
+		[[ $do_wait ]] || { $xtrace; return 1; }
 		$IfRun sleep $lock_wait_secs
 	done
 
 	_lock_type2lock_file[$type]=$lock_file
 	 lock_type2locked_resource[$type]=$resource
+	$xtrace
 	return 0
 }
 
 # ---------------------------------
 
 unlock() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -s ]] && { shift; local do_share=$true; } || local do_share=
 
 	local type
@@ -359,6 +361,7 @@ unlock() {
 		unset  lock_type2locked_resource[$type]
 	done
 	[[ $do_share ]] && $IfRun sleep $lock_share_secs
+	$xtrace
 }
 
 ##############################################################################
@@ -3299,11 +3302,11 @@ case $action in
 	$Trace
 	kill_jobs prune $*
 	;;
-   # kill-update [-sig] names: for each name (can be 'all'), kill update job
-   ( kill-update* | ku )
-	[[ $# != 0 ]] || abort_with_action_Usage kill-update
+   # kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
+   ( kill-copy* | kc | ku )
+	[[ $# != 0 ]] || abort_with_action_Usage kill-copy
 	$Trace
-	kill_jobs update $*
+	kill_jobs copy $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk )
