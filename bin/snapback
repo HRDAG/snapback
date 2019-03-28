@@ -243,9 +243,21 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-readonly lock_types="backup prune copy update" # kill_all_jobs uses
-
 readonly lock_dir=/var/lock/$our_name
+
+rm_stale_locks() {
+
+	local lock_file
+	for lock_file in $lock_dir/*.pid
+	    do	[[ -e $lock_file ]] || continue
+		lockpid    $lock_file >& /dev/null &&
+		lockpid -r $lock_file
+	done
+}
+
+# ---------------------------------
+
+readonly lock_types="backup prune copy update" # kill_all_jobs uses
 
 lock_file=
 
@@ -1543,13 +1555,13 @@ run_backup() {
 	set_drive_dir  $drive_name || return 1
 
 	# we must _always_ create the ,00 snapshots, they're saved forever
-	[[ $(date +%H) == 00 ]] && kill_jobs backup $drive_name
+	[[ $(date +%H) == 00 ]] && local wait_opt=-w || local wait_opt=
 
 	# the following is similar to the second half of copy_snapshot
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
-	lock backup $drive_name || return 1
+	lock -C $wait_opt backup $drive_name || return 1
 
 	_backup_management_of_prune $drive_name pre-rsync
 
@@ -3205,6 +3217,7 @@ case $action in
    # run-backups   names: backup names ('all' for every mounted backup drive)
    ( r*b*k*p* | rb* )
 	[[ $# != 0 ]] || abort_with_action_Usage run-backup
+	rm_stale_locks
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
