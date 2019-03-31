@@ -98,6 +98,7 @@ declare -i -r log_level=0	     # verbosity of logs in /var/log/snapback/
 # ----------------------------------
 
 # How high can FileSystem usage get before warning $sysadmin_email_addresses?
+# Also, if usage is too high, pruning takes priority over other actions.
 declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 
 # Normally, backups run at higher priority and pruning runs at lower priority;

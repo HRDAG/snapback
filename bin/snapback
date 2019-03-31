@@ -872,6 +872,14 @@ _backup_management_of_prune() {
 ##############################################################################-
 ##############################################################################-
 
+update_snapshots_ls() {
+
+	echo $snapshot_pattern{,.links} | tr ' ' '\n' |
+	    sort > $drive_log_dir/snapshots.ls
+}
+
+# -----------------------------------------------------------------------------
+
 _is_time_to_prune_drive() {
 	local dir=$1
 
@@ -917,6 +925,7 @@ _rm_pruned_snapshots() {
 	    do	[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		$IfRun mv $snapshot $snapshot.rm
 	done
+	update_snapshots_ls
 
 	set -- *.rm
 	[[ -d $1 ]] || shift
@@ -1416,8 +1425,7 @@ _handle_rsync_results() {
 		[[ $new_snapshot != *.links ]] &&
 		set -- $snapshot_pattern &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
-		echo $snapshot_pattern |
-		    tr ' ' '\n' > $drive_log_dir/snapshots.ls
+		update_snapshots_ls
 		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $IfRun ]] &&
