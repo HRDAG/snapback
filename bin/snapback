@@ -80,6 +80,7 @@ Usage: $our_name action [args]
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
 
+    ps: show job (or process) that holds each lock
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] names: for each name (can be 'all'), kill backup job
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
@@ -222,11 +223,18 @@ readonly lock_dir=/var/lock/$our_name
 
 rm_stale_locks() {
 
+	local test_lock_file=$lock_dir/test-$$.pid
+	if sudo  -n  lockpid    $test_lock_file
+	   then sudo lockpid -r $test_lock_file
+		local sudo=sudo
+	   else local sudo=
+	fi
+
 	local lock_file
 	for lock_file in $lock_dir/*.pid
 	    do	[[ -e $lock_file ]] || continue
-		lockpid    $lock_file >& /dev/null &&
-		lockpid -r $lock_file
+		$sudo lockpid    $lock_file >& /dev/null &&
+		$sudo lockpid -r $lock_file
 	done
 
 	return 0
@@ -2251,7 +2259,7 @@ watch() {
 	cron_PGIDs=$PGID
 	set -- $(process_group_PIDs $cron_PGIDs)
 	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
-	[[ $wchan ]] && sudo ps > /dev/null && sudo=sudo || sudo=
+	[[ $wchan ]] && sudo -n ps >& /dev/null && sudo=sudo || sudo= wchan=
 	#  option f for "forest"
 	cron_cmds=$($sudo ps www f -o pid,stat$wchan,bsdtime,command $*)
 	} || cron_cmds=
@@ -3330,6 +3338,15 @@ case $action in
 	[[ $# != 0 ]] || abort_with_action_Usage kill-all
 	$Trace
 	kill_all_jobs $*
+	;;
+   # ps: show job (or process) that holds each lock
+   ( ps )
+	rm_stale_locks
+	for lock in $lock_dir/*.pid
+	    do	header $lock
+		set -- $(< $lock)
+		ps -f -$1 || ps h -f $1
+	done
 	;;
 
    ###########################################################################
