@@ -416,8 +416,9 @@ signal_job() {
 
 	local lock_file
 	set_lock_file $type $name
-	[[  -s  $lock_file ]] || return 1 # could be stale lock-file ...
-	lockpid $lock_file >& /dev/null && lockpid -r $lock_file && return 1
+	[[ -s $lock_file ]] || return 1
+	$sudo lockpid    $lock_file >& /dev/null && # stale lock file?
+	$sudo lockpid -r $lock_file && return 1
 
 	set -- $(< $lock_file) &&
 	[[ $# != 0 ]] &&
@@ -1752,7 +1753,7 @@ copy_snapshot() {
 	# the following is similar to the second half of run_backup_rsync
 
 	# grab prune lock, so backup job can suspend us
-	lock -w prune $dst_drive_name || exit 1
+	lock -w prune $src_snapshot || exit 1
 
 	setup_copy_priority
 
@@ -1955,7 +1956,7 @@ run_copy_job() {
 
 	$Trace
 	until setsid $copy_snapshot_exe -r "$@" # backup $dst_name can kill us
-	   do	lock -w backup			# so wait for it to finish
+	   do	lock -w backup $dst_name	# so wait for it to finish
 		unlock  backup			# (copy_snapshot grabs lock)
 	done
 }
