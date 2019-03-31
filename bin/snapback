@@ -292,13 +292,13 @@ declare -A  lock_type2locked_resource
 
 # Usage: lock [-C | -w] type resource(s)
 #    Grab a lock of 'type' on any one of the resources (drive-dir or snapshot).
-#    If -C and want 'backup' lock but it's held by a Copy job, kill copy job.
+#    If -C and want lock that's held by a Copy job, kill copy job.
 #    If -w and all locks are held by other jobs, Wait for a lock to be freed.
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
 lock() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local steal_copys_backup_lock=$false
-	[[ $1 == -C ]] && { shift; steal_copys_backup_lock=$true; }
+	local steal_copys_lock=$false
+	[[ $1 == -C ]] && { shift; steal_copys_lock=$true; }
 	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	local type=$1; shift
 
@@ -316,19 +316,19 @@ lock() {
 			[[ ! $prev_lock_file ]] ||
 			   abort "hold $prev_lock_file, can't grab $lock_file"
 
-			if [[ $type == backup && $steal_copys_backup_lock ]]
-			   then $IfRun lockpid $lock_file 2> /dev/null &&
-				   break 2
-				local bPID=$(< $lock_file)
-				[[ $(fgrep -w $bPID $lock_dir/copy-*.pid) ]] &&
-				    { kill_jobs backup $drive
-				      do_wait=$true; } # wait for copy to die
-			fi
-
 			if [[ $type == prune && $suspend_prune_when_backup ]]
 			   then $IfRun lockpid    $backup_lock_file || continue
 				$IfRun lockpid -r $backup_lock_file
 			fi 2> /dev/null
+
+			if [[ $steal_copys_lock ]]
+			   then $IfRun lockpid $lock_file 2> /dev/null &&
+				   break 2
+				local PID=$(< $lock_file)
+				[[ $(fgrep -w $PID $lock_dir/copy-*.pid) ]] &&
+				    { kill_jobs $type $drive
+				      do_wait=$true; } # wait for copy to die
+			fi
 
 			local action_msg="holds '$type' lock for $drive"
 			if [[ $do_wait ]]
@@ -1195,7 +1195,13 @@ prune_drive() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
-	lock prune $drive_name ||
+	# if use suspend, priority is "which job should run" not renice/ionice
+	if is_disk_usage_too_high && [[ $suspend_prune_when_backup ]]
+	   then local lock_opt=-C  # desparately need pruning, steal copy lock
+	   else local lock_opt=
+	fi
+
+	lock $lock_opt prune $drive_name ||
 	    # since we're called, the old lock holder should be un-suspended
 	    { signal_job SIGCONT prune $drive_name; return 1; }
 
