@@ -228,6 +228,8 @@ rm_stale_locks() {
 		lockpid    $lock_file >& /dev/null &&
 		lockpid -r $lock_file
 	done
+
+	return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -319,10 +321,10 @@ lock() {
 			if [[ $type == prune && $suspend_prune_when_backup ]]
 			   then $IfRun lockpid    $backup_lock_file || continue
 				$IfRun lockpid -r $backup_lock_file
-			fi 2> /dev/null
+			fi > /dev/null
 
 			if [[ $steal_copys_lock ]]
-			   then $IfRun lockpid $lock_file 2> /dev/null &&
+			   then $IfRun lockpid $lock_file > /dev/null &&
 				   break 2
 				local PID=$(< $lock_file)
 				[[ $(fgrep -w $PID $lock_dir/copy-*.pid) ]] &&
