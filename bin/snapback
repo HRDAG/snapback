@@ -934,7 +934,7 @@ _rm_pruned_snapshots() {
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
 	    do	[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
-		$IfRun mv $snapshot $snapshot.rm
+		[[ -e $snapshot ]] && $IfRun mv $snapshot $snapshot.rm
 	done
 	update_snapshots_ls
 
@@ -1058,17 +1058,18 @@ declare -A type2date_suffix_pattern=(
 	[month]="-??-??,??"
 	 [year]="?-??-??,??"
 )
+[[ ${snapshot_pattern%${type2date_suffix_pattern[year]}} != "$snapshot_pattern" ]] || abort "snapshot_pattern has to end with type2date_suffix_pattern[year]"
 
 set_prune_pattern() {
-	local type=$1 pattern=$2  pp
+	local type=$1 pat=$2  pp
 
-	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
-	local prefix_pattern=${snapshot_pattern%$date_suffix_pattern}
+	local date_suffix_pat=${type2date_suffix_pattern[$type]}
+	local prefix_pat=${snapshot_pattern%$date_suffix_pat}
 	case $type in
-	    (  hour ) pp="$prefix_pattern$pattern{.*,}"		 ;;
-	    (   day ) pp="$prefix_pattern$pattern,00{.*,}"	 ;;
-	    ( month ) pp="$prefix_pattern$pattern-01,00{.*,}"	 ;;
-	    (  year ) pp="$prefix_pattern$pattern-01-01,00{.*,}" ;;
+	   (  hour ) pp="$prefix_pat$pat${type2date_suffix_pattern[null]}*"  ;;
+	   (   day ) pp="$prefix_pat$pat${type2date_suffix_pattern[hour]}*"  ;;
+	   ( month ) pp="$prefix_pat$pat${type2date_suffix_pattern[day]}*"   ;;
+	   (  year ) pp="$prefix_pat$pat${type2date_suffix_pattern[month]}*" ;;
 	esac
 	prune_pattern=$pp
 }
