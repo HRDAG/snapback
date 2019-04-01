@@ -752,8 +752,8 @@ validate_config_variables() {
 	[[ $snapshot_date_time_separator != *$bad_punctuation* ]] ||
 	   abort "snapshot_date_time_separator can't contain $bad_punctuation"
 	#
-	[[ $excluded_backup_hours != *[^\ \	0-9]* ]] ||
-	   abort "excluded_backup_hours must be list of numbers, no ranges/etc"
+	[[ $excluded_backup_hours != *[^-\ \	0-9]* ]] ||
+	   abort "excluded_backup_hours must be list of (ranges of) numbers"
 
 	set -- $config_file $drive_config_file
 
@@ -1058,7 +1058,9 @@ declare -A type2date_suffix_pattern=(
 	[month]="-??-??,??"
 	 [year]="?-??-??,??"
 )
-[[ ${snapshot_pattern%${type2date_suffix_pattern[year]}} != "$snapshot_pattern" ]] || abort "snapshot_pattern has to end with type2date_suffix_pattern[year]"
+[[ ${snapshot_pattern%${type2date_suffix_pattern[year]}} != \
+   "$snapshot_pattern" ]] ||
+	abort "snapshot_pattern has to end with type2date_suffix_pattern[year]"
 
 set_prune_pattern() {
 	local type=$1 pattern=$2
@@ -1345,15 +1347,34 @@ set_link_dest_opts___for_copy_snapshot() {
 # misc functions to support run_rsync
 # -----------------------------------------------------------------------------
 
+set_hours() {
+	local var_name=$1
+
+	set -- $(
+	for hour in ${!var_name}
+	    do	[[ $hour =~ ^0+$ ]] && continue # pruning needs midnight backup
+		[[ $hour == *-*  ]] || { echo $hour; continue; }
+		[[ $hour != *-*-* ]] || abort "bad $var_name range"
+		first=${hour%-*} last=${hour#*-}
+		if (( $first <= $last ))
+		   then eval echo \{$first..$last\}
+		   else eval echo \{$first..23\} \{1..$last\}
+		fi
+	done
+	)
+	hours=$*
+}
+
+# ---------------------------------
+
 _is_time_to_run_backup() {
 	local dir=$1
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
-	local  current_hour=$(date '+%k')
-	local excluded_hours=$(echo ${excluded_backup_hours-} |
-				sed 's/\b00*\b//g') # pruning needs midnight
-	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
+	local current_hour=$(date '+%k') hours
+	set_hours excluded_backup_hours
+	is_arg1_in_arg2 $current_hour $hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
 
 	return 1
