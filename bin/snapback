@@ -1061,17 +1061,18 @@ declare -A type2date_suffix_pattern=(
 [[ ${snapshot_pattern%${type2date_suffix_pattern[year]}} != "$snapshot_pattern" ]] || abort "snapshot_pattern has to end with type2date_suffix_pattern[year]"
 
 set_prune_pattern() {
-	local type=$1 pat=$2  pp
+	local type=$1 pattern=$2
 
-	local date_suffix_pat=${type2date_suffix_pattern[$type]}
-	local prefix_pat=${snapshot_pattern%$date_suffix_pat}
+	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
+	local date_prefix_pattern=${snapshot_pattern%$date_suffix_pattern}
 	case $type in
-	   (  hour ) pp="$prefix_pat$pat${type2date_suffix_pattern[null]}*"  ;;
-	   (   day ) pp="$prefix_pat$pat${type2date_suffix_pattern[hour]}*"  ;;
-	   ( month ) pp="$prefix_pat$pat${type2date_suffix_pattern[day]}*"   ;;
-	   (  year ) pp="$prefix_pat$pat${type2date_suffix_pattern[month]}*" ;;
+	   (  hour ) local date_suffix_type=null  ;;
+	   (   day ) local date_suffix_type=hour  ;;
+	   ( month ) local date_suffix_type=day   ;;
+	   (  year ) local date_suffix_type=month ;;
 	esac
-	prune_pattern=$pp
+	date_suffix_pattern=${type2date_suffix_pattern[$date_suffix_type]}
+	prune_pattern=$date_prefix_pattern$pattern$date_suffix_pattern{,.*}
 }
 
 # if support period > 24, change load__drive_name2backup_period
