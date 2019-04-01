@@ -874,7 +874,7 @@ _backup_management_of_prune() {
 	fi
 
 	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
-	signal_job SIGSTOP prune $name
+	$IfRun signal_job SIGSTOP prune $name
 }
 
 ##############################################################################-
@@ -1351,7 +1351,7 @@ _is_time_to_run_backup() {
 
 	local  current_hour=$(date '+%k')
 	local excluded_hours=$(echo ${excluded_backup_hours-} |
-				sed 's/\b0\b//g') # pruning needs midnight
+				sed 's/\b00*\b//g') # pruning needs midnight
 	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
 
