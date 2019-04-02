@@ -101,20 +101,21 @@ Usage: $our_name action [args]
   Common options:
 	-C: we are being run from cron
 
-	-c: pass -c (--checksum) to rsync (for actions that use 'rsv')
-	-n: pass -n (--dry-run ) to rsync (for actions that use 'rsv')
+	-c: pass -c (--checksum) to rsync
+	-n: pass -n (--dry-run ) to rsync
 	-v: pass -v (--verbose ) to rsync and maybe other commands
 	-q: pass -q (--quiet   ) to rsync and maybe other commands
+	-r rsync-opt: pass rsync-opt to rsync
 
 	-d: Debug shell script (don't run commands, just show them): simulation
 	-t: Trace shell script (show commands as they execute)
-	-T level: control whether Trace and TraceV functions run echoE*
+	-T level: control whether Trace & TraceV functions run echoE & echoEV
 "
 
 is_cron=$false   cron_opt=
 IfRun= Trace=    debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
-while getopts "C cnvq dtT: hk"  arg
+while getopts "C cnvqr: dtT: hk"  arg
     do	add_words our_opts -$arg ${OPTARG-}
 	case $arg in
 	   ( C ) is_cron=$true	cron_opt=-C ;;
@@ -123,6 +124,7 @@ while getopts "C cnvq dtT: hk"  arg
 	   ( n ) add_words our_rsync_opts --verbose --dry-run ;;
 	   ( v ) add_words our_rsync_opts --verbose ;;
 	   ( q ) add_words our_rsync_opts --quiet   ;; # cancels --verbose
+	   ( r ) add_words our_rsync_opts $OPTARG   ;;
 
 	   ( d ) IfRun="echo -e" debug_opt=-d ;; # $IfRun prevents side-effects
 	   ( t ) Trace="set -x"  trace_opt=-t ;;
