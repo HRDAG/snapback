@@ -103,8 +103,8 @@ Usage: $our_name action [args]
 
 	-c: pass -c (--checksum) to rsync
 	-n: pass -n (--dry-run ) to rsync
-	-v: pass -v (--verbose ) to rsync and maybe other commands
-	-q: pass -q (--quiet   ) to rsync and maybe other commands
+	-v: pass -v (--verbose ) to rsync (and maybe other commands)
+	-q: pass -q (--quiet   ) to rsync (and maybe other commands)
 	-r rsync-opt: pass rsync-opt to rsync
 
 	-d: Debug shell script (don't run commands, just show them): simulation
@@ -1760,7 +1760,7 @@ copy_snapshot() {
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
 
-	[[ $dst_minimal_snapshot_regex ]] || {
+	[[ $dst_minimal_snapshot_regex ]] || { # don't repeat dst setup
 	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
 	dst_dir=$drive_dir
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
@@ -1776,9 +1776,10 @@ copy_snapshot() {
 
 	is_dst_snapshot_needed $dst_snapshot || return 1
 
+	[[ $src_snapshot == /* ]]  || {	# fix copy-snapshot's (single) src?
 	local absolute_path
 	set_absolute_path $src_snapshot
-	local src_snapshot=$absolute_path
+	src_snapshot=$absolute_path ; }
 	is_src_snapshot_useful $src_snapshot || return 1
 
 	TraceV 2 src_snapshot dst_snapshot
@@ -1799,6 +1800,24 @@ copy_snapshot() {
 	run_rsync $pass_opt -c $src_snapshot/. $dst_snapshot
 
 	unlock -s prune
+}
+
+# -------------------------------------------------------
+
+# The following is similar to the second half of run_backup_rsync;
+# it's called by run_copy_job (which manages all locks) as a separate job.
+copy_snapshot_rsync() {
+	local src_snapshot=$1 dst_snapshot=$2
+
+	setup_copy_priority
+
+	# lower nice value is higher priority
+	[[   $cmd_to_set_copy_IO_priority < \
+	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
+
+	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
+
+	run_rsync -c $src_snapshot/. $dst_snapshot
 }
 
 # -----------------------------------------------------------------------------
@@ -1964,7 +1983,7 @@ run_jobs_in_parallel() {
 	for dir
 	    do	if [[ ! $IfRun ]]
 		   then trap '' HUP
-			# Can't "$function dir &", processes share $tmp* files.
+			# Can't "$function dir &", processes share lock files.
 			# Want new process-group so can ps/kill independently.
 			setsid \
 			$exe -r $dir &
@@ -1976,22 +1995,36 @@ run_jobs_in_parallel() {
 
 # -----------------------------------------------------------------------------
 
-# a backup job to our destination drive can kill us, so we need to restart
+# We can be killed by either a prune job that desparately needs our source
+# drive, or a backup job to our destination drive, so we need to restart;
+# and since we can be killed to steal either our source or destination
+# lock, we need to manage all locks.
 run_copy_job() {
-	local dst_name=${!#}
 
-	if [[ ${1-} == -r ]]		# are we recursing?
-	   then shift
-		$Trace
-		copy_snapshot "$@"
-		exit $?
+	if [[ $1 != -r ]]		# not Recursing, so need new job?
+	   then $Trace
+		trap '' HUP
+		# backup job or (desparate) prune job can kill us to steal lock
+		until setsid $copy_snapshot_exe -r "$@"
+		   do	true
+		done
+		return 0
 	fi
 
+	shift				# toss -r; we're now a new job
+	local dst_snapshot=${!#}
+	local src_snapshots=${*%$dst_snapshot}
+
 	$Trace
-	until setsid $copy_snapshot_exe -r "$@" # backup $dst_name can kill us
-	   do	lock -w backup $dst_name	# so wait for it to finish
-		unlock  backup			# (copy_snapshot grabs lock)
-	done
+	until     lock -w prune $src_snapshots && lock backup $dst_snapshot
+	   do	unlock -s prune	# didn't get backup lock; drop/share prune lock
+		set +x
+	done > /dev/null		# ignore message about busy backup lock
+	local src_snapshot=${lock_type2locked_resource[prune]}
+	$Trace
+	copy_snapshot_rsync $src_snapshot $dst_snapshot
+	unlock backup prune
+	return 0		# else infinite loop, see above
 }
 
 ##############################################################################-
@@ -2527,10 +2560,13 @@ add_extN_journal() {
 	is_OK_if_drive_dir_unmounted=$true
 	set_drive_name $1
 	set_drive_dir $drive_name
-	set_FS_label___from_mount_dir $drive_dir ; }
+	mount_dir=$drive_dir
+	set_FS_label___from_mount_dir $mount_dir ; }
 							[[ $FS_device ]] ||
 	set_FS_device___from_FS_label $FS_label
-	[[ ${mount_dir-} ]] || set_mount_dir___from_FS_device $FS_device
+	[[ ${mount_dir-} ]] ||
+	   set_mount_dir___from_FS_label $FS_label ||
+	   set_mount_dir___from_FS_device $FS_device
 	TraceV 1 force_opt FS_label FS_device VG_name mount_dir
 
 	sudo tune2fs -l $FS_device | grep -q '^Journal ' &&	  {
@@ -2548,10 +2584,10 @@ add_extN_journal() {
 	   abort "mke2fs -O journal_dev -> $?"
 
 	suspend_tracing
-	unmount_drives -q ${drive_dir:-$FS_device} ||
-	   $IfRun abort "umount $drive_dir"
+	unmount_drives -q ${mount_dir:-$FS_device} ||
+	   $IfRun abort "umount $mount_dir"
 	restore_tracing
-	mount  |  fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
+	mount | fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
 
 	$IfRun tune2fs -J device=LABEL=$label $FS_device ||
 	   abort "tune2fs -J attempt to attach journal -> $?"
@@ -3305,6 +3341,7 @@ case $action in
 	;;
    # copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
    ( c*p*s*s* | cs* | cps )
+	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
 	[[ $1 == -q ]] && { quiet_opt=$1; shift; } || quiet_opt=
 	(( $# >= 2 )) || abort_with_action_Usage copy-snap
 	dst_name=${!#}
@@ -3315,7 +3352,8 @@ case $action in
 
 	lock copy $dst_name || exit 1
 	for snapshot in $src_snapshots
-	    do	copy_snapshot $quiet_opt $snapshot $dst_name
+	    do	copy_snapshot $quiet_opt $snapshot $dst_name &&
+		   [[ ! $quiet_opt ]] && echo "copied $snapshot to $dst_name"
 	done
 	unlock copy
 	;;
