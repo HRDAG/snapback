@@ -1498,7 +1498,6 @@ _handle_rsync_results() {
 # ----------------------
 
 run_rsync() {
-	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
 	if [[ $1 == -c ]]
 	   then shift
 		local is_copy_snapshot=$true
@@ -1525,14 +1524,6 @@ run_rsync() {
 			   $IfRun mv $useful_dst $partial_dst && break
 		done
 	fi
-
-	case ${pass_opt#-p} in
-	   ('') ;;			     # not called by copy_snapshot
-	   (0)	;;			     # single-pass
-	   (1)	$IfRun mkdir -p $partial_dst; return 1 ;; # for run_prune check
-	   (2)	$IfRun rmdir    $partial_dst &> /dev/null ;; # for touch, below
-	   (*)	abort "bad pass option: $pass_opt"
-	esac
 
 	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
@@ -1571,7 +1562,6 @@ run_rsync() {
 
 	_handle_rsync_results $dst_snapshot $status $log
 
-	[[ $pass_opt ]] ||
 	$IfRun sync --file-system $dst_snapshot* &> /dev/null
 
 	return $status
@@ -1799,7 +1789,7 @@ copy_snapshot() {
 
 	cd_ $dst_dir		   # can kill job with: fuser -k -M $dst_dir
 
-	run_rsync $pass_opt -c $src_snapshot/. $dst_snapshot
+	run_rsync -c $src_snapshot/. $dst_snapshot
 
 	unlock -s prune
 }
@@ -3333,7 +3323,7 @@ case $action in
 	done
 	;;
    # copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
-   ( c*p*s*s* | cs* | cps )
+   ( c*p*s*s* | cs* | cps )		# cpss
 	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
 	[[ $1 == -q ]] && { quiet_opt=$1; shift; } || quiet_opt=
 	(( $# >= 2 )) || abort_with_action_Usage copy-snap
