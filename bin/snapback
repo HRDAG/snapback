@@ -255,7 +255,7 @@ set_lock_file() {
 
 	[[ -d $lock_dir ]] || sudo mkdir -p --mode=1777 $lock_dir
 
-	is_arg1_in_arg2 $type $lock_types ||
+	is_arg1_in_arg2  $type $lock_types ||
 	   abort "lock: '$type' is unknown lock type"
 
 	[[     $custom_config_vars ]] &&
@@ -2580,26 +2580,21 @@ add_extN_journal() {
 
 	$Trace
 
-	$IfRun mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log ||
-	   abort "mke2fs -O journal_dev -> $?"
+	RunCmd mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log
 
 	suspend_tracing
-	unmount_drives -q ${mount_dir:-$FS_device} ||
-	   $IfRun abort "umount $mount_dir"
+	RunCmd -d unmount_drives -q ${mount_dir:-$FS_device}
 	restore_tracing
 	mount | fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
 
-	$IfRun tune2fs -J device=LABEL=$label $FS_device ||
-	   abort "tune2fs -J attempt to attach journal -> $?"
+	RunCmd tune2fs -J device=LABEL=$label $FS_device
 	$IfRun tune2fs -l $FS_device | grep -i "journal [id]"
 	local status=${PIPESTATUS[0]}
 
 	[[ $do_mount ]] || return $status
 
 	mount_options=$common_mount_options,$extN_mount_options
-	$IfRun \
-	mount -v -t ext4 -o ${mount_options%,} $FS_device $mount_dir ||
-	   abort "mount exited with $?"
+	RunCmd mount -v -t ext4 -o ${mount_options%,} $FS_device $mount_dir
 }
 
 # -----------------------------------------------------------------------------
@@ -2927,13 +2922,12 @@ mkfs_backup_drive() {
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
 	[[ $mkfs_debug_opt ]] && IfRun=
-	cmd="$IfRun $cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
-	header ${cmd#$IfRun}
-	$cmd || abort "$cmd exited with $?"
+	cmd="$cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
+	header "$cmd"
+	$IfRun  $cmd || abort "$cmd exited with $?"
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
-	cmd="$IfRun mount -v -t $FS_type -o $mount_opts $device $drive_dir"
-	$cmd || abort "$cmd exited with $?"
+	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
 
 	warn "DON'T FORGET to add $name to drive_name_regex= in $config_file"
 	return 0
@@ -3024,8 +3018,10 @@ copy_backup_drive() {
 		$dst_device $dst_drive_dir
 	local cmd=$*
 
-	[[   $IfRun ]] && header "$_our_name ${cmd#* }"
-	[[ ! $IfRun ]] || exec $cmd || abort "$IfRun $cmd -> $?"
+	if [[ $IfRun ]]
+	   then header "$_our_name ${cmd#* }"
+		exec $cmd || abort "$cmd -> $?"
+	fi
 
 	local output_file=$dst_FS_label.out
 	echo -e "
@@ -3158,7 +3154,7 @@ _copy_extN_backup_drive() {
 	# -------------------------------------------------------
 
 	$IfRun set -x
-	time $IfRun dd if=$src_device of=$dst_device bs=1M || abort "dd -> $?"
+	time RunCmd dd if=$src_device of=$dst_device bs=1M
 	[[ $Trace ]] || set +x
 
 	$IfRun tune2fs -U $(uuidgen) $dst_device
@@ -3174,23 +3170,18 @@ _copy_extN_backup_drive() {
 	local mount_options=$common_mount_options,$extN_mount_options
 	mount_options=${mount_options%,}
 
-	is_arg1_in_arg2 -M $action_opts || { # don't want to re-Mount src?
-	local cmd="$IfRun
-	mount -v -t $FS_type -o $mount_options $src_device $src_drive_dir"
-	$cmd || abort "'$cmd' exited with $?"
-	}
+	is_arg1_in_arg2 -M $action_opts || # don't want to re-Mount src?
+	RunCmd mount -v -t $FS_type -o$mount_options $src_device $src_drive_dir
 
 	is_arg1_in_arg2 -F $action_opts || # don't want Fsck?
-	time $IfRun e2fsck -f -p -t -t $dst_device ||
-	   abort "e2fsck exited with $?; better check $src_device ?!"
+	time RunCmd -m "better check $src_device ?!" \
+	e2fsck -f -p -t -t $dst_device
 
 	$IfRun mkdir -p $dst_drive_dir
-	cmd="$IfRun
-	mount -v -t $FS_type -o $mount_options $dst_device $dst_drive_dir"
-	$cmd ||
-	   abort "'$cmd' exited with $?; make mount happen, then run resize2fs"
+	RunCmd -m "make mount happen, then run resize2fs" \
+	mount -v -t $FS_type -o $mount_options $dst_device $dst_drive_dir
 
-	$IfRun resize2fs $dst_device	# do this _after_ mount, for speed
+	RunCmd resize2fs $dst_device	# do this _after_ mount, for speed
 }
 
 # --------------------------------------------
@@ -3654,6 +3645,11 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t )
+	RunCmd true
+	RunCmd -d -m "expected (non fatal)" false
+	RunCmd    -m "expected     (fatal)" false
+	exit
+
 	lock backup x
 	lock backup x || abort badness 1
 	unlock backup
