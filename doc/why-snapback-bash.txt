@@ -1,4 +1,4 @@
-Why snapback not rsnapshot:
+Why snapback not rsnapshot or dirvish or rsync-snapshot:
 
    Supports many USB disk/flash drives (plugged in and off-site): efficiently
       runs simultaneous backups (system of cheap USB drives is reliable through
