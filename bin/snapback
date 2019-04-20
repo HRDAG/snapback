@@ -1386,6 +1386,9 @@ _is_time_to_run_backup() {
 
 readonly rsync_time_subdir=stats/rsync-minutes
 
+type	   days_to_keep >& /dev/null ||	# can have custom version
+declare -i days_to_keep=3		# ensure more than weekend-only data
+
 record_rsync_time() {
 	local snapshot=$(basename $1)
 	declare -i start_secs=$2
@@ -1402,7 +1405,6 @@ record_rsync_time() {
 	   else eval "$cmd"
 	fi || return 1
 
-	declare -i days_to_keep=3     # make sure don't just have weekend data
 	declare -i number_files_per_day=24/$backup_period
 	declare -i number_files_to_keep=$number_files_per_day*$days_to_keep
 	set -- $(dirname $file)/$snapshot_pattern.txt
