@@ -328,10 +328,10 @@ lock() {
 			[[ ! $prev_lock_file ]] ||
 			   abort "hold $prev_lock_file, can't grab $lock_file"
 
-			if [[ $type == prune && $suspend_prune_when_backup ]]
-			   then $IfRun lockpid    $backup_lock_file || continue
-				$IfRun lockpid -r $backup_lock_file
-			fi > /dev/null
+			[[ $type == prune && $suspend_prune_when_backup ]] && {
+			    $IfRun lockpid    $backup_lock_file 2> /dev/null &&
+			    $IfRun lockpid -r $backup_lock_file || continue
+			}
 
 			if [[ $steal_copys_lock ]]
 			   then $IfRun lockpid $lock_file > /dev/null &&
@@ -344,7 +344,7 @@ lock() {
 
 			local action_msg="holds '$type' lock for $drive"
 			if [[ $do_wait ]]
-			   then $IfRun lockpid $lock_file >& /dev/null
+			   then $IfRun lockpid $lock_file 2> /dev/null
 			   else    run_lockpid $lock_file "$action_msg"
 			fi && break 2
 		done
