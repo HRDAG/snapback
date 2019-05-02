@@ -173,9 +173,10 @@ readonly pruned_timestamp=.pruned.ts
 
 readonly our_opts=${our_opts# }
 # need to fork and exec ourselves for session control with 'setsid'
-readonly   run_backup_exe="$our_path $our_opts run-backup"
-readonly  prune_drive_exe="$our_path $our_opts prune-drive"
-readonly update_drive_exe="$our_path $our_opts update-drive"
+readonly    run_backup_exe="$our_path $our_opts run-backup"
+readonly   prune_drive_exe="$our_path $our_opts prune-drive"
+readonly  update_drive_exe="$our_path $our_opts update-drive"
+readonly copy_snapshot_exe="$our_path $our_opts copy-snapshot"
 
 readonly hostname=${HOSTNAME%%.*}
 
@@ -314,9 +315,9 @@ lock() {
 	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	local type=$1; shift
 
+	local resource lock_file LP1_opt= LP2_opt=
 	while true
-	    do	local resource lock_file
-		for resource
+	    do	for resource
 		    do	local drive=${resource%/$snapshot_pattern*}
 			set_lock_file backup $drive
 			local backup_lock_file=$lock_file
@@ -328,10 +329,11 @@ lock() {
 			[[ ! $prev_lock_file ]] ||
 			   abort "hold $prev_lock_file, can't grab $lock_file"
 
-			[[ $type == prune && $suspend_prune_when_backup ]] && {
-			    $IfRun lockpid    $backup_lock_file 2> /dev/null &&
-			    $IfRun lockpid -r $backup_lock_file || continue
-			}
+			if [[ $type == prune && $suspend_prune_when_backup ]]
+			   then $IfRun lockpid $LP1_opt $backup_lock_file &&
+				$IfRun lockpid	 -r	$backup_lock_file &&
+				LP1_opt= || { LP1_opt="-q -v"; continue; }
+			fi
 
 			if [[ $steal_copys_lock ]]
 			   then $IfRun lockpid $lock_file > /dev/null &&
@@ -344,8 +346,9 @@ lock() {
 
 			local action_msg="holds '$type' lock for $drive"
 			if [[ $do_wait ]]
-			   then $IfRun lockpid $lock_file 2> /dev/null
-			   else    run_lockpid $lock_file "$action_msg"
+			   then $IfRun lockpid $LP2_opt $lock_file &&
+				  LP2_opt= || { LP2_opt="-q -v"; false; }
+			   else run_lockpid $lock_file "$action_msg"
 			fi && break 2
 		done
 		[[ $do_wait ]] || { $xtrace; return 1; }
@@ -1771,12 +1774,16 @@ copy_snapshot() {
 	[[ $src_snapshot == /* ]]  || {	# fix copy-snapshot's (single) src?
 	local absolute_path
 	set_absolute_path $src_snapshot
-	src_snapshot=$absolute_path ; }
+	src_snapshot=$absolute_path
+	src_snapshots=$absolute_path ; } # only a single src
 	is_src_snapshot_useful $src_snapshot || return 1
 
 	TraceV 2 src_snapshot dst_snapshot
 
 	# the following is similar to the second half of run_backup_rsync
+
+	# the new way
+	# run_copy_job $src_snapshots $dst_snapshot; return
 
 	# grab prune lock, so backup job can suspend us
 	lock -w prune $src_snapshot || exit 1
@@ -1787,7 +1794,7 @@ copy_snapshot() {
 	[[   $cmd_to_set_copy_IO_priority < \
 	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
 
-	cd_ $dst_dir		   # can kill job with: fuser -k -M $dst_dir
+	cd_ $dst_dir		     # can kill job with: fuser -k -M $dst_dir
 
 	run_rsync -c $src_snapshot/. $dst_snapshot
 
@@ -1998,7 +2005,7 @@ run_copy_job() {
 		trap '' HUP
 		# backup job or (desparate) prune job can kill us to steal lock
 		until setsid $copy_snapshot_exe -r "$@"
-		   do	true
+		   do	$IfRun sleep $lock_share_secs
 		done
 		return 0
 	fi
@@ -2008,14 +2015,16 @@ run_copy_job() {
 	local src_snapshots=${*%$dst_snapshot}
 
 	$Trace
-	until     lock -w prune $src_snapshots && lock backup $dst_snapshot
+	until   lock -w prune $src_snapshots &&
+		lock   backup $dst_snapshot 2> /dev/null
 	   do	unlock -s prune	# didn't get backup lock; drop/share prune lock
 		set +x
-	done > /dev/null		# ignore message about busy backup lock
+	done
 	local src_snapshot=${lock_type2locked_resource[prune]}
 	$Trace
 	copy_snapshot_rsync $src_snapshot $dst_snapshot
-	unlock backup prune
+	unlock backup
+	unlock -s prune
 	return 0		# else infinite loop, see above
 }
 

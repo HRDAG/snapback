@@ -193,17 +193,17 @@ hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
 declare -i days_per_span_for_hour_prune=4	# prune-drive* can change this
   drv_name2days_per_span_for_hour_prune[Z]=1	# for action test-prune
 #
-# At date where the previous rm's all but *,00, repeat algorithm for months,
+# At date where hour_prune rm's all but *,00, repeat algorithm for months,
 # until all the oldest snapshots are only *-01,00 (i.e. one per month).
 declare -i months_per_span_for_day_prune=4	# prune-drive* can change this
   drv_name2months_per_span_for_day_prune[Z]=1	# for action test-prune
 #
-# At date where the previous rm's all but *-01,00, repeat algorithm for years,
+# At date where the day_prune rm's all but *-01,00, repeat algorithm for years,
 # until all the oldest snapshots are only *-01-01,00 (i.e. one per year).
 declare -i years_per_span_for_month_prune=4	# prune-drive* can change
   drv_name2years_per_span_for_month_prune[Z]=1	# for action test-prune
 
-# At date where previous rm's all but *-01-01,00, repeat algorithm for decades,
+# At date where month_prune rm's all but *-01-01,00, do algorithm for decades,
 # until all the oldest snapshots are only ?0-01-01,00 (i.e. one per decade).
 declare -i decades_per_span_for_year_prune=4	# prune-drive* can change
   drv_name2decades_per_span_for_year_prune[Z]=1	# for action test-prune
