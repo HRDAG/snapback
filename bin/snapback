@@ -1299,7 +1299,8 @@ set_link_dest_opts() {
 	for snapshot
 	    do	[[ -d $snapshot ]] || continue
 		link_dest_opts="$link_dest_opts --link-dest=$PWD/$snapshot"
-		[[ $snapshot != *.partial ]] && snapshots_used+=1
+		# don't consider *.partial or *.links to be adequate
+		[[ $snapshot != *.* ]] && snapshots_used+=1
 		(( snapshots_used >= num_link_dests )) && break
 	done
 	restore_tracing link_dest_opts
