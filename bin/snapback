@@ -275,19 +275,19 @@ run_lockpid() {
 	    lock_holder_action="is $lock_holder_action"
 
 	local our_PID=$BASHPID
-	local lock_cmd="lockpid $lock_file $our_PID"
+	local lock_cmd="lockpid --pid=$our_PID $lock_file"
 	lockpid_output=$($IfRun $lock_cmd 2>&1)
 	local status=$?
 
 	if [[ $status == 0 ]]
 	   then [[ $IfRun ]] &&
-		echo "$lockpid_output" | sed "s@ $our_PID@ <our_PID>@"
+		echo "$lockpid_output" | sed "s@$our_PID@<our_PID>@"
 		return 0
 	fi
 
 	local lock_holder_PID=$(echo "$lockpid_output" |
 				sed 's@^Process @@; s@ holds lock .*@@')
-	if [[ $status == 1 && $lock_holder_PID ]]
+	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
 	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
 		log  "process $lock_holder_PID $lock_holder_action"
 	   else log "$lock_cmd -> $lockpid_output (status=$status)"
@@ -303,7 +303,7 @@ readonly lock_share_secs=0.5
 declare -A _lock_type2lock_file
 declare -A  lock_type2locked_resource
 
-# Usage: lock [-C | -w] type resource(s)
+# Usage: lock [-C] [-w] type resource(s)
 #    Grab a lock of 'type' on any one of the resources (drive-dir or snapshot).
 #    If -C and want lock that's held by a Copy job, kill copy job.
 #    If -w and all locks are held by other jobs, Wait for a lock to be freed.
@@ -2414,7 +2414,8 @@ watch() {
 	lsblk_fields=name,fstype,type,size,state,sched,mountpoint
 	type lsblk &>/dev/null && 
 	echo &&
-	lsblk --output=$lsblk_fields $devices &&
+	lsblk --output=$lsblk_fields $devices | sort
+	[[ ${PIPESTATUS[0]} == 0 ]] &&
 	let rows-=num_drives+2
 	}
 
