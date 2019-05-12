@@ -1748,7 +1748,7 @@ is_dst_snapshot_needed() {
 	! [[ ${1##*/} != *.* || $ext == links || $ext == partial ]] &&
 	   $IfRun mv $1 $junk_dir/ && { warn "junk in $junk_dir"; return 0; }
 
-	[[ $1 != $dst_snapshot ]] && return 0
+	[[ $1 != $dst_snapshot ]] && return 0 ; [[ ! $is_quiet ]] &&
 	log     "$dst_snapshot already exists"; return 1
 }
 
@@ -1772,11 +1772,6 @@ copy_snapshot() {
 	dst_backup_type=$backup_type	   ; }
 
 	local  dst_snapshot=$dst_dir/${src_snapshot##*/}
-	[[ -d $dst_snapshot || -d ${dst_snapshot%.*} ]] &&
-	   { [[ ${FUNCNAME[1]} != update_drive ]] &&
-	     bad_copy "don't need $src_snapshot: it exists on $dst_drive_name"
-	     return 1; }
-
 	is_dst_snapshot_needed $dst_snapshot || return 1
 
 	[[ $src_snapshot == /* ]]  || {	# fix copy-snapshot's (single) src?
