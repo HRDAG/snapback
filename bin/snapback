@@ -1460,7 +1460,7 @@ _handle_rsync_results() {
 
 	if [[ -s $log ]]
 	   then [[ ${is_interactive-$IfRun} ]] && { bzcat $log; rm $log; }
-	   else rm $log
+	   else rm -f $log
 	fi
 
 	# uncomment next line to debug link_fail_count code with -d option
@@ -1474,6 +1474,7 @@ _handle_rsync_results() {
 		set -- $snapshot_pattern &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update_snapshots_ls
+		[[ ! $is_copy_snapshot ]] && # time used to set backup_period
 		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $IfRun ]] &&
@@ -3353,8 +3354,7 @@ case $action in
 
 	lock copy $dst_name || exit 1
 	for snapshot in $src_snapshots
-	    do	copy_snapshot $quiet_opt $snapshot $dst_name &&
-		   [[ ! $quiet_opt ]] && echo "copied $snapshot to $dst_name"
+	    do	copy_snapshot $quiet_opt $snapshot $dst_name
 	done
 	unlock copy
 	;;
