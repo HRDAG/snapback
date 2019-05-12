@@ -1294,14 +1294,19 @@ set_link_dest_opts() {
 	fi
 
 	suspend_tracing
-	declare -i snapshots_used=0
+	declare -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	local snapshot
 	for snapshot
 	    do	[[ -d $snapshot ]] || continue
+		# don't consider *.partial or *.links to be adequate;
+		# 20 --link-dest options max (10 per direction)
+		case $snapshot in
+		    ( *.links ) (( ++links_snapshots > 3 )) && continue ;;
+		    ( *.*     ) (( ++junky_snapshots > 2 )) && continue ;;
+		    (  *      ) (( ++goody_snapshots > $num_link_dests )) &&
+					break ;;
+		esac
 		link_dest_opts="$link_dest_opts --link-dest=$PWD/$snapshot"
-		# don't consider *.partial or *.links to be adequate
-		[[ $snapshot != *.* ]] && snapshots_used+=1
-		(( snapshots_used >= num_link_dests )) && break
 	done
 	restore_tracing link_dest_opts
 }
@@ -1784,12 +1789,13 @@ copy_snapshot() {
 
 	# the following is similar to the second half of run_backup_rsync
 
-	# the new way
+	# use this if backup and/or prune needs to kill copy job
 	# run_copy_job $src_snapshots $dst_snapshot; return
 
-	# the old way
+	# use the following if neither backup nor prune needs to kill copy job
+
 	# grab prune lock, so backup job can suspend us
-	lock -w prune $src_snapshot || exit 1
+#	lock -w prune $src_snapshot || exit 1
 
 	setup_copy_priority
 
@@ -1802,7 +1808,7 @@ copy_snapshot() {
 	run_rsync -c $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
-	unlock -s prune
+#	unlock -s prune
 }
 
 # -------------------------------------------------------

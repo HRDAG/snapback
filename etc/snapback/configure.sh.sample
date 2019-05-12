@@ -42,7 +42,7 @@ readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # if action 'dir-sizes' suggests
 # SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
 # described later).  Hard disks are different, so you can change that policy.
-	 suspend_prune_when_backup=$true     # non-RAID hard-disk drive
+	 suspend_prune_when_backup=$true     # non-striped hard-disk drive
 drv_name2suspend_prune_when_backup[C]=$false # SSD or flash memory stick
 #
 # The above and the below are correlated.
