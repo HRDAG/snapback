@@ -2375,7 +2375,7 @@ watch() {
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
 
-	(( $rows >= ($min_rows + 5) )) || [[ $show_all ]] && {
+	(( $rows >= ($min_rows + 7) )) || [[ $show_all ]] && {
 	echo
 	setup_snapshot_stats .rm
 	echo " Number pruned snapshots awaiting 'rm':  $stats_number"
@@ -2383,7 +2383,10 @@ watch() {
 	setup_snapshot_stats .links
 	echo "  Number of 'Too many links' snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
-	let rows-=5
+	setup_snapshot_stats .partial
+	echo " Number of .partial snapshots (error?):  $stats_number"
+	echo "          Days since .partial snapshot:  $stats_newest_age"
+	let rows-=7
 	}
 
 	# --------------------------------------------
