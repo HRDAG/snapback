@@ -226,8 +226,8 @@ readonly lock_dir=/var/lock/$our_name
 
 rm_stale_locks() {
 
-	local test_lock_file=$lock_dir/test-$$.pid
-	if sudo  -n  lockpid    $test_lock_file
+	local test_lock_file=$lock_dir/test-$BASHPID.pid
+	if sudo  -n  lockpid    $test_lock_file >& /dev/null
 	   then sudo lockpid -r $test_lock_file
 		local sudo=sudo
 	   else local sudo=
