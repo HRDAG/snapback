@@ -1791,7 +1791,7 @@ copy_snapshot() {
 	# use the following if neither backup nor prune needs to kill copy job
 
 	# grab prune lock, so backup job can suspend us
-#	lock -w prune $src_snapshot || exit 1
+	lock -w prune $src_snapshot || exit 1
 
 	setup_copy_priority
 
@@ -1804,7 +1804,7 @@ copy_snapshot() {
 	run_rsync -c $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
-#	unlock -s prune
+	unlock -s prune
 }
 
 # -------------------------------------------------------
