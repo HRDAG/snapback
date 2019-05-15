@@ -1220,8 +1220,6 @@ prune_drive() {
 	set_drive_name $drive_name
 	set_drive_dir  $drive_name || return 1
 
-	_is_time_to_prune_drive $drive_dir || return 0
-
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	# if use suspend, priority is "which job should run" not renice/ionice
@@ -1233,6 +1231,8 @@ prune_drive() {
 	lock $lock_opt prune $drive_name ||
 	    # since we're called, the old lock holder should be un-suspended
 	    { signal_job SIGCONT prune $drive_name; return 1; }
+
+	_is_time_to_prune_drive $drive_dir || { unlock prune; return 0; }
 
 	trap '' HUP
 	setup_prune_drive_priority
