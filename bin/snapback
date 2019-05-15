@@ -2212,7 +2212,7 @@ trim_prune() {
 
 # --------------------------------------------
 
-trim_update() {
+trim_copy_update() {
 
 	set -- $rsync_backup_opts	# standardize whitespace
 
@@ -2220,6 +2220,7 @@ trim_update() {
 	sed -e 's@update-drive -r @update-drive @g' \
 	    -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	    -e "s@ $* /@ \$opts /@" \
+	    -e 's@\( snapback[^0-9]* [^ ]*\) ..*\(.\) *$@\1 ... \2@' \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
 
@@ -2328,13 +2329,13 @@ watch() {
 	eval \
 	"set -- \$(cat $lock_dir/prune-${names_pat:-*}.pid 2>/dev/null)"
 	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
-			fgrep -e ' rm ' -e ' prune-' | trim_prune)
+			fgrep -e ' rm ' -e ' prune-' -e ' pd ' | trim_prune)
 	#
 	eval \
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
-			 egrep -e "[0-9] [/a-z].* (update|copy)-" \
+			 egrep -e "[0-9] [/a-z].* ((update|copy)-|cpss )" \
 			       -e "[0-9]     rsync" | 
 			  sed 's/   rsync/ rsync/')
 	#
@@ -2499,7 +2500,7 @@ watch() {
 	header "copy-snapshot or update-drive"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$cp_rsync_cmds" | trim_update | sort $prune_sort_opts
+	echo "$cp_rsync_cmds" | trim_copy_update | sort $prune_sort_opts
 	}
 
 	# ------------------------------------------------------------------
