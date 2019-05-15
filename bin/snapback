@@ -1586,6 +1586,7 @@ run_rsync() {
 # -------------------------------------------------------
 
 run_backup_rsync() {
+	local date_time=$1
 
 	setup_run_backup_priority && priority=high || priority=low
 
@@ -1594,8 +1595,6 @@ run_backup_rsync() {
 	   else local is_interactive=$false
 	fi
 
-	local date_time
-	set_date_time
 	local new_snapshot=$drive_dir/$date_time
 
 	if [[ $is_interactive && $drive_name != Z ]] # Z = debug "drive"
@@ -1619,19 +1618,19 @@ run_backup() {
 	set_drive_name $drive_name
 	set_drive_dir  $drive_name || return 1
 
-	# we must _always_ create the ,00 snapshots, they're saved forever
-	[[ $(date +%H) == 00 ]] && local wait_opt=-w || local wait_opt=
+	local date_time
+	set_date_time
 
 	# the following is similar to the second half of copy_snapshot
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
-	lock -C $wait_opt backup $drive_name || return 1
+	lock -w backup $drive_name || return 1
 
 	_backup_management_of_prune $drive_name pre-rsync
 
 	if _is_time_to_run_backup $drive_dir
-	   then	run_backup_rsync
+	   then	run_backup_rsync $date_time
 		local status=$?
 	   else local status=1
 	fi
