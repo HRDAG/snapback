@@ -1820,6 +1820,8 @@ copy_snapshot() {
 
 	local cwd=$PWD
 	cd_ $dst_dir		     # can kill job with: fuser -k -M $dst_dir
+	# don't try to copy to a backup-in-progress
+	ps l -u root | grep -w '[r]sync' | fgrep -q $dst_snapshot.partial ||
 	run_rsync -c $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
