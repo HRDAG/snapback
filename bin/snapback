@@ -321,7 +321,7 @@ lock() {
 	   then local must_wait=$true    wait_secs=$lock_must_wait_secs
 	   else local must_wait=$false   wait_secs=$lock_wait_secs
 	fi
-	local resource lock_file LP1_opt= LP2_opt= old_lock_PID=
+	local resource lock_file LP_bkp_opt=-q LP_prn_opt= old_lock_PID=
 	while true
 	    do	for resource
 		    do	local drive=${resource%/$snapshot_pattern*}
@@ -336,9 +336,9 @@ lock() {
 			   abort "hold $prev_lock_file, can't grab $lock_file"
 
 			if [[ $type == prune && $suspend_prune_when_backup ]]
-			   then $IfRun lockpid $LP1_opt $backup_lock_file &&
-				$IfRun lockpid	 -r	$backup_lock_file &&
-				LP1_opt= || { LP1_opt="-q -v"; continue; }
+			   then $IfRun lockpid $LP_bkp_opt $backup_lock_file &&
+				$IfRun lockpid	   -r	   $backup_lock_file &&
+				LP_bkp_opt= || { LP_bkp_opt="-q -v";continue; }
 			fi
 
 			if [[ $steal_copys_lock ]]
@@ -352,9 +352,9 @@ lock() {
 
 			local action_msg="holds '$type' lock for $drive"
 			if [[ $do_wait ]]
-			   then if $IfRun lockpid $LP2_opt $lock_file
-				   then LP2_opt=
-				   else LP2_opt="-q -v"
+			   then if $IfRun lockpid $LP_prn_opt $lock_file
+				   then LP_prn_opt=
+				   else LP_prn_opt="-q -v"
 					local lock_PID=$(<  $lock_file)
 					[[ $old_lock_PID && $lock_PID &&
 					   $old_lock_PID != $lock_PID &&
