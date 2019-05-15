@@ -297,8 +297,9 @@ run_lockpid() {
 
 # ------------------------------------------------------------------
 
-readonly  lock_wait_secs=0.2
 readonly lock_share_secs=0.5
+readonly  lock_wait_secs=0.2
+readonly  lock_must_wait_secs=0.01	# want to grab lock first
 
 declare -A _lock_type2lock_file
 declare -A  lock_type2locked_resource
@@ -316,7 +317,11 @@ lock() {
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
 	local type=$1; shift
 
-	local resource lock_file LP1_opt= LP2_opt=
+	if [[ $type == backup && $date_time == *00 ]] # maybe kept forever??
+	   then local must_wait=$true    wait_secs=$lock_must_wait_secs
+	   else local must_wait=$false   wait_secs=$lock_wait_secs
+	fi
+	local resource lock_file LP1_opt= LP2_opt= old_lock_PID=
 	while true
 	    do	for resource
 		    do	local drive=${resource%/$snapshot_pattern*}
@@ -347,13 +352,22 @@ lock() {
 
 			local action_msg="holds '$type' lock for $drive"
 			if [[ $do_wait ]]
-			   then $IfRun lockpid $LP2_opt $lock_file &&
-				  LP2_opt= || { LP2_opt="-q -v"; false; }
+			   then if $IfRun lockpid $LP2_opt $lock_file
+				   then LP2_opt=
+				   else LP2_opt="-q -v"
+					local lock_PID=$(<  $lock_file)
+					[[ $old_lock_PID && $lock_PID &&
+					   $old_lock_PID != $lock_PID &&
+					   ! $must_wait ]] &&
+					   return 1 # another wait'er was first
+					old_lock_PID=$lock_PID
+					false
+				fi
 			   else run_lockpid $lock_file "$action_msg"
 			fi && break 2
 		done
 		[[ $do_wait ]] || { $xtrace; return 1; }
-		$IfRun sleep $lock_wait_secs
+		$IfRun sleep $wait_secs
 	done
 
 	_lock_type2lock_file[$type]=$lock_file
