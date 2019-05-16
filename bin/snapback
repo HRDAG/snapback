@@ -275,6 +275,8 @@ set_locks() {
 	local type_regex=$1; shift
 	local PIDs=$*
 
+	[[ $PIDs ]] || return 1
+
 	local cwd=$PWD
 	cd_ $lock_dir
 	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
