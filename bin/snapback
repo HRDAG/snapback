@@ -906,6 +906,14 @@ _backup_management_of_prune() {
 ##############################################################################-
 ##############################################################################-
 
+is_rsync_using_snapshot() {
+	local snapshot=$1
+
+	ps l -u root | grep -w '[r]sync' | fgrep -q -w $snapshot
+}
+
+# -----------------------------------------------------------------------------
+
 update_snapshots_ls() {
 
 	echo $snapshot_pattern{,.links} | tr ' ' '\n' |
@@ -956,7 +964,8 @@ _rm_pruned_snapshots() {
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
-	    do	[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
+	    do	is_rsync_using_snapshot $snapshot && continue
+		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] && $IfRun mv $snapshot $snapshot.rm
 	done
 	update_snapshots_ls
@@ -1820,8 +1829,7 @@ copy_snapshot() {
 
 	local cwd=$PWD
 	cd_ $dst_dir		     # can kill job with: fuser -k -M $dst_dir
-	# don't try to copy to a backup-in-progress
-	ps l -u root | grep -w '[r]sync' | fgrep -q $dst_snapshot.partial ||
+	is_rsync_using_snapshot $dst_snapshot ||
 	run_rsync -c $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
@@ -2220,7 +2228,7 @@ trim_copy_update() {
 	sed -e 's@update-drive -r @update-drive @g' \
 	    -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	    -e "s@ $* /@ \$opts /@" \
-	    -e 's@\( snapback[^0-9]* [^ ]*\) ..*\(.\) *$@\1 ... \2@' \
+	    -e "s@\($_our_name[^0-9]* [^ ]*\) ..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
 
