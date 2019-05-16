@@ -925,10 +925,13 @@ _backup_management_of_prune() {
 ##############################################################################-
 ##############################################################################-
 
-is_rsync_using_snapshot() {
+count_rsyncs_using_snapshot() {
 	local snapshot=$1
 
-	ps l -u root | grep -w '[r]sync' | fgrep -q -w $snapshot
+	declare -i \
+	count=$(ps l -u root | grep -w '[r]sync' | fgrep -c -w $snapshot)
+	count=count/3
+	return $count
 }
 
 # -----------------------------------------------------------------------------
@@ -983,7 +986,7 @@ _rm_pruned_snapshots() {
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
-	    do	is_rsync_using_snapshot $snapshot && continue
+	    do	count_rsyncs_using_snapshot  $snapshot && continue
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] && $IfRun mv $snapshot $snapshot.rm
 	done
@@ -1848,7 +1851,7 @@ copy_snapshot() {
 
 	local cwd=$PWD
 	cd_ $dst_dir		     # can kill job with: fuser -k -M $dst_dir
-	is_rsync_using_snapshot $dst_snapshot ||
+	count_rsyncs_using_snapshot  $dst_snapshot ||
 	run_rsync -c $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
@@ -3710,6 +3713,10 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t )
+	count_rsyncs_using_snapshot $1
+	echo $?
+	exit
+
 	RunCmd true
 	RunCmd -d -m "expected (non fatal)" false
 	RunCmd    -m "expected     (fatal)" false
