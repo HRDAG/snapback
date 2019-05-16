@@ -269,6 +269,25 @@ set_lock_file() {
 
 # ---------------------------------
 
+locks=
+
+set_locks() {
+	local type_regex=$1; shift
+	local PIDs=$*
+
+	local cwd=$PWD
+	cd_ $lock_dir
+	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
+	set -- $(fgrep -l -w $fgrep_opts *.pid | grep "$type_regex" |
+		 sort | sed 's/\.pid//g')
+	locks=$*
+	cd $cwd
+
+	[[ $locks ]]
+}
+
+# ---------------------------------
+
 run_lockpid() {
 	local lock_file=$1 lock_holder_action=$2
 	[[ $lock_holder_action == holds* ]] ||
@@ -2328,6 +2347,7 @@ watch() {
 
 	eval \
 	"set -- \$(cat $lock_dir/backup-${names_pat:-*}.pid 2> /dev/null)"
+	set_locks backup $* && backup_lock_msg="; LOCKS: $locks"
 	[[ $# == 0 ]] && rsync_cmds= ||
 	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
@@ -2336,11 +2356,13 @@ watch() {
 
 	eval \
 	"set -- \$(cat $lock_dir/prune-${names_pat:-*}.pid 2>/dev/null)"
+	set_locks prune $* && prune_lock_msg="; LOCKS: $locks" # has copy locks
 	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' | trim_prune)
 	#
 	eval \
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
+	set_locks . $* && copy_lock_msg="; LOCKS: $locks"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			 egrep -e "[0-9] [/a-z].* ((update|copy)-|cpss )" \
@@ -2481,6 +2503,7 @@ watch() {
 
 	# ------------------------------------------------------------------
 
+      #	header "cron's run-prune${prune_lock_msg-}" # has copy's prune lock
 	header "cron's run-prune"
 	echo
 	> $tmp
@@ -2505,7 +2528,7 @@ watch() {
 
 	# copy-snapshots uses prune lock
 	[[ $cp_rsync_cmds ]] && {
-	header "copy-snapshot or update-drive"
+	header "copy-snapshot, update-drive${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$cp_rsync_cmds" | trim_copy_update | sort $prune_sort_opts
@@ -2520,7 +2543,8 @@ watch() {
 	"
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
-	header "cron's primary run-backup processes (abbreviated)"
+      #	header "cron's run-backups' lead rsyncs${backup_lock_msg-}"
+	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$hdr" | trim_ps_cols
@@ -2539,7 +2563,7 @@ watch() {
 	}
 
 	[[ $rsync_cmds ]] && {
-	header "cron's primary run-backup processes (full details)"
+	header "cron's run-backups' lead rsync processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$rsync_cmds" | sed "s@ $HOME/@ ~/@g"
