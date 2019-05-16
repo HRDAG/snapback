@@ -2516,10 +2516,10 @@ watch() {
 	(( $rows < ( $min_rows + $PD/2 ) )) &&
 	   fgrep_opt="-e prune-drive" && let rows+=$PD/2 || fgrep_opt=
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr $fgrep_opt
-	} | sort $prune_sort_opts > $tmp
+	} > $tmp
 	if [[ -s $tmp ]]
 	   then echo "$hdr" | trim_ps_cols
-		cat $tmp
+		cat $tmp # | sort $prune_sort_opts
 	   else echo -e "No pruning is being done$names_msg."
 	fi
 	rm $tmp
@@ -2531,7 +2531,7 @@ watch() {
 	header "copy-snapshot, update-drive${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$cp_rsync_cmds" | trim_copy_update | sort $prune_sort_opts
+	echo "$cp_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
 	}
 
 	# ------------------------------------------------------------------
