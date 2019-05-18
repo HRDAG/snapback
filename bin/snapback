@@ -224,6 +224,26 @@ assert_drive_dir_writable() {
 
 readonly lock_dir=/var/lock/$our_name
 
+locks=
+set_locks() {
+	local type_regex=$1; shift
+	local PIDs=$*
+
+	[[ $PIDs ]] || return 1
+
+	local cwd=$PWD
+	cd_ $lock_dir
+	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
+	set -- $(fgrep -l -w $fgrep_opts *.pid | grep "$type_regex" |
+		 sort | sed 's/\.pid//g')
+	locks=$*
+	cd $cwd
+
+	[[ $locks ]]
+}
+
+# -----------------------------------------------------------------------------
+
 rm_stale_locks() {
 
 	local test_lock_file=$lock_dir/test-$BASHPID.pid
@@ -265,27 +285,6 @@ set_lock_file() {
 	lock_file=$lock_dir/$type-$drive_name.pid
 
 	restore_tracing lock_file
-}
-
-# ---------------------------------
-
-locks=
-
-set_locks() {
-	local type_regex=$1; shift
-	local PIDs=$*
-
-	[[ $PIDs ]] || return 1
-
-	local cwd=$PWD
-	cd_ $lock_dir
-	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
-	set -- $(fgrep -l -w $fgrep_opts *.pid | grep "$type_regex" |
-		 sort | sed 's/\.pid//g')
-	locks=$*
-	cd $cwd
-
-	[[ $locks ]]
 }
 
 # ---------------------------------
