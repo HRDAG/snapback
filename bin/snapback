@@ -1668,15 +1668,25 @@ run_backup() {
 	local date_time
 	set_date_time
 
+	if _is_time_to_run_backup $drive_dir
+	   then local do_run_backup=$true
+	   else local do_run_backup=$false
+	fi
+
+	if [[ $do_run_backup ]]
+	   then local lock_opt=-w	# wait for lock, so don't skip backup
+	   else local lock_opt=		# (we still want to manage prune)
+	fi
+
 	# the following is similar to the second half of copy_snapshot
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
-	lock -w backup $drive_name || return 1
+	lock $lock_opt backup $drive_name || return 1
 
 	_backup_management_of_prune $drive_name pre-rsync
 
-	if _is_time_to_run_backup $drive_dir
+	if [[ $do_run_backup ]]
 	   then	run_backup_rsync $date_time
 		local status=$?
 	   else local status=1
@@ -2362,8 +2372,9 @@ watch() {
 	eval \
 	"set -- \$(cat $lock_dir/prune-${names_pat:-*}.pid 2>/dev/null)"
 	set_locks prune $* && prune_lock_msg="; LOCKS: $locks" # has copy locks
-	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null |
-			fgrep -e ' rm ' -e ' prune-' -e ' pd ' | trim_prune)
+	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null  |
+			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e 'lockpid ' |
+			trim_prune)
 	#
 	eval \
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
@@ -2371,6 +2382,7 @@ watch() {
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			 egrep -e "[0-9] [/a-z].* ((update|copy)-|cpss )" \
+			       -e "lockpid " \
 			       -e "[0-9]     rsync" | 
 			  sed 's/   rsync/ rsync/')
 	#
