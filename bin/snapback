@@ -289,7 +289,7 @@ set_lock_file() {
 
 # ---------------------------------
 
-run_lockpid() {
+lock_PID() {
 	local lock_opts=
 	while [[ $1 == -* ]] ; do add_words lock_opts $1; shift; done
 	local lock_file=$1 lock_holder_action=$2
@@ -357,13 +357,13 @@ lock() {
 	[[ ! $prev_lock_file ]] ||
 	   abort "hold $prev_lock_file, can't grab $lock_file"
 
-	local lock_msg="holds '$type' lock for $drive"
-	local  bkp_msg="${lock_msg/$type/backup}, so can't prune"
+	local      lock_msg="holds '$type' lock for $drive"
+	local  bkp_lock_msg="${lock_msg/$type/backup}, so can't prune"
 	while true
 	    do	if [[ $type == backup && $do_wait ]]
 		   then # return 1 if waited longer than backup_period
 			declare -i start_secs=$(date '+%s')
-			run_lockpid $wait_opt $lock_file "$lock_msg"
+			lock_PID $wait_opt $lock_file "$lock_msg"
 			declare -i   end_secs=$(date '+%s')
 			declare -i  wait_secs=end_secs-start_secs
 			[[ $must_wait ]] && wait_secs=0 # *need* lock?
@@ -373,21 +373,21 @@ lock() {
 
 		if [[ $type == prune && $suspend_prune_when_backup ]]
 		   then # can't grab prune lock when backup is running
-			run_lockpid $wait_opt $backup_lock_file "$bkp_msg" &&
-			run_lockpid     -r    $backup_lock_file "$bkp_msg" ||
+			lock_PID $wait_opt $backup_lock_file "$bkp_lock_msg" &&
+			lock_PID     -r    $backup_lock_file "$bkp_lock_msg" ||
 			    { $xtrace; return 1; }
 			if [[ $do_wait ]]
 			   then if $IfRun lockpid $lock_file >& /dev/null
 				   then break
-				   else run_lockpid -w $lock_file "$lock_msg"
-					run_lockpid -r $lock_file "$lock_msg"
+				   else lock_PID -w $lock_file "$lock_msg"
+					lock_PID -r $lock_file "$lock_msg"
 					continue # make sure no backup running
 				fi
 			#  else fall through
 			fi
 		fi
 
-		run_lockpid $wait_opt $lock_file "$lock_msg" &&
+		lock_PID $wait_opt $lock_file "$lock_msg" &&
 		    break || { $xtrace; return 1; }
 	done
 
