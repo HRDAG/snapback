@@ -1783,9 +1783,11 @@ is_src_snapshot_useful() {
 is_dst_snapshot_needed() {
 	local dst_snapshot=$1
 
-	set -- ${dst_snapshot%.*}{,.links} # a version might exist
+	set -- ${dst_snapshot%.*}*	# a version might exist
 	[[ $# == 1    ]] ||
 	   bad_copy "'$*' exist, (mv then) delete worst one" || return 1
+	[[ $1 != *.rm ]] ||
+	   bad_copy "destination is waiting to be pruned" || return 1
 
 	local junk_dir=${dst_snapshot%/*}/.junk
 	$IfRun mkdir -p $junk_dir > /dev/null
@@ -1823,7 +1825,8 @@ copy_snapshot() {
 	set_backup_type $dst_drive_name
 	dst_backup_type=$backup_type	   ; }
 
-	local  dst_snapshot=$dst_dir/${src_snapshot##*/}
+	[[ $src_snapshot == *.rm || $src_snapshot == *.partial ]] && return 1
+	local dst_snapshot=$dst_dir/${src_snapshot##*/}
 	is_dst_snapshot_needed $dst_snapshot || return 1
 
 	[[ $src_snapshot == /* ]]  || {	# fix copy-snapshot's (single) src?
