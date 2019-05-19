@@ -1715,7 +1715,7 @@ bad_copy() {
 	local msg=$*
 
 	[[ $is_quiet || $pass_opt || $IfRun ]] ||
-	   abort "$msg; use -q to avoid 'destination exists' failures"
+	   abort "$msg; use -q to not abort"
 
 	[[ ! $IfRun ]] || echo "copy_snapshot: $msg"
 
@@ -1783,11 +1783,9 @@ is_src_snapshot_useful() {
 is_dst_snapshot_needed() {
 	local dst_snapshot=$1
 
-	set -- ${dst_snapshot%.*}.*	# a version might exist
+	set -- ${dst_snapshot%.*}{,.links} # a version might exist
 	[[ $# == 1    ]] ||
 	   bad_copy "'$*' exist, (mv then) delete worst one" || return 1
-	[[ $1 != *.rm ]] ||
-	   bad_copy "destination is waiting to be pruned" || return 1
 
 	local junk_dir=${dst_snapshot%/*}/.junk
 	$IfRun mkdir -p $junk_dir > /dev/null
@@ -2222,6 +2220,7 @@ trim() {
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
 	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
 	    -e "s@ --pid=[0-9]* --dir=$lock_dir @ @"	\
+	    -e "s@ --pid=[0-9]* @ @"	\
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
