@@ -265,40 +265,27 @@ rm_stale_locks() {
 
 # -----------------------------------------------------------------------------
 
-readonly lock_types="backup prune copy" # kill_all_jobs uses
+readonly lock_types="backup prune copy" # kill_all_jobs uses also
 
-lock_file=
-
-set_lock_file() {
-	suspend_tracing
-
-	local type=$1 name=${2:-$drive_name}
-
-	[[ -d $lock_dir ]] || sudo mkdir -p --mode=1777 $lock_dir
-
-	is_arg1_in_arg2  $type $lock_types ||
-	   abort "lock: '$type' is unknown lock type"
-
-	[[     $custom_config_vars ]] &&
-	local ${custom_config_vars/suspend_prune_when_backup/} # for lock()
-	set_drive_name $name
-	lock_file=$lock_dir/$type-$drive_name.pid
-
-	restore_tracing lock_file
-}
-
-# ---------------------------------
+_lock_file=				# used by lock() and signal_job()
 
 lock_PID() {
+	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
 	while [[ $1 == -* ]] ; do add_words lock_opts $1; shift; done
-	local lock_file=$1 lock_holder_action=$2
+	local type=$1 lock_holder_action=$2
+
+	is_arg1_in_arg2 $type $lock_types ||
+	   abort "$FUNCNAME: '$type' is unknown lock type"
+	_lock_file=$type-$name.pid
+
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
 	local our_PID=$BASHPID
-	local lock_cmd="lockpid --pid=$our_PID $lock_opts $lock_file"
-	lockpid_output=$($IfRun $lock_cmd 2>&1)
+	local lock_cmd="lockpid --pid=$our_PID --dir=$lock_dir \
+				$lock_opts $_lock_file"
+	local lockpid_output=$($IfRun $lock_cmd 2>&1)
 	local status=$?
 
 	if [[ $status == 0 ]]
@@ -346,24 +333,17 @@ lock() {
 
 	local drive=${resource%/$snapshot_pattern*}
 
-	local lock_file
-	set_lock_file backup $drive
-	local backup_lock_file=$lock_file
-	set_lock_file $type  $drive
-
 	local prev_lock_file=${_lock_type2lock_file[$type]-}
-	[[   $prev_lock_file == $lock_file ]] &&
-	  { warn "already hold $lock_file"; $xtrace; return 0; }
 	[[ ! $prev_lock_file ]] ||
 	   abort "hold $prev_lock_file, can't grab $lock_file"
 
-	local      lock_msg="holds '$type' lock for $drive"
-	local  bkp_lock_msg="${lock_msg/$type/backup}, so can't prune"
+	local		    lock_msg="holds '$type' lock for $drive"
+	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
 	while true
 	    do	if [[ $type == backup && $do_wait ]]
 		   then # return 1 if waited longer than backup_period
 			declare -i start_secs=$(date '+%s')
-			lock_PID $wait_opt $lock_file "$lock_msg"
+			lock_PID $wait_opt backup "$lock_msg"
 			declare -i   end_secs=$(date '+%s')
 			declare -i  wait_secs=end_secs-start_secs
 			[[ $must_wait ]] && wait_secs=0 # *need* lock?
@@ -373,25 +353,25 @@ lock() {
 
 		if [[ $type == prune && $suspend_prune_when_backup ]]
 		   then # can't grab prune lock when backup is running
-			lock_PID $wait_opt $backup_lock_file "$bkp_lock_msg" &&
-			lock_PID     -r    $backup_lock_file "$bkp_lock_msg" ||
+			lock_PID $wait_opt backup "$prunes_backup_lock_msg" &&
+			lock_PID     -r    backup "$prunes_backup_lock_msg" ||
 			    { $xtrace; return 1; }
 			if [[ $do_wait ]]
-			   then if $IfRun lockpid $lock_file >& /dev/null
+			   then if lock_PID prune "$lock_msg" >& /dev/null
 				   then break
-				   else lock_PID -w $lock_file "$lock_msg"
-					lock_PID -r $lock_file "$lock_msg"
+				   else lock_PID -w prune "$lock_msg"
+					lock_PID -r prune "$lock_msg"
 					continue # make sure no backup running
 				fi
 			#  else fall through
 			fi
 		fi
 
-		lock_PID $wait_opt $lock_file "$lock_msg" &&
+		lock_PID $wait_opt $type "$lock_msg" &&
 		    break || { $xtrace; return 1; }
 	done
 
-	_lock_type2lock_file[$type]=$lock_file
+	_lock_type2lock_file[$type]=$_lock_file # lock_PID sets _lock_file
 	 lock_type2locked_resource[$type]=$resource
 
 	 $xtrace
@@ -409,7 +389,7 @@ unlock() {
 	for type
 	    do	local lock_file=${_lock_type2lock_file[$type]-}
 		[[   $lock_file ]] || abort "don't hold lock of type '$type'"
-		$IfRun lockpid -r $lock_file
+		$IfRun lockpid -r $lock_dir/$lock_file
 		unset _lock_type2lock_file[$type]
 		unset  lock_type2locked_resource[$type]
 	done
@@ -465,17 +445,14 @@ signal_job() {
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 
-	local lock_file
-	set_lock_file $type $name
-	[[ -s $lock_file ]] || return 1
-	$sudo lockpid    $lock_file >& /dev/null && # stale lock file?
-	$sudo lockpid -r $lock_file && return 1
+	$sudo lock_PID -n $name $type >& /dev/null && # was missing or stale?
+	$sudo lockpid -r $lock_dir/$_lock_file && return 1
 
-	set -- $(< $lock_file) &&
+	set -- $(< $lock_dir/$_lock_file) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 	set_signal_is_kill    $signal &&
-	$IfRun $sudo lockpid -r $lock_file
+	$IfRun $sudo lockpid -r $lock_dir/$_lock_file
 
 	return 0
 }
@@ -620,6 +597,8 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	sudo chmod g+w,g+s $log_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
+
+	[[ -d $lock_dir ]] || sudo mkdir -p --mode=1777 $lock_dir
 
 	[[ $drive_name == Z ]] && is_regression_test=$true
 
@@ -2229,7 +2208,8 @@ setup_snapshot_stats() {
 trim() {
 
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
-	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@' \
+	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
+	    -e "s@ --pid=[0-9]* --dir=$lock_dir @ @"	\
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
