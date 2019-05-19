@@ -290,12 +290,14 @@ set_lock_file() {
 # ---------------------------------
 
 run_lockpid() {
+	local lock_opts=
+	while [[ $1 == -* ]] ; do add_words lock_opts $1; shift; done
 	local lock_file=$1 lock_holder_action=$2
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
 	local our_PID=$BASHPID
-	local lock_cmd="lockpid --pid=$our_PID $lock_file"
+	local lock_cmd="lockpid --pid=$our_PID $lock_opts $lock_file"
 	lockpid_output=$($IfRun $lock_cmd 2>&1)
 	local status=$?
 
@@ -306,7 +308,7 @@ run_lockpid() {
 	fi
 
 	local lock_holder_PID=$(echo "$lockpid_output" |
-				sed 's@^Process @@; s@ holds lock .*@@')
+				sed -r 's@.*rocess ([0-9]+) holds.*@\1@')
 	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
 	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
 		log  "process $lock_holder_PID $lock_holder_action"
@@ -318,81 +320,81 @@ run_lockpid() {
 # ------------------------------------------------------------------
 
 readonly lock_share_secs=0.5
-readonly  lock_wait_secs=0.2
-readonly  lock_must_wait_secs=0.01	# want to grab lock first
+readonly lock_wait_msecs=300
+readonly lock_must_wait_msecs=1		# be the first to lock grab
 
 declare -A _lock_type2lock_file
 declare -A  lock_type2locked_resource
 
-# Usage: lock [-C] [-w] type resource(s)
-#    Grab a lock of 'type' on any one of the resources (drive-dir or snapshot).
-#    If -C and want lock that's held by a Copy job, kill copy job.
-#    If -w and all locks are held by other jobs, Wait for a lock to be freed.
+# Usage: lock [-w] type resource
+#    Grab a lock of 'type' on resource (drive-dir or snapshot).
+#    If -w and lock is held by other job, Wait for lock to be freed.
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
 lock() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local steal_copys_lock=$false
-	[[ $1 == -C ]] && { shift; steal_copys_lock=$true; }
 	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
-	local type=$1; shift
+	[[ $# == 2  ]] || abort "$FUNCNAME [-w] type resource"
+	local type=$1 resource=$2
 
-	if [[ $type == backup && $date_time == *00 ]] # maybe kept forever??
-	   then local must_wait=$true    wait_secs=$lock_must_wait_secs
-	   else local must_wait=$false   wait_secs=$lock_wait_secs
-	fi
-	local resource lock_file LP_bkp_opt=-q LP_prn_opt= old_lock_PID=
+	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
+	[[ $type == backup && $do_wait ]] &&
+	if [[ $date_time == *,00 ]]    # making snapshot that's rarely pruned?
+	   then local must_wait=$true   wait_msecs=$lock_must_wait_msecs
+	   else local must_wait=$false  wait_msecs=$lock_wait_msecs
+	fi && wait_opt=--wait-msecs=$wait_msecs
+
+	local drive=${resource%/$snapshot_pattern*}
+
+	local lock_file
+	set_lock_file backup $drive
+	local backup_lock_file=$lock_file
+	set_lock_file $type  $drive
+
+	local prev_lock_file=${_lock_type2lock_file[$type]-}
+	[[   $prev_lock_file == $lock_file ]] &&
+	  { warn "already hold $lock_file"; $xtrace; return 0; }
+	[[ ! $prev_lock_file ]] ||
+	   abort "hold $prev_lock_file, can't grab $lock_file"
+
+	local lock_msg="holds '$type' lock for $drive"
+	local  bkp_msg="${lock_msg/$type/backup}, so can't prune"
 	while true
-	    do	for resource
-		    do	local drive=${resource%/$snapshot_pattern*}
-			set_lock_file backup $drive
-			local backup_lock_file=$lock_file
-			set_lock_file $type  $drive
+	    do	if [[ $type == backup && $do_wait ]]
+		   then # return 1 if waited longer than backup_period
+			declare -i start_secs=$(date '+%s')
+			run_lockpid $wait_opt $lock_file "$lock_msg"
+			declare -i   end_secs=$(date '+%s')
+			declare -i  wait_secs=end_secs-start_secs
+			[[ $must_wait ]] && wait_secs=0 # *need* lock?
+			(( $wait_secs < $backup_period * 60 * 60 )) &&
+			    break || { $xtrace; return 1; }
+		fi
 
-			local prev_lock_file=${_lock_type2lock_file[$type]-}
-			[[   $prev_lock_file == $lock_file ]] &&
-			  { warn "already hold $lock_file"; $xtrace;return 0; }
-			[[ ! $prev_lock_file ]] ||
-			   abort "hold $prev_lock_file, can't grab $lock_file"
-
-			if [[ $type == prune && $suspend_prune_when_backup ]]
-			   then $IfRun lockpid $LP_bkp_opt $backup_lock_file &&
-				$IfRun lockpid	   -r	   $backup_lock_file &&
-				LP_bkp_opt= || { LP_bkp_opt="-q -v";continue; }
-			fi
-
-			if [[ $steal_copys_lock ]]
-			   then $IfRun lockpid $lock_file > /dev/null &&
-				   break 2
-				local PID=$(< $lock_file)
-				[[ $(fgrep -w $PID $lock_dir/copy-*.pid) ]] &&
-				    { kill_jobs $type $drive
-				      do_wait=$true; } # wait for copy to die
-			fi
-
-			local action_msg="holds '$type' lock for $drive"
+		if [[ $type == prune && $suspend_prune_when_backup ]]
+		   then # can't grab prune lock when backup is running
+			run_lockpid $wait_opt $backup_lock_file "$bkp_msg" &&
+			run_lockpid     -r    $backup_lock_file "$bkp_msg" ||
+			    { $xtrace; return 1; }
 			if [[ $do_wait ]]
-			   then if $IfRun lockpid $LP_prn_opt $lock_file
-				   then LP_prn_opt=
-				   else LP_prn_opt="-q -v"
-					local lock_PID=$(<  $lock_file)
-					[[ $old_lock_PID && $lock_PID &&
-					   $old_lock_PID != $lock_PID &&
-					   ! $must_wait ]] &&
-					   return 1 # another wait'er was first
-					old_lock_PID=$lock_PID
-					false
+			   then if $IfRun lockpid $lock_file >& /dev/null
+				   then break
+				   else run_lockpid -w $lock_file "$lock_msg"
+					run_lockpid -r $lock_file "$lock_msg"
+					continue # make sure no backup running
 				fi
-			   else run_lockpid $lock_file "$action_msg"
-			fi && break 2
-		done
-		[[ $do_wait ]] || { $xtrace; return 1; }
-		$IfRun sleep $wait_secs
+			#  else fall through
+			fi
+		fi
+
+		run_lockpid $wait_opt $lock_file "$lock_msg" &&
+		    break || { $xtrace; return 1; }
 	done
 
 	_lock_type2lock_file[$type]=$lock_file
 	 lock_type2locked_resource[$type]=$resource
-	$xtrace
+
+	 $xtrace
 	return 0
 }
 
@@ -1274,7 +1276,7 @@ prune_drive() {
 
 	# if use suspend, priority is "which job should run" not renice/ionice
 	if is_disk_usage_too_high && [[ $suspend_prune_when_backup ]]
-	   then local lock_opt=-C  # desparately need pruning, steal copy lock
+	   then local lock_opt=	  # desparately need pruning, borrow copy lock
 	   else local lock_opt=
 	fi
 
