@@ -246,18 +246,18 @@ set_locks() {
 
 rm_stale_locks() {
 
-	local test_lock_file=$lock_dir/test-$BASHPID.pid
-	if sudo  -n  lockpid    $test_lock_file >& /dev/null
-	   then sudo lockpid -r $test_lock_file
+	local test_lock_path=$lock_dir/test-$BASHPID.pid
+	if sudo  -n  lockpid    $test_lock_path >& /dev/null
+	   then sudo lockpid -r $test_lock_path
 		local sudo=sudo
 	   else local sudo=
 	fi
 
-	local lock_file
-	for lock_file in $lock_dir/*.pid
-	    do	[[ -e $lock_file ]] || continue
-		$sudo lockpid    $lock_file >& /dev/null &&
-		$sudo lockpid -r $lock_file
+	local lock_path
+	for lock_path in $lock_dir/*.pid
+	    do	[[ -e $lock_path ]] || continue
+		$sudo lockpid    $lock_path >& /dev/null &&
+		$sudo lockpid -r $lock_path
 	done
 
 	return 0
@@ -267,7 +267,12 @@ rm_stale_locks() {
 
 readonly lock_types="backup prune copy" # kill_all_jobs uses also
 
-_lock_file=				# used by lock() and signal_job()
+lock_path=				# used by lock() and signal_job()
+set_lock_path() {
+	local type=$1 name=${2:-$drive_name}
+
+	lock_path=$lock_dir/$type-$name.pid
+}
 
 lock_PID() {
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
@@ -277,14 +282,15 @@ lock_PID() {
 
 	is_arg1_in_arg2 $type $lock_types ||
 	   abort "$FUNCNAME: '$type' is unknown lock type"
-	_lock_file=$type-$name.pid
+	set_lock_path $type $name
+	local lock_file=$(basename $lock_path)
 
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
 	local our_PID=$BASHPID
 	local lock_cmd="lockpid --pid=$our_PID --dir=$lock_dir \
-				$lock_opts $_lock_file"
+				$lock_opts $lock_file"
 	local lockpid_output=$($IfRun $lock_cmd 2>&1)
 	local status=$?
 
@@ -310,7 +316,7 @@ readonly lock_share_secs=0.5
 readonly lock_wait_msecs=300
 readonly lock_must_wait_msecs=1		# be the first to lock grab
 
-declare -A _lock_type2lock_file
+declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
 
 # Usage: lock [-w] type resource
@@ -333,9 +339,9 @@ lock() {
 
 	local drive=${resource%/$snapshot_pattern*}
 
-	local prev_lock_file=${_lock_type2lock_file[$type]-}
-	[[ ! $prev_lock_file ]] ||
-	   abort "hold $prev_lock_file, can't grab $lock_file"
+	local prev_lock_path=${_lock_type2lock_path[$type]-}
+	[[ ! $prev_lock_path ]] ||
+	   abort "hold $(basename prev_lock_path), can't grab $type lock file"
 
 	local		    lock_msg="holds '$type' lock for $drive"
 	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
@@ -371,7 +377,7 @@ lock() {
 		    break || { $xtrace; return 1; }
 	done
 
-	_lock_type2lock_file[$type]=$_lock_file # lock_PID sets _lock_file
+	_lock_type2lock_path[$type]=$lock_path # lock_PID sets lock_path
 	 lock_type2locked_resource[$type]=$resource
 
 	 $xtrace
@@ -387,10 +393,10 @@ unlock() {
 
 	local type
 	for type
-	    do	local lock_file=${_lock_type2lock_file[$type]-}
-		[[   $lock_file ]] || abort "don't hold lock of type '$type'"
-		$IfRun lockpid -r $lock_dir/$lock_file
-		unset _lock_type2lock_file[$type]
+	    do	local lock_path=${_lock_type2lock_path[$type]-}
+		[[   $lock_path ]] || abort "don't hold lock of type '$type'"
+		$IfRun lockpid -r $lock_path ||abort "$FUNCNAME: lockpid -> $?"
+		unset _lock_type2lock_path[$type]
 		unset  lock_type2locked_resource[$type]
 	done
 	[[ $do_share ]] && $IfRun sleep $lock_share_secs
@@ -441,18 +447,24 @@ set_signal_is_kill() {
 # ----------------------
 
 signal_job() {
-	local signal=${1#-} type=$2 name=${3:-$drive_name}
+	local signal=${1#-} type=$2 name=${3-}
 
 	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
 
-	$sudo lock_PID -n $name $type >& /dev/null && # was missing or stale?
-	$sudo lockpid -r $lock_dir/$_lock_file && return 1
+	suspend_tracing
+	[[ $name ]] && set_drive_name $name
+	restore_tracing
+	name=$drive_name
+	set_lock_path $type $name
 
-	set -- $(< $lock_dir/$_lock_file) &&
+	$sudo lockpid    $lock_path >& /dev/null && # was missing or stale?
+	$sudo lockpid -r $lock_path && return 1
+
+	set -- $(< $lock_path) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 	set_signal_is_kill    $signal &&
-	$IfRun $sudo lockpid -r $lock_dir/$_lock_file
+	$IfRun $sudo lockpid -r $lock_path
 
 	return 0
 }
