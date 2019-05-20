@@ -288,11 +288,12 @@ lock_PID() {
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
-	local our_PID=$BASHPID status_file=$tmp_4
-	local lock_cmd="lockpid --pid=$our_PID --dir=$lock_dir \
-				$lock_opts $lock_file"
-	local lockpid_output=$($IfRun $lock_cmd 2>&1; echo \$? > $status_file)
+	local our_PID=$BASHPID status_file=$tmp_3
+	set -- lockpid --pid=$our_PID --dir=$lock_dir $lock_opts $lock_file
+	local lock_cmd=$*
+	local lockpid_output=$($IfRun $lock_cmd 2>&1; echo $? > $status_file)
 	local status=$(< $status_file)
+	rm $status_file
 
 	if [[ $status == 0 ]]
 	   then [[ $IfRun ]] &&
@@ -459,14 +460,16 @@ signal_job() {
 	name=$drive_name
 	set_lock_path $type $name
 
-	$sudo lockpid -r -p $$ $lock_path >& /dev/null && # missing or stale?
+	[[ -s $lock_path ]] || return 1
+	$sudo lockpid    -p $$ $lock_path >& /dev/null && # missing or stale?
 	$sudo lockpid -r -p $$ $lock_path && return 1
 
 	set -- $(< $lock_path) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 	set_signal_is_kill    $signal &&
-	$IfRun $sudo lockpid -r -p $1 $lock_path
+	$sudo lockpid    -p $$ $lock_path >& /dev/null && # some else grabbed?
+	$sudo lockpid -r -p $$ $lock_path
 
 	return 0
 }
@@ -2526,6 +2529,7 @@ watch() {
 	[[ ! $show_all ]] &&
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2) &&
 	   let rows+=$(wc -l < $tmp_2)
+	rm $tmp_2
 	(( $rows < ( $min_rows + $PD/2 ) )) &&
 	   fgrep_opt="-e prune-drive" && let rows+=$PD/2 || fgrep_opt=
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr $fgrep_opt
