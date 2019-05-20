@@ -247,8 +247,8 @@ set_locks() {
 rm_stale_locks() {
 
 	local test_lock_path=$lock_dir/test-$BASHPID.pid
-	if sudo  -n  lockpid    $test_lock_path >& /dev/null
-	   then sudo lockpid -r $test_lock_path
+	if sudo  -n  lockpid    -p $$ $test_lock_path >& /dev/null
+	   then sudo lockpid -r -p $$ $test_lock_path
 		local sudo=sudo
 	   else local sudo=
 	fi
@@ -256,8 +256,8 @@ rm_stale_locks() {
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
-		$sudo lockpid    $lock_path >& /dev/null &&
-		$sudo lockpid -r $lock_path
+		$sudo lockpid    -p $$ $lock_path >& /dev/null &&
+		$sudo lockpid -r -p $$ $lock_path
 	done
 
 	return 0
@@ -457,14 +457,14 @@ signal_job() {
 	name=$drive_name
 	set_lock_path $type $name
 
-	$sudo lockpid    $lock_path >& /dev/null && # was missing or stale?
-	$sudo lockpid -r $lock_path && return 1
+	$sudo lockpid -r -p $$ $lock_path >& /dev/null && # missing or stale?
+	$sudo lockpid -r -p $$ $lock_path && return 1
 
 	set -- $(< $lock_path) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 	set_signal_is_kill    $signal &&
-	$IfRun $sudo lockpid -r $lock_path
+	$IfRun $sudo lockpid -r -p $1 $lock_path
 
 	return 0
 }
