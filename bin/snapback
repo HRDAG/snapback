@@ -288,11 +288,11 @@ lock_PID() {
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
-	local our_PID=$BASHPID
+	local our_PID=$BASHPID status_file=$tmp_4
 	local lock_cmd="lockpid --pid=$our_PID --dir=$lock_dir \
 				$lock_opts $lock_file"
-	local lockpid_output=$($IfRun $lock_cmd 2>&1)
-	local status=$?
+	local lockpid_output=$($IfRun $lock_cmd 2>&1; echo \$? > $status_file)
+	local status=$(< $status_file)
 
 	if [[ $status == 0 ]]
 	   then [[ $IfRun ]] &&
@@ -324,6 +324,7 @@ declare -A  lock_type2locked_resource
 #    If -w and lock is held by other job, Wait for lock to be freed.
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
 lock() {
+	[[ ${action-} != test ]] &&
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
@@ -337,13 +338,14 @@ lock() {
 	   else local must_wait=$false  wait_msecs=$lock_wait_msecs
 	fi && wait_opt=--wait-msecs=$wait_msecs
 
-	local drive=${resource%/$snapshot_pattern*}
+	local drive_dir=${resource%/$snapshot_pattern*}
+	drive_name=${drive_dir#$drive_dir_prefix}
 
 	local prev_lock_path=${_lock_type2lock_path[$type]-}
 	[[ ! $prev_lock_path ]] ||
 	   abort "hold $(basename prev_lock_path), can't grab $type lock file"
 
-	local		    lock_msg="holds '$type' lock for $drive"
+	local		    lock_msg="holds '$type' lock for $drive_name"
 	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
 	while true
 	    do	if [[ $type == backup && $do_wait ]]
@@ -3720,7 +3722,12 @@ case $action in
    ( run | r )
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
-   ( test | t )
+   ( test | t ) action=test; $Trace
+	echo $$
+	lock prune G
+	echo $?
+	exit
+
 	count_rsyncs_using_snapshot $1
 	echo $?
 	exit
