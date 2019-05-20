@@ -2263,9 +2263,11 @@ trim_copy_update() {
 	set -- $rsync_backup_opts	# standardize whitespace
 
 	trim |
+	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
+	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	sed -e 's@update-drive -r @update-drive @g' \
-	    -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
-	    -e "s@ $* /@ \$opts /@" \
+	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
+	    -e "s@ $* /@ /@" \
 	    -e "s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
