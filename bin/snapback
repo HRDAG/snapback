@@ -73,8 +73,8 @@ Usage: $our_name action [args]
     list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
-    update-drives names: copy missing snapshots from other drives to names
-    copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
+    update-drives [-d] names: copy missing snapshots from other drives to names
+    copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show pruning & backup activity, and the status of pruning and backups
@@ -1846,6 +1846,9 @@ copy_snapshot() {
 
 	TraceV 2 src_snapshot dst_snapshot
 
+	[[ ${debug_copy-} ]] &&
+	    echo "copy $src_snapshot/\$dirs to $dst_dir/" && return 0
+
 	# the following is similar to the second half of run_backup_rsync
 
 	# use this if backup and/or prune needs to kill copy job
@@ -3402,8 +3405,10 @@ case $action in
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   # update-drives names: copy missing snapshots from other drives to names
+   #update-drives [-d] names: copy missing snapshots from other drives to names
    ( upd*dr*v* | ud* )
+	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
+	[[ $1 != -* ]] || abort "unknown option $1"
 	[[ ${!#} == [gG] ]] || abort "currently, only works on new drive: G"
 	[[ $# != 0 ]] || abort_with_action_Usage update-drive
 	run_jobs_in_parallel update "$@"
@@ -3418,11 +3423,12 @@ case $action in
 	    do	check-snapshot-hard-links $drive
 	done
 	;;
-   # copy-snapshots [-q] snapshots name: copy to 'name' mounted backup drive
+   # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cps )		# cpss
 	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
-	[[ $1 == -q ]] && { quiet_opt=$1; shift; } || quiet_opt=
-	[[ $1 != -* ]] || abort "unknown option $1"
+	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
+	[[ $1 == -q ]] && { quiet_opt=$1 ; shift; } || quiet_opt=
+	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
 	(( $# >= 2  )) || abort_with_action_Usage copy-snap
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
