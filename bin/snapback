@@ -468,8 +468,9 @@ signal_job() {
 	set -- $(< $lock_path) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
-	set_signal_is_kill    $signal &&
-	$sudo lockpid    -p $$ $lock_path >& /dev/null && # some else grabbed?
+
+	set_signal_is_kill $signal &&
+	$sudo lockpid    -p $$ $lock_path >& /dev/null && # avoid race
 	$sudo lockpid -r -p $$ $lock_path
 
 	return 0
@@ -1806,6 +1807,8 @@ is_dst_snapshot_needed() {
 	! [[ ${1##*/} != *.* || $ext == links || $ext == partial ]] &&
 	   $IfRun mv $1 $junk_dir/ && { warn "junk in $junk_dir"; return 0; }
 
+	[[ ${1##*/} != *.* && ${dst_snapshot##*/} == *.* ]] && {
+	[[ ! $is_quiet ]] && log "${dst_snapshot##*/} not needed"; return 1; }
 	[[ $1 != $dst_snapshot ]] && return 0 ; [[ ! $is_quiet ]] &&
 	log     "$dst_snapshot already exists"; return 1
 }
@@ -1822,6 +1825,7 @@ copy_snapshot() {
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
 
+	$Trace
 	[[ $dst_minimal_snapshot_regex ]] || { # don't repeat dst setup
 	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
 	dst_dir=$drive_dir
