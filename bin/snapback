@@ -2262,7 +2262,7 @@ trim_copy_update() {
 	sed -e 's@update-drive -r @update-drive @g' \
 	    -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	    -e "s@ $* /@ \$opts /@" \
-	    -e "s@\($_our_name[^0-9]* [^ ]*\) ..*\(.\) *\$@\1 ... \2@" \
+	    -e "s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
 
