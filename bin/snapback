@@ -271,6 +271,7 @@ lock_path=				# used by lock() and signal_job()
 set_lock_path() {
 	local type=$1 name=${2:-$drive_name}
 
+	[[ $name ]] || abort "$FUNCNAME: missing \$2 and \$drive_name null"
 	lock_path=$lock_dir/$type-$name.pid
 }
 
