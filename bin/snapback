@@ -2511,12 +2511,11 @@ watch() {
 		add_words devices $FS_device
 	done
 
-	# fields that don't work: rm,model,opt-io,rota
-	lsblk_fields=name,fstype,type,size,state,sched,mountpoint
+	# fields that don't work: rm,model
+	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
 	type lsblk &>/dev/null && 
 	echo &&
-	lsblk --output=$lsblk_fields $devices | sort
-	[[ ${PIPESTATUS[0]} == 0 ]] &&
+	lsblk --sort mountpoint --output=$lsblk_fields $devices &&
 	let rows-=num_drives+2
 	}
 
