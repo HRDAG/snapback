@@ -373,10 +373,10 @@ lock() {
 			lock_PID     -r    backup "$prunes_backup_lock_msg" ||
 			    { $xtrace; return 1; }
 			if [[ $do_wait ]]
-			   then if lock_PID prune "$lock_msg" >& /dev/null
+			   then if lock_PID -q prune "$lock_msg"
 				   then break
-				   else lock_PID -w prune "$lock_msg"
-					lock_PID -r prune "$lock_msg"
+				   else lock_PID $wait_opt prune "$lock_msg"
+					lock_PID     -r    prune "$lock_msg"
 					continue # make sure no backup running
 				fi
 			#  else fall through
