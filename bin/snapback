@@ -2859,8 +2859,8 @@ mkfs_backup_drive() {
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
 	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts == mkfs.xfs* ]] || {
-	   echo "If this is your first or smallest or xfs drive, use the -f option;"
-	   echo "otherwise, use action 'copy-drive' instead."
+	   echo "If this is your first or smallest drive, use the -f option;"
+	   echo "otherwise, use the very-fast 'copy-drive' action instead."
 	   abort_with_action_Usage mkfs
 	} >&2
 	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
@@ -2960,9 +2960,9 @@ mkfs_backup_drive() {
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
 		# See much-earlier long comment for discussion of block size.
-		[[ $opts == *"-s size="* ]] || add_words opts -s size=2048
-		[[ $opts == *"-b size="* ]] || add_words opts -b size=2048
-		[[ $opts == *"-n size="* ]] || add_words opts -n size=2048
+		[[ $opts == *"-s size="* ]] || add_words opts -s size=4096
+		[[ $opts == *"-b size="* ]] || add_words opts -b size=4096
+		[[ $opts == *"-n size="* ]] || add_words opts -n size=4096
 		[[ $opts == *maxpct=*    ]] || add_words opts -i maxpct=0
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional

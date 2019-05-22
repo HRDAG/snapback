@@ -28,9 +28,10 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 
 # You'll need to add -f if the partition already has an *UNWANTED* filesystem.
 # sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
-# The default: -i maxpct=0 -i size=512 -s size=2048 -b size=2048 -n size=2048
-# (sector/block sizes of 2048 allow ~20% more snapshots than 4096); note
-# that you can over-ride any of these individual defaults.
+# The default: -i maxpct=0 -i size=512 -s size=4096 -b size=4096 -n size=4096;
+#    Optional: -i maxpct=0 -i size=512 -s size=2048 -b size=2048 -n size=2048
+#    allows ~20% more snapshots than 4096), but stop working with Ubuntu 18.04;
+# note that you can over-ride any of these individual defaults.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
