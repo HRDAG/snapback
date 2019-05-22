@@ -89,7 +89,7 @@ Usage: $our_name action [args]
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
-    mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
+    mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
 
     check-snapshot-hard-links names: find snapshots with broken hard links
@@ -275,7 +275,10 @@ set_lock_path() {
 	lock_path=$lock_dir/$type-$name.pid
 }
 
+xtrace=				  # in case comment-out first line of function
+
 lock_PID() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
 	while [[ $1 == -* ]] ; do add_words lock_opts $1; shift; done
@@ -299,6 +302,7 @@ lock_PID() {
 	if [[ $status == 0 ]]
 	   then [[ $IfRun ]] &&
 		echo "$lockpid_output" | sed "s@$our_PID@<our_PID>@"
+		$xtrace
 		return 0
 	fi
 
@@ -309,6 +313,7 @@ lock_PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	   else log "$lock_cmd -> $lockpid_output (status=$status)"
 	fi >&2
+	$xtrace
 	return 1
 }
 
@@ -326,7 +331,7 @@ declare -A  lock_type2locked_resource
 #    If -w and lock is held by other job, Wait for lock to be freed.
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
 lock() {
-	[[ ${action-} != test ]] &&
+	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
@@ -349,6 +354,7 @@ lock() {
 
 	local		    lock_msg="holds '$type' lock for $drive_name"
 	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
+	[[ $type == prune ]] && add_words lock_msg " (could be copy or update)"
 	while true
 	    do	if [[ $type == backup && $do_wait ]]
 		   then # return 1 if waited longer than backup_period
@@ -846,7 +852,7 @@ customize_and_validate_configuration_variables() {
 # Manage priorities for backup and prune and update/merge.
 ##############################################################################
 
-is_disk_usage_too_high() {
+is_drive_usage_too_high() {
 
 	suspend_tracing
 	set -- $(df --output=pcent,ipcent $drive_dir | tail -n1)
@@ -889,7 +895,7 @@ setup_higher_priority() {
 # returns success if run at higher priority
 setup_run_backup_priority() {
 
-	if is_disk_usage_too_high
+	if is_drive_usage_too_high
 	   then  setup_lower_priority ; return 1
 	   else setup_higher_priority ; return 0
 	fi
@@ -899,7 +905,7 @@ setup_run_backup_priority() {
 
 setup_prune_drive_priority() {
 
-	if is_disk_usage_too_high
+	if is_drive_usage_too_high
 	   then setup_higher_priority
 	   else  setup_lower_priority
 	fi
@@ -1016,13 +1022,13 @@ _rm_pruned_snapshots() {
 
 	$Trace
 	# just prune subdirs containing files with massive # of hard-links;
-	# except too-high disk usage is more critical than "Too many files".
+	# except too-high drive usage is more critical than "Too many files".
 	set_FS_type___from_path $PWD
 	case ${FS_type,,} in
 	    ( xfs | btrfs )		# any FS that supports a zillion links
 		hard_link_dirs= ;;
 	esac
-	[[ ${hard_link_dirs-} ]] && ! is_disk_usage_too_high $drive_dir &&
+	[[ ${hard_link_dirs-} ]] && ! is_drive_usage_too_high $drive_dir &&
 	for snapshot
 	    do	local subdir
 		for subdir in $hard_link_dirs
@@ -1277,10 +1283,11 @@ prune_drive() {
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	# if use suspend, priority is "which job should run" not renice/ionice
-	if is_disk_usage_too_high && [[ $suspend_prune_when_backup ]]
+	if is_drive_usage_too_high && [[ $suspend_prune_when_backup ]]
 	   then local lock_opt=	  # desparately need pruning, borrow copy lock
 	   else local lock_opt=
 	fi
+	[[ $is_cron ]] || add_words lock_opt -w
 
 	lock $lock_opt prune $drive_name ||
 	    # since we're called, the old lock holder should be un-suspended
@@ -2717,7 +2724,7 @@ dir_sizes() {
 	suffix=ls-s-d
 
 	if [[ $# == 0 ]]
-	   then echo -e "\nThe actual disk-space consumed by a directory is"
+	   then echo -e "\nThe actual drive-space consumed by a directory is"
 		echo -e "the size of: its directory block(s) plus its inode:\n"
 		set -- *.$suffix.bz2
 		[[ -f $1 ]] ||
@@ -2819,7 +2826,7 @@ dir_sizes() {
 	echo -e "    ...\n"
 
 	set__total_dir_MB__avg_dir_KB $file.bz2
-	echo "BUT...  The actual disk-space consumed by a directory is"
+	echo "BUT...  The actual drive-space consumed by a directory is"
 	echo "the size of its directory block(s) plus the size of its inode:"
 	space="$total_dir_MB MB/snapshot"
 	  avg="$avg_dir_KB KB/dir"
@@ -2852,7 +2859,7 @@ mkfs_backup_drive() {
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
 	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts == mkfs.xfs* ]] || {
-	   echo "If this is your first or smallest disk, use the -f option;"
+	   echo "If this is your first or smallest or xfs drive, use the -f option;"
 	   echo "otherwise, use action 'copy-drive' instead."
 	   abort_with_action_Usage mkfs
 	} >&2
@@ -2881,10 +2888,10 @@ mkfs_backup_drive() {
 	# usage by directories (unless we only backup files that change often,
 	# and they're large enough that ext* needs to use indirect blocks).
 	# On my Ubuntu laptop, 1 KB blocks result in roughly half the
-	# directory disk space used by 2 KB blocks, so the default block size
+	# directory drive space used by 2 KB blocks, so the default block size
 	# is 1KB.  On HRDAG's Ubuntu server using XFS, 1 KB blocks and 2 KB
 	# blocks result in the same amount of directory space usage (and 4 KB
-	# results in 20% more), since most directories need 0 disk blocks
+	# results in 20% more), since most directories need 0 drive blocks
 	# (because their contents fit in the inode); so 2 KB blocks are
 	# optimal for XFS, since they'll result in better performance.
 
@@ -2902,7 +2909,7 @@ mkfs_backup_drive() {
 	# ALSO, by making the block size smaller with ext*, you'll be able to
 	# have more inodes if you have a lot of small files, see:
 	# https://askubuntu.com/a/1104944 .  Having small blocks might reduce
-	# performance on a rotational hard disk (unless you're using extents
+	# performance on a rotational hard drive (unless you're using extents
 	# and rsync's --preallocate), but probably won't affect performance on
 	# an SSD or flash memory stick (unless you're using ext* and you have
 	# lots of files with indirect blocks).
@@ -2948,7 +2955,7 @@ mkfs_backup_drive() {
 		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
-		# using isize=1024 resulted in 40% more directory disk space.
+		# using isize=1024 resulted in 40% more directory drive space.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
@@ -3844,7 +3851,7 @@ case $action in
 
 	set_drive_dir ${1^}
 	$Trace
-	is_disk_usage_too_high
+	is_drive_usage_too_high
 	abort $?
 
 	set_oldest_snapshot
