@@ -2516,7 +2516,7 @@ watch() {
 	type lsblk &>/dev/null && {
 	echo
 	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
-	lsblk --output=$lsblk_fields			$devices | sort
+	lsblk --output=$lsblk_fields			$devices
 	let rows-=num_drives+2
 	}
 
