@@ -2957,9 +2957,12 @@ mkfs_backup_drive() {
 		# using isize=1024 resulted in 40% more directory drive space.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
+		local dev=$(basename $(readlink $device))
+		local  sec_size_file=/sys/block/$dev/queue/physical_block_size
+		[[ -s $sec_size_file ]] && sec_size=$(< $sec_size_file)
+		[[    $sec_size		 ]] && add_words opts -s size=$sec_size
 		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
 		# See much-earlier long comment for discussion of block size.
-		[[ $opts == *"-s size="* ]] || add_words opts -s size=4096
 		[[ $opts == *"-b size="* ]] || add_words opts -b size=4096
 		[[ $opts == *"-n size="* ]] || add_words opts -n size=4096
 		[[ $opts == *maxpct=*    ]] || add_words opts -i maxpct=0

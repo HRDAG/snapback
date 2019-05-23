@@ -21,23 +21,28 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 
 # --------------------------
 # To understand the defaults mentioned below, read the long comments in
-# mkfs_backup_drive and it's helper functions.
+# mkfs_backup_drive and it's helper functions ... soon moved to Install.txt .
 # --------------------------
 
-# Comment-out all-but-one of these sample values:
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
+# *-*-* Comment-out all-but-one of these sample mkfs_* assignments. *-*-*
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
+# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
 
 # You'll need to add -f if the partition already has an *UNWANTED* filesystem.
 # sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
-# The default: -i maxpct=0 -i size=512 -s size=4096 -b size=4096 -n size=4096;
-#    Optional: -i maxpct=0 -i size=512 -s size=2048 -b size=2048 -n size=2048
-#    allows ~20% more snapshots than 4096), but stop working with Ubuntu 18.04;
-# note that you can over-ride any of these individual defaults.
+# s_size=$(< /sys/block/$(basename $(readlink $dev))/queue/physical_block_size)
+# Defaults: -i maxpct=0 -i size=512 -s size=$s_size -b size=4096 -n size=4096;
+# Optional: -i maxpct=0 -i size=512 -s size=$s_size -b size=2048 -n size=2048
+#    allows ~20% more snapshots than size=4096, but disallowed in Ubuntu 18.04.
+# Note that you can over-ride any of these individual defaults.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
 # but first read the long comments in the mkfs_backup_drive function & helpers.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
-readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
+readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
 readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # if action 'dir-sizes' suggests
 
 # SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
