@@ -2513,10 +2513,13 @@ watch() {
 
 	# fields that don't work: rm,model
 	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
-	type lsblk &>/dev/null && 
-	echo &&
-	lsblk --sort mountpoint --output=$lsblk_fields $devices &&
+	type lsblk &>/dev/null && {
+	echo
+	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
+	lsblk --output=$lsblk_fields			$devices | sort
 	let rows-=num_drives+2
+	}
+
 	}
 
 	# ------------------------------------------------------------------
