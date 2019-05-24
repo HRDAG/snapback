@@ -357,7 +357,7 @@ lock() {
 	[[ $type == prune ]] && add_words lock_msg " (could be copy or update)"
 	while true
 	    do	if [[ $type == backup && $do_wait ]]
-		   then # return 1 if waited longer than backup_period
+		   then # return 1 if spilled over to next backup time
 			declare -i start_secs=$(date '+%s')
 			lock_PID $wait_opt backup "$lock_msg"
 			declare -i   end_secs=$(date '+%s')
@@ -1469,6 +1469,10 @@ record_rsync_time() {
 
 	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
 	$IfRun sudo mkdir -p $(dirname $file)
+	local link=$log_dir/$rsync_time_subdir/$drive_name
+	$IfRun sudo mkdir -p $(dirname $link)
+	[[ -e $link ]] ||
+	$IfRun sudo ln -s ../../$drive_name/$rsync_time_subdir $link
 
 	local cmd="echo $minutes > $file"
 	if [[ $IfRun ]]
