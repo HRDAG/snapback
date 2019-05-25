@@ -1845,14 +1845,16 @@ copy_snapshot() {
 	set_backup_type $dst_drive_name
 	dst_backup_type=$backup_type	   ; }
 
-	local dst_snapshot=$dst_dir/${src_snapshot##*/}
-	is_dst_snapshot_needed $dst_snapshot || return 1
-
-	[[ $src_snapshot == /* ]]  || {	# fix copy-snapshot's (single) src?
+	[[ $src_snapshot == /* && ! -L $src_snapshot ]] || {
+	# the above criteria is alway satisfied by update, so this is a copy ..
 	local absolute_path
 	set_absolute_path $src_snapshot
 	src_snapshot=$absolute_path
-	src_snapshots=$absolute_path ; } # only a single src
+	src_snapshots=$absolute_path ; } # ... so only a single src
+
+	local dst_snapshot=$dst_dir/${src_snapshot##*/}
+
+	is_dst_snapshot_needed $dst_snapshot || return 1
 	is_src_snapshot_useful $src_snapshot || return 1
 
 	TraceV 2 src_snapshot dst_snapshot
