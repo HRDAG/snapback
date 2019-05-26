@@ -21,7 +21,7 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 
 # --------------------------
 # To understand the defaults mentioned below, read the long comments in
-# mkfs_backup_drive and it's helper functions ... soon moved to Install.txt .
+# mkfs_backup_drive and its helper functions ... soon moved to Install.txt .
 # --------------------------
 
 # *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
@@ -30,14 +30,17 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
 # *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
 
+# NOTE: XFS defaults support ~15% more snapshots than ext4 defaults.
+
 # You'll need to add -f if the partition already has an *UNWANTED* filesystem.
 # sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
-# s_size=$(< /sys/block/$(basename $(readlink $dev))/queue/physical_block_size)
-# Defaults: -i maxpct=0 -i size=512 -s size=$s_size -b size=4096 -n size=4096;
-# Optional: -i maxpct=0 -i size=512 -s size=$s_size -b size=2048 -n size=2048
+# sectsz=$(< /sys/block/$(basename $(readlink $dev))/queue/physical_block_size)
+# Defaults: -i maxpct=0 -i size=512 -s size=$sectsz -b size=4096 -n size=4096;
+# Optional: -i maxpct=0 -i size=512 -s size=$sectsz -b size=2048 -n size=2048
 #    allows ~20% more snapshots than size=4096, but disallowed in Ubuntu 18.04.
 # Note that you can over-ride any of these individual defaults.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
+readonly mkfs_cmd_opts="mkfs.xfs -i size=1024" # if action 'dir-sizes' suggests
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
 # but first read the long comments in the mkfs_backup_drive function & helpers.

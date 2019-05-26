@@ -73,7 +73,7 @@ Usage: $our_name action [args]
     list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
-    update-drives [-d] names: copy missing snapshots from other drives to names
+    update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
     copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
@@ -137,6 +137,8 @@ done
 let OPTIND=$OPTIND-1
 shift $OPTIND
 unset arg
+
+[[ $debug_opt ]] && verbose_opt=-v || verbose_opt=
 
 [[ -n $Trace && -n $IfRun ]] && IfRun=:
 
@@ -914,7 +916,7 @@ setup_prune_drive_priority() {
 # ---------------------------------
 
 _backup_management_of_prune() {
-	local name=$1 state=$2
+	local state=$1
 
 	[[ $is_cron ]] || return
 
@@ -925,7 +927,7 @@ _backup_management_of_prune() {
 	fi
 
 	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
-	$IfRun signal_job SIGSTOP prune $name
+	$IfRun signal_job SIGSTOP prune $drive_name
 }
 
 ##############################################################################-
@@ -997,8 +999,20 @@ _rm_pruned_snapshots() {
 	for snapshot
 	    do	count_rsyncs_using_snapshot  $snapshot || continue # in use?
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
-		[[ -e $snapshot ]] && $IfRun mv $snapshot $snapshot.rm
+		[[ -e $snapshot ]] || continue
+		if [[ $is_update ]]
+		   then   sudo mv $verbose_opt $snapshot $snapshot.rm
+		   else $IfRun mv	       $snapshot $snapshot.rm
+		fi
 	done
+
+	if [[ $is_update ]]
+	   then set -- *.partial.rm
+		[[ -d $1 ]] && rmdir $verbose_opt --ignore-fail-on-non-empty $*
+		restore_tracing
+		return
+	fi
+
 	update_snapshots_ls
 
 	set -- *.rm
@@ -1273,6 +1287,8 @@ _do_skip_newest_span_of_days() {
 
 # for goals of this function, see prune-variable comments in configure.sh
 prune_drive() {
+	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
+	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
 	local drive_name=$1 drive_dir
 
 	suspend_tracing
@@ -1281,6 +1297,8 @@ prune_drive() {
 	restore_tracing
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
+
+	[[ ! $is_update ]] && {		# for update, we just rmdir empty dirs
 
 	# if use suspend, priority is "which job should run" not renice/ionice
 	if is_drive_usage_too_high && [[ $suspend_prune_when_backup ]]
@@ -1298,6 +1316,8 @@ prune_drive() {
 	trap '' HUP
 	setup_prune_drive_priority
 
+	}
+
 	$Trace
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
@@ -1305,9 +1325,13 @@ prune_drive() {
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	# set -- <all the snapshot basenames, reverse sorted>
+	if [[ $is_update ]]
+	   then local suffix=.partial	# update_drive creates these (empty)
+	   else local suffix=*		# '*' to get .links & .partial
+	fi
 	suspend_tracing
 	set -- $(cd $drive_dir &&
-		   echo $snapshot_pattern*  | # '*' for .links & .partial
+		   echo $snapshot_pattern$suffix |
 		   tr ' ' '\n' | sort -u -r |
 		   grep -v '\.rm$')	# _rm_pruned_snapshots handles *.rm
 	restore_tracing
@@ -1319,6 +1343,8 @@ prune_drive() {
 
 	_rm_pruned_snapshots $snapshots_to_prune_file
 	rm $snapshots_to_prune_file
+
+	[[ $is_update ]] && return
 
 	$IfRun touch $drive_dir/$pruned_timestamp # touch even if did nothing
 
@@ -1548,7 +1574,9 @@ _handle_rsync_results() {
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
 		if (( $link_fail_count == 0 ))
-		   then error_msg="rsync exit status=$status"
+		   then local err=$(bzcat $log | tail -n2 | sed '1s/.*: //' |
+					tr '\n' '|' | sed 's/|/; /')
+			error_msg="...; ${err}rsync exit status=$status"
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links_error_msg "$error_msg")
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
@@ -1593,7 +1621,7 @@ run_rsync() {
 	if [[ $dst_snapshot == *.partial ]]
 	   then local partial_dst=$dst_snapshot
 	   else local partial_dst=$dst_snapshot.partial
-		# if earlier rsync exists, start with the earlier snapshot
+		# if we (partially) created this snapshot earlier, reuse it
 		local suffix
 		for   suffix in '' '.links'
 		    do	local  useful_dst=$dst_snapshot$suffix
@@ -1698,7 +1726,7 @@ run_backup() {
 	# suspended the backup and continued the prune
 	lock $lock_opt backup $drive_name || return 1
 
-	_backup_management_of_prune $drive_name pre-rsync
+	_backup_management_of_prune pre-rsync
 
 	if [[ $do_run_backup ]]
 	   then	run_backup_rsync $date_time
@@ -1706,7 +1734,7 @@ run_backup() {
 	   else local status=1
 	fi
 
-	_backup_management_of_prune $drive_name post-rsync # last, for testing
+	_backup_management_of_prune post-rsync # last, for testing
 
 	unlock backup
 
@@ -1736,7 +1764,7 @@ assert_not_in_cron_jobs() {
 bad_copy() {
 	local msg=$*
 
-	[[ $is_quiet || $pass_opt || $IfRun ]] ||
+	[[ $is_quiet || $is_update || $IfRun ]] ||
 	   abort "$msg; use -q to not abort"
 
 	[[ ! $IfRun ]] || echo "copy_snapshot: $msg"
@@ -1772,11 +1800,13 @@ set_backup_type() {
 dst_backup_type=
 
 matches_dst_backup_type() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dir=$1
 
 	local drive_name=${drive_dir#$drive_dir_prefix}
 	set_backup_type $drive_name
 	[[ $backup_type == $dst_backup_type ]]
+	$xtrace
 }
 
 # ----------------------
@@ -1827,14 +1857,16 @@ is_dst_snapshot_needed() {
 # ---------------------------------
 
 dst_dir=
+copy_snapshot_args=
 
 copy_snapshot() {
-	[[ $1 == -q  ]] && { local is_quiet=$true; shift; } || local is_quiet=
-	[[ $1 == -p? ]] && { local pass_opt=$1; shift; } || local pass_opt=
-	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
-	(( $# >=  2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
+	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
+	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
+	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
+	(( $# >= 2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
+	copy_snapshot_args=
 
 	$Trace
 	[[ $dst_minimal_snapshot_regex ]] || { # don't repeat dst setup
@@ -1862,12 +1894,21 @@ copy_snapshot() {
 	[[ ${debug_copy-} ]] &&
 	    echo "copy $src_snapshot/\$dirs to $dst_dir/" && return 0
 
-	# the following is similar to the second half of run_backup_rsync
+	[[ $is_update ]] &&
+	    copy_snapshot_args="$src_snapshots $dst_snapshot" && return 0
 
 	# use this if backup and/or prune needs to kill copy job
 	# run_copy_job $src_snapshots $dst_snapshot; return
 
-	# use the following if neither backup nor prune needs to kill copy job
+	copy_snapshot_rsync $src_snapshot $dst_snapshot
+}
+
+# -------------------------------------------------------
+
+# The following is similar to the second half of run_backup_rsync;
+# it's called by copy_snapshot and update_drive, to do the real work.
+copy_snapshot_rsync() {
+	local src_snapshot=$1 dst_snapshot=$2
 
 	# grab prune lock, so backup job can suspend us
 	lock -w prune $dst_snapshot || exit 1
@@ -1879,31 +1920,11 @@ copy_snapshot() {
 	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
 
 	local cwd=$PWD
-	cd_ $dst_dir		     # can kill job with: fuser -k -M $dst_dir
-	count_rsyncs_using_snapshot  $dst_snapshot && # if not in use ...
-	run_rsync -c $src_snapshot/. $dst_snapshot    # ... we can do the copy
+	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
+	run_rsync -c  $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
 	unlock -s prune
-}
-
-# -------------------------------------------------------
-
-# The following is similar to the second half of run_backup_rsync;
-# it's called by run_copy_job (which manages all locks) as a separate job.
-copy_snapshot_rsync() {
-	local src_snapshot=$1 dst_snapshot=$2
-
-	setup_copy_priority
-
-	# lower nice value is higher priority
-	[[   $cmd_to_set_copy_IO_priority < \
-	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
-
-	local cwd=$PWD
-	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
-	run_rsync -c $src_snapshot/. $dst_snapshot
-	cd_ $cwd
 }
 
 # -----------------------------------------------------------------------------
@@ -1959,8 +1980,10 @@ fastest_snapshots() {
 
 # --------------------------------------------
 
-update_drive() {
-	[[ $# == 1 ]] || abort "need to specify one drive name"
+sorted_useful_srcs() {
+	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
+	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
+	[[ $# == 1   ]] || abort "need to specify one drive name"
 
 	set_drive_name $1
 	set_drive_dir  $drive_name
@@ -1971,8 +1994,10 @@ update_drive() {
 	dst_backup_type=$backup_type
 	local drive_dirs=$(
 		set -- $(
-		# include drives excluded from backups
-		for drive_dir in $(list_drives -a | fgrep -v -x $dst_dir)
+		# -a so include drives excluded from backups
+		set -- $(list_drives -a | fgrep -v -x $dst_dir |
+				grep "$drive_dir_prefix${src_names_regex-.}")
+		for drive_dir
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
 		done # | tac		# uncomment to test sort_args
 		)
@@ -1989,52 +2014,78 @@ update_drive() {
 	let snapshot_key=$# drive_name_key=$#-1
 	local sort_key_args="--key=$snapshot_key --key=$drive_name_key"
 
-	load__drive_name2backup_period
-
 	TraceV 1 drive_dirs min_snapshot_pattern sort_key_args
 
-	cd_ $dst_dir	 # so can safely kill job with: fuser -k -M $dst_dir
+	cd $dst_dir || exit 1	  # so can kill job with: fuser -k -M $dst_dir
 
 	lock copy $dst_name > /dev/null || exit 1 # normal to run for days
 
 	$Trace
 
-	local prev_date_time= snapshots= cmd
 	for dir in $drive_dirs
 	    do	suspend_tracing
 		eval "echo $dir/$min_snapshot_pattern{,.links}" # useful ones
 		      echo $dir/$max_snapshot_pattern # token to terminate loop
 		restore_tracing
 	done | tr ' ' '\n' |
-	sort --field-separator=/ $sort_key_args |
-	# cat; exit # uncomment to debug drive_dirs, min_snapshot_pattern, sort
-	while read snapshot
-	    do	date_time=$(basename $snapshot)
+	sort --field-separator=/ $sort_key_args
+}
+
+# -----------------------------------------------------------------------------
+
+update_drive() {
+	set_drive_name ${!#}		# sorted_useful_srcs handles options
+
+	load__drive_name2backup_period
+
+	local srcs_dst_file=$tmp_5
+	local date_time prev_date_time=
+	local src_snapshot src_snapshots=
+	sorted_useful_srcs "$@" |	# this checks/sets drive_* globals
+	while read src_snapshot
+	    do	# oddness: we get multiple src snapshots with the same date
+		date_time=$(basename $src_snapshot)
 		date_time=${date_time%%.*}
 		if [[  $prev_date_time &&
 		       $prev_date_time != $date_time ]]
 		   then prev_date_time=$date_time # new date, process prev ones
 		   else [[ $prev_date_time ]] ||
 			prev_date_time=$date_time
-			add_words snapshots $snapshot
+			add_words src_snapshots $src_snapshot
 			continue
 		fi
 
-		set -- $(fastest_snapshots $snapshots)
-		cmd="copy_snapshot -p1 $* $dst_name" # for debugging
-		cmd="copy_snapshot -p0 $* $dst_name"
-		snapshots=$snapshot	# prepare to process new date
-		[[ $IfRun ]] && header $cmd
-		$cmd || continue
-		# break			# uncomment to debug
-	done
+		set -- $(fastest_snapshots $src_snapshots)
+		src_snapshots=$src_snapshot # prepare to process new date
+		copy_snapshot -u $* $drive_name
+		set -- $copy_snapshot_args
+		[[ $# != 0 ]] || continue
 
-	unlock copy
+		local dst_snapshot=${!#}
+		sudo mkdir -v -p $dst_snapshot.partial >&2 # for prune run
+		echo "$@"
+	done > $srcs_dst_file
+	[[  -s $srcs_dst_file ]] || return 1
 
-	local var=drive_name_regex
-	warn "DON'T FORGET: re-add $dst_name to $var= in $config_file"
+	prune_drive -u $drive_name	# just prunes empty .partial dirs
 
-	$IfRun sync --file-system $dst_dir &> /dev/null
+	local args src_snapshot dst_snapshot=
+	while read args
+	    do	set -- $args
+		local  dst_snapshot=${!#}
+		[[ -d $dst_snapshot.partial ]] || continue # was it pruned?
+		for src_snapshot in ${args%$dst_snapshot}
+		    do	[[ -d $src_snapshot ]] || continue
+			copy_snapshot_rsync $src_snapshot $dst_snapshot
+			break
+		done
+	done < $srcs_dst_file
+
+	[[ $IfRun && $dst_snapshot ]] &&
+	    sudo \
+	    rmdir --ignore-fail-on-non-empty $(dirname $dst_snapshot)/*.partial
+
+	unlock copy		     # sorted_useful_srcs grabbed lock for uus
 }
 
 ##############################################################################-
@@ -2049,6 +2100,8 @@ update_drive() {
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive.
 run_jobs_in_parallel() {
 	local type=$1; shift
+	local opts=
+	while [[ $1 == -[^r]* ]] ; do add_words opts $1; shift; done
 	[[ $1 == all ]] && set -- $(list_drives)
 
 	case $type in
@@ -2061,7 +2114,7 @@ run_jobs_in_parallel() {
 	if [[ ${1-} == -r ]]		# are we recursing?
 	   then shift
 		$Trace
-		$function $1
+		$function $opts $1
 		exit $?
 	fi
 
@@ -2072,8 +2125,8 @@ run_jobs_in_parallel() {
 			# Can't "$function dir &", processes share lock files.
 			# Want new process-group so can ps/kill independently.
 			setsid \
-			$exe -r $dir &
-		   else $exe -r $dir	# run in foreground, for testing
+			$exe $opts -r $dir &
+		   else $exe $opts -r $dir # run in foreground, for testing
 			echo
 		fi
 	done
@@ -2405,7 +2458,7 @@ watch() {
 	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
 			 egrep -e "[0-9] [/a-z].* ((update|copy)-|cpss )" \
 			       -e "lockpid " \
-			       -e "[0-9]     rsync" | 
+			       -e "[0-9]     rsync" |
 			  sed 's/   rsync/ rsync/')
 	#
 	cron_job_regexp=' -C run-backups? ' # put into configure.sh ??
@@ -3238,7 +3291,7 @@ _copy_extN_backup_drive() {
 	is_arg1_in_arg2 -f $action_opts ||
 	for drive_dir in $src_drive_dir $dst_drive_dir; do
 	if is_drive_mounted $drive_dir
-	   then set -- $(list_drives | 
+	   then set -- $(list_drives |
 			 fgrep -v -w -e $src_drive_dir -e $dst_drive_dir)
 		[[ $# == 0 ]] &&
 		msg="
@@ -3407,34 +3460,34 @@ stack_frame_to_show=0	     # show our line-number in action 'case- statement
 
 case $action in
   # list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
-   ( l*s*dr*v* | ld | ls )
+   ( l*s*dr*v* | ld | ls ) action=list-drives
 	list_drives "$@"
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
-   ( r*b*k*p* | rb* )
+   ( r*b*k*p* | rb* ) action=run-backups
 	[[ $# != 0 ]] || abort_with_action_Usage run-backup
 	[[ $1 == all ]] && rm_stale_locks
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
-   ( pr*n*dr*v* | pd* )
+   ( pr*n*dr*v* | pd* ) action=prune-drives
 	[[ $# != 0 ]] || abort_with_action_Usage prune-drive
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
-   #update-drives [-d] names: copy missing snapshots from other drives to names
-   ( upd*dr*v* | ud* )
-	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
-	[[ $1 != -* ]] || abort "unknown option $1"
-	[[ ${!#} == [gG] ]] || abort "currently, only works on new drive: G"
-	[[ $# != 0 ]] || abort_with_action_Usage update-drive
-	run_jobs_in_parallel update "$@"
+   # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
+   ( upd*dr*v* | ud* ) action=update-drives
+	[[ $1 == -d ]] && { debug_copy=$1    ; shift  ; } || debug_copy=
+	[[ $1 == -s ]] && { src_names_regex_opt="$1$2"; shift 2; }
+	[[ $1 != -[^r] ]] || abort "unknown option $1 (order matters)"
+	[[ $# != 0  ]] || abort_with_action_Usage update-drive
+	run_jobs_in_parallel update ${src_names_regex_opt-} "$@"
 	# [[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
-   ( c*s*h*l* )
+   ( c*s*h*l* ) action=check-snapshot-hard-links
 	[[ $# != 0   ]] || abort_with_action_Usage check-snapshot-
 	[[ $1 == all ]] && set -- $(list_drives)
 	for drive
@@ -3442,7 +3495,7 @@ case $action in
 	done
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
-   ( c*p*s*s* | cs* | cps )		# cpss
+   ( c*p*s*s* | cs* | cps ) action=copy-snapshots # cpss
 	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
 	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
 	[[ $1 == -q ]] && { quiet_opt=$1 ; shift; } || quiet_opt=
@@ -3462,7 +3515,7 @@ case $action in
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-   ( snapshot*size | ss )
+   ( snapshot*size | ss ) action=snapshot-size
 	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
 	dir=$1
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
@@ -3482,25 +3535,25 @@ case $action in
 	;;
 
    # kill-backup [-sig] names: for each name (can be 'all'), kill backup job
-   ( kill-backup* | kb )
+   ( kill-backup* | kb ) action=kill-backup
 	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
 	kill_jobs backup $*
 	;;
    # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
-   ( kill-prune* | kp )
+   ( kill-prune* | kp ) action=kill-prune
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
 	kill_jobs prune $*
 	;;
    # kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
-   ( kill-copy* | kc | ku )
+   ( kill-copy* | kc | ku ) action=kill-copy
 	[[ $# != 0 ]] || abort_with_action_Usage kill-copy
 	$Trace
 	kill_jobs copy $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
-   ( kill-all | ka | kk )
+   ( kill-all | ka | kk ) action=kill-all
 	[[ $# != 0 ]] || abort_with_action_Usage kill-all
 	$Trace
 	kill_all_jobs $*
@@ -3758,6 +3811,9 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) action=test; $Trace
+	sorted_useful_srcs "$@"
+	exit
+
 	echo $$
 	lock prune G
 	echo $?
