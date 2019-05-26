@@ -68,7 +68,7 @@ source $config_file || abort "$config_file broken"
    abort "install/edit $exclude_file, see included .sample"
 
 Usage="
-Usage: $our_name action [args]
+Usage: $our_name [options] action [args]
   Current actions are:
     list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
     run-backups   names: backup names ('all' for every mounted backup drive)
@@ -2062,7 +2062,7 @@ update_drive() {
 		[[ $# != 0 ]] || continue
 
 		local dst_snapshot=${!#}
-		sudo mkdir -v -p $dst_snapshot.partial >&2 # for prune run
+		sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 # to prune
 		echo "$@"
 	done > $srcs_dst_file
 	[[  -s $srcs_dst_file ]] || return 1
@@ -2331,13 +2331,15 @@ trim_copy_update() {
 
 	set -- $rsync_backup_opts	# standardize whitespace
 
+	local cpss="$_our_name c"
 	trim |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
-	sed -e 's@update-drive -r @update-drive @g' \
+	sed -e '/update-drive/s@ -r @ @g' \
+	    -e '/update-drive/s@ -s@ -s @' \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "s@ $* /@ /@" \
-	    -e "s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
+	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
 }
 
