@@ -2018,8 +2018,6 @@ sorted_useful_srcs() {
 
 	cd $dst_dir || exit 1	  # so can kill job with: fuser -k -M $dst_dir
 
-	lock copy $dst_name > /dev/null || exit 1 # normal to run for days
-
 	$Trace
 
 	for dir in $drive_dirs
@@ -2035,6 +2033,8 @@ sorted_useful_srcs() {
 
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
+
+	lock copy $drive_name > /dev/null || exit 1 # normal to run for days
 
 	load__drive_name2backup_period
 
@@ -2085,7 +2085,7 @@ update_drive() {
 	    sudo \
 	    rmdir --ignore-fail-on-non-empty $(dirname $dst_snapshot)/*.partial
 
-	unlock copy		     # sorted_useful_srcs grabbed lock for uus
+	unlock copy
 }
 
 ##############################################################################-
@@ -3477,7 +3477,7 @@ case $action in
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
-   ( upd*dr*v* | ud* ) action=update-drives
+   ( upd*dr*v* | u*d* ) action=update-drives
 	[[ $1 == -d ]] && { debug_copy=$1    ; shift  ; } || debug_copy=
 	[[ $1 == -s ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 != -[^r] ]] || abort "unknown option $1 (order matters)"
