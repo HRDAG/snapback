@@ -1008,7 +1008,7 @@ _rm_pruned_snapshots() {
 
 	if [[ $is_update ]]
 	   then set -- *.partial.rm
-		[[ -d $1 ]] && rmdir $verbose_opt --ignore-fail-on-non-empty $*
+		[[ -d $1 ]] && sudo rmdir --ignore-fail-on-non-empty $*
 		restore_tracing
 		return
 	fi
@@ -1961,14 +1961,15 @@ set_backup_period___from_snapshot() {
 
 # ---------------------------------
 
-# "fastest" snapshot is one ignored by cron (else largest backup_period),
-# since using this snapshot reduces chance we're killed for a needed backup.
+# the "fastest" snapshot is on the drive: 1. not running a backup; 2. hosting
+# fewest rsync commands; else 3. ignored by cron (else largest backup_period).
 fastest_snapshots() {
 
 	local      backup_period snapshot
 	declare -a backup_period2snapshots
 	for snapshot
-	    do	set_backup_period___from_snapshot $snapshot
+	    do	[[ -d $snapshot ]] || continue # pruned-away, or drive ejected?
+		set_backup_period___from_snapshot $snapshot
 		add_words -k $backup_period backup_period2snapshots $snapshot
 	done
 
@@ -2055,9 +2056,8 @@ update_drive() {
 			continue
 		fi
 
-		set -- $(fastest_snapshots $src_snapshots)
-		src_snapshots=$src_snapshot # prepare to process new date
-		copy_snapshot -u $* $drive_name
+		copy_snapshot -u $src_snapshots $drive_name
+		 src_snapshots=$src_snapshot # prepare to process new date
 		set -- $copy_snapshot_args
 		[[ $# != 0 ]] || continue
 
@@ -2070,21 +2070,17 @@ update_drive() {
 
 	prune_drive -u $drive_name	# just prunes empty .partial dirs
 
-	local args src_snapshot dst_snapshot=
+	local args dst_snapshot=
 	while read args
 	    do	set -- $args
 		local   dst_snapshot=${!#}
 		set -- $dst_snapshot*
 		[[ -d  $1 ]] || continue # was it pruned away?
-		for src_snapshot in ${args%$dst_snapshot}
-		    do	[[ -d $src_snapshot ]] || continue
-			copy_snapshot_rsync $src_snapshot $dst_snapshot
-			break
-		done
+		set -- $(fastest_snapshots ${args%$dst_snapshot})
+		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
 	done < $srcs_dst_file
 
-	[[ $IfRun && $dst_snapshot ]] &&
-	    sudo \
+	[[ $IfRun && $dst_snapshot ]] && sudo \
 	    rmdir --ignore-fail-on-non-empty $(dirname $dst_snapshot)/*.partial
 
 	unlock copy
@@ -3505,11 +3501,12 @@ case $action in
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) action=update-drives
-	[[ $1 == -r ]] && { recurse_opt=$1; shift; } || recurse_opt=
-	[[ $1 == -d ]] && {  debug_copy=$1; shift; } ||  debug_copy=
-	[[ $1 == -s ]] && { src_names_regex_opt="$1$2"; shift 2; }
-	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
-	[[ $# != 0  ]] || abort_with_action_Usage update-drive
+	[[ $1 == -d  ]] && {  debug_copy=$1; shift; } ||  debug_copy=
+	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
+	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
+	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
+	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
+	[[ $# != 0   ]] || abort_with_action_Usage update-drive
 	set -- $(echo $* | tr ' ' '\n' | tac)
 	run_jobs_in_parallel update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ $is_cron ]] && wait		# so see master cron job in ps
