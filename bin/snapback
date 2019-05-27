@@ -3113,7 +3113,10 @@ mkfs_backup_drive() {
 		$IfRun mv -v *.txt $PWD/$dir/
 	fi
 
-	warn "DON'T FORGET to add $name to drive_name_regex= in $config_file"
+	echo -e "\nTo populate newly-created drive, run:\n
+	$_our_name update-drive $drive_name"
+
+	warn "DON'T FORGET to add \`$name' to drive_name_regex= in $config_file"
 	return 0
 }
 
@@ -3189,8 +3192,10 @@ copy_backup_drive() {
 	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
-	if ! is_arg1_in_arg2 -D $action_opts # using 'dd'?
-	   then _assert_dst_big_enough
+	set_FS_type___from_path $src_device
+	if [[ $FS_type == xfs ]] || is_arg1_in_arg2 -D $action_opts # not 'dd'?
+	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
+	   else _assert_dst_big_enough
 		# show the user a sample fstab record
 		IfRun=echo mkfs_backup_drive -f $dst_device $dst_name |&
 		  # search for the last two fields in the fstab record
