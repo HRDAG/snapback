@@ -35,9 +35,9 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # You'll need to add -f if the partition already has an *UNWANTED* filesystem.
 # sparse=1 may hurt performance on hard disk drives (but probably not SSDs).
 # sectsz=$(< /sys/block/$(basename $(readlink $dev))/queue/physical_block_size)
-# Defaults: -i maxpct=0 -i size=512 -s size=$sectsz -b size=4096 -n size=4096;
-# Optional: -i maxpct=0 -i size=512 -s size=$sectsz -b size=2048 -n size=2048
-#    allows ~20% more snapshots than size=4096, but disallowed in Ubuntu 18.04.
+# Defaults: -i maxpct=0 -i size=512 -b size=4096 -n size=4096;
+# Optional: -i maxpct=0 -i size=512 -b size=2048 -n size=2048, which allows
+#    ~20% more snapshots than size=4096, but is disallowed in Ubuntu 18.04.
 # Note that you can over-ride any of these individual defaults.
 readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 readonly mkfs_cmd_opts="mkfs.xfs -i size=1024" # if action 'dir-sizes' suggests

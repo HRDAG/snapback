@@ -1111,7 +1111,7 @@ set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
 readonly     snapshot_regex=${snapshot_pattern//\?/.}
 readonly snapshot_day_regex=${snapshot_regex%,??}
 
-set_date_time() { date_time=$(date '+%Y-%m-%d,%H'); }
+set_date_time() { date_time=$(date '+%Y-%m-%d,%H' "$@"); }
 set_day      () {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
 set_seconds  () {   seconds=$(date '+%s'       -d "$(basename $1 |
 				        sed 's/\..*//;s/,/ /;s/$/:00:00/')" ||
@@ -2061,7 +2061,8 @@ update_drive() {
 		set -- $copy_snapshot_args
 		[[ $# != 0 ]] || continue
 
-		local dst_snapshot=${!#}
+		local    dst_snapshot=${!#}
+		[[ ! -d $dst_snapshot.links ]] &&
 		sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 # to prune
 		echo "$@"
 	done > $srcs_dst_file
@@ -2072,8 +2073,9 @@ update_drive() {
 	local args src_snapshot dst_snapshot=
 	while read args
 	    do	set -- $args
-		local  dst_snapshot=${!#}
-		[[ -d $dst_snapshot.partial ]] || continue # was it pruned?
+		local   dst_snapshot=${!#}
+		set -- $dst_snapshot*
+		[[ -d  $1 ]] || continue # was it pruned away?
 		for src_snapshot in ${args%$dst_snapshot}
 		    do	[[ -d $src_snapshot ]] || continue
 			copy_snapshot_rsync $src_snapshot $dst_snapshot
@@ -2360,11 +2362,10 @@ watch() {
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
-	# FIXME: handle multi-character names by using {name1,$name2,..,$nameN}
 	local drives= names_pat= fixed_names=
 	if [[ $names ]]
 	   then for name in ${names//,/ }
-		    do	set_drive_name  $name
+		    do	set_drive_name $name
 			add_words drives $drive_dir_prefix$drive_name
 			[[ $name = ? ]] && names_pat=$names_pat$drive_name
 			fixed_names=$fixed_names,$drive_name
@@ -2385,6 +2386,10 @@ watch() {
 
 	set -- $(stty -a | head -n1)
 	declare -i rows=${5%;} cols=${7%;}
+
+	#
+	# figure out how many columns are needed
+	#
 
 	# since the contents of $() are run in subshell, have to echo results
 	set -- $(
@@ -2437,6 +2442,10 @@ watch() {
 
 	customize_and_validate_configuration_variables
 
+	#
+	# figure out how many rows are needed
+	#
+
 	eval \
 	"set -- \$(cat $lock_dir/backup-${names_pat:-*}.pid 2> /dev/null)"
 	set_locks backup $* && backup_lock_msg="; LOCKS: $locks"
@@ -2486,10 +2495,11 @@ watch() {
 	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
 	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
 	TraceV 1 PD CS RB && let rows-=3
-	# min overhead is 'hours to create', no pruning, no abbrev rsync: 4*3
-	#   (plus 1 watch line and 2 age of good snapshots)
-	declare -i min_rows=$(( 3 + 4*3 + PD + CS + RB )); [[ $cron_opt ]] &&
-		   min_rows=$(( min_rows + 4 + 5*num_rsyncs + PD ))
+	# min overhead: 1 watch line, 1 blank line, 2 hours to create,
+	#   2 good snapshots, 2 empty sections (prune & backup) w/4 lines each
+	declare -i min_rows=$(( 6 + 2*4 + PD + RB ));	(( CS > 0 ))    &&
+		   min_rows+=$(( 4 + CS ));		[[ $cron_opt ]] &&
+		   min_rows+=$(( 4 + 5*num_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
@@ -2540,7 +2550,7 @@ watch() {
 
 	# --------------------------------------------
 
-	declare -i rows_used=5
+	declare -i rows_used=6
 	(( $rows >= ($min_df_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo
 	setup_snapshot_stats ''
@@ -2551,6 +2561,8 @@ watch() {
 	echo "  Total number months w/good snapshots:  $stats_number"
 	setup_snapshot_stats '' month
 	echo "  Total number years  w/good snapshots:  $stats_number"
+	setup_snapshot_stats '*'
+	echo "  Total number snapshots, good and bad:  $stats_number"
 	let rows-=$rows_used
 	}
 
@@ -2625,7 +2637,7 @@ watch() {
 
 	# copy-snapshots uses prune lock
 	[[ $cp_rsync_cmds ]] && {
-	header "copy-snapshot, update-drive${copy_lock_msg-}"
+	header "copy & update${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$cp_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
@@ -3021,10 +3033,7 @@ mkfs_backup_drive() {
 		# using isize=1024 resulted in 40% more directory drive space.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
-		local dev=$(basename $(readlink $device))  s_size
-		local  s_size_file=/sys/block/$dev/queue/physical_block_size
-		[[ -s $s_size_file ]] && s_size=$(< $s_size_file) ||s_size=4096
-		[[ $opts == *"-s size="* ]] || add_words opts -s size=$s_size
+		#
 		# See much-earlier long comment for discussion of block size.
 		[[ $opts == *"-b size="* ]] || add_words opts -b size=4096
 		[[ $opts == *"-n size="* ]] || add_words opts -n size=4096
@@ -3092,6 +3101,17 @@ mkfs_backup_drive() {
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
+
+	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+	mkdir -p $rsync_time_dir
+	cd_ $rsync_time_dir
+	set -- *.txt
+	if [[ -e $1 ]]
+	   then set_date_time -r .
+		dir=.${date_time%,*}
+		$IfRun mkdir -p $dir
+		$IfRun mv -v *.txt $PWD/$dir/
+	fi
 
 	warn "DON'T FORGET to add $name to drive_name_regex= in $config_file"
 	return 0
@@ -3480,11 +3500,13 @@ case $action in
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) action=update-drives
-	[[ $1 == -d ]] && { debug_copy=$1    ; shift  ; } || debug_copy=
+	[[ $1 == -r ]] && { recurse_opt=$1; shift; } || recurse_opt=
+	[[ $1 == -d ]] && {  debug_copy=$1; shift; } ||  debug_copy=
 	[[ $1 == -s ]] && { src_names_regex_opt="$1$2"; shift 2; }
-	[[ $1 != -[^r] ]] || abort "unknown option $1 (order matters)"
+	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
 	[[ $# != 0  ]] || abort_with_action_Usage update-drive
-	run_jobs_in_parallel update ${src_names_regex_opt-} "$@"
+	set -- $(echo $* | tr ' ' '\n' | tac)
+	run_jobs_in_parallel update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
@@ -3500,7 +3522,7 @@ case $action in
    ( c*p*s*s* | cs* | cps ) action=copy-snapshots # cpss
 	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
 	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
-	[[ $1 == -q ]] && { quiet_opt=$1 ; shift; } || quiet_opt=
+	[[ $1 == -q ]] && {  quiet_opt=$1; shift; } ||  quiet_opt=
 	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
 	(( $# >= 2  )) || abort_with_action_Usage copy-snap
 	dst_name=${!#}
