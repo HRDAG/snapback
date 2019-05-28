@@ -419,17 +419,6 @@ unlock() {
 # enumerating/showing/signaling/killing process groups
 ##############################################################################
 
-set_PGID() {
-
-	if [[ $# == 0 ]]
-	   then PGID=
-	   else PGID=$(set -- $(ps h -o pgid $* | sort -u); echo $*)
-	fi
-	[[ $PGID ]]
-}
-
-# ---------------------------------
-
 process_group_PIDs() {
 
 	local PGID
@@ -939,7 +928,7 @@ _backup_management_of_prune() {
 # arguments can include options to grep (e.g. -F), ending in name of resource
 count_rsyncs_using_resource() {
 
-	return $(ps l -u root | grep -w '[r]sync' | grep -c "$@")
+	return $(COLUMNS=999 ps l -u root | grep -w '[r]sync' | grep -c "$@")
 }
 
 # -----------------------------------------------------------------------------
@@ -2379,6 +2368,7 @@ watch() {
 
 	set -- $(stty -a | head -n1)
 	declare -i rows=${5%;} cols=${7%;}
+	export COLUMNS=$cols		# for 'ps'
 
 	#
 	# figure out how many columns are needed
@@ -2443,7 +2433,8 @@ watch() {
 	"set -- \$(cat $lock_dir/backup-${names_pat:-*}.pid 2> /dev/null)"
 	set_locks backup $* && backup_lock_msg="; LOCKS: $locks"
 	[[ $# == 0 ]] && rsync_cmds= ||
-	rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
+	rsync_cmds=$(COLUMNS=999 ps_ -H ww  $* |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
 	declare -i num_drives=$(set -- $drives; echo $#)
@@ -2451,7 +2442,8 @@ watch() {
 	eval \
 	"set -- \$(cat $lock_dir/prune-${names_pat:-*}.pid 2>/dev/null)"
 	set_locks prune $* && prune_lock_msg="; LOCKS: $locks" # has copy locks
-	prune_cmds=$(ps_ w -H h $(echo " $*" | sed 's/ / -/g')	 2>/dev/null  |
+	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
+	prune_cmds=$(COLUMNS=999 ps_ w -H h $* 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e 'lockpid ' |
 			trim_prune)
 	#
@@ -2459,19 +2451,25 @@ watch() {
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
 	set_locks . $* && copy_lock_msg="; LOCKS: $locks"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
-	cp_rsync_cmds=$(ps_ -H ww  $(echo " $*" | sed 's/ / -/g') |
+	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
+	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
 			 egrep -e "[0-9] [/a-z].* ((update|copy)-|cpss )" \
 			       -e "lockpid " \
 			       -e "[0-9]     rsync" |
 			  sed 's/   rsync/ rsync/')
 	#
+	rsync_or_rm_cmd_PGIDs_file=$tmp_1
+	ps -u root -O pgid,command | grep -w -e '[r]sync' -e '[r]m' |
+	   awk '{print $2}' > $rsync_or_rm_cmd_PGIDs_file
 	cron_job_regexp=' -C run-backups? ' # put into configure.sh ??
-	set -- $(ps -u root w | egrep "$cron_job_regexp" |
-			awk '$0 !~ /setsid / {print $1}')
+	set -- $(COLUMNS=999 ps -u root -O pgid,command |
+			egrep "$cron_job_regexp" |
+			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
+			awk '$0 !~ /setsid / {print $2}' | sort -u -n)
+	cron_PGIDs=$*
+	rm $rsync_or_rm_cmd_PGIDs_file
 
 	[[ ($cron_opt || ! $rsync_cmds) && $# != 0 ]] && {
-	set_PGID $*
-	cron_PGIDs=$PGID
 	set -- $(process_group_PIDs $cron_PGIDs)
 	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps >& /dev/null && sudo=sudo || sudo= wchan=
@@ -2629,7 +2627,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	# copy-snapshots uses prune lock
-	[[ $cp_rsync_cmds ]] && {
+	[[ $cp_rsync_cmds && ! $cron_opt ]] && {
 	header "copy & update${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
