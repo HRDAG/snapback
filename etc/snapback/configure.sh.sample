@@ -221,7 +221,7 @@ declare -i decades_per_span_for_year_prune=4	# prune-drive* can change
 # or to scale all 4 of the previous variables for a drive of a different size.
 	 pruning_span_scale_factor=1.0	  # scales previous 4 variables
 drv_name2pruning_span_scale_factor[G]=1.5 # G is 50% bigger than other drives
-drv_name2pruning_span_scale_factor[Z]=1	  # Z used for pruning regression tests
+drv_name2pruning_span_scale_factor[Z]=1	  # regression test of pruning uses Z
 
 # Action 'check-snapshot-hard-links' uses this optional list to find the
 # first (and subsequent) snapshot that has a different inode for all

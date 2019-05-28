@@ -936,13 +936,10 @@ _backup_management_of_prune() {
 ##############################################################################-
 ##############################################################################-
 
-count_rsyncs_using_snapshot() {
-	local snapshot=$1
+# arguments can include options to grep (e.g. -F), ending in name of resource
+count_rsyncs_using_resource() {
 
-	declare -i \
-	count=$(ps l -u root | grep -w '[r]sync' | fgrep -c -w $snapshot)
-	count=count/3
-	return $count
+	return $(ps l -u root | grep -w '[r]sync' | grep -c "$@")
 }
 
 # -----------------------------------------------------------------------------
@@ -997,7 +994,7 @@ _rm_pruned_snapshots() {
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
-	    do	count_rsyncs_using_snapshot  $snapshot || continue # in use?
+	    do	count_rsyncs_using_resource  $snapshot || continue # in use?
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
 		if [[ $is_update ]]
@@ -3476,31 +3473,34 @@ check-snapshot-hard-links() {
 action=$1; shift
 _our_name="$our_name"
  our_name="$our_name $action"
+undo_action_abbrev() { action=$1 our_name="$_our_name $1" ; }
+
+# ---------------------------------
 
 process_action() {
 
-stack_frame_to_show=0	     # show our line-number in action 'case- statement
+stack_frame_to_show=0		# show line-number inside the 'case' statement
 
 case $action in
   # list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
-   ( l*s*dr*v* | ld | ls ) action=list-drives
+   ( l*s*dr*v* | ld | ls ) undo_action_abbrev list-drives
 	list_drives "$@"
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
-   ( r*b*k*p* | rb* ) action=run-backups
+   ( r*b*k*p* | rb* ) undo_action_abbrev run-backups
 	[[ $# != 0 ]] || abort_with_action_Usage run-backup
 	[[ $1 == all ]] && rm_stale_locks
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
-   ( pr*n*dr*v* | pd* ) action=prune-drives
+   ( pr*n*dr*v* | pd* ) undo_action_abbrev prune-drives
 	[[ $# != 0 ]] || abort_with_action_Usage prune-drive
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
-   ( upd*dr*v* | u*d* ) action=update-drives
+   ( upd*dr*v* | u*d* ) undo_action_abbrev update-drives
 	[[ $1 == -d  ]] && {  debug_copy=$1; shift; } ||  debug_copy=
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
@@ -3513,7 +3513,7 @@ case $action in
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
-   ( c*s*h*l* ) action=check-snapshot-hard-links
+   ( c*s*h*l* ) undo_action_abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort_with_action_Usage check-snapshot-
 	[[ $1 == all ]] && set -- $(list_drives)
 	for drive
@@ -3521,7 +3521,7 @@ case $action in
 	done
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
-   ( c*p*s*s* | cs* | cps ) action=copy-snapshots # cpss
+   ( c*p*s*s* | cs* | cps ) undo_action_abbrev copy-snapshots # cpss
 	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
 	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
 	[[ $1 == -q ]] && {  quiet_opt=$1; shift; } ||  quiet_opt=
@@ -3541,7 +3541,7 @@ case $action in
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-   ( snapshot*size | ss ) action=snapshot-size
+   ( snapshot*size | ss ) undo_action_abbrev snapshot-size
 	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
 	dir=$1
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
@@ -3561,25 +3561,25 @@ case $action in
 	;;
 
    # kill-backup [-sig] names: for each name (can be 'all'), kill backup job
-   ( kill-backup* | kb ) action=kill-backup
+   ( kill-backup* | kb ) undo_action_abbrev kill-backup
 	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
 	$Trace
 	kill_jobs backup $*
 	;;
    # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
-   ( kill-prune* | kp ) action=kill-prune
+   ( kill-prune* | kp ) undo_action_abbrev kill-prune
 	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
 	$Trace
 	kill_jobs prune $*
 	;;
    # kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
-   ( kill-copy* | kc | ku ) action=kill-copy
+   ( kill-copy* | kc | ku ) undo_action_abbrev kill-copy
 	[[ $# != 0 ]] || abort_with_action_Usage kill-copy
 	$Trace
 	kill_jobs copy $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
-   ( kill-all | ka | kk ) action=kill-all
+   ( kill-all | ka | kk ) undo_action_abbrev kill-all
 	[[ $# != 0 ]] || abort_with_action_Usage kill-all
 	$Trace
 	kill_all_jobs $*
@@ -3836,7 +3836,8 @@ case $action in
    ( run | r )
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
-   ( test | t ) action=test; $Trace
+   ( test | t ) undo_action_abbrev test; $Trace
+
 	sorted_useful_srcs "$@"
 	exit
 
@@ -3845,7 +3846,7 @@ case $action in
 	echo $?
 	exit
 
-	count_rsyncs_using_snapshot $1
+	count_rsyncs_using_resource $1
 	echo $?
 	exit
 
