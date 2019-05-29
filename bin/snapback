@@ -2604,8 +2604,10 @@ watch() {
 
 	# ------------------------------------------------------------------
 
+	# FIXME: rewrite this section, it's an awful mess
+
 	> $tmp
-	[[ $prune_cmds ]] && {
+	[[ $prune_cmds || $show_all ]] && {
       #	header "cron's run-prune${prune_lock_msg-}" # has copy's prune lock
 	header "cron's run-prune"
 	echo
@@ -2619,10 +2621,12 @@ watch() {
 	   fgrep_opt="-e prune-drive" && let rows+=$PD/2 || fgrep_opt=
 	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr $fgrep_opt
 	} > $tmp
-	if [[ -s $tmp ]]
+	if [[ $prune_cmds ]]
 	   then echo "$hdr" | trim_ps_cols
 		cat $tmp # | sort $prune_sort_opts
-	#  else echo -e "No pruning is being done$names_msg."
+	elif [[ $show_all ]]
+	   then cat $tmp
+		echo -e "No pruning is being done$names_msg."
 	fi
 	rm $tmp
 
