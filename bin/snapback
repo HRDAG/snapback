@@ -1560,8 +1560,10 @@ _handle_rsync_results() {
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
 		if (( $link_fail_count == 0 ))
-		   then local err=$(bzcat $log | tail -n2 | sed '1s/.*: //' |
-					tr '\n' '|' | sed 's/|/; /')
+		   then local err=$(bzcat $log | tail -n2)
+			((  $(echo "$err" | wc -l) > 1 )) &&
+			err=$(echo "$err" | sed '1s/.*: //' |
+						tr '\n' '|' | sed 's/|/; /')
 			error_msg="...; ${err}rsync exit status=$status"
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links_error_msg "$error_msg")
@@ -2101,6 +2103,12 @@ run_jobs_in_parallel() {
 		$function $opts $1
 		exit $?
 	fi
+
+	[[ -t 1 ]] && echo -e "
+	NOTE: your $action will be run a separate, disconnected job; run:
+
+		$_our_name watch
+"
 
 	$Trace
 	for dir
