@@ -2439,13 +2439,18 @@ watch() {
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
 	declare -i num_drives=$(set -- $drives; echo $#)
 
-	eval \
-	"set -- \$(cat $lock_dir/prune-${names_pat:-*}.pid 2>/dev/null)"
+	eval "set -- $lock_dir/prune-${names_pat:-*}.pid"
+	[[ -e $1 ]] || shift
+	[[ $# != 0 && ! ( $debug_opt || $show_all ) ]] &&
+	set -- $(echo $* | tr ' ' '\n' | fgrep -v /prune-Z.); [[ $# != 0 ]] &&
+	set -- $(cat  $* 2>/dev/null)
+	[[ $# == 0 ]] && prune_cmds= || {
 	set_locks prune $* && prune_lock_msg="; LOCKS: $locks" # has copy locks
 	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $* 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e 'lockpid ' |
 			trim_prune)
+	}
 	#
 	eval \
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
