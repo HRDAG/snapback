@@ -2479,27 +2479,29 @@ watch() {
 
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
-	declare -i PD=$(echo    "$prune_cmds" | egrep -c  '(prune|copy)-drive')
-	let PD=PD*2			# add in 'rm'
+	declare -i PD=$(echo    "$prune_cmds" | fgrep -c 'prune-drive')
+	(( PD > 0 )) && let PD=PD*2+4	# add in 'rm' plus section-overhead
 	declare -i CS=$(echo "$cp_rsync_cmds" | egrep -c '(update|copy)-')
-	let CS=CS*2+4			# add in 'rsync' and section-overhead
+	(( CS > 0 )) && let CS=CS*2+4	# add in 'rsync' plus section-overhead
 	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
-	(( RB > 0 )) && let RB+=3	# add in 'default ...' lines
+	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
+	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
 	TraceV 1 PD CS RB && let rows-=3
 	# min overhead: 1 watch line, 1 blank line, 2 hours to create,
-	#   2 good snapshots, 2 empty sections (prune & backup) w/4 lines each
-	declare -i min_rows=$(( 6 + 2*4 + PD + RB ));	(( CS > 0 ))    &&
-		   min_rows+=$(( 4 + CS ));		[[ $cron_opt ]] &&
+	#   2 good snapshots, 4 lines of empty backup section.
+	# the copy (CS) section is only printed if there's some activity.
+	declare -i min_rows=$((  6 + 4 + PD + CS + RB )); [[ $cron_opt ]] &&
 		   min_rows+=$(( 4 + 5*num_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
 
+
 	# ------------------------------------------------------------------
 	# now we're ready to start showing stuff to the user
 	# ------------------------------------------------------------------
 
-	declare -i min_for_rare=$(( min_df_rows + 6 + 5 + 7 ))
+	declare -i min_for_rare=$(( min_df_rows + 6 + 7 + 6 ))
 	[[ ! -s /etc/sudoers.d/$_our_name &&
 	   ( $rows -gt $min_for_rare || $show_all ) ]] && {
 		header -E "to not fill the log with frequent 'sudo ps'"
@@ -2534,8 +2536,8 @@ watch() {
 	echo "  Number of 'Too many links' snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
 	setup_snapshot_stats .partial
-	echo " Number of .partial snapshots (error?):  $stats_number"
-	echo "          Days since .partial snapshot:  $stats_newest_age"
+	echo "Number .partial snapshots, updates+err:  $stats_number"
+	echo "Days from most recent snapshot.partial:  $stats_newest_age"
 	let rows-=$rows_used
 	}
 
@@ -2553,22 +2555,22 @@ watch() {
 	setup_snapshot_stats '' month
 	echo "  Total number years  w/good snapshots:  $stats_number"
 	setup_snapshot_stats '*'
-	echo "  Total number snapshots, good and bad:  $stats_number"
+	echo "  Total snapshots (good, partial, .rm):  $stats_number"
 	let rows-=$rows_used
 	}
 
 	# ------------------------------------------------------------------
 
-	[[ $rows -ge $min_df_rows || $show_all ]] && {
+	(( $rows >= $min_df_rows )) || [[ $show_all ]] && {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	df --block-size=G --output=$df_fields  $drives
-	let rows-=num_drives+2
+	let rows-=$num_drives+2
 	}
 
 	# --------------------------------------------
 
-	[[ $rows -ge $min_df_rows || $show_all ]] && {
+	(( $rows >= $min_df_rows )) || [[ $show_all ]] && {
 	devices=
 	for dir in $drives
 	    do	set_FS_device___from_path $dir &&
@@ -2581,7 +2583,7 @@ watch() {
 	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
 	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
 	lsblk --output=$lsblk_fields			$devices
-	let rows-=num_drives+2
+	let rows-=$num_drives+2
 	}
 
 	}
@@ -2602,11 +2604,11 @@ watch() {
 
 	# ------------------------------------------------------------------
 
+	> $tmp
+	[[ $prune_cmds ]] && {
       #	header "cron's run-prune${prune_lock_msg-}" # has copy's prune lock
 	header "cron's run-prune"
 	echo
-	> $tmp
-	[[ $prune_cmds ]] && {
 
 	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
 	[[ ! $show_all ]] &&
@@ -2620,7 +2622,7 @@ watch() {
 	if [[ -s $tmp ]]
 	   then echo "$hdr" | trim_ps_cols
 		cat $tmp # | sort $prune_sort_opts
-	   else echo -e "No pruning is being done$names_msg."
+	#  else echo -e "No pruning is being done$names_msg."
 	fi
 	rm $tmp
 
