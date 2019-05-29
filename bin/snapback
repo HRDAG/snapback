@@ -234,7 +234,7 @@ set_locks() {
 	[[ $PIDs ]] || return 1
 
 	local cwd=$PWD
-	cd_ $lock_dir
+	cd $lock_dir || abort "cd $lock_dir"
 	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
 	set -- $(fgrep -l -w $fgrep_opts *.pid | grep "$type_regex" |
 		 sort | sed 's/\.pid//g')
@@ -2239,7 +2239,7 @@ setup_snapshot_stats() {
 	for dir in $(list_drives -a)
 	    do	set_drive_name $dir
 		local name=$drive_name
-		cd_ $dir
+		cd $dir || abort "cd $dir"
 		ending=${type2date_suffix_pattern[$ignored_date_ending_type]}
 		ending_RE=${ending//\?/.}
 		suspend_tracing
@@ -2262,7 +2262,7 @@ setup_snapshot_stats() {
 		add_words oldies $name=$old
 		add_words newies $name=$new
 	done
-	cd_ $cwd
+	cd $cwd || abort "cd $cwd"
 
 	suspend_tracing
 	local format=
@@ -2604,31 +2604,31 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	# FIXME: rewrite this section, it's an awful mess
-
-	> $tmp
-	[[ $prune_cmds || $show_all ]] && {
-      #	header "cron's run-prune${prune_lock_msg-}" # has copy's prune lock
-	header "cron's run-prune"
-	echo
-
+	# if prune in cron section, don't usually also show it in prune section
 	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
 	[[ ! $show_all ]] &&
 	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2) &&
 	   let rows+=$(wc -l < $tmp_2)
 	rm $tmp_2
-	(( $rows < ( $min_rows + $PD/2 ) )) &&
-	   fgrep_opt="-e prune-drive" && let rows+=$PD/2 || fgrep_opt=
-	echo "$prune_cmds" | fgrep -v -w -e xargs -e tr $fgrep_opt
-	} > $tmp
+
+	let snapback_cmd_count="($PD-4)/2" # 4 is section overhead
+	(( $rows < ( $min_rows + $snapback_cmd_count ) )) &&
+	   fgrep_opt="-e prune-drive" && # just want 'rm' commands
+		let rows+=$snapback_cmd_count || fgrep_opt=
+	prune_cmds=$(echo "$prune_cmds" |fgrep -v -w -e xargs -e tr $fgrep_opt)
+
+	[[ $prune_cmds || $show_all ]] && {
+      #	header "cron's run-prune${prune_lock_msg-}" # has copy's prune lock
+	header "cron's run-prune"
+	echo
+	}
+
 	if [[ $prune_cmds ]]
 	   then echo "$hdr" | trim_ps_cols
-		cat $tmp # | sort $prune_sort_opts
+		echo "$prune_cmds"
 	elif [[ $show_all ]]
-	   then cat $tmp
-		echo -e "No pruning is being done$names_msg."
+	   then echo -e "No pruning is being done$names_msg."
 	fi
-	rm $tmp
 
 	# ------------------------------------------------------------------
 
@@ -3560,7 +3560,7 @@ case $action in
 
    # w: show pruning & backup activity, and the status of pruning and backups
    # watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
-   ( watch | wa* | wt* | w )
+   ( watch | wa* | wt* | w ) [[ $action == w?* ]] && undo_action_abbrev watch
 	watch "$@"
 	;;
 
@@ -3602,11 +3602,11 @@ case $action in
    # filesystem maintenance actions
    ###########################################################################
 
-   ( add-extN-journal | aej )
+   ( add*extN*journal | aej ) undo_action_abbrev add-extN-journal
      add_extN_journal "$@"
 	;;
 
-   ( dir*sizes | ds )
+   ( dir*sizes | ds ) undo_action_abbrev dir-sizes
      dir_sizes "$@"
 	;;
 
@@ -3614,11 +3614,11 @@ case $action in
      mkfs_backup_drive "$@"
 	;;
    # copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
-   ( c*p**dr*v* | cpd )
+   ( c*p**dr*v* | cpd ) undo_action_abbrev copy-drive
      copy_backup_drive "$@"
 	;;
    # finish-copy-drive: only used internally
-   ( f*c*p*dr*v* | f*c*p*d* | fcd )
+   ( f*c*p*dr*v* | f*c*p*d* | fcd ) undo_action_abbrev finish-copy-drive
      finish_copy_backup_drive "$@"
 	;;
 
@@ -3627,7 +3627,7 @@ case $action in
    ###########################################################################
 
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
-   ( mk*[Zz] | mkz )
+   ( mk*[Zz] | mkz ) undo_action_abbrev mk-Z
 	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
 	[[ $1 != -* ]] || abort "unknown option $1"
 
@@ -3704,7 +3704,7 @@ case $action in
 	;;
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
-   ( test*prune | tp )
+   ( test*prune | tp ) undo_action_abbrev test-prune
 	[[ $# == 0 ]] || abort_with_action_Usage test-prune
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
@@ -3767,12 +3767,12 @@ case $action in
 
    # WARNING: this should only be called by "snapcrypt close"
    # unmount names: for each name (can be 'all'), kill backup & unmount drive
-   ( u*mount | u )			# umount
+   ( u*mount | u ) undo_action_abbrev unmount # umount
 	[[ $# != 0 ]] || abort "pass drive names"
      unmount_drives "$@"
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today
-   ( has-new-snapshots | hsn )
+   ( has*new*snapshots | hsn ) undo_action_abbrev has-new-snapshots
 	drive=$1
 	[[ $drive == *Z ]] && exit 0	# for debugging
 
@@ -3793,7 +3793,7 @@ case $action in
 	    abort "$drive has no (successful) backups since $latest_day"
 	;;
    # for "snapcrypt close": find drive with max # snapshots since last mounted
-   ( max-drive | max-backup* | md | mb )
+   ( max*drive | max*backup* | md | mb ) undo_action_abbrev max-drive
 	if [[ $# == 1 ]]
 	   then set_drive_name $1 2>/dev/null
 		if [[ ${drive_name-} ]]
@@ -3837,7 +3837,7 @@ case $action in
    # you can jump to the end of the file.			 #
    # -------------------------------------------------------------
 
-   ( run | r )
+   ( run | r ) undo_action_abbrev run
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
