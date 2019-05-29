@@ -2453,8 +2453,8 @@ watch() {
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
 	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
-			 egrep -e "[0-9] [/a-z].* ((update|copy)-|cpss )" \
-			       -e "lockpid " \
+			 egrep -e "[0-9] [/a-z].* (update|copy)-" \
+			       -e "[l]ockpid " \
 			       -e "[0-9]     rsync" |
 			  sed 's/   rsync/ rsync/')
 	#
