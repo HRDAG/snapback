@@ -2461,9 +2461,9 @@ watch() {
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -O pgid,command | grep -w -e '[r]sync' -e '[r]m' |
 	   awk '{print $2}' > $rsync_or_rm_cmd_PGIDs_file
-	cron_job_regexp=' -C run-backups? ' # put into configure.sh ??
+	cron_job_regex=' -C run-backups? ' # put into configure.sh ??
 	set -- $(COLUMNS=999 ps -u root -O pgid,command |
-			egrep "$cron_job_regexp" |
+			egrep "$cron_job_regex" |
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
 			awk '$0 !~ /setsid / {print $2}' | sort -u -n)
 	cron_PGIDs=$*
@@ -2658,7 +2658,7 @@ watch() {
 	# show process tree of master cron job(s)
 	[[ $cron_cmds ]] && {
 	stime=$(set -- $(ps h -o stime $cron_PGIDs | sort -u); echo $*)
-	regex=${cron_job_regexp%%s*}
+	regex=${cron_job_regex%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
 	echo "$cron_cmds" | trim_backup
