@@ -2149,14 +2149,16 @@ run_jobs_in_parallel() {
 "
 
 	$Trace
-	for dir
-	    do	if [[ ! $IfRun ]]
+	for name
+	    do	[[ $name =~ ^$admin_drive_name_regex$ ]] &&
+		[[ $is_drive_name_capitalized ]] && name=${name^} # for 'ps'
+		if [[ ! $IfRun ]]
 		   then trap '' HUP
-			# Can't "$function dir &", processes share lock files.
+			# Can't "$function name &", processes share lock files.
 			# Want new process-group so can ps/kill independently.
 			setsid \
-			$exe $opts -r $dir &
-		   else $exe $opts -r $dir # run in foreground, for testing
+			$exe $opts -r $name &
+		   else $exe $opts -r $name # run in foreground, for testing
 			echo
 		fi
 	done
@@ -2629,9 +2631,9 @@ watch() {
 		add_words devices $FS_device
 	done
 
-	# fields that don't work: rm,model
-	type lsblk &>/dev/null && {
+	type lsblk &>/dev/null && [[ ! $cp_rsync_cmds ]] && {
 	echo
+	# fields that don't work: rm,model
 	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
 	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
 	lsblk --output=$lsblk_fields			$devices
