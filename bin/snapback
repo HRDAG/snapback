@@ -246,20 +246,29 @@ set_locks() {
 
 # -----------------------------------------------------------------------------
 
+sudo_lockpid=
+
+set_sudo_lockpid() {
+
+	[[ $sudo_lockpid ]] && return
+
+	if sudo -n lockpid -h >& /dev/null
+	   then sudo_lockpid="sudo lockpid --pid=$BASHPID"
+	   else sudo_lockpid="     lockpid" # only reclaim locks user can write
+	fi
+}
+
+# --------------------------------------------
+
 rm_stale_locks() {
 
-	local test_lock_path=$lock_dir/test-$BASHPID.pid
-	if sudo  -n  lockpid    -p $$ $test_lock_path >& /dev/null
-	   then sudo lockpid -r -p $$ $test_lock_path
-		local sudo=sudo
-	   else local sudo=
-	fi
+	set_sudo_lockpid
 
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
-		$sudo lockpid    -p $$ $lock_path >& /dev/null &&
-		$sudo lockpid -r -p $$ $lock_path
+		$sudo_lockpid    $lock_path >& /dev/null &&
+		$sudo_lockpid -r $lock_path
 	done
 
 	return 0
@@ -459,16 +468,17 @@ signal_job() {
 	set_lock_path $type $name
 
 	[[ -s $lock_path ]] || return 1
-	$sudo lockpid    -p $$ $lock_path >& /dev/null && # missing or stale?
-	$sudo lockpid -r -p $$ $lock_path && return 1
+	set_sudo_lockpid
+	$sudo_lockpid    $lock_path >& /dev/null && # missing or stale?
+	$sudo_lockpid -r $lock_path && return 1
 
 	set -- $(< $lock_path) &&
 	[[ $# != 0 ]] &&
 	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
 	set_signal_is_kill $signal &&
-	$sudo lockpid    -p $$ $lock_path >& /dev/null && # avoid race
-	$sudo lockpid -r -p $$ $lock_path
+	$sudo_lockpid    $lock_path >& /dev/null && # avoid race
+	$sudo_lockpid -r $lock_path
 
 	return 0
 }
@@ -1001,7 +1011,7 @@ _rm_pruned_snapshots() {
 
 	update_snapshots_ls
 
-	set -- *.rm
+	set -- $snapshot_pattern*.rm
 	[[ -d $1 ]] || shift
 	local snapshot_basenames=$*
 	restore_tracing
@@ -1370,7 +1380,9 @@ set_link_dest_opts() {
 	declare -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	local snapshot
 	for snapshot
-	    do	[[ -d $snapshot ]] || continue
+	    do	[[ -d  $snapshot ]] || continue
+		set -- $snapshot/*
+		[[ -d  $1 ]] || continue # update's empty snapshot?
 		# don't consider *.partial or *.links to be adequate;
 		# 20 --link-dest options max (10 per direction)
 		case $snapshot in
@@ -2020,11 +2032,38 @@ sorted_useful_srcs() {
 
 # -----------------------------------------------------------------------------
 
+remove_empty_partial_snapshots() {
+	local drive_dir=$1
+
+	# 'sudo -n' because we're called by 'watch' and 'w'
+	sudo -n rmdir $drive_dir/*.partial >& /dev/null
+}
+
+# ---------------------------------
+
+cleanup_after_updates() {
+
+	set_sudo_lockpid
+
+	local drive_dir drive_name
+	for drive_dir in $(list_drives -a)
+	    do	set_drive_name $drive_dir
+		set_lock_path copy $drive_name # update could be running
+		$sudo_lockpid    $lock_path >& /dev/null || continue
+		$IfRun remove_empty_partial_snapshots $drive_dir
+		$sudo_lockpid -r $lock_path
+	done
+}
+
+# --------------------------------------------
+
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 
 	lock copy $drive_name > /dev/null || exit 1 # normal to run for days
 
+	set_drive_dir $drive_name
+	remove_empty_partial_snapshots $drive_dir
 	load__drive_name2backup_period
 
 	local srcs_dst_file=$tmp_5
@@ -2068,8 +2107,7 @@ update_drive() {
 		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
 	done < $srcs_dst_file
 
-	[[ $IfRun && $dst_snapshot ]] && sudo \
-	    rmdir --ignore-fail-on-non-empty $(dirname $dst_snapshot)/*.partial
+	remove_empty_partial_snapshots $drive_dir
 
 	unlock copy
 }
@@ -2349,6 +2387,7 @@ watch() {
 	local all_opts="$ps_opt $cron_opt"
 	[[ $names ]] && add_words all_opts -N $names
 	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.1
+	[[ $action != $watch_opt ]] && cleanup_after_updates
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
@@ -2646,7 +2685,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	# copy-snapshots uses prune lock
-	[[ $cp_rsync_cmds && ! $cron_opt ]] && {
+	[[ $cp_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
 	header "copy & update${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
@@ -2681,11 +2720,22 @@ watch() {
 	echo "$cron_cmds" | trim_backup
 	}
 
+	# ------------------------------------------------------------------
+
 	[[ $rsync_cmds ]] && {
 	header "cron's run-backups' lead rsync processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$rsync_cmds" | sed "s@ $HOME/@ ~/@g"
+	}
+
+	# ------------------------------------------------------------------
+
+	[[ $cp_rsync_cmds ]] && {
+	header "copy's & update's rsync processes (full details)"
+	echo
+	echo "$hdr" | trim_ps_cols
+	echo "$cp_rsync_cmds" | grep -w '[r]sync' | sed "s@ $HOME/@ ~/@g"
 	}
 }
 
@@ -2916,6 +2966,34 @@ dir_sizes() {
 	space="$total_dir_MB MB/snapshot"
 	  avg="$avg_dir_KB KB/dir"
 	echo -e "\n  all directories consume $space ($avg)\n\n"
+}
+
+# -----------------------------------------------------------------------------
+
+filesystem_geometry() {
+
+	local dash=------
+	local    format="%20s %8s %8s %8s %8s %8s\n"
+	printf "$format" ""	""	""	"dir "	stripe	stripe
+	printf "$format" inode	sector	block	block	"unit "	width
+	printf "$format" $dash	$dash	$dash	$dash	$dash	$dash
+	format=${format/%20s/%10s: %8s}
+	local drive_dir
+	for drive_dir in $(list_drives -a)
+	    do	set_FS_type___from_path $drive_dir
+		local  name=${drive_dir#$drive_dir_prefix}
+		set_FS_device___from_path $drive_dir
+		case $FS_type in
+		    ( ext? )
+			sudo tune2fs $FS_device > $tmp
+			inode=$(sed -n 's///p')
+			;;
+		    ( xfs  ) true ;;
+		    (  *   )
+			printf "%10s: %s is unknown FS type\n:" $name $FS_type
+			;;
+		esac
+	done
 }
 
 # -----------------------------------------------------------------------------
@@ -3623,6 +3701,11 @@ case $action in
      dir_sizes "$@"
 	;;
 
+   ( filesystem*geometry | fsg ) undo_action_abbrev filesystem-geometry
+     filesystem_geometry "$@"
+	;;
+
+   # mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
    ( mkfs )
      mkfs_backup_drive "$@"
 	;;
@@ -3854,6 +3937,13 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	cleanup_after_updates
+	exit
+
+	set_drive_name "$@"
+	set_drive_dir $drive_name
+	remove_empty_partial_snapshots $drive_dir
+	exit
 
 	sorted_useful_srcs "$@"
 	exit
