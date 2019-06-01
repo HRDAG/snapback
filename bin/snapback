@@ -372,8 +372,8 @@ lock() {
 		   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
 		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
 		fi
-	elif [[ $type == prune ]]	# grab lock as soon as possible?
-	   then wait_opt=--wait-expiration=${backup_period}h
+	elif [[ $type == prune && $action == prune* ]] # not update-drive?
+	   then abort "if prune waits for prune lock, it suspends copy/update"
 	fi
 
 	while true
@@ -381,12 +381,13 @@ lock() {
 		   then # can't grab prune lock when backup is running
 			lock_PID $wait_opt backup "$prunes_backup_lock_msg" &&
 			lock_PID     -r    backup "$prunes_backup_lock_msg" ||
-			    { $xtrace; return 1; }
+			    { $xtrace; return 1; } # not waiting, or expired
 			if [[ $do_wait ]]
 			   then if lock_PID -q prune "$lock_msg"
-				   then break
+				   then break	 # success!
 				   else lock_PID $wait_opt prune "$lock_msg" &&
-					lock_PID     -r    prune "$lock_msg"
+					lock_PID     -r    prune "$lock_msg" ||
+					   { $xtrace; return 1; } # expired
 					continue # make sure no backup running
 				fi
 			#  else fall through
@@ -470,8 +471,9 @@ signal_job() {
 	$sudo_lockpid    $lock_path >& /dev/null && # missing or stale?
 	$sudo_lockpid -r $lock_path && return 1
 
-	set -- $(< $lock_path) &&
-	[[ $# != 0 ]] &&
+	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
+	[[ $type != prune ]] || fgrep -q -v -w $1 ${lock_path/prune/copy} ||
+	    return 1			# prune lock held by copy job
 	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
 	set_signal_is_kill $signal &&
@@ -1006,20 +1008,22 @@ _rm_pruned_snapshots() {
 		log "pruned $# snapshots, will rename to *.rm for deletion"
 	fi
 
+	[[ $is_update && $IfRun ]] && local sudo=sudo || local sudo=
+
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
 	    do	count_rsyncs_using_resource  $snapshot || continue # in use?
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
 		if [[ $is_update ]]
-		   then   sudo mv $verbose_opt $snapshot $snapshot.rm
+		   then  $sudo mv $verbose_opt $snapshot $snapshot.rm
 		   else $IfRun mv	       $snapshot $snapshot.rm
 		fi
 	done
 
 	if [[ $is_update ]]
 	   then set -- *.partial.rm
-		[[ -d $1 ]] && sudo rmdir --ignore-fail-on-non-empty $*
+		[[ -d $1 ]] && $sudo rmdir --ignore-fail-on-non-empty $*
 		restore_tracing
 		return
 	fi
@@ -1316,7 +1320,7 @@ prune_drive() {
 	   then local lock_opt=	  # desparately need pruning, borrow copy lock
 	   else local lock_opt=
 	fi
-	add_words lock_opt -w
+	# add_words lock_opt -w	    # this would keep copy or update suspended
 
 	lock $lock_opt prune $drive_name ||
 	    # since we're called, the old lock holder should be un-suspended
@@ -1507,11 +1511,11 @@ record_rsync_time() {
 	declare -i minutes=$(( (30 + $end_secs - $start_secs) / 60 ))
 
 	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
-	$IfRun sudo mkdir -p $(dirname $file)
+	$IfRun mkdir -p $(dirname $file)
 	local link=$log_dir/$rsync_time_subdir/$drive_name
-	$IfRun sudo mkdir -p $(dirname $link)
+	$IfRun mkdir -p $(dirname $link)
 	[[ -e $link ]] ||
-	$IfRun sudo ln -s ../../$drive_name/$rsync_time_subdir $link
+	$IfRun ln -s ../../$drive_name/$rsync_time_subdir $link
 
 	local cmd="echo $minutes > $file"
 	if [[ $IfRun ]]
@@ -2077,7 +2081,8 @@ cleanup_after_updates() {
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 
-	lock copy $drive_name > /dev/null || exit 1 # normal to run for days
+	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
+	IfRun= lock copy $drive_name > /dev/null || exit 1 # can run for days
 
 	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
@@ -2126,7 +2131,7 @@ update_drive() {
 
 	remove_empty_partial_snapshots $drive_dir
 
-	unlock copy
+	IfRun= unlock copy
 }
 
 ##############################################################################-
@@ -3714,6 +3719,7 @@ case $action in
 	eval "set -- $type_glob*-$name_glob.pid"
 	for lock
 	    do	header $lock
+		[[ -e  $lock ]] || { echo "no such lock"; continue; }
 		set -- $(< $lock)
 		ps $ps_opts -$1 || ps h $ps_opts $1
 	done

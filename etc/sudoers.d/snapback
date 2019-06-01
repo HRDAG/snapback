@@ -1,3 +1,8 @@
-# 'snapback watch -C' runs 'sudo ps', which will fill up auth.log, unless ...
-Cmnd_Alias SNAPBACK = /bin/ps
+# 'snapback watch -C' runs repeated 'sudo ps', which will fill up auth.log;
+#    it also runs a few rmdir commands at startup (not repeated).
+# Run many mkdir & mv cmds (and 1 rmdir) for each 'update' regression test.
+# ionice and renice are run for every 'backup' and 'prune'.
+# lockpid is run when kill-*.
+# 'mkfs'/etc run umount and tune2fs; 'dir-sizes' runs find.
+Cmnd_Alias SNAPBACK = /bin/ps, /bin/mkdir, /bin/rmdir # /usr/local/bin/lockpid, /bin/mv, /usr/bin/ionice, /usr/bin/renice
 Defaults!SNAPBACK !syslog, !pam_session
