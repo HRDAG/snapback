@@ -1,4 +1,4 @@
-# version=14
+# version=15
 
 ################################################################
 ################################################################
@@ -261,6 +261,7 @@ readonly snapshot_date_time_separator=','
 readonly       drive_name_regex='[AD]'
 readonly admin_drive_name_regex='[A-Za-z]'
 readonly is_drive_name_capitalized=$true
+readonly is_drive_name_upper_cased=$true
 
 # -----------------------------------------------------------------------------
 

@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=14			# has to match version= in configure.sh.sample
+version=15			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -80,7 +80,7 @@ Usage: $our_name [options] action [args]
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
 
-    ps: show job (or process) that holds each lock
+    ps [ps-opts] [type_glob [name-glob]]: show holders of lock(s)
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] names: for each name (can be 'all'), kill backup job
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
@@ -252,10 +252,12 @@ set_sudo_lockpid() {
 
 	[[ $sudo_lockpid ]] && return
 
-	if sudo -n lockpid -h >& /dev/null
+	if [[ $action == kill-* ]] || sudo -n lockpid -h >& /dev/null
 	   then sudo_lockpid="sudo lockpid --pid=$BASHPID"
-	   else sudo_lockpid="     lockpid" # only reclaim locks user can write
+	   else sudo_lockpid=lockpid  # only reclaim locks that user can write
 	fi
+	[[ $action == kill-* ]] && sudo_lockpid="$IfRun $sudo_lockpid"
+	readonly sudo_lockpid
 }
 
 # --------------------------------------------
@@ -331,8 +333,6 @@ lock_PID() {
 # ------------------------------------------------------------------
 
 readonly lock_share_secs=0.5
-readonly lock_wait_msecs=300
-readonly lock_must_wait_msecs=1		# be the first to lock grab
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -349,13 +349,6 @@ lock() {
 	[[ $# == 2  ]] || abort "$FUNCNAME [-w] type resource"
 	local type=$1 resource=$2
 
-	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
-	[[ $type == backup && $do_wait ]] &&
-	if [[ $date_time == *,00 ]]    # making snapshot that's rarely pruned?
-	   then local must_wait=$true   wait_msecs=$lock_must_wait_msecs
-	   else local must_wait=$false  wait_msecs=$lock_wait_msecs
-	fi && wait_opt=--wait-msecs=$wait_msecs
-
 	local drive_dir=${resource%/$snapshot_pattern*}
 	drive_name=${drive_dir#$drive_dir_prefix}
 
@@ -366,19 +359,25 @@ lock() {
 	local		    lock_msg="holds '$type' lock for $drive_name"
 	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
 	[[ $type == prune ]] && add_words lock_msg " (could be copy or update)"
-	while true
-	    do	if [[ $type == backup && $do_wait ]]
-		   then # return 1 if spilled over to next backup time
-			declare -i start_secs=$(date '+%s')
-			lock_PID $wait_opt backup "$lock_msg"
-			declare -i   end_secs=$(date '+%s')
-			declare -i  wait_secs=end_secs-start_secs
-			[[ $must_wait ]] && wait_secs=0 # *need* lock?
-			(( $wait_secs < $backup_period * 60 * 60 )) &&
-			    break || { $xtrace; return 1; }
-		fi
 
-		if [[ $type == prune && $suspend_prune_when_backup ]]
+	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
+	[[ $do_wait ]] &&
+	if [[ $type == backup ]]
+	   then declare -i half_backup_period_mins=$backup_period*60/2
+		  if [[ $date_time == *-01,00 ]] # kept a very long time?
+		   then wait_opt=--wait-expiration=15d # want it, or next month
+		elif [[ $date_time == *-16,00 ]] # kept a long time?
+		   then wait_opt=--wait-expiration=8d # want it, or next one
+		elif [[ $date_time ==    *,00 ]] # kept a fairly long time?
+		   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
+		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
+		fi
+	elif [[ $type == prune ]]	# grab lock as soon as possible?
+	   then wait_opt=--wait-expiration=${backup_period}h
+	fi
+
+	while true
+	    do	if [[ $type == prune && $suspend_prune_when_backup ]]
 		   then # can't grab prune lock when backup is running
 			lock_PID $wait_opt backup "$prunes_backup_lock_msg" &&
 			lock_PID     -r    backup "$prunes_backup_lock_msg" ||
@@ -386,7 +385,7 @@ lock() {
 			if [[ $do_wait ]]
 			   then if lock_PID -q prune "$lock_msg"
 				   then break
-				   else lock_PID $wait_opt prune "$lock_msg"
+				   else lock_PID $wait_opt prune "$lock_msg" &&
 					lock_PID     -r    prune "$lock_msg"
 					continue # make sure no backup running
 				fi
@@ -459,8 +458,6 @@ set_signal_is_kill() {
 signal_job() {
 	local signal=${1#-} type=$2 name=${3-}
 
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-
 	suspend_tracing
 	[[ $name ]] && set_drive_name $name
 	restore_tracing
@@ -469,12 +466,13 @@ signal_job() {
 
 	[[ -s $lock_path ]] || return 1
 	set_sudo_lockpid
+	[[ ! $IfRun ]] &&
 	$sudo_lockpid    $lock_path >& /dev/null && # missing or stale?
 	$sudo_lockpid -r $lock_path && return 1
 
 	set -- $(< $lock_path) &&
 	[[ $# != 0 ]] &&
-	$IfRun $sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
+	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
 	set_signal_is_kill $signal &&
 	$sudo_lockpid    $lock_path >& /dev/null && # avoid race
@@ -664,10 +662,30 @@ source_drive_specific_config_file() {
 
 # ---------------------------------
 
-drive_name=				# global, used by log()
+drive_name=				# global, used by log() and etc
+
+have_cmd \
+_set_drive_name ||		      # configure.sh can replace this function
+# ignore invalid names, fix the case of valid names
+_set_drive_name() {
+	local name=$1
+
+	# needed when argument could be a drive_dir not a drive_name
+	[[ $name =~ ^$admin_drive_name_regex$ ]] || return 1
+
+	  if [[ $is_drive_name_upper_cased ]]
+	   then drive_name=${name^^}
+	elif [[ $is_drive_name_capitalized ]]
+	   then drive_name=${name^}
+	   else drive_name=$name
+	fi
+}
+
+# ----------------------
 
 have_cmd \
 set_drive_name ||		      # configure.sh can replace this function
+# pass: directory (that holds snapshots), filesystem label, or valid name
 set_drive_name() {
 	[[ $# == 1 && $1 ]] || abort "set_drive_name takes a single argument"
 
@@ -688,10 +706,7 @@ set_drive_name() {
 		   abort "$name is not drive-dir or FS-label or valid-name"
 		name=${drive_dir#$drive_dir_prefix}
 	fi
-	if [[ $is_drive_name_capitalized ]]
-	   then drive_name=${name^}
-	   else drive_name=$name
-	fi
+	_set_drive_name $name
 	TraceV 3 drive_name
 
 	set__drive_log_dir__file_for_logging__admin_group__is_regression_test \
@@ -1301,7 +1316,7 @@ prune_drive() {
 	   then local lock_opt=	  # desparately need pruning, borrow copy lock
 	   else local lock_opt=
 	fi
-	[[ $is_cron ]] || add_words lock_opt -w
+	add_words lock_opt -w
 
 	lock $lock_opt prune $drive_name ||
 	    # since we're called, the old lock holder should be un-suspended
@@ -1866,6 +1881,8 @@ copy_snapshot() {
 	(( $# >= 2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
+# need regression test before enable this:
+#	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
 	copy_snapshot_args=
 
 	$Trace
@@ -1878,7 +1895,7 @@ copy_snapshot() {
 	dst_backup_type=$backup_type	   ; }
 
 	[[ $src_snapshot == /* && ! -L $src_snapshot ]] || {
-	# the above criteria is alway satisfied by update, so this is a copy ..
+	# the above criteria is alway satisfied by update, so we're 'copy' ...
 	local absolute_path
 	set_absolute_path $src_snapshot
 	src_snapshot=$absolute_path
@@ -2124,9 +2141,16 @@ update_drive() {
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive.
 run_jobs_in_parallel() {
 	local type=$1; shift
-	local opts=
+	local opts= are_recursing=$false
 	while [[ $1 == -[^r]* ]] ; do add_words opts $1; shift; done
-	[[ $1 == all ]] && set -- $(list_drives)
+	[[ $1 == -r  ]] && { are_recursing=$true; shift; }
+	if [[ $IfRun && $(hostname) == eleanor ]]
+	   then local excluded_regex='\bG$' # G is too slow
+	   else local excluded_regex=NoThInG
+	fi
+	[[ $1 == all ]] && set -- $(list_drives | grep -v "$excluded_regex")
+	[[  ! $IfRun ]] &&
+	set -- $(echo $* | tr ' ' '\n' | tac) # ps shows new proc 1st
 
 	case $type in
 	   ( backup ) function=run_backup   exe=$run_backup_exe  ;;
@@ -2135,9 +2159,8 @@ run_jobs_in_parallel() {
 	   (   *    ) abort "'$type' is not supported" ;;
 	esac
 
-	if [[ ${1-} == -r ]]		# are we recursing?
-	   then shift
-		$Trace
+	if [[ $are_recursing ]]
+	   then $Trace
 		$function $opts $1
 		exit $?
 	fi
@@ -2150,8 +2173,7 @@ run_jobs_in_parallel() {
 
 	$Trace
 	for name
-	    do	[[ $name =~ ^$admin_drive_name_regex$ ]] &&
-		[[ $is_drive_name_capitalized ]] && name=${name^} # for 'ps'
+	    do	_set_drive_name $name && name=$drive_name # cleanup for 'ps'
 		if [[ ! $IfRun ]]
 		   then trap '' HUP
 			# Can't "$function name &", processes share lock files.
@@ -2480,7 +2502,6 @@ watch() {
 
 	eval \
 	"set -- \$(cat $lock_dir/backup-${names_pat:-*}.pid 2> /dev/null)"
-	set_locks backup $* && backup_lock_msg="; LOCKS: $locks"
 	[[ $# == 0 ]] && rsync_cmds= ||
 	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
 	rsync_cmds=$(COLUMNS=999 ps_ -H ww  $* |
@@ -2494,7 +2515,6 @@ watch() {
 	set -- $(echo $* | tr ' ' '\n' | fgrep -v /prune-Z.); [[ $# != 0 ]] &&
 	set -- $(cat  $* 2>/dev/null)
 	[[ $# == 0 ]] && prune_cmds= || {
-	set_locks prune $* && prune_lock_msg="; LOCKS: $locks" # has copy locks
 	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $* 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e 'lockpid ' |
@@ -2503,7 +2523,7 @@ watch() {
 	#
 	eval \
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
-	set_locks . $* && copy_lock_msg="; LOCKS: $locks"
+	set_locks prune $* && copy_lock_msg="; PRUNE LOCKS: ${locks//prune-/}"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
 	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
@@ -2672,7 +2692,6 @@ watch() {
 	prune_cmds=$(echo "$prune_cmds" |fgrep -v -w -e xargs -e tr $fgrep_opt)
 
 	[[ $prune_cmds || $show_all ]] && {
-      #	header "cron's run-prune${prune_lock_msg-}" # has copy's prune lock
 	header "cron's run-prune"
 	echo
 	}
@@ -2703,7 +2722,6 @@ watch() {
 	"
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
-      #	header "cron's run-backups' lead rsyncs${backup_lock_msg-}"
 	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
@@ -3604,7 +3622,6 @@ case $action in
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
 	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
 	[[ $# != 0   ]] || abort_with_action_Usage update-drive
-	set -- $(echo $* | tr ' ' '\n' | tac)
 	run_jobs_in_parallel update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
@@ -3681,13 +3698,24 @@ case $action in
 	$Trace
 	kill_all_jobs $*
 	;;
-   # ps: show job (or process) that holds each lock
+   # ps [ps-opts] [type_glob [name-glob]]: show holders of lock(s)
    ( ps )
+	ps_opts=
+	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
+	   do add_words ps_opts $1; shift; done
+	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
+	[[ $is_darwin ]] || ps_opts="-H $ps_opts"
+	type_glob=${1:-*} name_glob=${2:-*}
+	[[ ${is_drive_name_upper_cased-$is_drive_name_capitalized} ]] &&
+	   name_glob=${name_glob^^}
+
 	rm_stale_locks
-	for lock in $lock_dir/*.pid
+	cd_ $lock_dir
+	eval "set -- $type_glob*-$name_glob.pid"
+	for lock
 	    do	header $lock
 		set -- $(< $lock)
-		ps -f -$1 || ps h -f $1
+		ps $ps_opts -$1 || ps h $ps_opts $1
 	done
 	;;
 
