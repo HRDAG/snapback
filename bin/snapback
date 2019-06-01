@@ -472,7 +472,7 @@ signal_job() {
 	$sudo_lockpid -r $lock_path && return 1
 
 	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
-	[[ $type != prune ]] || fgrep -q -v -w $1 ${lock_path/prune/copy} ||
+	[[ $type != prune ]] || ! fgrep -s -w $1 ${lock_path/prune/copy} ||
 	    return 1			# prune lock held by copy job
 	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
