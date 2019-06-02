@@ -2912,7 +2912,7 @@ dir_sizes() {
 		done || exit 1
 	   else file=  name=${1-}
 		[[ $# == 1 && $name && $name != -* ]] ||
-		   abort_with_action_Usage dir-size
+		   abort_with_action_Usage
 		set_drive_name $1
 	fi
 	[[ ${1-} != -* ]] || abort "$FUNCNAME: unknown option $1"
@@ -3053,11 +3053,11 @@ mkfs_backup_drive() {
 	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts == mkfs.xfs* ]] || {
 	   echo "If this is your first or smallest drive, use the -f option;"
 	   echo "otherwise, use the very-fast 'copy-drive' action instead."
-	   abort_with_action_Usage mkfs
+	   abort_with_action_Usage
 	} >&2
 	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
 	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')
-	[[ $# == [12] ]] || abort_with_action_Usage mkfs
+	[[ $# == [12] ]] || abort_with_action_Usage
 	local device=$1 name=${2-}
 	TraceV 3 mkfs_opts device name
 	[[ $device = /* ]] || device=/dev/$device
@@ -3612,14 +3612,14 @@ case $action in
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
    ( r*b*k*p* | rb* ) undo_action_abbrev run-backups
-	[[ $# != 0 ]] || abort_with_action_Usage run-backup
+	[[ $# != 0 ]] || abort_with_action_Usage
 	[[ $1 == all ]] && rm_stale_locks
 	run_jobs_in_parallel backup "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo_action_abbrev prune-drives
-	[[ $# != 0 ]] || abort_with_action_Usage prune-drive
+	[[ $# != 0 ]] || abort_with_action_Usage
 	run_jobs_in_parallel prune "$@"
 	[[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
@@ -3630,14 +3630,14 @@ case $action in
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
 	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
-	[[ $# != 0   ]] || abort_with_action_Usage update-drive
+	[[ $# != 0   ]] || abort_with_action_Usage
 	run_jobs_in_parallel update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ $is_cron ]] && wait		# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo_action_abbrev check-snapshot-hard-links
-	[[ $# != 0   ]] || abort_with_action_Usage check-snapshot-
+	[[ $# != 0   ]] || abort_with_action_Usage
 	[[ $1 == all ]] && set -- $(list_drives)
 	for drive
 	    do	check-snapshot-hard-links $drive
@@ -3649,7 +3649,7 @@ case $action in
 	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
 	[[ $1 == -q ]] && {  quiet_opt=$1; shift; } ||  quiet_opt=
 	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
-	(( $# >= 2  )) || abort_with_action_Usage copy-snap
+	(( $# >= 2  )) || abort_with_action_Usage
 	dst_name=${!#}
 	src_snapshots=${*%$dst_name}
 
@@ -3665,7 +3665,7 @@ case $action in
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
    ( snapshot*size | ss ) undo_action_abbrev snapshot-size
-	[[ $# == 1 ]] || abort_with_action_Usage snapshot-size
+	[[ $# == 1 ]] || abort_with_action_Usage
 	dir=$1
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
 	warn "this could take hours"
@@ -3685,25 +3685,25 @@ case $action in
 
    # kill-backup [-sig] names: for each name (can be 'all'), kill backup job
    ( kill-backup* | kb ) undo_action_abbrev kill-backup
-	[[ $# != 0 ]] || abort_with_action_Usage kill-backup
+	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
 	kill_jobs backup $*
 	;;
    # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
    ( kill-prune* | kp ) undo_action_abbrev kill-prune
-	[[ $# != 0 ]] || abort_with_action_Usage kill-prune
+	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
 	kill_jobs prune $*
 	;;
    # kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
    ( kill-copy* | kc | ku ) undo_action_abbrev kill-copy
-	[[ $# != 0 ]] || abort_with_action_Usage kill-copy
+	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
 	kill_jobs copy $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk ) undo_action_abbrev kill-all
-	[[ $# != 0 ]] || abort_with_action_Usage kill-all
+	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
 	kill_all_jobs $*
 	;;
@@ -3841,7 +3841,7 @@ case $action in
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
    ( test*prune | tp ) undo_action_abbrev test-prune
-	[[ $# == 0 ]] || abort_with_action_Usage test-prune
+	[[ $# == 0 ]] || abort_with_action_Usage
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
 
