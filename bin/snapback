@@ -1000,7 +1000,7 @@ _rm_pruned_snapshots() {
 	suspend_tracing
 	set -- $(< $snapshots_file)
 
-	[[ $# != 0 ]] &&
+	[[ $# != 0 && ! $is_update ]] &&
 	if (( $log_level >= 2 ))
 	   then [[ $IfRun ]] ||
 		log "will prune these snapshots: " $*
@@ -2539,8 +2539,8 @@ watch() {
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
 			       -e "[l]ockpid " \
 			       -e "[0-9]     rsync" |
-			   sed -e 's/   rsync/ rsync/' \
-			       -e 's/   lockp/ lockp/')
+			   sed -e 's/   rsync/ rsync/')
+		#	       -e 's/   lockp/ lockp/')	# -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -O pgid,command | grep -w -e '[r]sync' -e '[r]m' |
