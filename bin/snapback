@@ -2171,7 +2171,8 @@ run_jobs_in_parallel() {
 	fi
 
 	[[ -t 1 ]] && echo -e "
-	NOTE: your $action will be run a separate, disconnected job; run:
+	NOTE: your $action will run as a separate, disconnected job;
+	      and it might wait for a lock before it can start.  See it with:
 
 		$_our_name watch
 "
@@ -3615,13 +3616,13 @@ case $action in
 	[[ $# != 0 ]] || abort_with_action_Usage
 	[[ $1 == all ]] && rm_stale_locks
 	run_jobs_in_parallel backup "$@"
-	[[ $is_cron ]] && wait		# so see master cron job in ps
+	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo_action_abbrev prune-drives
 	[[ $# != 0 ]] || abort_with_action_Usage
 	run_jobs_in_parallel prune "$@"
-	[[ $is_cron ]] && wait		# so see master cron job in ps
+	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo_action_abbrev update-drives
@@ -3632,7 +3633,7 @@ case $action in
 	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
 	[[ $# != 0   ]] || abort_with_action_Usage
 	run_jobs_in_parallel update ${src_names_regex_opt-} $recurse_opt $*
-	# [[ $is_cron ]] && wait		# so see master cron job in ps
+	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
