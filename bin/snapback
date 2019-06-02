@@ -472,8 +472,8 @@ signal_job() {
 	$sudo_lockpid -r $lock_path && return 1
 
 	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
-	[[ $type != prune ]] || ! fgrep -s -w $1 ${lock_path/prune/copy} ||
-	    return 1			# prune lock held by copy job
+	[[ $action == kill-prune ]] &&fgrep -s -w $1 ${lock_path/prune/copy} &&
+	    return 1	   # can't 'kill-prune' if prune lock held by copy job
 	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
 	set_signal_is_kill $signal &&
@@ -2397,6 +2397,7 @@ trim_copy_update() {
 	sed -e '/update-drive/s@ -r @ @g' \
 	    -e '/update-drive/s@ -s@ -s @' \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
+	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
 	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$dirs /@'
@@ -2420,7 +2421,7 @@ watch() {
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
-	local drives= names_pat= fixed_names=
+	local drives= names_pat= fixed_names= show_all=$false
 	if [[ $names ]]
 	   then for name in ${names//,/ }
 		    do	set_drive_name $name
@@ -2429,7 +2430,7 @@ watch() {
 			fixed_names=$fixed_names,$drive_name
 		done
 		names=${fixed_names#,}
-		show_all=$true   cron_opt=-C
+		# show_all=$true   cron_opt=-C
 	   else show_all=$false
 		drives=$(list_drives -a | tr '\n' ' ')
 	fi
@@ -2438,7 +2439,7 @@ watch() {
 
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
-	TraceV 2 names drives names_pat ps_opt cron_opt show_all
+	TraceV 1 names drives names_pat ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
 
@@ -2526,16 +2527,18 @@ watch() {
 			trim_prune)
 	}
 	#
+	# both update-drive and copy-snapshot use the copy lock
 	eval \
 	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
 	set_locks prune $* && copy_lock_msg="; PRUNE LOCKS: ${locks//prune-/}"
 	[[ $# == 0 ]] && cp_rsync_cmds= ||
 	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
 	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
-			 egrep -e "[0-9] [/a-z].* (update|copy)-" \
+			 egrep -e "[0-9] .*$_our_name.* [cu]" \
 			       -e "[l]ockpid " \
 			       -e "[0-9]     rsync" |
-			  sed 's/   rsync/ rsync/')
+			   sed -e 's/   rsync/ rsync/' \
+			       -e 's/   lockp/ lockp/')
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -O pgid,command | grep -w -e '[r]sync' -e '[r]m' |
@@ -2548,7 +2551,8 @@ watch() {
 	cron_PGIDs=$*
 	rm $rsync_or_rm_cmd_PGIDs_file
 
-	[[ ($cron_opt || ! $rsync_cmds) && $# != 0 ]] && {
+	# only show un-asked cron jobs if no rsync details to show
+	[[ ($cron_opt || ! $rsync_cmds$cp_rsync_cmds) && $# != 0 ]] && {
 	set -- $(process_group_PIDs $cron_PGIDs)
 	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps >& /dev/null && sudo=sudo || sudo= wchan=
