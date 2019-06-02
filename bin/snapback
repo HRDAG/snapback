@@ -2123,6 +2123,7 @@ update_drive() {
 	while read args
 	    do	set -- $args
 		local   dst_snapshot=${!#}
+		[[ -d  $dst_snapshot ]] && continue # undeleted?
 		set -- $dst_snapshot*
 		[[ -d  $1 ]] || continue # was it pruned away?
 		set -- $(fastest_snapshots ${args%$dst_snapshot})
