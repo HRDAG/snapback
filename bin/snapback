@@ -473,7 +473,7 @@ signal_job() {
 
 	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
 	[[ $action == kill-prune ]] &&fgrep -s -w $1 ${lock_path/prune/copy} &&
-	    return 1	   # can't 'kill-prune' if prune lock held by copy job
+	    { warn "ignoring $type-$name lock, held by copy job"; return 1; }
 	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
 	set_signal_is_kill $signal &&
@@ -1022,7 +1022,7 @@ _rm_pruned_snapshots() {
 	done
 
 	if [[ $is_update ]]
-	   then set -- *.partial.rm
+	   then set -- *.partial.rm	# some from update, some from pruning
 		[[ -d $1 ]] && $sudo rmdir --ignore-fail-on-non-empty $*
 		restore_tracing
 		return
@@ -1376,6 +1376,14 @@ prune_drive() {
 # functions to setup --link-dest args to rsync
 # -----------------------------------------------------------------------------
 
+_have_full_snapshot() {
+
+	set -- ${new_snapshot%/$snapshot_pattern*}/$snapshot_pattern
+	[[ -d $1 ]]
+}
+
+# ---------------------------------
+
 declare -i num_link_dests=0
 
 set_link_dest_opts() {
@@ -1397,6 +1405,7 @@ set_link_dest_opts() {
 
 	suspend_tracing
 	declare -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
+	_have_full_snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
 	local snapshot
 	for snapshot
 	    do	[[ -d  $snapshot ]] || continue
@@ -2171,7 +2180,7 @@ run_jobs_in_parallel() {
 		exit $?
 	fi
 
-	[[ -t 1 ]] && echo -e "
+	[[ ! $IfRun && -t 1 ]] && echo -e "
 	NOTE: your $action will run as a separate, disconnected job;
 	      and it might wait for a lock before it can start.  See it with:
 
@@ -2718,7 +2727,7 @@ watch() {
 
 	# copy-snapshots uses prune lock
 	[[ $cp_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
-	header "copy & update${copy_lock_msg-}"
+	header "copy (& update)${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$cp_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
@@ -3599,7 +3608,7 @@ check-snapshot-hard-links() {
 action=$1; shift
 _our_name="$our_name"
  our_name="$our_name $action"
-undo_action_abbrev() { action=$1 our_name="$_our_name $1" ; }
+undo_action_abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
 
 # ---------------------------------
 
@@ -3979,6 +3988,13 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
+	new_snapshot=$1
+	TraceV 0 new_snapshot
+	_have_full_snapshot
+	echo "status=$?"
+	exit
+
 	cleanup_after_updates
 	exit
 
