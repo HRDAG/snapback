@@ -1005,7 +1005,7 @@ _rm_pruned_snapshots() {
 	   then [[ $IfRun ]] ||
 		log "will prune these snapshots: " $*
 	   else $IfRun \
-		log "pruned $# snapshots, will rename to *.rm for deletion"
+		log "pruning $# snapshots: will rename to *.rm for deletion"
 	fi
 
 	[[ $is_update && $IfRun ]] && local sudo=sudo || local sudo=
