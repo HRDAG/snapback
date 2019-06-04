@@ -3012,29 +3012,54 @@ dir_sizes() {
 # -----------------------------------------------------------------------------
 
 filesystem_geometry() {
+	[[ ${1-} == -a ]] && { shift; local all_opt=-a; } || local all_opt=
+	local drive_dirs=$*
 
 	local dash=------
 	local    format="%20s %8s %8s %8s %8s %8s\n"
 	printf "$format" ""	""	""	"dir "	stripe	stripe
-	printf "$format" inode	sector	block	block	"unit "	width
+	printf "$format" sector	inode	block	block	"unit "	width
 	printf "$format" $dash	$dash	$dash	$dash	$dash	$dash
-	format=${format/%20s/%10s: %8s}
+	format=${format/\%20s/%-10s :%8s}
 	local drive_dir
-	for drive_dir in $(list_drives -a)
+	for drive_dir in ${drive_dirs:-$(list_drives $all_opt)}
 	    do	set_FS_type___from_path $drive_dir
 		local  name=${drive_dir#$drive_dir_prefix}
 		set_FS_device___from_path $drive_dir
+		[[ -L $FS_device ]] && dev=$(readlink $FS_device)
+		dev=$(basename ${dev-$FS_device})
+		dev=${dev%%[0-9]}
 		case $FS_type in
 		    ( ext? )
-			sudo tune2fs $FS_device > $tmp
-			inode=$(sed -n 's///p')
+			# output _sometimes_ contains SPACEs (e.g. for inode=)
+			RunCmd sudo tune2fs -l $FS_device > $tmp
+			[[ $FS_device == /dev/mapper/* ]] && sector= ||
+			sector=$(< /sys/block/$dev/queue/physical_block_size)
+			inode=$(sed -n 's/^Inode size:.* //p' $tmp)
+			block=$(sed -n 's/^Block size:.* //p' $tmp)
+			dir_block=$block
+			sunit=
+			swidth=
 			;;
-		    ( xfs  ) true ;;
+		    ( xfs  )
+			RunCmd xfs_info $drive_dir > $tmp
+		       sector=$(sed -nr '/at/s/.* sectsz=([^ ]+) .*/\1/p' $tmp)
+			inode=$(sed -nr '/^m/ s/.* isize=([^ ]+) .*/\1/p' $tmp)
+			block=$(sed -nr '/^d/ s/.* bsize=([^ ]+) .*/\1/p' $tmp)
+		    dir_block=$(sed -nr '/^n/ s/.* bsize=([^ ]+) .*/\1/p' $tmp)
+			sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' $tmp)
+		       swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' $tmp)
+			 sunit="$sunit blks"
+			swidth="$swidth blks"
+			;;
 		    (  *   )
 			printf "%10s: %s is unknown FS type\n:" $name $FS_type
 			;;
 		esac
+		printf "$format" $drive_dir \
+		    "$sector" "$inode" "$block" "$dir_block" "$sunit" "$swidth"
 	done
+	rm $tmp
 }
 
 # -----------------------------------------------------------------------------
@@ -3753,6 +3778,7 @@ case $action in
      dir_sizes "$@"
 	;;
 
+   # filesystem-geometry [-a | drive-dirs]: show sector, inode, block, etc size
    ( filesystem*geometry | fsg ) undo_action_abbrev filesystem-geometry
      filesystem_geometry "$@"
 	;;
