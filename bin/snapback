@@ -2547,7 +2547,7 @@ watch() {
 	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
 	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
-			       -e " lockpid " \
+			       -e " [l]ockpid " \
 			       -e "[0-9]     rsync" |
 			   sed -e 's/   rsync/ rsync/')
 			#      -e 's/   lockp/ lockp/')	# -> harder to notice
