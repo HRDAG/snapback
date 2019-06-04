@@ -80,7 +80,7 @@ Usage: $our_name [options] action [args]
     w: show pruning & backup activity, and the status of pruning and backups
     watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
 
-    ps [ps-opts] [type_glob [name-glob]]: show holders of lock(s)
+    ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] names: for each name (can be 'all'), kill backup job
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
@@ -236,7 +236,7 @@ set_locks() {
 	local cwd=$PWD
 	cd $lock_dir || abort "cd $lock_dir"
 	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
-	set -- $(fgrep -l -w $fgrep_opts *.pid | grep "$type_regex" |
+	set -- $(fgrep -l -w $fgrep_opts *.pid | egrep "$type_regex" |
 		 sort | sed 's/\.pid//g')
 	locks=$*
 	cd $cwd
@@ -2027,7 +2027,7 @@ sorted_useful_srcs() {
 		set -- $(
 		# -a so include drives excluded from backups
 		set -- $(list_drives -a | fgrep -v -x $dst_dir |
-				grep "$drive_dir_prefix${src_names_regex-.}")
+				egrep "$drive_dir_prefix${src_names_regex-.}")
 		for drive_dir
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
 		done # | tac		# uncomment to test sort_args
@@ -2163,7 +2163,7 @@ run_jobs_in_parallel() {
 	   then local excluded_regex='\bG$' # G is too slow
 	   else local excluded_regex=NoThInG
 	fi
-	[[ $1 == all ]] && set -- $(list_drives | grep -v "$excluded_regex")
+	[[ $1 == all ]] && set -- $(list_drives | egrep -v "$excluded_regex")
 	[[  ! $IfRun ]] &&
 	set -- $(echo $* | tr ' ' '\n' | tac) # ps shows new proc 1st
 
@@ -2534,9 +2534,10 @@ watch() {
 	[[ $# == 0 ]] && prune_cmds= || {
 	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $* 2>/dev/null  |
-			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e 'lockpid ' |
+			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
 			trim_prune)
 	}
+
 	#
 	# both update-drive and copy-snapshot use the copy lock
 	eval \
@@ -2546,10 +2547,10 @@ watch() {
 	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
 	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
-			       -e "[l]ockpid " \
+			       -e " lockpid " \
 			       -e "[0-9]     rsync" |
 			   sed -e 's/   rsync/ rsync/')
-		#	       -e 's/   lockp/ lockp/')	# -> harder to notice
+			#      -e 's/   lockp/ lockp/')	# -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -O pgid,command | grep -w -e '[r]sync' -e '[r]m' |
@@ -3718,20 +3719,20 @@ case $action in
 	$Trace
 	kill_all_jobs $*
 	;;
-   # ps [ps-opts] [type_glob [name-glob]]: show holders of lock(s)
+   # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
    ( ps )
 	ps_opts=
 	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
 	   do add_words ps_opts $1; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts"
-	type_glob=${1:-*} name_glob=${2:-*}
+	type_pattern=${1:-*} name_pattern=${2:-*}
 	[[ ${is_drive_name_upper_cased-$is_drive_name_capitalized} ]] &&
-	   name_glob=${name_glob^^}
+	   name_pattern=${name_pattern^^}
 
 	rm_stale_locks
 	cd_ $lock_dir
-	eval "set -- $type_glob*-$name_glob.pid"
+	eval "set -- $type_pattern*-$name_pattern.pid"
 	for lock
 	    do	header $lock
 		[[ -e  $lock ]] || { echo "no such lock"; continue; }
