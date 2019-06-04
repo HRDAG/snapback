@@ -1249,8 +1249,8 @@ prune_type_to_file() {
 		[[ $first_prune_date ]] || break
 
 		set -f; set -- $prune_type_patterns; set +f
-		prune_type_pattern=$1; shift # we'll use first pattern
-		prune_type_patterns=$*	     # save remaining patterns
+		prune_type_pattern=$1; shift # for this pass, use next pattern
+		prune_type_patterns=$*	     # rest of patterns for more passes
 
 		set_prune_pattern $type $prune_type_pattern
 		TraceV 5 date_suffix_pattern first_prune_date \
@@ -1340,13 +1340,9 @@ prune_drive() {
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	# set -- <all the snapshot basenames, reverse sorted>
-	if [[ $is_update ]]
-	   then local suffix=.partial	# update_drive creates these (empty)
-	   else local suffix=*		# '*' to get .links & .partial
-	fi
 	suspend_tracing
 	set -- $(cd $drive_dir &&
-		   echo $snapshot_pattern$suffix |
+		   echo $snapshot_pattern*  | # prune everything
 		   tr ' ' '\n' | sort -u -r |
 		   grep -v '\.rm$')	# _rm_pruned_snapshots handles *.rm
 	restore_tracing
@@ -3015,12 +3011,13 @@ filesystem_geometry() {
 	[[ ${1-} == -a ]] && { shift; local all_opt=-a; } || local all_opt=
 	local drive_dirs=$*
 
-	local dash=------
-	local    format="%20s %8s %8s %8s %8s %8s\n"
+	local dash="------"
+	local dash="======"
+	local    format="%25s %8s %8s %8s %8s %8s\n"
 	printf "$format" ""	""	""	"dir "	stripe	stripe
 	printf "$format" sector	inode	block	block	"unit "	width
 	printf "$format" $dash	$dash	$dash	$dash	$dash	$dash
-	format=${format/\%20s/%-10s :%8s}
+	format=${format/\%25s/%-15s :%8s}
 	local drive_dir
 	for drive_dir in ${drive_dirs:-$(list_drives $all_opt)}
 	    do	set_FS_type___from_path $drive_dir
