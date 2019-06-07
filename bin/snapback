@@ -592,6 +592,8 @@ is_regression_test=$false
 readonly none=NoNe
 _last_initialized_drive_name=
 
+readonly watch_cache_dir=$log_dir/stats/watch
+
 # this is normally called by set_drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
 set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
@@ -617,10 +619,12 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	[[ $group == NoNe ]] && group= || admin_group=$group
 	restore_tracing group
 
-	[[ -d $log_dir ]] || {
-	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
-	sudo chgrp $group  $log_dir &&
-	sudo chmod g+w,g+s $log_dir
+	local  dir=$watch_cache_dir
+	local  dirs="$dir ${dir%/*} $(dirname ${dir%/*})"
+	[[ -d $dir ]] || {
+	sudo mkdir -p $dir	; [[ $group ]] &&
+	sudo chgrp $group  $dirs &&
+	sudo chmod g+w,g+s $dirs
 	sudo mkdir -p --mode=1777 $lock_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
@@ -670,7 +674,7 @@ have_cmd \
 _set_drive_name ||		      # configure.sh can replace this function
 # ignore invalid names, fix the case of valid names
 _set_drive_name() {
-	local name=$1
+	local name=${1#$drive_dir_prefix}
 
 	# needed when argument could be a drive_dir not a drive_name
 	[[ $name =~ ^$admin_drive_name_regex$ ]] || return 1
@@ -2312,13 +2316,34 @@ stats_newest_age=
 
 setup_snapshot_stats() {
 	local suffix=$1 ignored_date_ending_type=${2-null}
+	local cache_name="suffix=${suffix/\*/STAR},type=$ignored_date_ending_type.txt"
 	[[ $suffix == .rm ]] && suffix=*$suffix
 	[[ $ignored_date_ending_type == null ]] &&
 	   local dates=$true || local dates=$false
 
-	local cwd=$PWD nums= oldies= newies=
+	local     number_cache_file=$watch_cache_dir/number/$cache_name
+	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
+	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
+	local drive_dirs=$(list_drives -a)
 	local dir drive_name
-	for dir in $(list_drives -a)
+	local found_modified_drive=$false
+	for dir in $drive_dirs
+	    do	[[ $number_cache_file -nt $dir/. ]] && continue
+		found_modified_drive=$true
+		break
+	done
+	if [[ ! $found_modified_drive ]]
+	   then # echo -n C:		# uncomment to ensure cache is working
+		stats_number=$(< $number_cache_file)
+		[[ $dates ]] && {
+		stats_oldest_age=$(< $oldest_age_cache_file)
+		stats_newest_age=$(< $newest_age_cache_file)
+		}
+		return
+	fi
+
+	local cwd=$PWD nums= oldies= newies=
+	for dir in $drive_dirs
 	    do	set_drive_name $dir
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
@@ -2358,6 +2383,15 @@ setup_snapshot_stats() {
 	stats_number=$(    echo "$nums"   | sed 's/  *$//') ; [[ $dates ]] && {
 	stats_oldest_age=$(echo "$oldies" | sed 's/  *$//')
 	stats_newest_age=$(echo "$newies" | sed 's/  *$//')		    ; }
+
+	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
+	[[ -w $watch_cache_dir ]] && {
+	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
+					 ${newest_age_cache_file%/*}
+	echo "$stats_number"	 >     $number_cache_file   ; [[ $dates ]] && {
+	echo "$stats_oldest_age" > $oldest_age_cache_file
+	echo "$stats_newest_age" > $newest_age_cache_file		    ; }
+	}
 }
 
 # -----------------------------------------------------------------------------
@@ -2423,7 +2457,7 @@ watch() {
 
 	local all_opts="$ps_opt $cron_opt"
 	[[ $names ]] && add_words all_opts -N $names
-	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.1
+	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.1
 	[[ $action != $watch_opt ]] && cleanup_after_updates
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
