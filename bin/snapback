@@ -155,7 +155,7 @@ need_cmds lockpid
 
 shopt -s extglob
 
-umask 02				# log dirs are setgid sudo
+umask 02				# log dirs are setgid sudo/whatever
 
 set -u					# abort if access unset variable
 
@@ -592,8 +592,6 @@ is_regression_test=$false
 readonly none=NoNe
 _last_initialized_drive_name=
 
-readonly watch_cache_dir=$log_dir/stats/watch
-
 # this is normally called by set_drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
 set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
@@ -619,12 +617,10 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	[[ $group == NoNe ]] && group= || admin_group=$group
 	restore_tracing group
 
-	local  dir=$watch_cache_dir
-	local  dirs="$dir ${dir%/*} $(dirname ${dir%/*})"
-	[[ -d $dir ]] || {
-	sudo mkdir -p $dir	; [[ $group ]] &&
-	sudo chgrp $group  $dirs &&
-	sudo chmod g+w,g+s $dirs
+	[[ -d $log_dir ]] || {
+	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
+	sudo chgrp $group  $log_dir &&
+	sudo chmod g+w,g+s $log_dir
 	sudo mkdir -p --mode=1777 $lock_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
@@ -2314,6 +2310,9 @@ stats_number=
 stats_oldest_age=
 stats_newest_age=
 
+readonly watch_cache_dir=$log_dir/stats/watch
+readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
+
 setup_snapshot_stats() {
 	local suffix=$1 ignored_date_ending_type=${2-null}
 	local cache_name="suffix=${suffix/\*/STAR},type=$ignored_date_ending_type.txt"
@@ -2332,18 +2331,20 @@ setup_snapshot_stats() {
 		found_modified_drive=$true
 		break
 	done
+	[[ -s $cached_drive_dirs_file ]] &&
+	[[ $drive_dirs == "$(< $cached_drive_dirs_file)" ]] &&
 	if [[ ! $found_modified_drive ]]
-	   then # echo -n C:		# uncomment to ensure cache is working
-		stats_number=$(< $number_cache_file)
+	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
 		stats_oldest_age=$(< $oldest_age_cache_file)
 		stats_newest_age=$(< $newest_age_cache_file)
 		}
+		# echo -n C:		# uncomment to ensure cache is working
 		return
 	fi
 
 	local cwd=$PWD nums= oldies= newies=
-	for dir in $drive_dirs
+	for dir in $(list_drives -a)
 	    do	set_drive_name $dir
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
@@ -2385,13 +2386,13 @@ setup_snapshot_stats() {
 	stats_newest_age=$(echo "$newies" | sed 's/  *$//')		    ; }
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
-	[[ -w $watch_cache_dir ]] && {
+	[[ -w $log_dir ]] || return # might not have write access to the cache
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
+	echo "$drive_dirs" > $cached_drive_dirs_file
 	echo "$stats_number"	 >     $number_cache_file   ; [[ $dates ]] && {
 	echo "$stats_oldest_age" > $oldest_age_cache_file
 	echo "$stats_newest_age" > $newest_age_cache_file		    ; }
-	}
 }
 
 # -----------------------------------------------------------------------------
@@ -2456,7 +2457,10 @@ watch() {
 	[[ $is_cron ]] && cron_opt=-C
 
 	local all_opts="$ps_opt $cron_opt"
-	[[ $names ]] && add_words all_opts -N $names
+	if [[ $names ]]
+	   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
+		add_words all_opts -N $names
+	fi
 	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.1
 	[[ $action != $watch_opt ]] && cleanup_after_updates
 	[[ $action == w ]] ||
@@ -3676,7 +3680,7 @@ stack_frame_to_show=0		# show line-number inside the 'case' statement
 
 case $action in
   # list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
-   ( l*s*dr*v* | ld | ls ) undo_action_abbrev list-drives
+   ( l*s*dr*v* | ld | ls | df ) undo_action_abbrev list-drives
 	list_drives "$@"
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
