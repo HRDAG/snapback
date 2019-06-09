@@ -2425,8 +2425,8 @@ trim_backup() {
 
 	trim |
 	sed -e 's@run-backup -r @run-backup @g' \
-	    -e "s@$drive_dir_prefix@@g" \
-	    -e 's@ --.* @ $opts -R $dirs @'
+	    -e 's@ --.* @ $opts -R $dirs @' \
+	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 }
 
 # --------------------------------------------
@@ -2452,9 +2452,9 @@ trim_copy_update() {
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
-	    -e "s@$drive_dir_prefix@@g" \
 	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
-	    -e 's@/[^/]*/\. /@/$snap/. /@'
+	    -e 's@/[^/]*/\. /@/$snap/. /@' \
+	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 }
 
 # ------------------------------------------------------------------
