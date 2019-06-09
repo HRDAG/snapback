@@ -1,4 +1,4 @@
-# version=15
+# version=16
 
 ################################################################
 ################################################################
@@ -24,12 +24,6 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # mkfs_backup_drive and its helper functions ... soon moved to Install.txt .
 # --------------------------
 
-# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
-# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
-# *-*-* Comment-out all-but-one of these sample mkfs_* assignments. *-*-*
-# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
-# *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
-
 # NOTE: XFS defaults support ~15% more snapshots than ext4 defaults.
 
 # You'll need to add -f if the partition already has an *UNWANTED* filesystem.
@@ -38,36 +32,35 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # Defaults: -i maxpct=0 -i size=512 -b size=4096 -n size=4096;
 # Optional: -i maxpct=0 -i size=512 -b size=2048 -n size=2048, which allows
 #    ~20% more snapshots than size=4096, but is disallowed in Ubuntu 18.04.
-# Note that you can over-ride any of these individual defaults.
-readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
-readonly mkfs_cmd_opts="mkfs.xfs -i size=1024" # if action 'dir-sizes' suggests
+# Note that you can over-ride any of the individual defaults.
+# readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
+# readonly mkfs_cmd_opts="mkfs.xfs -i size=1024" # action 'dir-sizes' suggests?
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
 # but first read the long comments in the mkfs_backup_drive function & helpers.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
-readonly mkfs_cmd_opts="mkfs.ext4"	   # typical GNU/Linux server or laptop
-readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # if action 'dir-sizes' suggests
+readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
+# readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # action 'dir-sizes' suggests?
 
-# SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
-# snapshots simultaneously with no I/O penalty (the priority is controlled as
-# described later).  Hard disks are different, so you can change that policy.
-	 suspend_prune_when_backup=$true     # non-striped hard-disk drive
-drv_name2suspend_prune_when_backup[C]=$false # SSD or flash memory stick
-#
-# The above and the below are correlated.
-#
-# Used by set_FS_external_log: should it setup an external filesystem journal?
-	 do_want_external_log=$true	# rotational disk, & have SSD for logs
-drv_name2do_want_external_log[C]=$false # SSD
+# You probably won't need to change these.
+readonly common_mount_options="nodev,nosuid,relatime,nodiratime"
+readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
+readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
-# Optional function to allowcate an external filesystem log/journal
-# on fast storage (RAID, SSD, even flash memory stick).
-false &&				# rewrite function if not using LVM
+# -----------------------------------------
+# Rotational disks need special handling. #
+# -----------------------------------------
+
+# Optional function to allocate an external filesystem log/journal
+# on fast storage (SSD, or always-plugged-in flash memory stick),
+# for use with rotational hard disks.
+# Rewrite this function if you're not using LVM.
+readonly FS_log_VG=			# should be fast & reliable
 set_FS_external_log() {
 	[[ ${1-} == -f ]] && { do_force=$true; shift; } || do_force=$false
-	local FS_label=$1 VG=${2:-VGfast} # default VG: fast & reliable
+	local FS_label=$1 VG=${2:-$FS_log_VG}
 
-	[[ $do_want_external_log ||	# defined later in this file
+	[[ $do_want_external_log ||	# defined below
 	   $do_force                ]] || { FS_external_log= && return 1; }
 
 	       FS_external_log=/dev/$VG/${FS_label}_log
@@ -78,10 +71,17 @@ set_FS_external_log() {
 	[[ $FS_external_log ]]
 }
 
-# You probably won't need to change these.
-readonly common_mount_options="nodev,nosuid,relatime,nodiratime"
-readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
-readonly    XFS_mount_options="logbsize=256k"	 # for performance
+# Used by set_FS_external_log: should it setup an external filesystem journal?
+	 do_want_external_log=$FS_log_VG # value for (RAID of) rotational disks
+drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
+#
+# The above and the below are correlated.
+#
+# SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
+# snapshots simultaneously with no I/O penalty (the priority is controlled as
+# described later).  Hard disks are different, so you can change that policy.
+	 suspend_prune_when_backup=$true     # non-striped hard-disk drive
+drv_name2suspend_prune_when_backup[X]=$false # no (or little) seek penalty
 
 # ------------------------------------------------
 # Variables used by run-backup* and prune-drive* #
@@ -131,7 +131,7 @@ readonly cmd_to_set_higher_IO_priority="ionice -c 2 -n 5 -p"
 
 # The directories we back up, *must* be absolute paths; can use bash globbing.
 	 dirs_to_backup="/"
-drv_name2dirs_to_backup[Y]=/home/scott/{.bash*,bin,git} # personal memory stick
+drv_name2dirs_to_backup[X]=/home/scott/{.bash*,bin,git} # personal memory stick
 drv_name2dirs_to_backup[Z]=/var/tmp/small-dir # for testing with pseudo-drive Z
 
 # Basic options for "rsync"; add --acls if it's supported.
@@ -145,7 +145,7 @@ readonly successful_rsync_exit_statuses="0 24"
 #
 # We ignore SIGUSR1 or SIGINT (status=20) since partial snapshots are handled.
 # Instead of logging failures for Too many links (status=31), speedup pruning.
-readonly no_log_rsync_exit_statuses="20" # add 31 after address all issues
+readonly no_log_rsync_exit_statuses="20" # can add 31
 
 # If some drives are smaller and their filesystem usage gets too high, you can
 # exclude directories rather than speed-up pruning; this is better than
@@ -169,8 +169,8 @@ readonly excluded_backup_hours="23 1 3"
 # The number of hours (1, 2, 4, 8, 12, or 24) between cron-based backup runs.
 # A backup is *always* done at midnight, since that's the one pruning keeps.
 declare -i backup_period=1		# need much RAM for small period
-  drv_name2backup_period[E]=4		# the E drive is 6x slower
-  drv_name2backup_period[G]=24		# the G drive seems to be dieing
+  drv_name2backup_period[X]=2		# if drive is 2x slower
+  drv_name2backup_period[Y]=24		# small drive, or drive with history
   drv_name2backup_period[Z]=2		# twice the period of the mk-Z output
 
 # ----------------------------------------------------------------------------
@@ -258,14 +258,17 @@ readonly snapshot_date_time_separator=','
 # the sysadmin runs a command, or for the 'watch' action ('list-drives -a').
 # So, when you want to do maintenance on a drive, so want to suspend
 # backups and pruning, remove the drive's name from drive_name_regex= (only).
-readonly       drive_name_regex='[AD]'
-readonly admin_drive_name_regex='[A-Za-z]'
+      drive_name_regex='[A-Z]'		# only drives being backed-up & pruned
+admin_drive_name_regex='[A-Za-z]'	# all, for watch & list-drives -a
+_wider_name_regex='+-?[0-9]*'		# support AB, CD-2, E3, etc
+readonly       drive_name_regex=$drive_name_regex$_wider_name_regex
+readonly admin_drive_name_regex=$admin_drive_name_regex$_wider_name_regex
 readonly is_drive_name_capitalized=$true
 readonly is_drive_name_upper_cased=$true
 
 # -----------------------------------------------------------------------------
 
-# if this doesn't work, use: M-x shell-script-mode
+# Emacs variables: if this doesn't work, use: M-x shell-script-mode
 # Local Variables:
 # mode: sh
 # End:

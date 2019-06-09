@@ -1,20 +1,94 @@
+A. Installing the files that snapback needs
+
+On Darwin (Mac OS-X), you'll need to use Homebrew to install a fairly-full set
+of GNU utilities:
+
+    sudo brew install bash gnu-sed pstree coreutils findutils ...
+
+On BSD, you'll need to do something similar to the above, and set the PATH
+inside /etc/snapback/configure.sh (see below) to put them first.
+
+First run:
+
+    git clone git@github.com:HRDAG/libsnap.git
+
+in the parent directory of your snapback workspace.
+
+From the root of the snapback workspace, copy-and-paste the following commands
+into a terminal window running bash:
+
+    pushd   ../libsnap/src/lockpid && make && popd &&
+    sudo cp ../libsnap/src/lockpid/lockpid	/usr/local/bin/
+    sudo cp bin/snapback			/usr/local/bin/
+    sudo cp etc/sudoers.d/snapback		/etc/sudoers.d/
+    sudo cp ../libsnap/bin/libsnap.sh		/usr/local/bin/
+
+    sudo cp -r etc/snapback /etc/	# could instead copy to /usr/local/etc/
+    cd /etc/snapback &&			# ... or: cd /usr/local/etc/snapback
+    for fs in *.sample; do f=${fs%.sample}; sudo cp -v $fs $f; done &&
+    echo "now edit the two files copied from the .sample files"
+
+
+B. TL;DR (Too Long; Didn't Read)
+
+To get up and running quickly, here's the minimal edits to
+/etc/snapback/configure.sh that are needed for some sample configurations:
+
+   1. single type of backup on flash drive(s)
+
+      Set suspend_prune_when_backup= and do_want_external_log= to $false
+
+      You can name your drives A, B, C, etc.
+
+   2. single type of backup on hard disk(s)
+
+      If you have an LVM VG on an SSD (flash drive), set an FS_log_VG= value.
+
+      You can name your drives A, B, C, etc.
+
+   3. backups split across a pair of (small?) flash drives
+
+      Set suspend_prune_when_backup= and do_want_external_log= to $false
+
+      H (hourly) drive (smaller?), frequent backups: search for _prune= ,
+      create customized *_prune[H]=0 variables _except_ for
+      months_per_span_for_day_prune= (leave that with larger value).
+      Could use e.g. drv_name2dirs_to_backup[H]=/home if drive is small.
+
+      D (daily) drive, long-term backups: create backup_period[D]=24
+
+      If you want to have multiple H and D drives (so some drives can be
+      off-site), then name them H-1, H-2, D-1, D-2, etc
+
+On GNU/Linux, run "sudo snapback mkfs ..."  to build a filesystem on each
+drive (which will *DESTROY* any existing data on the specified partion).
+
+On Darwin (Mac OS-X), use an APFS filesystem labeled backup-<name>, and set
+backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
+
+
+C. A Warning and a Note
+
 WARNING: if you heavily use an application which generates lots of hard-linked
 files (like HRDAG's 'snap' aka 'snapshot'; or Red Hat's 'yum' package
-manager's /var/lib/yum/yumdb/, but that's excluded by default), you could run
+manager's /var/lib/yum/yumdb/, which we exclude by default), you could run
 into the "Too many links" rsync error if you use a backup-drive
 filesystem-type that has too-small limits on the maximum number of hard-links
 per inode (when mounting NTFS via 'fuseblk', the max links is 8K; for ext4,
 the max is 65K).  In this case, you'll ideally use a filesystem like XFS (or
-Btrfs if you're adventuresome) that uses a 32-bit word to hold the inode's
-link reference-count.
+Btrfs, if you're adventuresome) that uses a 32-bit word to hold the inode's
+link reference-count.  Similarly, APFS on Darwin (Mac OS-X) uses a 32-bit
+link-count (*never* use HFS: every "hard link" creates a hidden copy of the
+file?!).
 
 NOTE: the following is heavily oriented towards a GNU/Linux system like
 Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
-'copy-drive' actions (see below) will support XFS filesystems, because HRDAG
-uses 'snap' aka 'snapshot' so we experience "Too many links" errors with our 3
-years of backup snapshots.]
+'copy-drive' actions (see below) support XFS filesystems, because HRDAG uses
+'snap' aka 'snapshot', so we experience "Too many links" errors with our 3
+years of backup snapshots on an ext4 filesystem.]
 
-A. Re-using existing backup drives and partitions
+
+D. Re-using existing backup drives and partitions
 
 If you have drive partitions with one or more existing snaphots, it's best to
 use "cp -al" to copy all the snapshots onto one partition (ideally, the
@@ -82,31 +156,7 @@ Now you can mount all your backup partitions on $drive_dir_prefix (defined in
 configure.sh).
 
 
-B. Installing the files that snapback needs
-
-You will need to run:
-
-    git clone git@github.com:HRDAG/libsnap.git
-
-in the parent directory of your snapback workspace.
-
-From the root of the snapback workspace, copy-and-paste the following commands
-into a terminal window:
-
-    pushd   ../libsnap/src/lockpid && make && popd &&
-    sudo cp ../libsnap/src/lockpid/lockpid	/usr/local/bin/
-    sudo cp bin/snapback			/usr/local/bin/
-    sudo cp etc/sudoers.d/snapback		/etc/sudoers.d/
-    sudo cp ../libsnap/bin/libsnap.sh		/usr/local/bin/
-    # you might need to recompile 'lockpid'
-
-    sudo cp -r etc/snapback /etc/	# could instead copy to /usr/local/etc/
-    cd /etc/snapback &&			# ... or: cd /usr/local/etc/snapback
-    for fs in *.sample; do f=${fs%.sample}; sudo cp -v $fs $f; done &&
-    echo "now edit the two files copied from the .sample files"
-
-
-C. Configuring 'snapback'
+E. Configuring 'snapback'
 
 All configuration takes place in
 
@@ -117,16 +167,16 @@ NOTE: From here on, when I mention "configure.sh" or "exclude.txt", I mean the
 file in /usr/local/etc/snapback/ else /etc/snapback/ .
 
 Some of it is quite abstract, you'll need to carefully read the comments.  And
-it's probably best to leave the tuning variables alone (see section F.), and
-re-read those variables comments after you've let cron create a lot of
-snapshots and you start to run out of resources on some drives.
+it's probably best to leave the tuning variables alone (see final section on
+Tuning.), and re-read those variables comments after you've let cron create a
+lot of snapshots and you start to run out of resources on some drives.
 
 [If there's something you want to change that can't be accomplished by editing
 those two files, email sweikart@gmail.com with a description of what you want
 to accomplish.]
 
 
-D. Preparing brand new partitions when you have no existing snapshots
+F. Preparing brand new partitions when you have no existing snapshots
 
 You can use:
 
@@ -153,7 +203,7 @@ backup all of them simultaneously with:
     sudo snapback run-backups
 
 
-E. Automation with cron
+G. Automation with cron
 
 NOTE: send sweikart@gmail.com instructions on how to support automation if the
 following doesn't work.
@@ -173,7 +223,7 @@ from etc/cron.d/snapback into a file in /etc/cron.hourly/ . If you don't have
 etc/cron.d/snapback to your /etc/crontab file.
 
 
-F. Tuning
+H. Tuning
 
 There's two kinds of problems that will require tuning: you're running out
 of drive space or inodes, or you're getting "Too many links" errors.  If you

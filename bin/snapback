@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=15			# has to match version= in configure.sh.sample
+version=16			# has to match version= in configure.sh.sample
 
 readonly coder=sweikart@gmail.com
 
@@ -57,7 +57,7 @@ readonly uncustomizable_config_vars="
 	     drive_dir_prefix old_crypt_name_prefixes drive_config_file
 	     drive_name_regex admin_drive_name_regex is_drive_name_capitalized"
 readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
-		       sed -n -r 's/^[^#=]*\b(\w+)=.*$/\1/p' | sort -u)
+		       sed -n -r 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' | sort -u)
 for var in $config_vars; do eval "declare -A drv_name2$var"; done
 #
 # this grabs variables that control backup and pruning, and may also hold
@@ -590,15 +590,15 @@ admin_group=
 is_regression_test=$false
 
 readonly none=NoNe
-_last_initialized_drive_name=
+_last_fully_initialized_drive_name=
 
 # this is normally called by set_drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
 set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	local  drive_name=${1-}	     # called from set_drive_name, so $1 valid
 
-	if  [[ $_last_initialized_drive_name != ${drive_name:-$none} ]]
-	   then _last_initialized_drive_name=${drive_name:-$none}
+	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
+	   then _last_fully_initialized_drive_name=${drive_name:-$none}
 	   else return 0		# skip very-long, duplicative setup
 	fi
 
@@ -681,6 +681,7 @@ _set_drive_name() {
 	   then drive_name=${name^}
 	   else drive_name=$name
 	fi
+	_last_fully_initialized_drive_name= # prevent weird bugs
 }
 
 # ----------------------
@@ -764,7 +765,9 @@ customize_config_variables() {
 	local var_name
 	[[ ${config_var2default_value[*]-} ]] ||
 	for var_name in $config_vars
-	    do	config_var2default_value[$var_name]=${!var_name}
+	    do	[[ ${!var_name-UnSet} != UnSet ]] ||
+		   abort "need to set '$var_name=' in $config_file"
+		config_var2default_value[$var_name]=${!var_name}
 		suspend_tracing
 	done
 	restore_tracing
@@ -2310,38 +2313,7 @@ stats_number=
 stats_oldest_age=
 stats_newest_age=
 
-readonly watch_cache_dir=$log_dir/stats/watch
-readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
-
-setup_snapshot_stats() {
-	local suffix=$1 ignored_date_ending_type=${2-null}
-	local cache_name="suffix=${suffix/\*/STAR},type=$ignored_date_ending_type.txt"
-	[[ $suffix == .rm ]] && suffix=*$suffix
-	[[ $ignored_date_ending_type == null ]] &&
-	   local dates=$true || local dates=$false
-
-	local     number_cache_file=$watch_cache_dir/number/$cache_name
-	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
-	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
-	local drive_dirs=$(list_drives -a)
-	local dir drive_name
-	local found_modified_drive=$false
-	for dir in $drive_dirs
-	    do	[[ $number_cache_file -nt $dir/. ]] && continue
-		found_modified_drive=$true
-		break
-	done
-	[[ -s $cached_drive_dirs_file ]] &&
-	[[ $drive_dirs == "$(< $cached_drive_dirs_file)" ]] &&
-	if [[ ! $found_modified_drive ]]
-	   then stats_number=$(< $number_cache_file)
-		[[ $dates ]] && {
-		stats_oldest_age=$(< $oldest_age_cache_file)
-		stats_newest_age=$(< $newest_age_cache_file)
-		}
-		# echo -n C:		# uncomment to ensure cache is working
-		return
-	fi
+_recalculate_stats_vars() {
 
 	local cwd=$PWD nums= oldies= newies=
 	for dir in $(list_drives -a)
@@ -2384,6 +2356,44 @@ setup_snapshot_stats() {
 	stats_number=$(    echo "$nums"   | sed 's/  *$//') ; [[ $dates ]] && {
 	stats_oldest_age=$(echo "$oldies" | sed 's/  *$//')
 	stats_newest_age=$(echo "$newies" | sed 's/  *$//')		    ; }
+}
+
+# ----------------------
+
+readonly watch_cache_dir=$log_dir/stats/watch
+readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
+
+setup_snapshot_stats() {
+	local suffix=$1 ignored_date_ending_type=${2-null}
+	local cache_name="suffix=${suffix/\*/STAR},type=$ignored_date_ending_type.txt"
+	[[ $suffix == .rm ]] && suffix=*$suffix
+	[[ $ignored_date_ending_type == null ]] &&
+	   local dates=$true || local dates=$false
+
+	local     number_cache_file=$watch_cache_dir/number/$cache_name
+	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
+	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
+	local drive_dirs=$(list_drives -a)
+	local dir drive_name
+	local found_modified_drive=$false
+	for dir in $drive_dirs
+	    do	[[ $number_cache_file -nt $dir/. ]] && continue
+		found_modified_drive=$true
+		break
+	done
+	[[ -s $cached_drive_dirs_file ]] &&
+	[[ $drive_dirs == "$(< $cached_drive_dirs_file)" ]] &&
+	if [[ ! $found_modified_drive ]]
+	   then stats_number=$(< $number_cache_file)
+		[[ $dates ]] && {
+		stats_oldest_age=$(< $oldest_age_cache_file)
+		stats_newest_age=$(< $newest_age_cache_file)
+		}
+		# echo -n C:		# uncomment to ensure cache is working
+		return
+	fi
+
+	_recalculate_stats_vars
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir ]] || return # might not have write access to the cache
@@ -2415,6 +2425,7 @@ trim_backup() {
 
 	trim |
 	sed -e 's@run-backup -r @run-backup @g' \
+	    -e "s@$drive_dir_prefix@@g" \
 	    -e 's@ --.* @ $opts -R $dirs @'
 }
 
@@ -2441,8 +2452,9 @@ trim_copy_update() {
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
+	    -e "s@$drive_dir_prefix@@g" \
 	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
-	    -e 's@/[^/]*/\. /@/$dirs /@'
+	    -e 's@/[^/]*/\. /@/$snap/. /@'
 }
 
 # ------------------------------------------------------------------
@@ -2662,7 +2674,7 @@ watch() {
 	echo " Number pruned snapshots awaiting 'rm':  $stats_number"
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
 	setup_snapshot_stats .links
-	echo "  Number of 'Too many links' snapshots:  $stats_number"
+	echo " Number .links (failed 'ln') snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
 	setup_snapshot_stats .partial
 	echo "Number .partial snapshots, updates+err:  $stats_number"
@@ -4132,7 +4144,7 @@ case $action in
 	done
 	exit
 
-	for path in /backup/A /backup/A/latest /dev/sdb5
+	for path in ${drive_dir_prefix}A ${drive_dir_prefix}A/latest /dev/sdb5
 	    do	set_FS_type___from_path $path
 		echo "$path -> $FS_type"
 	done
@@ -4185,7 +4197,7 @@ case $action in
 	done
 	exit
 
-	drive_dir=/backup/F
+	drive_dir=${drive_dir_prefix}F
 	cd $drive_dir
 	log=/tmp/root/F-190126-15.bz2
 	_links_error_msg "nnn 'Too many links'"
