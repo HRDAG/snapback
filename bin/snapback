@@ -765,7 +765,7 @@ customize_config_variables() {
 	local var_name
 	[[ ${config_var2default_value[*]-} ]] ||
 	for var_name in $config_vars
-	    do	[[ ${!var_name-UnSet} != UnSet ]] ||
+	    do	is_set $var_name ||
 		   abort "need to set '$var_name=' in $config_file"
 		config_var2default_value[$var_name]=${!var_name}
 		suspend_tracing
@@ -958,6 +958,7 @@ _backup_management_of_prune() {
 # arguments can include options to grep (e.g. -F), ending in name of resource
 count_rsyncs_using_resource() {
 
+	[[ $drive_name == Z || $IfRun ]] && return 0
 	return $(COLUMNS=999 ps l -u root | grep -w '[r]sync' | grep -c "$@")
 }
 
@@ -1244,7 +1245,18 @@ prune_type_to_file() {
 	local     prune_type_pattern  prune_pattern
 	while [[ $prune_type_patterns ]]
 	    do	set -- $remaining_reverse_sorted_snapshot_dates
-		Trace 5 "\nLOOP $type: $# dates left: ${1-} ${2-} ... ${!#}"
+
+		# might want to delete *all* the snapshots left to be pruned
+		if [[ $date_span == 0 ]]
+		   then shift	      # don't delete span we previously pruned
+			for date
+			    do	echo $date*
+			done
+			break
+
+		fi
+
+		Trace 4 "\n  LOOP $type: $# dates left: ${1-} ${2-} ... ${!#}"
 		! _do_skip_newest_span_of_days $type || shift $date_span ||
 		    shift $# # shift does nothing if try to shift more than $#
 		remaining_reverse_sorted_snapshot_dates=$*
@@ -1260,7 +1272,7 @@ prune_type_to_file() {
 			  prune_type_pattern prune_pattern
 		eval "set -- $prune_pattern"
 		[[ -d $1 ]] || shift
-		Trace 5 " Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
+		Trace 5 "\n Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
 
 		# skip over the snapshot prune-matches that aren't old enough
 		set -- $(echo $* | tr ' ' '\n' | sort -r)
@@ -1273,7 +1285,7 @@ prune_type_to_file() {
 		done
 		[[ -d ${1-} ]] || continue
 		# delete all the old-enough prune matches
-		Trace 5 "Deleting ~$# snapshots: $1 ${2-} ${3-} ... ${!#}"
+		Trace 5 "\nDeleting ~$# snapshots: $1 ${2-} ${3-} ... ${!#}"
 		echo ${*%$_oldest_snapshot*} # don't delete oldest snapshot
 	done >> $file_of_snapshots_to_prune
 
@@ -2179,8 +2191,8 @@ run_jobs_in_parallel() {
 		exit $?
 	fi
 
-	[[ ! $IfRun && -t 1 ]] && echo -e "
-	NOTE: your $action will run as a separate, disconnected job;
+	[[ ! $IfRun && $* != [Zz] && -t 1 ]] && echo -e "
+	NOTE: your $action command will run as a separate, disconnected job;
 	      and it might wait for a lock before it can start.  See it with:
 
 		$_our_name watch
@@ -2189,7 +2201,7 @@ run_jobs_in_parallel() {
 	$Trace
 	for name
 	    do	_set_drive_name $name && name=$drive_name # cleanup for 'ps'
-		if [[ ! $IfRun ]]
+		if [[ ! $IfRun && $drive_name != Z ]]
 		   then trap '' HUP
 			# Can't "$function name &", processes share lock files.
 			# Want new process-group so can ps/kill independently.
@@ -4063,6 +4075,12 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	foo=
+	is_set foo || echo bad1
+	is_set bar && echo bad2
+	is_set foo bar && echo bad3
+	exit
+
 	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
