@@ -1119,9 +1119,9 @@ _rm_pruned_snapshots() {
 	$IfRun sync --file-system $drive_dir &> /dev/null
 }
 
-# ---------------------------------------------------------------------------
-# variables and functions that implement the date format in snapshot basename
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------
+# variables and functions that implement the snapshot date-time format, and pruning) #
+# ------------------------------------------------------------------------------------
 
 # snapshot basename format is Year-Mo-Da,Hr, all implemented in this section;
 #    to implement snapshot_date_time_separator, search for: ,00 ,?? ,$ ,/
@@ -1181,15 +1181,6 @@ set_prune_pattern() {
 # if support period > 24, change load__drive_name2backup_period
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
-declare -A backup_period2minimal_snapshot_regex=(
-    [1]="$snapshot_regex"
-    [2]="$snapshot_day_regex,.[02468]"
-    [4]="$snapshot_day_regex,([02][048]|1[26])"
-    [8]="$snapshot_day_regex,(00|08|16)"
-   [12]="$snapshot_day_regex,(00|12)"
-   [24]="$snapshot_day_regex,00"
-)
-#
 declare -A backup_period2minimal_snapshot_pattern=(
     [1]="$snapshot_pattern"
     [2]="$snapshot_day_pattern,?[02468]"
@@ -1220,9 +1211,22 @@ function load__type2date_span {
     )
 }
 
-# ---------------------------------------------------------------------------
-# end of variables and functions that implement the date format in snapshots
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------
+# end of variables and functions that implement the snapshot date-time format, and pruning) #
+# -------------------------------------------------------------------------------------------
+
+declare -A backup_period2minimal_snapshot_regex
+#
+for _period in ${!backup_period2minimal_snapshot_pattern[*]}
+    do	  value=${backup_period2minimal_snapshot_pattern[$_period]}
+	value=${value//\?/.}
+	value=${value//\{/(}
+	value=${value//\}/)}
+	value=${value//,/|}
+	value=${value/|/,} 		# restore $snapshot_date_time_separator
+	backup_period2minimal_snapshot_regex[$_period]=$value
+done
+unset _period
 
 scale_date_span() {
 
@@ -1247,9 +1251,10 @@ prune_type_to_file() {
 
 	Trace 5 "\n==> $type prune <=="
 	declare -i period=$backup_period
-	local     prune_type_pattern  prune_pattern
-	while [[ $prune_type_patterns ]]
-	    do	set -- $remaining_reverse_sorted_snapshot_dates
+	local prune_pattern
+	while set_popped_word___from_list prune_type_patterns
+	    do	local prune_type_pattern=$popped_word
+		set -- $remaining_reverse_sorted_snapshot_dates
 
 		# might want to delete *all* the snapshots left to be pruned
 		if [[ $date_span == 0 ]]
@@ -1267,10 +1272,6 @@ prune_type_to_file() {
 		remaining_reverse_sorted_snapshot_dates=$*
 		local first_prune_date=${1-}
 		[[ $first_prune_date ]] || break
-
-		set -f; set -- $prune_type_patterns; set +f
-		prune_type_pattern=$1; shift # for this pass, use next pattern
-		prune_type_patterns=$*	     # rest of patterns for more passes
 
 		set_prune_pattern $type $prune_type_pattern
 		TraceV 5 date_suffix_pattern first_prune_date \
