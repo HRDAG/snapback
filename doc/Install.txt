@@ -50,7 +50,7 @@ To get up and running quickly, here's the minimal edits to
 
       Set suspend_prune_when_backup= and do_want_external_log= to $false
 
-      H (hourly) drive (smaller?), frequent backups: set
+      H (hourly) drive (smaller?), frequent backups: create
       drv_name2months_per_span_for_day_prune[H]=0 (delete old snapshots).
       Could use e.g. drv_name2dirs_to_backup[H]=/home if drive is small.
 

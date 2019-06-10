@@ -20,7 +20,9 @@
 
 version=16			# has to match version= in configure.sh.sample
 
-readonly coder=sweikart@gmail.com
+###############################################################################
+## Our naming and coding conventions are documented at the top of libsnap.sh ##
+###############################################################################
 
 # libsnap.sh has these functions/variables: $tmp_dir, $our_name, $our_path,
 # $true, $false, have_cmd, need_cmds, $is_darwin, set_FS_type___from_path,
@@ -63,6 +65,9 @@ for var in $config_vars; do eval "declare -A drv_name2$var"; done
 # this grabs variables that control backup and pruning, and may also hold
 # customizable functions set_drive_name & source_drive_specific_config_file
 source $config_file || abort "$config_file broken"
+
+type     coder >& /dev/null ||	# can have custom version
+readonly coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
    abort "install/edit $exclude_file, see included .sample"
@@ -151,11 +156,11 @@ readonly tmp_3=$tmp_dir/$our_name-3-$$
 readonly tmp_4=$tmp_dir/$our_name-4-$$
 readonly tmp_5=$tmp_dir/$our_name-5-$$
 
-need_cmds lockpid
+need_cmds lockpid			# from libsnap repo
 
 shopt -s extglob
 
-umask 02				# log dirs are setgid sudo/whatever
+umask 02				# log and lock dirs are setgid sudo/whatever
 
 set -u					# abort if access unset variable
 
@@ -618,10 +623,10 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	restore_tracing group
 
 	[[ -d $log_dir ]] || {
-	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
-	sudo chgrp $group  $log_dir &&
-	sudo chmod g+w,g+s $log_dir
 	sudo mkdir -p --mode=1777 $lock_dir
+	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
+	sudo chgrp $group  $log_dir $lock_dir &&
+	sudo chmod g+w,g+s $log_dir $lock_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
 
@@ -1148,7 +1153,7 @@ shorten_date() {
 }
 
 declare -A type2date_suffix_pattern=(
-	 [null]=""
+	 [NONE]=""
 	 [hour]=",??"
 	  [day]="-??,??"
 	[month]="-??-??,??"
@@ -1164,7 +1169,7 @@ set_prune_pattern() {
 	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
 	local date_prefix_pattern=${snapshot_pattern%$date_suffix_pattern}
 	case $type in
-	   (  hour ) local date_suffix_type=null  ;;
+	   (  hour ) local date_suffix_type=NONE  ;;
 	   (   day ) local date_suffix_type=hour  ;;
 	   ( month ) local date_suffix_type=day   ;;
 	   (  year ) local date_suffix_type=month ;;
@@ -2376,10 +2381,15 @@ readonly watch_cache_dir=$log_dir/stats/watch
 readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
 
 setup_snapshot_stats() {
-	local suffix=$1 ignored_date_ending_type=${2-null}
-	local cache_name="suffix=${suffix/\*/STAR},type=$ignored_date_ending_type.txt"
+	local suffix=$1 ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
+
+	[[ $suffix ]] && local suffix_name=${suffix/\*/STAR} || local suffix_name=NONE
+	suffix_name=${suffix_name#.}
+	local cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type.txt"
+	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
+
 	[[ $suffix == .rm ]] && suffix=*$suffix
-	[[ $ignored_date_ending_type == null ]] &&
+	[[ $ignored_date_ending_type == NONE ]] &&
 	   local dates=$true || local dates=$false
 
 	local     number_cache_file=$watch_cache_dir/number/$cache_name
@@ -2409,12 +2419,17 @@ setup_snapshot_stats() {
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir ]] || return # might not have write access to the cache
+	local lockpid_args="--dir=$lock_dir $lock_name"
+	lockpid $lockpid_args >& /dev/null || return
+
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
 	echo "$drive_dirs" > $cached_drive_dirs_file
 	echo "$stats_number"	 >     $number_cache_file   ; [[ $dates ]] && {
 	echo "$stats_oldest_age" > $oldest_age_cache_file
 	echo "$stats_newest_age" > $newest_age_cache_file		    ; }
+
+	lockpid --release $lockpid_args
 }
 
 # -----------------------------------------------------------------------------
@@ -3876,8 +3891,6 @@ case $action in
 	    start_date=${1:-12/22/2099}	# tests hours with ...
 	        period=${2:-0..23}	# sequence of hours, else 'month'
 
-	umask=02
-
 	set_drive_dir Z
 	cd_ $drive_dir
 	[[ $IfRun ]] ||
@@ -4075,12 +4088,6 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
-	foo=
-	is_set foo || echo bad1
-	is_set bar && echo bad2
-	is_set foo bar && echo bad3
-	exit
-
 	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
@@ -4099,18 +4106,13 @@ case $action in
 	sorted_useful_srcs "$@"
 	exit
 
-	echo $$
-	lock prune G
-	echo $?
-	exit
-
 	count_rsyncs_using_resource $1
 	echo $?
 	exit
 
-	RunCmd true
-	RunCmd -d -m "expected (non fatal)" false
-	RunCmd    -m "expected     (fatal)" false
+	echo $$
+	lock prune G
+	echo $?
 	exit
 
 	lock backup x
@@ -4135,14 +4137,6 @@ case $action in
 	validate_config_variables
 	set__OS_release_file__OS_release
 	TraceV 0 OS_release_file OS_release
-	exit
-
-	wont_trace() {         foo=2
-		       suspend_tracing; echo untraced; restore_tracing foo; }
-	will_trace() { set -x; foo=1
-		       suspend_tracing; echo untraced; restore_tracing foo
-		       wont_trace; echo traced; set +x; }
-	will_trace
 	exit
 
 	log test 1
