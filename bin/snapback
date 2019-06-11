@@ -1898,7 +1898,8 @@ is_dst_snapshot_needed() {
 
 	[[ ${1##*/} != *.* && ${dst_snapshot##*/} == *.* ]] && {
 	[[ ! $is_quiet ]] && log "${dst_snapshot##*/} not needed"; return 1; }
-	[[ $1 != $dst_snapshot ]] && return 0 ; [[ ! $is_quiet ]] &&
+	[[ $1 != $dst_snapshot ]] && return 0
+	[[ $is_quiet || $action == update* ]] ||
 	log     "$dst_snapshot already exists"; return 1
 }
 
