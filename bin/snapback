@@ -2007,6 +2007,7 @@ set_backup_period___from_snapshot() {
 	local drive=${snapshot%/$snapshot_pattern*}
 	local  name=${drive#$drive_dir_prefix}
 	backup_period=${drive_name2backup_period[$name]}
+	[[ $backup_period ]] || abort "$FUNCNAME: $snapshot is unknown"
 }
 
 # ---------------------------------
@@ -2117,7 +2118,7 @@ update_drive() {
 	remove_empty_partial_snapshots $drive_dir
 	load__drive_name2backup_period
 
-	local srcs_dst_file=$tmp_5
+	local srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
 	local date_time prev_date_time=
 	local src_snapshot src_snapshots=
 	sorted_useful_srcs "$@" |	# this checks/sets drive_* globals
@@ -2150,8 +2151,7 @@ update_drive() {
 
 	local args dst_snapshot=
 	while read args
-	    do	rm -f $srcs_dst_file # unlink file (this process holds it open)
-		set -- $args
+	    do	set -- $args
 		local   dst_snapshot=${!#}
 		[[ -d  $dst_snapshot ]] && continue # undeleted?
 		set -- $dst_snapshot*
@@ -2159,6 +2159,7 @@ update_drive() {
 		set -- $(fastest_snapshots ${args%$dst_snapshot})
 		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
 	done < $srcs_dst_file
+	rm     $srcs_dst_file
 
 	remove_empty_partial_snapshots $drive_dir
 
