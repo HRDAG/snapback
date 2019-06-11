@@ -75,7 +75,7 @@ readonly coder=sweikart@gmail.com
 Usage="
 Usage: $our_name [options] action [args]
   Current actions are:
-    list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
+    list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
     update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
@@ -96,6 +96,7 @@ Usage: $our_name [options] action [args]
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
     mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
+    filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
 
     check-snapshot-hard-links names: find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
@@ -530,8 +531,9 @@ list_drive_dirs() {
 	   then local regex=$admin_drive_name_regex
 	   else local regex=$drive_name_regex # for cron & nohup
 	fi
-	df --output=target --no-sync |
-	   egrep "^$drive_dir_prefix$regex$" | sort -u
+	[[ ${1-} == -A ]] && regex=/ || regex="^$drive_dir_prefix$regex$"
+	df --output=target --no-sync -x devtmpfs -x tmpfs |
+	   egrep "$regex" | sort -u
 	restore_tracing
 }
 
@@ -1008,6 +1010,7 @@ _rm_pruned_snapshots() {
 
 	suspend_tracing
 	set -- $(< $snapshots_file)
+	rm $snapshots_file
 
 	[[ $# != 0 && ! $is_update ]] &&
 	if (( $log_level >= 2 ))
@@ -1373,8 +1376,8 @@ prune_drive() {
 	set -- $(prune_type_to_file month $snapshots_to_prune_file $*);#set +x
 	set -- $(prune_type_to_file year  $snapshots_to_prune_file $*)
 
-	_rm_pruned_snapshots $snapshots_to_prune_file
-	rm $snapshots_to_prune_file
+	_rm_pruned_snapshots $snapshots_to_prune_file # it deletes the file
+	rm -f $snapshots_to_prune_file
 
 	[[ $is_update ]] && return
 
@@ -2141,13 +2144,14 @@ update_drive() {
 		sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 # to prune
 		echo "$@"
 	done > $srcs_dst_file
-	[[  -s $srcs_dst_file ]] || return 1
+	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
 	prune_drive -u $drive_name	# just prunes empty .partial dirs
 
 	local args dst_snapshot=
 	while read args
-	    do	set -- $args
+	    do	rm -f $srcs_dst_file # unlink file (this process holds it open)
+		set -- $args
 		local   dst_snapshot=${!#}
 		[[ -d  $dst_snapshot ]] && continue # undeleted?
 		set -- $dst_snapshot*
@@ -2287,6 +2291,7 @@ rsync_hour_maxs=
 
 set__rsync_hour_avgs__rsync_hour_maxs() {
 
+	set_stats_format $all_drive_dirs
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
 	for dir in $all_drive_dirs
@@ -2509,7 +2514,6 @@ watch() {
 
 	set -- $(list_drive_dirs -a)
 	local all_drive_dirs=$*
-	set_stats_format $all_drive_dirs
 	local drive_dirs= show_all=$false
 	if [[ $names ]]
 	   then local name_list=
@@ -2762,26 +2766,26 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp
-	declare -i admin_PD=$(wc -l < $tmp)+3 # 3 is the overhead
+	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp_1
+	declare -i admin_PD=$(wc -l < $tmp_1)+3 # 3 is the overhead
 	declare -i ad_hoc_min_rows=$min_rows+$admin_PD
-	if [[ -s $tmp && ( $rows -ge $ad_hoc_min_rows || $show_all ) ]]
+	if [[ -s $tmp_1 && ( $rows -ge $ad_hoc_min_rows || $show_all ) ]]
 	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
 		echo "$hdr" | trim_ps_cols
-		trim_prune < $tmp
+		trim_prune < $tmp_1
 		let rows-=$admin_PD
 	fi
-	rm $tmp
+	rm $tmp_1
 
 	# ------------------------------------------------------------------
 
 	# if prune in cron section, don't usually also show it in prune section
-	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_2
+	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_1
 	[[ ! $show_all ]] &&
-	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_2) &&
-	   let rows+=$(wc -l < $tmp_2)
-	rm $tmp_2
+	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_1) &&
+	   let rows+=$(wc -l < $tmp_1)
+	rm $tmp_1
 
 	let snapback_cmd_count="($PD-4)/2" # 4 is section overhead
 	(( $rows < ( $min_rows + $snapback_cmd_count ) )) &&
@@ -3089,16 +3093,17 @@ dir_sizes() {
 # -----------------------------------------------------------------------------
 
 filesystem_geometry() {
-	[[ ${1-} == -a ]] && { shift; local all_opt=-a; } || local all_opt=
+	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 	local drive_dirs=$*
 
-	local dash="------"
-	local dash="======"
-	local    format="%25s %8s %8s %8s %8s %8s %8s\n"
-	printf "$format" ""	""	""	""	"dir "	stripe	stripe
-	printf "$format" FStype	sector	inode	block	block	"unit "	width
-	printf "$format" $dash	$dash	$dash	$dash	$dash	$dash	$dash
-	format=${format/\%25s/%-15s :%8s}
+	local dash="------" dsh="---------------"
+	local dash="======" dsh="==============="
+	local    format="%-15s   %-8s%8s %8s %8s %8s %8s %8s\n"
+	local f=$format strp="stripe "
+      printf "$f" ""   ""	""	""	""	"dir " "$strp" "$strp"
+      printf "$f" Mount	FStype	sector	inode	block	block  "unit  "	width\ 
+      printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
+	format=${format/\%25s/%-15s  %8s}
 	local drive_dir
 	for drive_dir in ${drive_dirs:-$(list_drive_dirs $all_opt)}
 	    do	set_FS_type___from_path $drive_dir
@@ -3107,38 +3112,40 @@ filesystem_geometry() {
 		[[ -L $FS_device ]] &&
 		set_absolute_path $FS_device && FS_device=$absolute_path
 		[[ $FS_device == /dev/mapper/* ]] && dev= ||
-		dev=$(echo $FS_device | sed 's@.*/@@; s/[0-9]*$//')
+		dev=$(echo $FS_device | sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//')
 		case $FS_type in
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
-			RunCmd sudo tune2fs -l $FS_device > $tmp
+			RunCmd sudo tune2fs -l $FS_device > $tmp_1
 			[[ ! $dev ]] && sector= ||
 			sector=$(< /sys/block/$dev/queue/physical_block_size)
-			inode=$(sed -n 's/^Inode size:.* //p' $tmp)
-			block=$(sed -n 's/^Block size:.* //p' $tmp)
+			inode=$(sed -n 's/^Inode size:.* //p' $tmp_1)
+			block=$(sed -n 's/^Block size:.* //p' $tmp_1)
 			dir_block=$block
 			sunit=
 			swidth=
 			;;
 		    ( xfs  )
-			RunCmd xfs_info $drive_dir > $tmp
+			RunCmd xfs_info $drive_dir > $tmp # $tmp_1
 		       sector=$(sed -nr '/at/s/.* sectsz=([^ ]+) .*/\1/p' $tmp)
 			inode=$(sed -nr '/^m/ s/.* isize=([^ ]+) .*/\1/p' $tmp)
 			block=$(sed -nr '/^d/ s/.* bsize=([^ ]+) .*/\1/p' $tmp)
 		    dir_block=$(sed -nr '/^n/ s/.* bsize=([^ ]+) .*/\1/p' $tmp)
 			sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' $tmp)
 		       swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' $tmp)
-			 sunit="$sunit blks"
-			swidth="$swidth blks"
+			sunit="$sunit blks"
+		       swidth="$swidth blks"
 			;;
 		    (  *   )
-			printf "%10s: %s is unknown FS type\n:" $name $FS_type
+			printf "%-15s   %s is unknown FS type\n" \
+				$name	$FS_type
+			continue
 			;;
 		esac
 		printf "$format" $drive_dir $FS_type \
 		    "$sector" "$inode" "$block" "$dir_block" "$sunit" "$swidth"
 	done
-	rm $tmp
+	rm $tmp_1
 }
 
 # -----------------------------------------------------------------------------
@@ -3722,7 +3729,7 @@ process_action() {
 stack_frame_to_show=0		# show line-number inside the 'case' statement
 
 case $action in
-  # list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
+  # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
    ( l*s*dr*v* | ld | ls | df ) undo_action_abbrev list-drives
 	list_drive_dirs "$@"
 	;;
@@ -3857,7 +3864,7 @@ case $action in
      dir_sizes "$@"
 	;;
 
-   # filesystem-geometry [-a | drive-dirs]: show sector, inode, block, etc size
+   # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
    ( filesystem*geometry | fsg ) undo_action_abbrev filesystem-geometry
      filesystem_geometry "$@"
 	;;
@@ -4092,6 +4099,10 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	set_absolute_path /dev/mapper/backup_C
+	echo $absolute_path
+	exit
+
 	set_FS_label___from_FS_device foo
 	exit
 
