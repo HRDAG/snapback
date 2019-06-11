@@ -497,7 +497,7 @@ kill_jobs() {
 	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
 	[[ $* == all ]] && set -- $(list_drive_dirs -a)
 
-	local name status=1
+	local name status=1		# assume nothing to kill
 	for name
 	    do	signal_job $signal $type $name && status=0
 	done
@@ -617,9 +617,14 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	file_for_logging=$drive_log_dir/messages.log
 
 	suspend_tracing
+	local user
+	for user in ${SUDO_USER-} ${USER-} ${LOGNAME-} ${HOME##*/}
+	    do	[[ $user != root ]] && break
+	done
+	local users_groups=$(id -G -n $user)
 	local group
 	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
-	    do	is_arg1_in_arg2 $group $(id -G -n $LOGNAME) && break
+	    do	is_arg1_in_arg2 $group $users_groups && break
 	done
 	[[ $group == NoNe ]] && group= || admin_group=$group
 	restore_tracing group
@@ -1900,7 +1905,7 @@ is_dst_snapshot_needed() {
 	[[ ! $is_quiet ]] && log "${dst_snapshot##*/} not needed"; return 1; }
 	[[ $1 != $dst_snapshot ]] && return 0
 	[[ $is_quiet || $action == update* ]] ||
-	log     "$dst_snapshot already exists"; return 1
+	    log "$dst_snapshot already exists"; return 1
 }
 
 # ---------------------------------
@@ -2038,10 +2043,20 @@ sorted_useful_srcs() {
 	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
 	[[ $# == 1   ]] || abort "need to specify one drive name"
 
+	suspend_tracing
 	set_drive_name $1
 	set_drive_dir  $drive_name
 	local dst_name=$drive_name
 	local  dst_dir=$drive_dir
+	restore_tracing
+
+	if [[ ${src_names_regex-} ]]
+	   then   if [[ $is_drive_name_upper_cased ]]
+		   then src_names_regex=${src_names_regex^^}
+		elif  [[ $is_drive_name_capitalized ]]
+		   then src_names_regex=${src_names_regex^} # fails if regex
+		fi
+	fi
 
 	set_backup_type $dst_name
 	dst_backup_type=$backup_type
@@ -3101,9 +3116,9 @@ filesystem_geometry() {
 	local dash="------" dsh="---------------"
 	local dash="======" dsh="==============="
 	local    format="%-15s   %-8s%8s %8s %8s %8s %8s %8s\n"
-	local f=$format strp="stripe "
-      printf "$f" ""   ""	""	""	""	"dir " "$strp" "$strp"
-      printf "$f" Mount	FStype	sector	inode	block	block  "unit  "	width\ 
+	local f=$format strp="stripe " wdth="width  "
+      printf "$f" ""   ""	""	""	""	"dir " "$strp"  "$strp"
+      printf "$f" Mount	FS-type	sector	inode	block	block  "unit  "	"$wdth"
       printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
 	local drive_dir
@@ -3846,12 +3861,15 @@ case $action in
 	rm_stale_locks
 	cd_ $lock_dir
 	eval "set -- $type_pattern*-$name_pattern.pid"
+	status=1			# assume all locks are missing/stale
 	for lock
 	    do	header $lock
 		[[ -e  $lock ]] || { echo "no such lock"; continue; }
 		set -- $(< $lock)
 		ps $ps_opts -$1 || ps h $ps_opts $1
+		status=0
 	done
+	exit $status
 	;;
 
    ###########################################################################
