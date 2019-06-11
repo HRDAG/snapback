@@ -2509,21 +2509,21 @@ watch() {
 	set -- $(list_drives -a)
 	local all_drive_dirs=$*
 	set_stats_format $all_drive_dirs
-	local drive_dirs= names_pat= fixed_names= show_all=$false
+	local drive_dirs= show_all=$false
 	if [[ $names ]]
-	   then for name in ${names//,/ }
+	   then local name_list=
+		for name in ${names//,/ }
 		    do	_set_drive_name $name
 			add_words drive_dirs $drive_dir_prefix$drive_name
-			fixed_names=$fixed_names,$drive_name
+			name_list=$name_list,$drive_name
 		done
-		names=${fixed_names#,}
+		names=${name_list#,}
 		# show_all=$true   cron_opt=-C
 	   else show_all=$false
 		drive_dirs=$all_drive_dirs
 	fi
-	[[ $names_pat ]] && names_pat=[$names_pat] &&
+	[[ $names ]] && names_pat="{$names}" &&
 	    names_msg=" for $names " || names_msg=
-
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
 	TraceV 1 names drive_dirs names_pat ps_opt cron_opt show_all
