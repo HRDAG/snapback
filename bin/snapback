@@ -494,7 +494,7 @@ kill_jobs() {
 	local type=$1; shift
 	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
 	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
-	[[ $* == all ]] && set -- $(list_drives -a)
+	[[ $* == all ]] && set -- $(list_drive_dirs -a)
 
 	local name status=1
 	for name
@@ -520,7 +520,7 @@ kill_all_jobs() {
 # miscellaneous
 ##############################################################################
 
-list_drives() {
+list_drive_dirs() {
 	suspend_tracing
 	[[ ${1-} == -a ]] &&
 	   local list_all_drives=$true && shift ||
@@ -572,7 +572,7 @@ function fix_snapshot_names {
 set_oldest_snapshot() {
 
 	local oldest= FS
-	for FS in $(list_drives)
+	for FS in $(list_drive_dirs)
 	    do	suspend_tracing
 		set -- $FS/$snapshot_pattern
 		restore_tracing
@@ -1983,7 +1983,7 @@ load__drive_name2backup_period() {
 	local $custom_config_vars	# for customize_config_variables
 
 	local drive
-	for drive in $(list_drives -a)
+	for drive in $(list_drive_dirs -a)
 	    do	local name=${drive#$drive_dir_prefix}
 		suspend_tracing
 		customize_config_variables $name
@@ -2043,7 +2043,7 @@ sorted_useful_srcs() {
 	local drive_dirs=$(
 		set -- $(
 		# -a so include drives excluded from backups
-		set -- $(list_drives -a | fgrep -v -x $dst_dir |
+		set -- $(list_drive_dirs -a | fgrep -v -x $dst_dir |
 				egrep "$drive_dir_prefix${src_names_regex-.}")
 		for drive_dir
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
@@ -2093,7 +2093,7 @@ cleanup_after_updates() {
 	set_sudo_lockpid
 
 	local drive_dir drive_name
-	for drive_dir in $(list_drives -a)
+	for drive_dir in $(list_drive_dirs -a)
 	    do	set_drive_name $drive_dir
 		set_lock_path copy $drive_name # update could be running
 		$sudo_lockpid    $lock_path >& /dev/null || continue
@@ -2180,7 +2180,8 @@ run_jobs_in_parallel() {
 	   then local excluded_regex='\bG$' # G is too slow
 	   else local excluded_regex=NoThInG
 	fi
-	[[ $1 == all ]] && set -- $(list_drives | egrep -v "$excluded_regex")
+	[[ $1 == all ]] &&
+	set -- $(list_drive_dirs | egrep -v "$excluded_regex")
 	[[  ! $IfRun ]] &&
 	set -- $(echo $* | tr ' ' '\n' | tac) # ps shows new proc 1st
 
@@ -2506,7 +2507,7 @@ watch() {
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
-	set -- $(list_drives -a)
+	set -- $(list_drive_dirs -a)
 	local all_drive_dirs=$*
 	set_stats_format $all_drive_dirs
 	local drive_dirs= show_all=$false
@@ -2866,7 +2867,7 @@ watch() {
 unmount_drives() {
 	[[ $1 == -q  ]] && { shift; is_OK_if_drive_dir_unmounted=$true; }
 	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
-	[[ $* == all ]] && set -- $(list_drives)
+	[[ $* == all ]] && set -- $(list_drive_dirs)
 
 	$Trace
 	# do this early, since takes a while for processes to die
@@ -3099,7 +3100,7 @@ filesystem_geometry() {
 	printf "$format" $dash	$dash	$dash	$dash	$dash	$dash	$dash
 	format=${format/\%25s/%-15s :%8s}
 	local drive_dir
-	for drive_dir in ${drive_dirs:-$(list_drives $all_opt)}
+	for drive_dir in ${drive_dirs:-$(list_drive_dirs $all_opt)}
 	    do	set_FS_type___from_path $drive_dir
 		local  name=${drive_dir#$drive_dir_prefix}
 		set_FS_device___from_path $drive_dir
@@ -3550,7 +3551,7 @@ _copy_extN_backup_drive() {
 	is_arg1_in_arg2 -f $action_opts ||
 	for drive_dir in $src_drive_dir $dst_drive_dir; do
 	if is_drive_mounted $drive_dir
-	   then set -- $(list_drives |
+	   then set -- $(list_drive_dirs |
 			 fgrep -v -w -e $src_drive_dir -e $dst_drive_dir)
 		[[ $# == 0 ]] &&
 		msg="
@@ -3723,7 +3724,7 @@ stack_frame_to_show=0		# show line-number inside the 'case' statement
 case $action in
   # list-drives [-a]: list mounted backup drives/partitions; -a -> +hidden ones
    ( l*s*dr*v* | ld | ls | df ) undo_action_abbrev list-drives
-	list_drives "$@"
+	list_drive_dirs "$@"
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
    ( r*b*k*p* | rb* ) undo_action_abbrev run-backups
@@ -3753,7 +3754,7 @@ case $action in
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo_action_abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort_with_action_Usage
-	[[ $1 == all ]] && set -- $(list_drives)
+	[[ $1 == all ]] && set -- $(list_drive_dirs)
 	for drive
 	    do	check-snapshot-hard-links $drive
 	done
@@ -4052,7 +4053,7 @@ case $action in
 		fi
 	fi
 
-	set -- ${*:-$(list_drives)}	# for debugging: | tac
+	set -- ${*:-$(list_drive_dirs)}	# for debugging: | tac
 	[[  -d $1  ]] || shift
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
