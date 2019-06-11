@@ -2262,11 +2262,22 @@ run_copy_job() {
 ##############################################################################-
 ##############################################################################-
 
-format=
-for (( i = 1; i <= 26; i++ ))
-    do	add_words format '%-6s'
-done
-readonly stats_format=$format
+set_stats_format() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local drive_dirs=$*
+
+	declare -i format_width
+	local format=
+	local drive_dir drive_name
+	for drive_dir in $drive_dirs
+	    do	_set_drive_name $drive_dir
+		format_width=${#drive_name}+5
+		add_words format "%-${format_width}s"
+	done
+	stats_format=$format
+	TraceV 1 stats_format
+	$xtrace
+}
 
 # ---------------------------------
 
@@ -2277,7 +2288,7 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
-	for dir in $(list_drives -a)
+	for dir in $all_drive_dirs
 	    do	set_drive_name $dir
 		local name=$drive_name
 		local  dir=$drive_log_dir/$rsync_time_subdir
@@ -2299,8 +2310,6 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
 	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
-	rsync_hour_avgs=$(echo "$rsync_hour_avgs" | sed 's/  *$//')
-	rsync_hour_maxs=$(echo "$rsync_hour_maxs" | sed 's/  *$//')
 }
 
 # -----------------------------------------------------------------------------
@@ -2334,7 +2343,7 @@ stats_newest_age=
 _recalculate_stats_vars() {
 
 	local cwd=$PWD nums= oldies= newies=
-	for dir in $(list_drives -a)
+	for dir in $all_drive_dirs
 	    do	set_drive_name $dir
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
@@ -2362,18 +2371,9 @@ _recalculate_stats_vars() {
 	done
 	cd $cwd || abort "cd $cwd"
 
-	suspend_tracing
-	local format=
-	for (( i = 1; i <= 26; i++ ))
-	    do	add_words format '%-6s'
-	done
-	restore_tracing
-	printf -v nums   "$stats_format" $nums		    ; [[ $dates ]] && {
-	printf -v oldies "$stats_format" $oldies
-	printf -v newies "$stats_format" $newies			    ; }
-	stats_number=$(    echo "$nums"   | sed 's/  *$//') ; [[ $dates ]] && {
-	stats_oldest_age=$(echo "$oldies" | sed 's/  *$//')
-	stats_newest_age=$(echo "$newies" | sed 's/  *$//')		    ; }
+	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
+	printf -v stats_oldest_age "$stats_format" $oldies
+	printf -v stats_newest_age "$stats_format" $newies		    ; }
 }
 
 # ----------------------
@@ -2396,7 +2396,7 @@ setup_snapshot_stats() {
 	local     number_cache_file=$watch_cache_dir/number/$cache_name
 	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
 	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
-	local drive_dirs=$(list_drives -a)
+	local drive_dirs=$all_drive_dirs
 	local dir drive_name
 	local found_modified_drive=$false
 	for dir in $drive_dirs
@@ -2506,25 +2506,27 @@ watch() {
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
-	local drives= names_pat= fixed_names= show_all=$false
+	set -- $(list_drives -a)
+	local all_drive_dirs=$*
+	set_stats_format $all_drive_dirs
+	local drive_dirs= names_pat= fixed_names= show_all=$false
 	if [[ $names ]]
 	   then for name in ${names//,/ }
-		    do	set_drive_name $name
-			add_words drives $drive_dir_prefix$drive_name
-			[[ $name = ? ]] && names_pat=$names_pat$drive_name
+		    do	_set_drive_name $name
+			add_words drive_dirs $drive_dir_prefix$drive_name
 			fixed_names=$fixed_names,$drive_name
 		done
 		names=${fixed_names#,}
 		# show_all=$true   cron_opt=-C
 	   else show_all=$false
-		drives=$(list_drives -a | tr '\n' ' ')
+		drive_dirs=$all_drive_dirs
 	fi
 	[[ $names_pat ]] && names_pat=[$names_pat] &&
 	    names_msg=" for $names " || names_msg=
 
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
-	TraceV 1 names drives names_pat ps_opt cron_opt show_all
+	TraceV 1 names drive_dirs names_pat ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
 
@@ -2539,7 +2541,7 @@ watch() {
 	# since the contents of $() are run in subshell, have to echo results
 	set -- $(
 	declare -i max_device_len=0 max_mount_len=0
-	df --block-size=G $drives |
+	df --block-size=G $drive_dirs |
 	while read device size used avail used mount junk
 	    do	declare -i device_len=${#device} mount_len=${#mount}
 		is_new_max=$false
@@ -2598,7 +2600,7 @@ watch() {
 	rsync_cmds=$(COLUMNS=999 ps_ -H ww  $* |
 			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
-	declare -i num_drives=$(set -- $drives; echo $#)
+	declare -i num_drives=$(set -- $drive_dirs; echo $#)
 
 	eval "set -- $lock_dir/prune-${names_pat:-*}.pid"
 	[[ -e $1 ]] || shift
@@ -2733,7 +2735,7 @@ watch() {
 	(( $rows >= $min_df_rows )) || [[ $show_all ]] && {
 	echo
 	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
-	df --block-size=G --output=$df_fields  $drives
+	df --block-size=G --output=$df_fields $drive_dirs
 	let rows-=$num_drives+2
 	}
 
@@ -2741,7 +2743,7 @@ watch() {
 
 	(( $rows >= $min_df_rows )) || [[ $show_all ]] && {
 	devices=
-	for dir in $drives
+	for dir in $drive_dirs
 	    do	set_FS_device___from_path $dir &&
 		add_words devices $FS_device
 	done
@@ -4089,6 +4091,9 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	set_FS_label___from_FS_device foo
+	exit
+
 	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
