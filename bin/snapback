@@ -875,7 +875,7 @@ customize_and_validate_configuration_variables() {
 
 	suspend_tracing
 
-	type source_drive_specific_config_file &> /dev/null && # optional
+	type -t source_drive_specific_config_file > /dev/null && # optional
 	source_drive_specific_config_file $name
 
 	customize_config_variables $name
@@ -1128,7 +1128,7 @@ _rm_pruned_snapshots() {
 
 	$IfRun log "pruned exclude-patterns from _all_ snapshots"
 
-	$IfRun sync --file-system $drive_dir &> /dev/null
+	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
 }
 
 # ------------------------------------------------------------------------------------
@@ -1202,7 +1202,7 @@ declare -A backup_period2minimal_snapshot_pattern=(
 )
 #
 # the [hour] chunks are the complement of the previous map's values
-[[	 ${type2prune_type_patterns-} || # custom version in $config_file?
+[[	 ${type2prune_type_patterns-} ]] || # custom version in $config_file?
 declare -A type2prune_type_patterns=(
 # the ones these patterns skip: hour=00, day=01, month=01, year=00
 # period after prune: 2                4                 ~8          ~12   all
@@ -1537,7 +1537,7 @@ _is_time_to_run_backup() {
 
 readonly rsync_time_subdir=stats/rsync-minutes
 
-[[	 ${days_to_keep-} ||		# custom version in $config_file?
+[[	 ${days_to_keep-} ]] ||		# custom version in $config_file?
 declare -i days_to_keep=3		# ensure more than weekend-only data
 
 record_rsync_time() {
@@ -2457,7 +2457,7 @@ setup_snapshot_stats() {
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir ]] || return # might not have write access to the cache
 	local lockpid_args="--dir=$lock_dir $lock_name"
-	lockpid $lockpid_args &> /dev/null || return
+	lockpid $lockpid_args > /dev/null || return
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
@@ -2484,7 +2484,7 @@ run_df() {
 run_lsblk() {
 	local drive_dirs=${*:-$(list_drive_dirs -a)}
 
-	type lsblk &> /dev/null || return 1
+	type -t lsblk > /dev/null || return 1
 
 	local dir devices=
 	for dir in $drive_dirs
@@ -3330,8 +3330,8 @@ mkfs_backup_drive() {
 		[[ $opts == *"-i size="* ]] || opts+=" -i size=512"
 		[[ $opts == *maxpct=*    ]] || opts+=" -i maxpct=0"
 		mount_opts="$XFS_mount_options"
-		type set_FS_external_log &> /dev/null && # optional
-		     set_FS_external_log $FS_label &&
+		type -t set_FS_external_log > /dev/null && # optional
+			set_FS_external_log $FS_label &&
 		logdev="logdev=$FS_external_log" &&
 		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
 	elif [[ $cmd == mkfs.ext? ]]
@@ -3359,8 +3359,8 @@ mkfs_backup_drive() {
 		[[ $opts != *extent* ]] && opts+=" $ext4_extent_opt"
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$extN_mount_options"
-		type set_FS_external_log &> /dev/null	&& # optional
-		     set_FS_external_log $FS_label	&&
+		type -t set_FS_external_log > /dev/null	&& # optional
+			set_FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
@@ -3730,7 +3730,7 @@ check-snapshot-hard-links() {
 
 	declare -A file2inum
 	for old_file in $very_old_immutable_files
-	    do	$IfRun sudo chattr +i $old_file &> /dev/null
+	    do	$IfRun sudo -n chattr +i $old_file &> /dev/null
 		file=$1$old_file
 		set_inum $file ||
 		  abort "$drive_name: $file missing from oldest snapshot $1"
