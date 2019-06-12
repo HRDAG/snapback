@@ -349,14 +349,15 @@ declare -A  lock_type2locked_resource
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
 lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ $1 == -w ]] && { shift; local do_wait=$true; } || local do_wait=
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
-	[[ $# == 2  ]] || abort "$FUNCNAME [-w] type resource"
-	local type=$1 resource=$2
+	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
+	[[ $1 != -*   ]] || abort "$FUNCNAME: unknown option $1, order matters"
+	[[ $# == [12] ]] || abort "$FUNCNAME [-w] type resource"
+	local type=$1 resource=${2:-$drive_name}
 
-	local drive_dir=${resource%/$snapshot_pattern*}
-	drive_name=${drive_dir#$drive_dir_prefix}
+	local drive_name
+	_set_drive_name $resource
+	local drive_dir=$drive_dir_prefix$drive_name
 
 	local prev_lock_path=${_lock_type2lock_path[$type]-}
 	[[ ! $prev_lock_path ]] ||
@@ -1352,7 +1353,7 @@ prune_drive() {
 	fi
 	# lock_opt+=" -w"	    # this would keep copy or update suspended
 
-	lock $lock_opt prune $drive_name ||
+	lock $lock_opt prune ||
 	    # since we're called, the old lock holder should be un-suspended
 	    { signal_job SIGCONT prune $drive_name; return 1; }
 
@@ -1778,7 +1779,7 @@ run_backup() {
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
 	# suspended the backup and continued the prune
-	lock $lock_opt backup $drive_name || return 1
+	lock $lock_opt backup || return 1
 
 	_backup_management_of_prune pre-rsync
 
@@ -2044,7 +2045,7 @@ fastest_snapshots() {
 		local ss=$snapshot
 		echo "$do_suspend|$doing_backup|$doing_prune|$rsync_count|$ss"
 	done | sort -t\| -n |		# numeric sort
-	# cat; return			# uncomment to debug
+	# cat; return			# uncomment to debug with action 'test'
 	cut -d\| -f5
 }
 
@@ -2077,7 +2078,7 @@ sorted_useful_srcs() {
 				egrep "$drive_dir_prefix${src_names_regex-.}")
 		for drive_dir
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
-		done # | tac		# uncomment to test sort_args
+		done
 		)
 		echo $*
 	)
@@ -2138,7 +2139,7 @@ update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock copy $drive_name > /dev/null || exit 1 # can run for days
+	IfRun= lock copy > /dev/null || exit 1 # can run for days
 
 	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
@@ -3083,7 +3084,7 @@ dir_sizes() {
 		--include='*/' --exclude='*'  \
 		      $dirs_to_backup  /tmp/  |
 	   grep '^/' |
-	   # head -n 100 |		# uncomment to debug
+	   # head -n 100 |		# uncomment to speedup debugging
 	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
 	   sed -r 's/^ *([0-9]+K) +/\1|/' | # pipe-separate fields
 	   sort -t '|' -k1n,1 -k2	  | # for histogram & compression
@@ -3820,15 +3821,14 @@ case $action in
 	[[ $1 == -q ]] && {  quiet_opt=$1; shift; } ||  quiet_opt=
 	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
 	(( $# >= 2  )) || abort_with_action_Usage
-	dst_name=${!#}
-	src_snapshots=${*%$dst_name}
+	drive_name=${!#}
+	src_snapshots=${*%$drive_name}
 
-	set_drive_name $dst_name
-	dst_name=$drive_name
+	set_drive_name $drive_name
 
-	lock copy $dst_name || exit 1
+	lock copy || exit 1
 	for snapshot in $src_snapshots
-	    do	copy_snapshot $quiet_opt $snapshot $dst_name
+	    do	copy_snapshot $quiet_opt $snapshot $drive_name
 	done
 	unlock copy
 	;;
@@ -4150,7 +4150,9 @@ case $action in
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
 	load__drive_name2do_suspend
-	fastest_snapshots /backup/?/2016-08-01,00
+	set -- /backup/?/2016-08-01,00
+	       fastest_snapshots $*; echo
+	echo $(fastest_snapshots $*)
 	exit
 
 	set_absolute_path /dev/mapper/backup_C
