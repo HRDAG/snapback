@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=16			# has to match version= in configure.sh.sample
+version=17			# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -101,6 +101,7 @@ Usage: $our_name [options] action [args]
     check-snapshot-hard-links names: find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
+    regression-test [tests]: check functionality, see $tmp_dir/?? for results
 
   NOTE: to see what an action would do, use -d option to simulate the action.
 
@@ -3756,6 +3757,152 @@ check-snapshot-hard-links() {
 	echo "$drive_name: no broken hard-links!"
 }
 
+# -----------------------------------------------------------------------------
+# regression tests for "old" (installed) vs "tst" (workspace) snapback
+# -----------------------------------------------------------------------------
+
+was_test_cache_stale=
+
+# -d is used to specify a comma-separated list of Drives
+# -r means using data on a Real backup drive
+is_test_cache_stale() {
+	[[ $1 == -d ]] && { local drives=$2 ; shift 2; } || local drives=
+	[[ $1 == -r ]] && { is_debug_drive= ; shift; } || is_debug_drive=$true
+	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
+	local cached_file=$1
+
+	was_test_cache_stale=$true	# assume cached file is stale
+
+	[[ -s $cached_file ]] || return 0
+
+	for file in $old_cmd $config_file
+	    do	[[ $cached_file -nt $file ]] && continue
+		echo "$file is newer, recomputing ..."
+		return 0
+	done
+
+	local drive
+	if [[ $is_debug_drive ]]
+	   then drives=${drive_dir_prefix}Z
+	elif [[ $drives ]]
+	   then _drives=
+		for drive in ${drives//,/ }
+		    do	_set_drive_name $drive
+			 drive=$drive_dir_prefix/$drive_name
+			_drives+=" $drive"
+		done
+		drives=${_drives# }
+	   else drives=$(snapback list-drives -a)
+	fi
+
+	for drive in $drives
+	    do	[[ $cached_file -nt $drive/. ]] && continue
+		echo "$drive is newer, recomputing ..."
+		return 0
+	done
+
+	was_test_cache_stale=$false	# we found no problems
+
+	return 1
+}
+
+# --------------------------------------------
+
+show_test_header() {
+	header "$* (first number is sorted md5sum, second is unsorted)"
+}
+
+# ---------------------------------
+
+show_test_results() {
+	local output_file=$1
+
+	echo "$(sort $output_file | md5sum) $(md5sum $output_file)"
+}
+
+# --------------------------------------------
+
+run_debug_cmds() {
+	local test=$1; shift
+	local args=$*
+
+	local tmp_o=$tmp_dir/o$test	# holds output from "old" cmd
+	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
+
+	is_test_cache_stale $is_test_cache_stale_opts  $tmp_o &&
+	$old_cmd -d $args &> $tmp_o ; show_test_results $tmp_o
+	$tst_cmd -d $args &> $tmp_t ; show_test_results $tmp_t
+	cmp --quiet $tmp_o $tmp_t && { echo "-- same results!"; return; }
+
+	[[ $was_test_cache_stale ]] || {
+	echo -e "\nSince different results, we'll regenerate cached data ..."
+	$old_cmd -d $args &> $tmp_o ; show_test_results $tmp_o
+				      show_test_results $tmp_t
+	cmp --quiet $tmp_o $tmp_t && { echo "-- same results!"; return; }
+	}
+
+	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t"
+}
+
+# ---------------------------------
+
+regression_test() {
+	local tests=${*:-b c z p u}
+
+	# --------------------------------------------
+
+	is_arg1_in_arg2 b $tests && {
+	show_test_header backup all
+	is_test_cache_stale_opts=-r	# we backup all drives ...
+	run_debug_cmds b run-backups all
+	}
+
+	# --------------------------------------------
+
+	is_arg1_in_arg2 c $tests && {
+	show_test_header copy to Z
+	is_test_cache_stale_opts=    # will use oldest snapshot, never deleted
+	set_oldest_snapshot
+	run_debug_cmds c copy-snapshot $oldest_snapshot Z
+	}
+
+	# --------------------------------------------
+
+	is_arg1_in_arg2 z $tests && {
+	set -- ${drive_dir_prefix}Z/$snapshot_pattern
+	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
+	show_test_header prune Z
+	is_test_cache_stale_opts=	# test-prune always leaves same files
+	run_debug_cmds z prune-drive Z
+	}
+
+	# --------------------------------------------
+
+	is_arg1_in_arg2 p $tests && {
+	show_test_header prune all
+	is_test_cache_stale_opts=-r	# we prune all drives ...
+	run_debug_cmds z prune-drives all
+	}
+
+	# --------------------------------------------
+
+	is_arg1_in_arg2 u $tests && {
+	local src=${update_test_src-}
+	local dst=${update_test_dst-}
+	[[ $src && $dst ]] ||
+	   abort "$config_file needs update_test_src & update_test_dst for 'u'"
+	show_test_header update -s $src $dst
+
+	$our_path kill-copy $dst &> /dev/null &&
+	    warn "killed update-drive (or copy) to $dst"
+
+	is_test_cache_stale_opts="-d $src,$dst"
+	run_debug_cmds u update-drives -s $src $dst
+	}
+
+	echo
+}
+
 #############################################################################
 #############################################################################
 # Process the requested action with the above functions & global variables. #
@@ -4068,6 +4215,11 @@ case $action in
 	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
 	;;
 
+   # regression-test [tests]: check functionality, see $tmp_dir/?? for results
+   ( r*t* ) undo_action_abbrev regression-test; $Trace
+	regression_test "$@"
+	;;
+
    ###########################################################################
    # actions for snapcrypt to call
    ###########################################################################
@@ -4135,7 +4287,7 @@ case $action in
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
-	set_drive_name $1
+	_set_drive_name $1
 	echo $drive_dir_prefix$drive_name
 	;;
 
