@@ -971,11 +971,11 @@ _backup_management_of_prune() {
 ##############################################################################-
 ##############################################################################-
 
-# arguments can include options to grep (e.g. -F), ending in name of resource
 count_rsyncs_using_resource() {
+	local regex=$*
 
-	[[ $drive_name == Z || $debug_opt ]] && return 0
-	return $(COLUMNS=999 ps l -u root | grep -w '[r]sync' | grep -c "$@")
+	[[ $drive_name == Z || $IfRun ]] && return 0
+	return $(COLUMNS=999 ps l -u root | egrep -c "\brsync .*$regex")
 }
 
 # -----------------------------------------------------------------------------
@@ -2041,8 +2041,8 @@ fastest_snapshots() {
 		fi
 
 		drive_dir=$drive_dir_prefix$drive_name
-		local rsync_count=$(COLUMNS=999 ps l -u root |
-					   grep -c "\brsync .* $drive_dir/")
+		count_rsyncs_using_resource " $drive_dir/"
+		local rsync_count=$?
 
 		local ss=$snapshot
 		echo "$do_suspend|$doing_backup|$doing_prune|$rsync_count|$ss"
@@ -2694,7 +2694,7 @@ watch() {
 			#      -e 's/   lockp/ lockp/')	# -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
-	ps -u root -O pgid,command | grep -w -e '[r]sync' -e '[r]m' |
+	ps -u root -O pgid,command | egrep '\b(rsync|rm) ' |
 	   awk '{print $2}' > $rsync_or_rm_cmd_PGIDs_file
 	cron_job_regex=' -C run-backups? ' # put into configure.sh ??
 	set -- $(COLUMNS=999 ps -u root -O pgid,command |
@@ -2903,7 +2903,7 @@ watch() {
 	header "copy's & update's rsync processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$cp_rsync_cmds" | grep -w '[r]sync' | sed "s@ $HOME/@ ~/@g"
+	echo "$cp_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
 	}
 }
 
@@ -4152,9 +4152,8 @@ case $action in
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
 	load__drive_name2do_suspend
-	set -- /backup/?/2016-08-01,00
-	       fastest_snapshots $*; echo
-	echo $(fastest_snapshots $*)
+	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
+	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
 
 	set_absolute_path /dev/mapper/backup_C
