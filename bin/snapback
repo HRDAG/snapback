@@ -755,7 +755,7 @@ set_drive_dir() {
 
 	if  is_drive_mounted  $drive_dir
 	   then fix_snapshot_names $drive_dir # must call last
-		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null
+		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null # optional
 	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
 		    warn "no filesystem mounted on $drive_dir" ||
 		    : print_call_stack
@@ -1720,7 +1720,7 @@ run_rsync() {
 
 	_handle_rsync_results $dst_snapshot $status $log
 
-	$IfRun sync --file-system $dst_snapshot* &> /dev/null
+	$IfRun sync --file-system $dst_snapshot* &> /dev/null # optional
 
 	return $status
 }
@@ -2113,7 +2113,7 @@ remove_empty_partial_snapshots() {
 	local drive_dir=$1
 
 	# 'sudo -n' because we're called by 'watch' and 'w'
-	sudo -n rmdir $drive_dir/*.partial &> /dev/null
+	sudo -n rmdir $drive_dir/*.partial &> /dev/null # optional
 }
 
 # ---------------------------------
@@ -3727,7 +3727,7 @@ check-snapshot-hard-links() {
 
 	declare -A file2inum
 	for old_file in $very_old_immutable_files
-	    do	$IfRun sudo -n chattr +i $old_file &> /dev/null
+	    do	$IfRun sudo -n chattr +i $old_file &> /dev/null # optional
 		file=$1$old_file
 		set_inum $file ||
 		  abort "$drive_name: $file missing from oldest snapshot $1"
