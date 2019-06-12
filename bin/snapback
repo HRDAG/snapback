@@ -66,7 +66,7 @@ for var in $config_vars; do eval "declare -A drv_name2$var"; done
 # customizable functions set_drive_name & source_drive_specific_config_file
 source $config_file || abort "$config_file broken"
 
-type     coder >& /dev/null ||	# can have custom version
+type     coder &> /dev/null ||	# can have custom version
 readonly coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
@@ -258,7 +258,7 @@ set_sudo_lockpid() {
 
 	[[ $sudo_lockpid ]] && return
 
-	if [[ $action == kill-* ]] || sudo -n lockpid -h >& /dev/null
+	if [[ $action == kill-* ]] || sudo -n lockpid -h &> /dev/null
 	   then sudo_lockpid="sudo lockpid --pid=$BASHPID"
 	   else sudo_lockpid=lockpid  # only reclaim locks that user can write
 	fi
@@ -275,7 +275,7 @@ rm_stale_locks() {
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
-		$sudo_lockpid    $lock_path >& /dev/null &&
+		$sudo_lockpid    $lock_path &> /dev/null &&
 		$sudo_lockpid -r $lock_path
 	done
 
@@ -474,7 +474,7 @@ signal_job() {
 	[[ -s $lock_path ]] || return 1
 	set_sudo_lockpid
 	[[ ! $debug_opt ]] &&
-	$sudo_lockpid    $lock_path >& /dev/null && # missing or stale?
+	$sudo_lockpid    $lock_path &> /dev/null && # missing or stale?
 	$sudo_lockpid -r $lock_path && return 1
 
 	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
@@ -483,7 +483,7 @@ signal_job() {
 	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
 	set_signal_is_kill $signal &&
-	$sudo_lockpid    $lock_path >& /dev/null && # avoid race
+	$sudo_lockpid    $lock_path &> /dev/null && # avoid race
 	$sudo_lockpid -r $lock_path
 
 	return 0
@@ -753,7 +753,7 @@ set_drive_dir() {
 
 	if  is_drive_mounted  $drive_dir
 	   then fix_snapshot_names $drive_dir # must call last
-		sudo  -n  mkdir -p $drive_dir/.junk >& /dev/null
+		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null
 	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
 		    warn "no filesystem mounted on $drive_dir" ||
 		    : print_call_stack
@@ -1200,7 +1200,7 @@ declare -A backup_period2minimal_snapshot_pattern=(
 )
 #
 # the [hour] chunks are the complement of the previous map's values
-type       type2prune_type_patterns >& /dev/null || # can have custom version
+type       type2prune_type_patterns &> /dev/null || # can have custom version
 declare -A type2prune_type_patterns=(
 # the ones these patterns skip: hour=00, day=01, month=01, year=00
 # period after prune: 2                4                 ~8          ~12   all
@@ -1535,7 +1535,7 @@ _is_time_to_run_backup() {
 
 readonly rsync_time_subdir=stats/rsync-minutes
 
-type	   days_to_keep >& /dev/null ||	# can have custom version
+type	   days_to_keep &> /dev/null ||	# can have custom version
 declare -i days_to_keep=3		# ensure more than weekend-only data
 
 record_rsync_time() {
@@ -2042,10 +2042,10 @@ fastest_snapshots() {
 					   grep -c "\brsync .* $drive_dir/")
 
 		local ss=$snapshot
-		echo "$do_suspend,$doing_backup,$doing_prune,$rsync_count,$ss"
-	done | sort -t, -n |		# numeric sort
+		echo "$do_suspend|$doing_backup|$doing_prune|$rsync_count|$ss"
+	done | sort -t\| -n |		# numeric sort
 	# cat; return			# uncomment to debug
-	cut -d, -f5
+	cut -d\| -f5
 }
 
 # --------------------------------------------
@@ -2113,7 +2113,7 @@ remove_empty_partial_snapshots() {
 	local drive_dir=$1
 
 	# 'sudo -n' because we're called by 'watch' and 'w'
-	sudo -n rmdir $drive_dir/*.partial >& /dev/null
+	sudo -n rmdir $drive_dir/*.partial &> /dev/null
 }
 
 # ---------------------------------
@@ -2126,7 +2126,7 @@ cleanup_after_updates() {
 	for drive_dir in $(list_drive_dirs -a)
 	    do	_set_drive_name $drive_dir
 		set_lock_path copy $drive_name # update could be running
-		$sudo_lockpid    $lock_path >& /dev/null || continue
+		$sudo_lockpid    $lock_path &> /dev/null || continue
 		$IfRun remove_empty_partial_snapshots $drive_dir
 		$sudo_lockpid -r $lock_path
 	done
@@ -2454,7 +2454,7 @@ setup_snapshot_stats() {
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir ]] || return # might not have write access to the cache
 	local lockpid_args="--dir=$lock_dir $lock_name"
-	lockpid $lockpid_args >& /dev/null || return
+	lockpid $lockpid_args &> /dev/null || return
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
@@ -2705,7 +2705,7 @@ watch() {
 	[[ ($cron_opt || ! $rsync_cmds$cp_rsync_cmds) && $# != 0 ]] && {
 	set -- $(process_group_PIDs $cron_PGIDs)
 	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
-	[[ $wchan ]] && sudo -n ps >& /dev/null && sudo=sudo || sudo= wchan=
+	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
 	#  option f for "forest"
 	cron_cmds=$($sudo ps www f -o pid,stat$wchan,bsdtime,command $*)
 	} || cron_cmds=
