@@ -66,7 +66,7 @@ for var in $config_vars; do eval "declare -A drv_name2$var"; done
 # customizable functions set_drive_name & source_drive_specific_config_file
 source $config_file || abort "$config_file broken"
 
-type     coder &> /dev/null ||	# can have custom version
+[[     ${coder-} ]] ||			# custom version in $config_file?
 readonly coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
@@ -1202,7 +1202,7 @@ declare -A backup_period2minimal_snapshot_pattern=(
 )
 #
 # the [hour] chunks are the complement of the previous map's values
-type       type2prune_type_patterns &> /dev/null || # can have custom version
+[[	 ${type2prune_type_patterns-} || # custom version in $config_file?
 declare -A type2prune_type_patterns=(
 # the ones these patterns skip: hour=00, day=01, month=01, year=00
 # period after prune: 2                4                 ~8          ~12   all
@@ -1537,7 +1537,7 @@ _is_time_to_run_backup() {
 
 readonly rsync_time_subdir=stats/rsync-minutes
 
-type	   days_to_keep &> /dev/null ||	# can have custom version
+[[	 ${days_to_keep-} ||		# custom version in $config_file?
 declare -i days_to_keep=3		# ensure more than weekend-only data
 
 record_rsync_time() {
