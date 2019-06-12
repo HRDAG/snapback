@@ -1921,8 +1921,7 @@ copy_snapshot() {
 	(( $# >= 2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
-# need regression test before enable this:
-#	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
+	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
 	copy_snapshot_args=
 
 	$Trace
@@ -2047,8 +2046,6 @@ sorted_useful_srcs() {
 	suspend_tracing
 	set_drive_name $1
 	set_drive_dir  $drive_name
-	local dst_name=$drive_name
-	local  dst_dir=$drive_dir
 	restore_tracing
 
 	if [[ ${src_names_regex-} ]]
@@ -2059,12 +2056,12 @@ sorted_useful_srcs() {
 		fi
 	fi
 
-	set_backup_type $dst_name
+	set_backup_type $drive_name
 	dst_backup_type=$backup_type
 	local drive_dirs=$(
 		set -- $(
 		# -a so include drives excluded from backups
-		set -- $(list_drive_dirs -a | fgrep -v -x $dst_dir |
+		set -- $(list_drive_dirs -a | fgrep -v -x $drive_dir |
 				egrep "$drive_dir_prefix${src_names_regex-.}")
 		for drive_dir
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
@@ -2085,7 +2082,7 @@ sorted_useful_srcs() {
 
 	TraceV 1 drive_dirs min_snapshot_pattern sort_key_args
 
-	cd $dst_dir || exit 1	  # so can kill job with: fuser -k -M $dst_dir
+	cd $drive_dir || exit 1	# so can kill job with: fuser -k -M $drive_dir
 
 	$Trace
 
@@ -2115,7 +2112,7 @@ cleanup_after_updates() {
 
 	local drive_dir drive_name
 	for drive_dir in $(list_drive_dirs -a)
-	    do	set_drive_name $drive_dir
+	    do	_set_drive_name $drive_dir
 		set_lock_path copy $drive_name # update could be running
 		$sudo_lockpid    $lock_path >& /dev/null || continue
 		$IfRun remove_empty_partial_snapshots $drive_dir
@@ -2198,7 +2195,7 @@ run_jobs_in_parallel() {
 	local opts= are_recursing=$false
 	while [[ $1 == -[^r]* ]] ; do opts+=" $1"; shift; done
 	[[ $1 == -r  ]] && { are_recursing=$true; shift; }
-	if [[ $debug_opt && $(hostname) == eleanor ]]
+	if [[ $debug_opt && ${HOSTNAME-} == eleanor ]]
 	   then local excluded_regex='\bG$' # G is too slow
 	   else local excluded_regex=NoThInG
 	fi
