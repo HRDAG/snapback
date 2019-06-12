@@ -34,7 +34,7 @@ version=16			# has to match version= in configure.sh.sample
 # warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
 # print_or_egrep_Usage_then_exit, abort_with_action_Usage,
 # log, $file_for_logging, $log_level, $log_msg_prefix, header,
-# cd_ , add_words, confirm, is_arg1_in_arg2, run_function
+# cd_ , confirm, is_arg1_in_arg2, run_function
 #
 # search for '####' in libsnap.sh to see environment and coding conventions
 source libsnap.sh || exit 1
@@ -122,15 +122,15 @@ is_cron=$false   cron_opt=
 IfRun= Trace=    debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
 while getopts "C cnvqr: dtT: hk"  arg
-    do	add_words our_opts -$arg ${OPTARG-}
+    do	our_opts+=" -$arg ${OPTARG-}"
 	case $arg in
 	   ( C ) is_cron=$true	cron_opt=-C ;;
 
-	   ( c ) add_words our_rsync_opts --checksum ;;
-	   ( n ) add_words our_rsync_opts --verbose --dry-run ;;
-	   ( v ) add_words our_rsync_opts --verbose ;;
-	   ( q ) add_words our_rsync_opts --quiet   ;; # cancels --verbose
-	   ( r ) add_words our_rsync_opts $OPTARG   ;;
+	   ( c ) our_rsync_opts+=" --checksum"	;;
+	   ( n ) our_rsync_opts+=" --verbose --dry-run" ;;
+	   ( v ) our_rsync_opts+=" --verbose"	;;
+	   ( q ) our_rsync_opts+=" --quiet"	;; # cancels --verbose
+	   ( r ) our_rsync_opts+=" $OPTARG"	;;
 
 	   ( d ) IfRun="echo -e" debug_opt=-d ;; # $IfRun prevents side-effects
 	   ( t ) Trace="set -x"  trace_opt=-t ;;
@@ -300,7 +300,7 @@ lock_PID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
-	while [[ $1 == -* ]] ; do add_words lock_opts $1; shift; done
+	while [[ $1 == -* ]] ; do lock_opts+=" $1"; shift; done
 	local type=$1 lock_holder_action=$2
 
 	is_arg1_in_arg2 $type $lock_types ||
@@ -364,7 +364,7 @@ lock() {
 
 	local		    lock_msg="holds '$type' lock for $drive_name"
 	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
-	[[ $type == prune ]] && add_words lock_msg " (could be copy or update)"
+	[[ $type == prune ]] && lock_msg+=" (could be copy or update)"
 
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
 	[[ $do_wait ]] &&
@@ -789,7 +789,7 @@ customize_config_variables() {
 
 	for var_name in config_file exclude_file
 	    do	[[ $(declare -p $var_name) == "declare -r "* ]] ||
-		add_words custom_config_vars $var_name
+		custom_config_vars+=" $var_name"
 	done
 
 	for var_name in $config_vars
@@ -801,7 +801,7 @@ customize_config_variables() {
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
 
-		add_words custom_config_vars $var_name
+		custom_config_vars+=" $var_name"
 
 		is_arg1_in_arg2 $drive_name $drv_names ||
 		   { eval "$var_name=\${config_var2default_value[$var_name]}"
@@ -811,6 +811,7 @@ customize_config_variables() {
 		eval "$var_name=\$custom_value"
 		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
+	custom_config_vars=${custom_config_vars# }
 	restore_tracing custom_config_vars
 }
 
@@ -1349,7 +1350,7 @@ prune_drive() {
 	   then local lock_opt=	  # desparately need pruning, borrow copy lock
 	   else local lock_opt=
 	fi
-	# add_words lock_opt -w	    # this would keep copy or update suspended
+	# lock_opt+=" -w"	    # this would keep copy or update suspended
 
 	lock $lock_opt prune $drive_name ||
 	    # since we're called, the old lock holder should be un-suspended
@@ -2027,7 +2028,7 @@ fastest_snapshots() {
 	for snapshot
 	    do	[[ -d $snapshot ]] || continue # pruned-away, or drive ejected?
 		set_backup_period___from_snapshot $snapshot
-		add_words -k $backup_period backup_period2snapshots $snapshot
+		backup_period2snapshots[$backup_period]+=" $snapshot"
 	done
 
 	set -- $(echo ${!backup_period2snapshots[*]} | tr ' ' '\n' |sort -n -r)
@@ -2147,7 +2148,7 @@ update_drive() {
 		   then prev_date_time=$date_time # new date, process prev ones
 		   else [[ $prev_date_time ]] ||
 			prev_date_time=$date_time
-			add_words src_snapshots $src_snapshot
+			src_snapshots+=" $src_snapshot"
 			continue
 		fi
 
@@ -2195,7 +2196,7 @@ update_drive() {
 run_jobs_in_parallel() {
 	local type=$1; shift
 	local opts= are_recursing=$false
-	while [[ $1 == -[^r]* ]] ; do add_words opts $1; shift; done
+	while [[ $1 == -[^r]* ]] ; do opts+=" $1"; shift; done
 	[[ $1 == -r  ]] && { are_recursing=$true; shift; }
 	if [[ $IfRun && $(hostname) == eleanor ]]
 	   then local excluded_regex='\bG$' # G is too slow
@@ -2294,9 +2295,9 @@ set_stats_format() {
 	for drive_dir in $drive_dirs
 	    do	_set_drive_name $drive_dir
 		format_width=${#drive_name}+5
-		add_words format "%-${format_width}s"
+		format+=" %-${format_width}s"
 	done
-	stats_format=$format
+	stats_format=${format# }
 	TraceV 1 stats_format
 	$xtrace
 }
@@ -2326,8 +2327,8 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 				   awk '{ printf "%.1f", $1/60 }')
 		   else hour_avg= hour_max=
 		fi
-		add_words hour_avgs $name=$hour_avg
-		add_words hour_maxs $name=$hour_max
+		hour_avgs+=" $name=$hour_avg"
+		hour_maxs+=" $name=$hour_max"
 
 	done
 
@@ -2381,7 +2382,7 @@ _recalculate_stats_vars() {
 			   sed "s/$ending_RE$//" | uniq)
 		restore_tracing
 
-		add_words nums $name=$#
+		nums+=" $name=$#"
 
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
@@ -2389,8 +2390,8 @@ _recalculate_stats_vars() {
 			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
 		fi
-		add_words oldies $name=$old
-		add_words newies $name=$new
+		oldies+=" $name=$old"
+		newies+=" $name=$new"
 	done
 	cd $cwd || abort "cd $cwd"
 
@@ -2522,7 +2523,7 @@ watch() {
 	local all_opts="$ps_opt $cron_opt"
 	if [[ $names ]]
 	   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
-		add_words all_opts -N $names
+		all_opts+=" -N $names"
 	fi
 	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.1
 	[[ $action != $watch_opt ]] && cleanup_after_updates
@@ -2536,7 +2537,7 @@ watch() {
 	   then local name_list=
 		for name in ${names//,/ }
 		    do	_set_drive_name $name
-			add_words drive_dirs $drive_dir_prefix$drive_name
+			drive_dirs+=" $drive_dir_prefix$drive_name"
 			name_list=$name_list,$drive_name
 		done
 		names=${name_list#,}
@@ -2767,7 +2768,7 @@ watch() {
 	devices=
 	for dir in $drive_dirs
 	    do	set_FS_device___from_path $dir &&
-		add_words devices $FS_device
+		devices+=" $FS_device"
 	done
 
 	type lsblk &>/dev/null && [[ ! $cp_rsync_cmds ]] && {
@@ -3210,7 +3211,7 @@ mkfs_backup_drive() {
 	local name=$drive_name
 	local drive_dir=$drive_dir_prefix$drive_name
 	local _mkfs_cmd_opts=$mkfs_cmd_opts
-	add_words _mkfs_cmd_opts $mkfs_opts
+	_mkfs_cmd_opts+=" $mkfs_opts"
 
 	set_FS_label___from_mount_dir $drive_dir
 
@@ -3292,10 +3293,10 @@ mkfs_backup_drive() {
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		#
 		# See much-earlier long comment for discussion of block size.
-		[[ $opts == *"-b size="* ]] || add_words opts -b size=4096
-		[[ $opts == *"-n size="* ]] || add_words opts -n size=4096
-		[[ $opts == *"-i size="* ]] || add_words opts -i size=512
-		[[ $opts == *maxpct=*    ]] || add_words opts -i maxpct=0
+		[[ $opts == *"-b size="* ]] || opts+=" -b size=4096"
+		[[ $opts == *"-n size="* ]] || opts+=" -n size=4096"
+		[[ $opts == *"-i size="* ]] || opts+=" -i size=512"
+		[[ $opts == *maxpct=*    ]] || opts+=" -i maxpct=0"
 		mount_opts="$XFS_mount_options"
 		type set_FS_external_log &> /dev/null && # optional
 		     set_FS_external_log $FS_label &&
@@ -3317,13 +3318,13 @@ mkfs_backup_drive() {
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
-	   then add_words opts -v
+	   then opts+=" -v"
 		[[ $opts != *-T* ]] && {
-		[[ $opts != *-b* ]]	&& add_words opts -b $block_size
-		[[ $opts != *-i* ]]	&& add_words opts -i $bytes_per_inode
-		[[ $opts != *-I* ]]	&& add_words opts -I 128	; }
-		[[ $opts != *-m* ]]	&& add_words opts -m .1
-		[[ $opts != *extent* ]] && add_words opts $ext4_extent_opt
+		[[ $opts != *-b* ]]	&& opts+=" -b $block_size"
+		[[ $opts != *-i* ]]	&& opts+=" -i $bytes_per_inode"
+		[[ $opts != *-I* ]]	&& opts+=" -I 128"	; }
+		[[ $opts != *-m* ]]	&& opts+=" -m .1"
+		[[ $opts != *extent* ]] && opts+=" $ext4_extent_opt"
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$extN_mount_options"
 		type set_FS_external_log &> /dev/null	&& # optional
@@ -3429,7 +3430,7 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 
 copy_backup_drive() {
 	action_opts=
-	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
+	while [[ ${1-} == -* ]] ; do action_opts+=" $1"; shift; done
 	[[ $# != 0 ]] ||
 	abort "[-f] [-D] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
 	local src=$1 dst_name=$2 dst_device=${3-}
@@ -3635,7 +3636,7 @@ _copy_extN_backup_drive() {
 # finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
 finish_copy_backup_drive() {
 	action_opts=
-	while [[ ${1-} == -* ]] ; do add_words action_opts $1; shift; done
+	while [[ ${1-} == -* ]] ; do action_opts+=" $1"; shift; done
 	local cmd=$(echo "$Usage" |
 		    grep copy-drive | sed "s/^ */$_our_name -d /; s/:.*//")
 	[[ $# == 4 ]] || abort "to see args, run: $cmd"
@@ -3715,8 +3716,8 @@ check-snapshot-hard-links() {
 			break
 		done
 		[[ $found_good_link ]] && partials= && shift && continue
-		[[ $1 == *.partial ]] && add_words partials $1 &&
-		   shift && continue
+		[[ $1 == *.partial  ]] && partials+=" $1" &&
+						       shift && continue
 
 		$IfRun mkdir -p .rm
 		set -- $partials $*
@@ -3851,7 +3852,7 @@ case $action in
    ( ps )
 	ps_opts=
 	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
-	   do add_words ps_opts $1; shift; done
+	   do ps_opts+=" $1"; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts"
 	type_pattern=${1:-*} name_pattern=${2:-*}
@@ -4123,9 +4124,6 @@ case $action in
 	echo $absolute_path
 	exit
 
-	set_FS_label___from_FS_device foo
-	exit
-
 	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
@@ -4183,6 +4181,12 @@ case $action in
 	log test 2
 	exit
 
+	copy_snapshot 1 2 3
+	exit
+
+	set_FS_label___from_FS_device foo
+	exit
+
 	set_FS_block_size___from_path $1
 	echo $FS_block_size
 	exit
@@ -4200,6 +4204,12 @@ case $action in
 	done
 	exit
 
+	set_drive_name ${1:-a}
+	set_drive_dir $drive_name
+	set_FS_label___from_mount_dir $drive_dir
+	echo $FS_label
+	exit
+
 	print_call_stack 1
 	abort test
 
@@ -4209,9 +4219,6 @@ case $action in
 	echoE test2
 	log 0 test3
 	abort test4
-	exit
-
-	copy_snapshot 1 2 3
 	exit
 
 	echoE test
@@ -4225,12 +4232,6 @@ case $action in
 		abort "aborting test"
 	}
 	foo
-	exit
-
-	set_drive_name ${1:-a}
-	set_drive_dir $drive_name
-	set_FS_label___from_mount_dir $drive_dir
-	echo $FS_label
 	exit
 
 	set_drive_dir ${1^}
@@ -4253,19 +4254,10 @@ case $action in
 	_links_error_msg "nnn 'Too many links'"
 	exit
 
-	set_drive_dir F
-	exit
-
 	$Trace
 	set_drive_dir ${1-''}
 	log "test with drive ${1-}"
 	exit
-
-	echo $backup_period
-	customize_config_variables F
-	echo $backup_period
-	backup_period+=1
-	echo $backup_period
 	;;
 
    ( * )
