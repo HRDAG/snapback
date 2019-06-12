@@ -146,7 +146,7 @@ unset arg
 
 [[ $debug_opt ]] && verbose_opt=-v || verbose_opt=
 
-[[ -n $Trace && -n $IfRun ]] && IfRun=:
+[[ $Trace && $debug_opt ]] && IfRun=:
 
 trap '' HUP TERM
 trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
@@ -319,7 +319,7 @@ lock_PID() {
 	rm $status_file
 
 	if [[ $status == 0 ]]
-	   then [[ $IfRun ]] &&
+	   then [[ $debug_opt ]] &&
 		echo "$lockpid_output" | sed "s@$our_PID@<our_PID>@"
 		$xtrace
 		return 0
@@ -473,7 +473,7 @@ signal_job() {
 
 	[[ -s $lock_path ]] || return 1
 	set_sudo_lockpid
-	[[ ! $IfRun ]] &&
+	[[ ! $debug_opt ]] &&
 	$sudo_lockpid    $lock_path >& /dev/null && # missing or stale?
 	$sudo_lockpid -r $lock_path && return 1
 
@@ -971,7 +971,7 @@ _backup_management_of_prune() {
 # arguments can include options to grep (e.g. -F), ending in name of resource
 count_rsyncs_using_resource() {
 
-	[[ $drive_name == Z || $IfRun ]] && return 0
+	[[ $drive_name == Z || $debug_opt ]] && return 0
 	return $(COLUMNS=999 ps l -u root | grep -w '[r]sync' | grep -c "$@")
 }
 
@@ -1020,13 +1020,13 @@ _rm_pruned_snapshots() {
 
 	[[ $# != 0 && ! $is_update ]] &&
 	if (( $log_level >= 2 ))
-	   then [[ $IfRun ]] ||
+	   then [[ $debug_opt ]] ||
 		log "will prune these snapshots: " $*
 	   else $IfRun \
 		log "pruning $# snapshots: will rename to *.rm for deletion"
 	fi
 
-	[[ $is_update && $IfRun ]] && local sudo=sudo || local sudo=
+	[[ $is_update && $debug_opt ]] && local sudo=sudo || local sudo=
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
@@ -1094,7 +1094,7 @@ _rm_pruned_snapshots() {
 
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
-	   then [[ $IfRun ]] ||
+	   then [[ $debug_opt ]] ||
 	        log "deleted these pruned snapshots: $snapshot_basenames"
 	   else $IfRun \
 		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
@@ -1102,7 +1102,7 @@ _rm_pruned_snapshots() {
 
 	local pruned_TS=$drive_dir/$pruned_timestamp
 	[[ $drive_name == Z ||		# regression test?
-	   ( ! $IfRun &&		# ... too slow for real drive
+	   ( ! $debug_opt &&		# ... too slow for real drive
 	     # very slow: only run if exclude.txt changed since our last run
 	     ( ! -e $pruned_TS ||
 		    $pruned_TS -ot $exclude_file ) ) ]] &&
@@ -1553,7 +1553,7 @@ record_rsync_time() {
 	$IfRun ln -s ../../$drive_name/$rsync_time_subdir $link
 
 	local cmd="echo $minutes > $file"
-	if [[ $IfRun ]]
+	if [[ $debug_opt ]]
 	   then echo "$cmd"
 	   else eval "$cmd"
 	fi || return 1
@@ -1620,7 +1620,7 @@ _handle_rsync_results() {
 		[[ ! $is_copy_snapshot ]] && # time used to set backup_period
 		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
-		   ! $is_cron || $IfRun ]] &&
+		   ! $is_cron || $debug_opt ]] &&
 		$IfRun log "created $new_snapshot (at ${priority}er priority)"
 	   else set -- $(bzcat $log 2>/dev/null | # might be empty file
 			 grep -c ': Too many links (31) *$')
@@ -1686,7 +1686,7 @@ run_rsync() {
 
 	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
-	[[ $IfRun ]] ||	     # use 'sleep 9' to wait for rsync to modify mtime
+	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
 	until [[ -e  $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
 	$IfRun touch $partial_dst	# in case we crash; see next 'touch'
 	[[ -f $partial_dst ]] && rm $partial_dst # quick backup??
@@ -1818,10 +1818,10 @@ assert_not_in_cron_jobs() {
 bad_copy() {
 	local msg=$*
 
-	[[ $is_quiet || $is_update || $IfRun ]] ||
+	[[ $is_quiet || $is_update || $debug_opt ]] ||
 	   abort "$msg; use -q to not abort"
 
-	[[ ! $IfRun ]] || echo "copy_snapshot: $msg"
+	[[ ! $debug_opt ]] || echo "copy_snapshot: $msg"
 
 	return 1
 }
@@ -2198,13 +2198,13 @@ run_jobs_in_parallel() {
 	local opts= are_recursing=$false
 	while [[ $1 == -[^r]* ]] ; do opts+=" $1"; shift; done
 	[[ $1 == -r  ]] && { are_recursing=$true; shift; }
-	if [[ $IfRun && $(hostname) == eleanor ]]
+	if [[ $debug_opt && $(hostname) == eleanor ]]
 	   then local excluded_regex='\bG$' # G is too slow
 	   else local excluded_regex=NoThInG
 	fi
 	[[ $1 == all ]] &&
 	set -- $(list_drive_dirs | egrep -v "$excluded_regex")
-	[[  ! $IfRun ]] &&
+	[[ ! $debug_opt ]] &&
 	set -- $(echo $* | tr ' ' '\n' | tac) # ps shows new proc 1st
 
 	case $type in
@@ -2220,7 +2220,7 @@ run_jobs_in_parallel() {
 		exit $?
 	fi
 
-	[[ ! $IfRun && $* != [Zz] && -t 1 ]] && echo -e "
+	[[ ! $debug_opt && $* != [Zz] && -t 1 ]] && echo -e "
 	NOTE: your $action command will run as a separate, disconnected job;
 	      and it might wait for a lock before it can start.  See it with:
 
@@ -2230,7 +2230,7 @@ run_jobs_in_parallel() {
 	$Trace
 	for name
 	    do	_set_drive_name $name && name=$drive_name # cleanup for 'ps'
-		if [[ ! $IfRun && $drive_name != Z ]]
+		if [[ ! $debug_opt && $drive_name != Z ]]
 		   then trap '' HUP
 			# Can't "$function name &", processes share lock files.
 			# Want new process-group so can ps/kill independently.
@@ -2895,7 +2895,7 @@ unmount_drives() {
 	# do this early, since takes a while for processes to die
 	$IfRun kill_all_jobs "$@"
 
-	[[ $IfRun ]] && local output=/dev/stdout || local output=/dev/null
+	[[ $debug_opt ]] && local output=/dev/stdout || local output=/dev/null
 	local name drive_name drive_dir status=0
 	for name
 	    do	set_drive_name $name
@@ -3049,7 +3049,7 @@ dir_sizes() {
 	file=$type-dirblock=$dirblock-inode=$inode-$drive_name$where.$suffix
 	TraceV 1 dirs_to_backup file
 
-	[[ ! $IfRun ]] ||
+	[[ ! $debug_opt ]] ||
 	   abort "use '-T 1' or '-t' instead of '-d' (-d only works with -f)"
 	[[ $UID == 0 ]] || abort "need to use sudo"
 
@@ -3312,7 +3312,7 @@ mkfs_backup_drive() {
 	   else abort "don't support '$cmd $opts', email $coder"
 	fi
 	#
-	if ! [[ $FS_type == ext? && $IfRun && $UID == 0 ]]
+	if ! [[ $FS_type == ext? && $debug_opt && $UID == 0 ]]
 	   then local mkfs_debug_opt=
 	   else local mkfs_debug_opt=-n
 		warn "running mkfs.$FS_type in debug mode ..."
@@ -3465,7 +3465,7 @@ copy_backup_drive() {
 		$dst_device $dst_drive_dir
 	local cmd=$*
 
-	if [[ $IfRun ]]
+	if [[ $debug_opt ]]
 	   then header "$_our_name ${cmd#* }"
 		exec $cmd || abort "$cmd -> $?"
 	fi
@@ -3925,7 +3925,7 @@ case $action in
 
 	set_drive_dir Z
 	cd_ $drive_dir
-	[[ $IfRun ]] ||
+	[[ $debug_opt ]] ||
 	rm -rf *
 
 	hours=00 is_months=$false
@@ -3978,7 +3978,7 @@ case $action in
 	done
 
 	$IfRun rm -rf .mk-Z
-	$IfRun mkdir  .mk-Z	; [[ $IfRun ]] ||
+	$IfRun mkdir  .mk-Z	; [[ $debug_opt ]] ||
 	cp -al *    .mk-Z/
 	;;
 
