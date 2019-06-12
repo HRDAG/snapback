@@ -4,5 +4,6 @@
 # ionice and renice are run for every 'backup' and 'prune'.
 # lockpid is run when kill-*.
 # 'mkfs'/etc run umount and tune2fs; 'dir-sizes' runs find.
-Cmnd_Alias SNAPBACK = /bin/ps, /bin/mkdir, /bin/rmdir # /usr/local/bin/lockpid, /bin/mv, /usr/bin/ionice, /usr/bin/renice
-Defaults!SNAPBACK !syslog, !pam_session
+Cmnd_Alias SNAPBACK = /bin/ps, /bin/mkdir, /bin/rmdir, /usr/local/bin/lockpid # /bin/mv, /usr/bin/ionice, /usr/bin/renice
+# lockpid needs a umask of 02
+Defaults!SNAPBACK !syslog, !pam_session, umask=02

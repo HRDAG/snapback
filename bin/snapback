@@ -2522,8 +2522,8 @@ watch() {
 	   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
 		all_opts+=" -N $names"
 	fi
-	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.1
-	[[ $action != $watch_opt ]] && cleanup_after_updates
+	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.1
+	[[ $watch_opt   ]] || cleanup_after_updates
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
