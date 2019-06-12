@@ -682,7 +682,8 @@ have_cmd \
 _set_drive_name ||		      # configure.sh can replace this function
 # ignore invalid names, fix the case of valid names
 _set_drive_name() {
-	local name=${1#$drive_dir_prefix}
+	local  name=${1#$drive_dir_prefix}
+	name=${name%/$snapshot_pattern*}
 
 	# needed when argument could be a drive_dir not a drive_name
 	[[ $name =~ ^$admin_drive_name_regex$ ]] || return 1
@@ -1187,7 +1188,6 @@ set_prune_pattern() {
 	prune_pattern=$date_prefix_pattern$pattern$date_suffix_pattern{,.*}
 }
 
-# if support period > 24, change load__drive_name2backup_period
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
 declare -A backup_period2minimal_snapshot_pattern=(
@@ -1985,9 +1985,9 @@ copy_snapshot_rsync() {
 
 # -----------------------------------------------------------------------------
 
-declare -A drive_name2backup_period
+declare -A drive_name2do_suspend
 
-load__drive_name2backup_period() {
+load__drive_name2do_suspend() {
 
 	local $custom_config_vars	# for customize_config_variables
 
@@ -1997,43 +1997,55 @@ load__drive_name2backup_period() {
 		suspend_tracing
 		customize_config_variables $name
 		restore_tracing
-		if [[ $name =~ ^$drive_name_regex$ ]]
-		   then local period=$backup_period
-		   else local period=25	# > all numbers in valid_backup_periods
+		if [[ $suspend_prune_when_backup ]]
+		   then local value=1
+		   else local value=0
 		fi
-		drive_name2backup_period[$name]=$period
+		drive_name2do_suspend[$name]=$value
 	done
 }
 
 # ---------------------------------
 
-set_backup_period___from_snapshot() {
-	local snapshot=$1
-
-	local drive=${snapshot%/$snapshot_pattern*}
-	local  name=${drive#$drive_dir_prefix}
-	backup_period=${drive_name2backup_period[$name]}
-	[[ $backup_period ]] || abort "$FUNCNAME: $snapshot is unknown"
-}
-
-# ---------------------------------
-
-# the "fastest" snapshot is on the drive: 1. not running a backup; 2. hosting
-# fewest rsync commands; else 3. ignored by cron (else largest backup_period).
+# the "fastest" snapshot is on drive that's: 1. not suspendable; else 2. not
+# running a backup; else 3. not being pruned; else 4. hosting the smallest
+# number of rsync commands.
 fastest_snapshots() {
 
-	local      backup_period snapshot
-	declare -a backup_period2snapshots
-	for snapshot
-	    do	[[ -d $snapshot ]] || continue # pruned-away, or drive ejected?
-		set_backup_period___from_snapshot $snapshot
-		backup_period2snapshots[$backup_period]+=" $snapshot"
-	done
+	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
 
-	set -- $(echo ${!backup_period2snapshots[*]} | tr ' ' '\n' |sort -n -r)
-	for backup_period
-	    do	echo ${backup_period2snapshots[$backup_period]}
-	done
+	local snapshot lock_path
+	for snapshot
+	    do	_set_drive_name $snapshot
+		local do_suspend=${drive_name2do_suspend[$drive_name]}
+
+		set_lock_path prune
+		if lockpid $lock_path &> /dev/null
+		   then lockpid --release $lock_path
+			local doing_prune=0
+		   else local doing_prune=1
+		fi
+
+		local doing_backup=1	# assume doing a backup (or copy)
+		set_lock_path backup
+		if lockpid $lock_path &> /dev/null
+		   then lockpid --release $lock_path
+			set_lock_path copy
+			if lockpid $lock_path &> /dev/null
+			   then lockpid --release $lock_path
+				doing_backup=0
+			fi
+		fi
+
+		drive_dir=$drive_dir_prefix$drive_name
+		local rsync_count=$(COLUMNS=999 ps l -u root |
+					   grep -c "\brsync .* $drive_dir/")
+
+		local ss=$snapshot
+		echo "$do_suspend,$doing_backup,$doing_prune,$rsync_count,$ss"
+	done | sort -t, -n |		# numeric sort
+	# cat; return			# uncomment to debug
+	cut -d, -f5
 }
 
 # --------------------------------------------
@@ -2130,7 +2142,6 @@ update_drive() {
 
 	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
-	load__drive_name2backup_period
 
 	local srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
 	local date_time prev_date_time=
@@ -2163,6 +2174,7 @@ update_drive() {
 
 	prune_drive -u $drive_name	# just prunes empty .partial dirs
 
+	load__drive_name2do_suspend
 	local args dst_snapshot=
 	while read args
 	    do	set -- $args
@@ -2170,7 +2182,7 @@ update_drive() {
 		[[ -d  $dst_snapshot ]] && continue # undeleted?
 		set -- $dst_snapshot*
 		[[ -d  $1 ]] || continue # was it pruned away?
-		set -- $(fastest_snapshots ${args%$dst_snapshot})
+		set -- $(fastest_snapshots ${args%$dst_snapshot}) # pass srcs
 		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
 	done < $srcs_dst_file
 	rm     $srcs_dst_file
@@ -4137,6 +4149,10 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	load__drive_name2do_suspend
+	fastest_snapshots /backup/?/2016-08-01,00
+	exit
+
 	set_absolute_path /dev/mapper/backup_C
 	echo $absolute_path
 	exit
