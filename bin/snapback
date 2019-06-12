@@ -2456,6 +2456,36 @@ setup_snapshot_stats() {
 
 # -----------------------------------------------------------------------------
 
+run_df() {
+	local drive_dirs=${*:-$(list_drive_dirs -a)}
+
+	echo
+	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
+	df --block-size=G --output=$df_fields $drive_dirs
+}
+
+# --------------------------------------------
+
+run_lsblk() {
+	local drive_dirs=${*:-$(list_drive_dirs -a)}
+
+	type lsblk &> /dev/null || return 1
+
+	local dir devices=
+	for dir in $drive_dirs
+	    do	set_FS_device___from_path $dir &&
+		devices+=" $FS_device"
+	done
+
+	echo
+	# fields that don't work: rm,model
+	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
+	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
+	lsblk --output=$lsblk_fields			$devices
+}
+
+# -----------------------------------------------------------------------------
+
 trim() {
 
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
@@ -2752,32 +2782,18 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	(( $rows >= $min_df_rows )) || [[ $show_all ]] && {
-	echo
-	df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
-	df --block-size=G --output=$df_fields $drive_dirs
-	let rows-=$num_drives+2
-	}
+	if [[ $show_all ]]
+	   then filesystem_geometry $drive_dirs
+	   else	(( $rows >= $min_df_rows )) &&
+		run_df $drive_dirs &&
+		let rows-=$num_drives+2
 
-	# --------------------------------------------
+		# --------------------------------------------
 
-	(( $rows >= $min_df_rows )) || [[ $show_all ]] && {
-	devices=
-	for dir in $drive_dirs
-	    do	set_FS_device___from_path $dir &&
-		devices+=" $FS_device"
-	done
-
-	type lsblk &>/dev/null && [[ ! $cp_rsync_cmds ]] && {
-	echo
-	# fields that don't work: rm,model
-	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
-	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
-	lsblk --output=$lsblk_fields			$devices
-	let rows-=$num_drives+2
-	}
-
-	}
+		(( $rows >= $min_df_rows )) && [[ ! $cp_rsync_cmds ]] &&
+		run_lsblk $drive_dirs &&
+		let rows-=$num_drives+2
+	fi
 
 	# ------------------------------------------------------------------
 
@@ -3110,6 +3126,10 @@ dir_sizes() {
 filesystem_geometry() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 	local drive_dirs=$*
+
+	run_df    $drive_dirs
+	run_lsblk $drive_dirs
+	echo
 
 	local dash="------" dsh="---------------"
 	local dash="======" dsh="==============="
