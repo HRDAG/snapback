@@ -27,13 +27,14 @@ Why snapback not rsnapshot or dirvish or rsync-snapshot:
 Why write such a serious program in bash:
 
    Language efficiency is irrelevant, all the time is spent in 'rsync' & 'rm.
-   It has needed features: lists, regular arrays, associative arrages, regex.
+   It has needed features: lists, regular arrays, associative arrays, regex.
    Simple support of background processes with control of session groups.
    Config file holds shell commands (eg functions, arrays, maps, computation).
    Automagically maintain list of config variables:
       easy/reliable validation that all config variables were set;
-      per-variable customization: associative array maps drive name to value.
+      per-variable customization (associative array maps drive name to value).
    Supports simulation, which allows trivial creation of fast regression tests.
    Supports tracing of all commands, for deep debugging, or learning new code.
+   Supports sophisticated logging, printing call stack on error.
    Can start as a simple script, and evolve into a reliable, featureful one
       (with regression-testing after each change).
