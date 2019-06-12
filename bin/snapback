@@ -904,27 +904,24 @@ is_drive_usage_too_high() {
 
 setup_copy_priority() {
 
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_copy_CPU_priority $BASHPID &> /dev/null
-	$IfRun $sudo $cmd_to_set_copy_IO_priority  $BASHPID &> /dev/null
+	$IfRun $cmd_to_set_copy_CPU_priority $BASHPID > /dev/null
+	$IfRun $cmd_to_set_copy_IO_priority  $BASHPID > /dev/null
 }
 
 # --------------
 
 setup_lower_priority() {
 
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_lower_CPU_priority $BASHPID &> /dev/null
-	$IfRun $sudo $cmd_to_set_lower_IO_priority  $BASHPID &> /dev/null
+	$IfRun $cmd_to_set_lower_CPU_priority $BASHPID > /dev/null
+	$IfRun $cmd_to_set_lower_IO_priority  $BASHPID > /dev/null
 }
 
 # --------------
 
 setup_higher_priority() {
 
-	[[ $is_regression_test ]] && local sudo= || local sudo=sudo
-	$IfRun $sudo $cmd_to_set_higher_CPU_priority $BASHPID &> /dev/null
-	$IfRun $sudo $cmd_to_set_higher_IO_priority  $BASHPID &> /dev/null
+	$IfRun $cmd_to_set_higher_CPU_priority $BASHPID > /dev/null
+	$IfRun $cmd_to_set_higher_IO_priority  $BASHPID > /dev/null
 }
 
 # -----------------------
@@ -2128,7 +2125,7 @@ cleanup_after_updates() {
 	local drive_dir drive_name
 	for drive_dir in $(list_drive_dirs -a)
 	    do	_set_drive_name $drive_dir
-		set_lock_path copy $drive_name # update could be running
+		set_lock_path copy	# update could be running
 		$sudo_lockpid    $lock_path &> /dev/null || continue
 		$IfRun remove_empty_partial_snapshots $drive_dir
 		$sudo_lockpid -r $lock_path
