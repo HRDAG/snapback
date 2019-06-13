@@ -2344,18 +2344,18 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
 	for dir in $all_drive_dirs
-	    do	set_drive_name $dir
+	    do	_set_drive_name $dir
 		local name=$drive_name
-		local  dir=$drive_log_dir/$rsync_time_subdir
+		local  dir=$log_dir/$name/$rsync_time_subdir
 		set -- $dir/$snapshot_pattern.txt
 		[[ -f $1 ]] || shift
 		if [[ $# != 0 ]]
-		   then local sum=$(cat $* | tr '\n' '+' | sed 's/+$//')
-			declare -i total=$sum
+		   then local sum=$(cat $* | tr '\n' '+')
+			declare -i total=${sum%+}
 			hour_avg=$(echo $total $# |
 				   awk '{ printf "%.1f", $1/($2*60) }')
-			hour_max=$(sort -n $* | tail -n1 |
-				   awk '{ printf "%.1f", $1/60 }')
+			hour_max=$(sort -n -r $* |
+				   awk '{ printf "%.1f", $1/60; exit }')
 		   else hour_avg= hour_max=
 		fi
 		hour_avgs+=" $name=$hour_avg"
