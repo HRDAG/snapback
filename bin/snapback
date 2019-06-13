@@ -2399,7 +2399,7 @@ _recalculate_stats_vars() {
 
 	local cwd=$PWD nums= oldies= newies=
 	for dir in $all_drive_dirs
-	    do	set_drive_name $dir
+	    do	_set_drive_name $dir
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
 		ending=${type2date_suffix_pattern[$ignored_date_ending_type]}
@@ -2437,11 +2437,13 @@ readonly watch_cache_dir=$log_dir/stats/watch
 readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
 
 setup_snapshot_stats() {
-	local suffix=$1 ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
+	local suffix=$1
+	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
 
-	[[ $suffix ]] && local suffix_name=${suffix/\*/STAR} || local suffix_name=NONE
-	suffix_name=${suffix_name#.}
-	local cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type.txt"
+	[[ $suffix ]] &&
+	   local suffix_name=${suffix/\*/STAR} || local suffix_name=NONE
+	suffix_name=${suffix_name#.} ; local \
+	 cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type.txt"
 	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
 
 	[[ $suffix == .rm ]] && suffix=*$suffix
