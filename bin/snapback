@@ -364,8 +364,8 @@ lock() {
 	[[ ! $prev_lock_path ]] ||
 	   abort "hold $(basename $prev_lock_path), can't grab $type lock file"
 
-	local		    lock_msg="holds '$type' lock for $drive_name"
-	local prunes_backup_lock_msg="${lock_msg/$type/backup}, so can't prune"
+	local		 lock_msg="holds '$type' lock for $drive_name"
+	local non_backup_lock_msg="${lock_msg/$type/backup}, so can't $type"
 	[[ $type == prune ]] && lock_msg+=" (could be copy or update)"
 
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
@@ -385,16 +385,16 @@ lock() {
 	fi
 
 	while true
-	    do	if [[ $type == prune && ! $is_multi_writer ]]
-		   then # can't grab prune lock when backup is running
-			lock_PID $wait_opt backup "$prunes_backup_lock_msg" &&
-			lock_PID     -r    backup "$prunes_backup_lock_msg" ||
+	    do	if ! [[ $type == backup || $is_multi_writer ]]
+		   then # can't grab lock when backup is running
+			lock_PID $wait_opt backup "$non_backup_lock_msg" &&
+			lock_PID     -r    backup "$non_backup_lock_msg" ||
 			    { $xtrace; return 1; } # not waiting, or expired
 			if [[ $do_wait ]]
-			   then if lock_PID -q prune "$lock_msg"
+			   then if lock_PID -q $type "$lock_msg"
 				   then break	 # success!
-				   else lock_PID $wait_opt prune "$lock_msg" &&
-					lock_PID     -r    prune "$lock_msg" ||
+				   else lock_PID $wait_opt $type "$lock_msg" &&
+					lock_PID     -r    $type "$lock_msg" ||
 					   { $xtrace; return 1; } # expired
 					continue # make sure no backup running
 				fi
