@@ -443,8 +443,12 @@ set_lock_PGIDs() {
 	local type=$1
 
 	lock_PGIDs=
+
 	eval "set -- $lock_dir/$type-${names_pat:-*}.pid"
-	[[ -e $1 ]] || return 1
+	local lock locks=
+	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
+	set -- $locks
+	[[ $# != 0 ]] || return 1
 
 	[[ $type == prune && ! ( $debug_opt || $show_all ) ]] &&
 	set -- $(echo $* | tr ' ' '\n' | fgrep -v /$type-Z.)
@@ -2025,6 +2029,7 @@ copy_snapshot() {
 copy_snapshot_rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
+	[[ ! $suspend_prune_when_backup ]] ||
 	# grab prune lock, so backup job can suspend us
 	lock -w prune $dst_snapshot || exit 1
 
@@ -2039,6 +2044,7 @@ copy_snapshot_rsync() {
 	run_rsync -c  $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
+	[[ ! $suspend_prune_when_backup ]] ||
 	unlock -s prune
 }
 
@@ -2611,6 +2617,7 @@ watch() {
 	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
+	[[ ${1-} != -* ]] ||abort "$FUNCNAME: unknown option $1, order matters"
 	[[ $is_cron ]] && cron_opt=-C
 
 	local all_opts="$ps_opt $cron_opt"
@@ -2618,7 +2625,7 @@ watch() {
 	   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
 		all_opts+=" -N $names"
 	fi
-	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.1
+	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.5 # >= 0.5 best for -C w/sudo access
 	[[ $watch_opt   ]] || cleanup_after_updates
 	[[ $action == w ]] ||
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
@@ -2717,19 +2724,17 @@ watch() {
 
 	declare -i num_drives=$(set -- $drive_dirs; echo $#)
 
-	bkp_rsync_cmds=
-	set_lock_PGIDs backup &&
+	set_lock_PGIDs backup && {
 	bkp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
-			   grep "[0-9]   rsync" | sed 's/   rsync/ rsync/') &&
-	declare -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ||
-	declare -i num_bkp_rsyncs=0
+			   grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+	declare -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
+	declare -i num_bkp_rsyncs=0 ;	   bkp_rsync_cmds= ; }
 
 	set_lock_PGIDs prune &&
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
 			trim_prune) || prune_cmds=
 
-	#
 	# both update-drive and copy-snapshot use the copy lock
 	set_lock_PGIDs copy &&
 	copy_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
@@ -2886,7 +2891,7 @@ watch() {
 	prune_cmds=$(echo "$prune_cmds" |fgrep -v -w -e xargs -e tr $fgrep_opt)
 
 	[[ $prune_cmds || $show_all ]] && {
-	header "cron's run-prune"
+	header "run-prune"
 	echo
 	}
 
