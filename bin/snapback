@@ -520,6 +520,34 @@ kill_all_jobs() {
 	done
 }
 
+# -----------------------------------------------------------------------------
+
+ps_locks() {
+	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
+	local ps_opts=
+	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
+	   do ps_opts+=" $1"; shift; done
+	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
+	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
+	local type_pattern=${1:-*} name_pattern=${2:-${drive_name:-*}}
+
+	[[ ${is_drive_name_upper_cased-} ]] &&
+	   name_pattern=${name_pattern^^}
+
+	[[ $do_rm ]] && rm_stale_locks
+	cd_ $lock_dir
+	local status=1			# assume all locks are missing/stale
+	eval "set -- $type_pattern*-$name_pattern.pid"
+	for lock
+	    do	header $PWD/$lock
+		[[ -s $lock ]] || { echo "no such lock"; continue; }
+		set -- $(< $lock)
+		ps $ps_opts -$1 || ps ${no_header_opt-} $ps_opts $1
+		status=$?
+	done
+	return $status
+}
+
 ##############################################################################
 # miscellaneous
 ##############################################################################
@@ -3851,6 +3879,9 @@ run_debug_cmds() {
 regression_test() {
 	local tests=${*:-b c z p u}
 
+	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
+	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
+
 	# --------------------------------------------
 
 	is_arg1_in_arg2 b $tests && {
@@ -3895,6 +3926,8 @@ regression_test() {
 	   abort "$config_file needs update_test_src & update_test_dst for 'u'"
 	show_test_header update -s $src $dst
 
+	_set_drive_name $dst
+	ps_locks copy > /dev/null &&
 	$our_path kill-copy $dst &> /dev/null &&
 	    warn "killed update-drive (or copy) to $dst"
 
@@ -4027,27 +4060,7 @@ case $action in
 	;;
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
    ( ps )
-	ps_opts=
-	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
-	   do ps_opts+=" $1"; shift; done
-	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
-	[[ $is_darwin ]] || ps_opts="-H $ps_opts"
-	type_pattern=${1:-*} name_pattern=${2:-*}
-	[[ ${is_drive_name_upper_cased-$is_drive_name_capitalized} ]] &&
-	   name_pattern=${name_pattern^^}
-
-	rm_stale_locks
-	cd_ $lock_dir
-	eval "set -- $type_pattern*-$name_pattern.pid"
-	status=1			# assume all locks are missing/stale
-	for lock
-	    do	header $lock
-		[[ -e  $lock ]] || { echo "no such lock"; continue; }
-		set -- $(< $lock)
-		ps $ps_opts -$1 || ps h $ps_opts $1
-		status=0
-	done
-	exit $status
+	ps_locks "$@"
 	;;
 
    ###########################################################################
