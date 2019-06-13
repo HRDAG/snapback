@@ -347,7 +347,7 @@ declare -A  lock_type2locked_resource
 # Usage: lock [-w] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
-#    Can't grab 'prune' lock if 'backup' lock held and ! is_multi_writer
+#    Can't grab non-backup lock if 'backup' lock held and ! is_multi_writer
 lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
