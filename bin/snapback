@@ -348,7 +348,6 @@ declare -A  lock_type2locked_resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
 #    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
-# For sophisticated control of this function, see start of fastest_snapshots()
 lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -2043,29 +2042,21 @@ load__drive_name2do_suspend() {
 fastest_snapshots() {
 
 	local drive_name drive_dir	       # don't change caller's values
-	local suspend_prune_when_backup=$false # don't need fancy locking ...
-	local IfRun=			       # ... but want real locking
-	local is_cron=$true		       # lock_PID not record busy locks
-	declare -A _lock_type2lock_path	       # ignore our caller's locks
 
 	local snapshot
 	for snapshot
 	    do	_set_drive_name $snapshot
 		local do_suspend=${drive_name2do_suspend[$drive_name]}
 
-		if lock prune > /dev/null
-		   then unlock prune
-			local doing_prune=0
-		   else local doing_prune=1
+		if ps_locks -R backup > /dev/null ||
+		   ps_locks -R copy   > /dev/null
+		   then doing_backup=1
+		   else doing_backup=0
 		fi
 
-		local doing_backup=1	# assume doing a backup (or copy)
-		if lock backup > /dev/null
-		   then unlock backup
-			if lock copy > /dev/null
-			   then unlock copy
-				doing_backup=0
-			fi
+		if ps_locks -R prune > /dev/null
+		   then local doing_prune=1
+		   else local doing_prune=0
 		fi
 
 		drive_dir=$drive_dir_prefix$drive_name
