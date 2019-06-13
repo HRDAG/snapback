@@ -653,11 +653,54 @@ set_oldest_snapshot() {
 # Setup variables for working with a specific backup drive.
 ##############################################################################-
 
-drive_log_dir=
-
 admin_group=
 
+set_admin_group() {
+
+	suspend_tracing
+	local user
+	for user in ${SUDO_USER-} ${USER-} ${LOGNAME-} ${HOME##*/} ${MAIL##*/}
+	    do	[[ $user != root ]] && break
+	done
+	local users_groups=$(id -G -n $user)
+
+	local group
+	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
+	    do	is_arg1_in_arg2 $group $users_groups && break
+	done
+	[[ $group != NoNe ]] && admin_group=$group
+	restore_tracing group
+}
+
+# ----------------------
+
+_create_log_dirs() {
+
+	set_admin_group
+	local group=$admin_group
+
+	[[ -d $log_dir ]] || {
+	sudo mkdir -p --mode=1777 $lock_dir
+	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
+	sudo chgrp $group  $log_dir $lock_dir &&
+	sudo chmod g+w,g+s $log_dir $lock_dir
+	}
+	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
+
+	[[ $group ]] && group=:$group
+	if [[ ! -d $drive_log_dir ]]
+	   then sudo mkdir -p -m g+w,o-w $drive_log_dir
+		[[ $is_regression_test ]] &&
+		sudo touch $file_for_logging &&
+		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
+	fi
+	[[ -d $drive_log_dir ]] || abort "need sudo privs to setup new drive"
+}
+
+# -----------------------------------
+
 is_regression_test=$false
+drive_log_dir=
 
 readonly none=NoNe
 _last_fully_initialized_drive_name=
@@ -672,44 +715,15 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	   else return 0		# skip very-long, duplicative setup
 	fi
 
+	[[ $drive_name == Z ]] && is_regression_test=$true
+
 	if [[ $drive_name ]]
 	   then drive_log_dir=$log_dir/$drive_name
 	   else drive_log_dir=$log_dir
 	fi
 	TraceV 3 drive_log_dir
 	file_for_logging=$drive_log_dir/messages.log
-
-	suspend_tracing
-	local user
-	for user in ${SUDO_USER-} ${USER-} ${LOGNAME-} ${HOME##*/} ${MAIL##*/}
-	    do	[[ $user != root ]] && break
-	done
-	local users_groups=$(id -G -n $user)
-	local group
-	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
-	    do	is_arg1_in_arg2 $group $users_groups && break
-	done
-	[[ $group == NoNe ]] && group= || admin_group=$group
-	restore_tracing group
-
-	[[ -d $log_dir ]] || {
-	sudo mkdir -p --mode=1777 $lock_dir
-	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
-	sudo chgrp $group  $log_dir $lock_dir &&
-	sudo chmod g+w,g+s $log_dir $lock_dir
-	}
-	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
-
-	[[ $drive_name == Z ]] && is_regression_test=$true
-
-	[[ $group ]] && group=:$group
-	if [[ ! -d $drive_log_dir ]]
-	   then sudo mkdir -p -m g+w,o-w $drive_log_dir
-		[[ $is_regression_test ]] &&
-		sudo touch $file_for_logging &&
-		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
-	fi
-	[[ -d $drive_log_dir ]] || abort "need sudo privs to setup new drive"
+	[[ -d $drive_log_dir ]] || _create_log_dirs
 
 	suspend_tracing
 	customize_and_validate_configuration_variables $drive_name
@@ -812,7 +826,8 @@ set_drive_dir() {
 	_set_drive_dir
 
 	if [[ $is_regression_test && ! -d $drive_dir ]]
-	   then	[[ $admin_group ]] && local group=:$admin_group || local group=
+	   then	set_admin_group
+		[[ $admin_group ]] && local group=:$admin_group || local group=
 		sudo mkdir $drive_dir &&
 		sudo chmod g+s,g+w $drive_dir &&
 		sudo chown $LOGNAME$group $drive_dir ||
