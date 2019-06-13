@@ -356,9 +356,9 @@ lock() {
 	[[ $# == [12] ]] || abort "$FUNCNAME [-w] type resource"
 	local type=$1 resource=${2:-$drive_name}
 
-	local drive_name
+	local drive_name drive_dir	# don't mess up caller's values
 	_set_drive_name $resource
-	local drive_dir=$drive_dir_prefix$drive_name
+	_set_drive_dir
 
 	local prev_lock_path=${_lock_type2lock_path[$type]-}
 	[[ ! $prev_lock_path ]] ||
@@ -715,7 +715,6 @@ _set_drive_name() {
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_pattern*}
 
-	# needed when argument could be a drive_dir not a drive_name
 	[[ $name =~ ^$admin_drive_name_regex$ ]] || return 1
 
 	  if [[ $is_drive_name_upper_cased ]]
@@ -763,6 +762,12 @@ set_drive_name() {
 
 drive_dir=				# global, just in case
 
+_set_drive_dir() {
+	local name=${1:-$drive_name}
+
+	drive_dir=$drive_dir_prefix$name
+}
+
 is_OK_if_drive_dir_unmounted=$false
 
 set_drive_dir() {
@@ -771,7 +776,7 @@ set_drive_dir() {
 	[[ $drive_name != */* ]] ||
 	  abort "'/' in drive name not (yet)supported, add to drive_dir_prefix"
 
-	drive_dir=$drive_dir_prefix$drive_name
+	_set_drive_dir
 
 	if [[ $is_regression_test && ! -d $drive_dir ]]
 	   then	[[ $admin_group ]] && local group=:$admin_group || local group=
@@ -1884,9 +1889,9 @@ dst_backup_type=
 
 matches_dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local drive_dir=$1
+	local drive_dir=$1 drive_name
 
-	local drive_name=${drive_dir#$drive_dir_prefix}
+	_set_drive_name $drive_dir
 	set_backup_type $drive_name
 	[[ $backup_type == $dst_backup_type ]]
 	$xtrace
@@ -2020,17 +2025,17 @@ load__drive_name2do_suspend() {
 
 	local $custom_config_vars	# for customize_config_variables
 
-	local drive
+	local drive drive_name
 	for drive in $(list_drive_dirs -a)
-	    do	local name=${drive#$drive_dir_prefix}
+	    do	_set_drive_name $drive
 		suspend_tracing
-		customize_config_variables $name
+		customize_config_variables $drive_name
 		restore_tracing
 		if [[ $suspend_prune_when_backup ]]
-		   then local value=1
-		   else local value=0
+		   then local do_suspend=1
+		   else local do_suspend=0
 		fi
-		drive_name2do_suspend[$name]=$value
+		drive_name2do_suspend[$drive_name]=$do_suspend
 	done
 }
 
@@ -2059,7 +2064,7 @@ fastest_snapshots() {
 		   else local doing_prune=0
 		fi
 
-		drive_dir=$drive_dir_prefix$drive_name
+		_set_drive_dir
 		count_rsyncs_using_resource " $drive_dir/"
 		local rsync_count=$?
 
@@ -2600,7 +2605,8 @@ watch() {
 	   then local name_list=
 		for name in ${names//,/ }
 		    do	_set_drive_name $name
-			drive_dirs+=" $drive_dir_prefix$drive_name"
+			_set_drive_dir
+			drive_dirs+=" $drive_dir"
 			name_list=$name_list,$drive_name
 		done
 		names=${name_list#,}
@@ -3079,7 +3085,7 @@ dir_sizes() {
 
 	[[ $file ]] || {
 
-	drive_dir=$drive_dir_prefix$drive_name
+	_set_drive_dir
 	if [[ -d $drive_dir/latest ]]
 	   then excludes=   dirs_to_backup=$drive_dir/latest/.  where=
 	   else excludes="--exclude=$drive_dir_prefix*
@@ -3161,7 +3167,7 @@ dir_sizes() {
 
 filesystem_geometry() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
-	local drive_dirs=$*
+	local drive_dirs=${*:-$(list_drive_dirs $all_opt)}
 
 	run_df    $drive_dirs
 	run_lsblk $drive_dirs
@@ -3175,10 +3181,10 @@ filesystem_geometry() {
       printf "$f" Mount	FS-type	sector	inode	block	block  "unit  "	"$wdth"
       printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
-	local drive_dir
-	for drive_dir in ${drive_dirs:-$(list_drive_dirs $all_opt)}
+	local drive_name drive_dir
+	for drive_dir in $drive_dirs
 	    do	set_FS_type___from_path $drive_dir
-		local  name=${drive_dir#$drive_dir_prefix}
+		_set_drive_name $drive_dir
 		set_FS_device___from_path $drive_dir
 		[[ -L $FS_device ]] &&
 		set_absolute_path $FS_device && FS_device=$absolute_path
@@ -3209,7 +3215,7 @@ filesystem_geometry() {
 			;;
 		    (  *   )
 			printf "%-15s   %s is unknown FS type\n" \
-				$name	$FS_type
+				$drive_name $FS_type
 			continue
 			;;
 		esac
@@ -3261,8 +3267,8 @@ mkfs_backup_drive() {
 	   then set_drive_name $name
 	   else set_drive_name $device
 	fi
-	local name=$drive_name
-	local drive_dir=$drive_dir_prefix$drive_name
+	local name=$drive_name drive_dir
+	_set_drive_dir
 	local _mkfs_cmd_opts=$mkfs_cmd_opts
 	_mkfs_cmd_opts+=" $mkfs_opts"
 
@@ -3472,8 +3478,8 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 	fi
 
 	FS_device=$device
-	set_drive_name $name
-	drive_dir=$drive_dir_prefix$drive_name
+	_set_drive_name $name
+	_set_drive_dir
 	set_FS_label___from_mount_dir $drive_dir
 
 	TraceV 1 device name drive_name FS_device drive_dir FS_label
@@ -3804,15 +3810,15 @@ is_test_cache_stale() {
 		return 0
 	done
 
-	local drive
+	local drive drive_name drive_dir
 	if [[ $is_debug_drive ]]
 	   then drives=${drive_dir_prefix}Z
 	elif [[ $drives ]]
 	   then _drives=
 		for drive in ${drives//,/ }
 		    do	_set_drive_name $drive
-			 drive=$drive_dir_prefix/$drive_name
-			_drives+=" $drive"
+			_set_drive_dir
+			_drives+=" $drive_dir"
 		done
 		drives=${_drives# }
 	   else drives=$(snapback list-drives -a)
@@ -4262,11 +4268,9 @@ case $action in
    # for "snapcrypt close": find drive with max # snapshots since last mounted
    ( max*drive | max*backup* | md | mb ) undo_action_abbrev max-drive
 	if [[ $# == 1 ]]
-	   then set_drive_name $1 2>/dev/null
-		if [[ ${drive_name-} ]]
-		   then echo "$drive_dir_prefix$drive_name"
-			exit 0
-		fi
+	   then  _set_drive_name $1 &&
+		 _set_drive_dir &&
+		echo $drive_dir && exit 0
 	fi
 
 	set -- ${*:-$(list_drive_dirs)}	# for debugging: | tac
@@ -4295,8 +4299,9 @@ case $action in
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
-	_set_drive_name $1
-	echo $drive_dir_prefix$drive_name
+	 _set_drive_name $1 || abort "$1 is not a valid backup drive name"
+	 _set_drive_dir
+	echo $drive_dir
 	;;
 
    # -------------------------------------------------------------
