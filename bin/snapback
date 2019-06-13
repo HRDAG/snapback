@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=17			# has to match version= in configure.sh.sample
+version=18			# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -347,7 +347,7 @@ declare -A  lock_type2locked_resource
 # Usage: lock [-w] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
-#    Can't grab 'prune' lock if 'backup' lock held and should suspend prune.
+#    Can't grab 'prune' lock if 'backup' lock held and ! is_multi_writer
 lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -385,7 +385,7 @@ lock() {
 	fi
 
 	while true
-	    do	if [[ $type == prune && $suspend_prune_when_backup ]]
+	    do	if [[ $type == prune && ! $is_multi_writer ]]
 		   then # can't grab prune lock when backup is running
 			lock_PID $wait_opt backup "$prunes_backup_lock_msg" &&
 			lock_PID     -r    backup "$prunes_backup_lock_msg" ||
@@ -1035,13 +1035,13 @@ _backup_management_of_prune() {
 
 	[[ $is_cron ]] || return
 
-	if [[ ( ! $suspend_prune_when_backup && $state ==  pre-rsync ) ||
-	      (   $suspend_prune_when_backup && $state == post-rsync ) ]]
+	if [[ (   $is_multi_writer && $state ==  pre-rsync ) ||
+	      ( ! $is_multi_writer && $state == post-rsync ) ]]
 	   then $IfRun run_jobs_in_parallel prune $drive_dir
 		return
 	fi
 
-	[[ $suspend_prune_when_backup && $state == pre-rsync ]] &&
+	[[ ! $is_multi_writer && $state == pre-rsync ]] &&
 	$IfRun signal_job SIGSTOP prune $drive_name
 }
 
@@ -1428,7 +1428,7 @@ prune_drive() {
 	[[ ! $is_update ]] && {		# for update, we just rmdir empty dirs
 
 	# if use suspend, priority is "which job should run" not renice/ionice
-	if is_drive_usage_too_high && [[ $suspend_prune_when_backup ]]
+	if is_drive_usage_too_high && [[ ! $is_multi_writer ]]
 	   then local lock_opt=	  # desparately need pruning, borrow copy lock
 	   else local lock_opt=
 	fi
@@ -2048,7 +2048,7 @@ copy_snapshot() {
 copy_snapshot_rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	[[ ! $suspend_prune_when_backup ]] ||
+	[[ $is_multi_writer ]] ||
 	# grab prune lock, so backup job can suspend us
 	lock -w prune $dst_snapshot || exit 1
 
@@ -2063,7 +2063,7 @@ copy_snapshot_rsync() {
 	run_rsync -c  $src_snapshot/. $dst_snapshot
 	cd_ $cwd
 
-	[[ ! $suspend_prune_when_backup ]] ||
+	[[ $is_multi_writer ]] ||
 	unlock -s prune
 }
 
@@ -2081,9 +2081,9 @@ load__drive_name2do_suspend() {
 		suspend_tracing
 		customize_config_variables $drive_name
 		restore_tracing
-		if [[ $suspend_prune_when_backup ]]
-		   then local do_suspend=1
-		   else local do_suspend=0
+		if [[ $is_multi_writer ]]
+		   then local do_suspend=0
+		   else local do_suspend=1
 		fi
 		drive_name2do_suspend[$drive_name]=$do_suspend
 	done
