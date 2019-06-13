@@ -436,6 +436,31 @@ unlock() {
 # enumerating/showing/signaling/killing process groups
 ##############################################################################
 
+lock_PGIDs=
+copy_lock_msg=
+
+set_lock_PGIDs() {
+	local type=$1
+
+	lock_PGIDs=
+	eval "set -- $lock_dir/$type-${names_pat:-*}.pid"
+	[[ -e $1 ]] || return 1
+
+	[[ $type == prune && ! ( $debug_opt || $show_all ) ]] &&
+	set -- $(echo $* | tr ' ' '\n' | fgrep -v /$type-Z.)
+
+	set -- $(cat  $* 2>/dev/null)
+	[[ $# != 0 ]] || return 1
+
+	[[ $type == copy ]] && set_locks prune $* &&
+	    copy_lock_msg="; PRUNE LOCKS: ${locks//prune-/}"
+
+	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
+	lock_PGIDs=$*
+}
+
+# -----------------------------------------------------------------------------
+
 process_group_PIDs() {
 
 	local PGID
@@ -2622,13 +2647,15 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	set -- $(stty -a | head -n1)
+	set -f; set -- $(stty -a); set +f
 	declare -i rows=${5%;} cols=${7%;}
 	export COLUMNS=$cols		# for 'ps'
 
 	#
-	# figure out how many columns are needed
+	# figure out how many columns are needed for cron (if needed
 	#
+
+	[[ $cron_opt ]] && {
 
 	# since the contents of $() are run in subshell, have to echo results
 	set -- $(
@@ -2643,7 +2670,8 @@ watch() {
 		(( $max_device_len < $device_len )) &&		  # also header
 		    max_device_len=$device_len	is_new_max=$true
 		[[ $is_new_max ]] && echo $max_device_len $max_mount_len
-	done | tail -n1
+		exit
+	done
 	)
 	declare -i max_device_len=$1 max_mount_len=$2
 
@@ -2660,6 +2688,8 @@ watch() {
 		(( ps_wchan_width > max_ps_wchan_width )) &&
 		   ps_wchan_width=max_ps_wchan_width
 	fi
+
+	}
 
 	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
@@ -2685,39 +2715,28 @@ watch() {
 	# figure out how many rows are needed
 	#
 
-	eval \
-	"set -- \$(cat $lock_dir/backup-${names_pat:-*}.pid 2> /dev/null)"
-	[[ $# == 0 ]] && rsync_cmds= ||
-	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
-	rsync_cmds=$(COLUMNS=999 ps_ -H ww  $* |
-			grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
-	declare -i num_rsyncs=$(echo "$rsync_cmds" | wc -l)
 	declare -i num_drives=$(set -- $drive_dirs; echo $#)
 
-	eval "set -- $lock_dir/prune-${names_pat:-*}.pid"
-	[[ -e $1 ]] || shift
-	[[ $# != 0 && ! ( $debug_opt || $show_all ) ]] &&
-	set -- $(echo $* | tr ' ' '\n' | fgrep -v /prune-Z.); [[ $# != 0 ]] &&
-	set -- $(cat  $* 2>/dev/null)
-	[[ $# == 0 ]] && prune_cmds= || {
-	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
-	prune_cmds=$(COLUMNS=999 ps_ w -H h $* 2>/dev/null  |
+	bkp_rsync_cmds=
+	set_lock_PGIDs backup &&
+	bkp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
+			   grep "[0-9]   rsync" | sed 's/   rsync/ rsync/') &&
+	declare -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ||
+	declare -i num_bkp_rsyncs=0
+
+	set_lock_PGIDs prune &&
+	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
-			trim_prune)
-	}
+			trim_prune) || prune_cmds=
 
 	#
 	# both update-drive and copy-snapshot use the copy lock
-	eval \
-	"set -- \$(cat $lock_dir/copy-${names_pat:-*}.pid 2>/dev/null)"
-	set_locks prune $* && copy_lock_msg="; PRUNE LOCKS: ${locks//prune-/}"
-	[[ $# == 0 ]] && cp_rsync_cmds= ||
-	set -- $(echo " $*" | sed 's/ / -/g') && # want all processes in group
-	cp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $* |
+	set_lock_PGIDs copy &&
+	copy_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
 			       -e " [l]ockpid " \
 			       -e "[0-9]     rsync" |
-			   sed -e 's/   rsync/ rsync/')
+			   sed -e 's/   rsync/ rsync/') || copy_rsync_cmds=
 			#      -e 's/   lockp/ lockp/')	# -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
@@ -2732,7 +2751,7 @@ watch() {
 	rm $rsync_or_rm_cmd_PGIDs_file
 
 	# only show un-asked cron jobs if no rsync details to show
-	[[ ($cron_opt || ! $rsync_cmds$cp_rsync_cmds) && $# != 0 ]] && {
+	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
 	set -- $(process_group_PIDs $cron_PGIDs)
 	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
@@ -2742,11 +2761,11 @@ watch() {
 
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
-	declare -i PD=$(echo    "$prune_cmds" | fgrep -c 'prune-drive')
+	declare -i PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
 	(( PD > 0 )) && let PD=PD*2+4	# add in 'rm' plus section-overhead
-	declare -i CS=$(echo "$cp_rsync_cmds" | egrep -c '(update|copy)-')
+	declare -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && let CS=CS*2+4	# add in 'rsync' plus section-overhead
-	declare -i RB=$(echo    "$rsync_cmds" | fgrep -c rsync)
+	declare -i RB=$num_bkp_rsyncs
 	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
 	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
 	TraceV 1 PD CS RB && let rows-=3
@@ -2754,7 +2773,7 @@ watch() {
 	#   2 good snapshots, 4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	declare -i min_rows=$((  6 + 4 + PD + CS + RB )); [[ $cron_opt ]] &&
-		   min_rows+=$(( 4 + 5*num_rsyncs + PD ))
+		   min_rows+=$(( 4 + 5*num_bkp_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
@@ -2832,7 +2851,7 @@ watch() {
 
 		# --------------------------------------------
 
-		(( $rows >= $min_df_rows )) && [[ ! $cp_rsync_cmds ]] &&
+		(( $rows >= $min_df_rows )) && [[ ! $copy_rsync_cmds ]] &&
 		run_lsblk $drive_dirs &&
 		let rows-=$num_drives+2
 	fi
@@ -2881,11 +2900,11 @@ watch() {
 	# ------------------------------------------------------------------
 
 	# copy-snapshots uses prune lock
-	[[ $cp_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
+	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
 	header "copy (& update)${copy_lock_msg-}"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$cp_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
+	echo "$copy_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
 	}
 
 	# ------------------------------------------------------------------
@@ -2898,10 +2917,10 @@ watch() {
 	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
 
 	header "cron's run-backups' lead rsync processes (abbreviated)"
-	[[ $rsync_cmds ]] && {
+	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$hdr" | trim_ps_cols
-	echo "$rsync_cmds" | trim_backup | sort $rsync_sort_opts
+	echo "$bkp_rsync_cmds" | trim_backup | sort $rsync_sort_opts
 	} || echo -e "\nNo backups are running$names_msg."
 
 	# ------------------------------------------------------------------
@@ -2917,20 +2936,20 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	[[ $rsync_cmds ]] && {
+	[[ $bkp_rsync_cmds ]] && {
 	header "cron's run-backups' lead rsync processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$rsync_cmds" | sed "s@ $HOME/@ ~/@g"
+	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g"
 	}
 
 	# ------------------------------------------------------------------
 
-	[[ $cp_rsync_cmds ]] && {
+	[[ $copy_rsync_cmds ]] && {
 	header "copy's & update's rsync processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
-	echo "$cp_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
+	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
 	}
 }
 
