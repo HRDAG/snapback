@@ -576,6 +576,10 @@ ps_locks() {
 	return $status
 }
 
+# ---------------------------------
+
+have_job() { ps_locks -R "$@" > /dev/null; }
+
 ##############################################################################
 # miscellaneous
 ##############################################################################
@@ -677,7 +681,7 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 
 	suspend_tracing
 	local user
-	for user in ${SUDO_USER-} ${USER-} ${LOGNAME-} ${HOME##*/}
+	for user in ${SUDO_USER-} ${USER-} ${LOGNAME-} ${HOME##*/} ${MAIL##*/}
 	    do	[[ $user != root ]] && break
 	done
 	local users_groups=$(id -G -n $user)
@@ -2084,13 +2088,12 @@ fastest_snapshots() {
 	    do	_set_drive_name $snapshot
 		local do_suspend=${drive_name2do_suspend[$drive_name]}
 
-		if ps_locks -R backup > /dev/null ||
-		   ps_locks -R copy   > /dev/null
-		   then doing_backup=1
-		   else doing_backup=0
+		if have_job backup || have_job copy
+		   then local doing_backup=1
+		   else local doing_backup=0
 		fi
 
-		if ps_locks -R prune > /dev/null
+		if have_job prune
 		   then local doing_prune=1
 		   else local doing_prune=0
 		fi
@@ -3950,7 +3953,7 @@ regression_test() {
 	show_test_header update -s $src $dst
 
 	_set_drive_name $dst
-	ps_locks copy > /dev/null &&
+	have_job copy &&
 	$our_path kill-copy $dst &> /dev/null &&
 	    warn "killed update-drive (or copy) to $dst"
 
