@@ -494,9 +494,15 @@ _signal_job() {
 
 	[[ $IfRun ]] && echo "${FUNCNAME[1]} $*" && return 0
 
+	local lock_msg="waiting for backup to finish so can CONTinue $type"
 	local type
 	for type
-	    do	have_job $type && signal_job $signal $type
+	    do	have_job $type || continue
+		if [[ $signal == *CONT && $type != backup ]]
+		   then lock_PID -w backup "$lock_msg" || continue
+			lock_PID -r backup "$lock_msg"
+		fi
+		signal_job $signal $type
 	done
 }
 
