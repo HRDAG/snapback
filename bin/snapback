@@ -389,35 +389,19 @@ lock() {
 		   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
 		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
 		fi
-	fi
-	if [[ $is_cron || $wait_opt || $debug_opt ]]
-	   then local extra_wait_opt=$wait_opt
-	   else local extra_wait_opt=--wait # if interactice user, wait
+	elif [[ ! $is_cron ]]		# interactive user?
+	    then wait_opt=--wait
 	fi
 
-	while true
-	    do	if ! [[ $type == backup || $is_drive_multi_writer ]]
-		   then # can't grab lock when backup is running
-			lock_PID $extra_wait_opt backup "$extra_lock_msg" &&
-			lock_PID	-r	 backup "$extra_lock_msg" ||
-			    { $xtrace; return 1; } # not waiting, or expired
-			if [[ $do_wait ]]
-			   then if lock_PID -q $type "$lock_msg"
-				   then break	 # success!
-				   else lock_PID $wait_opt $type "$lock_msg" &&
-					lock_PID     -r    $type "$lock_msg" ||
-					   { $xtrace; return 1; } # expired
-					continue # make sure no backup running
-				fi
-			#  else fall through
-			fi
-		fi
+	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
+	local primary_lock_path=$lock_path # lock_PID sets lock_path
+	if ! [[ $type == backup || $is_drive_multi_writer ]]
+	   then lock_PID --wait    backup "$extra_lock_msg" &&
+		lock_PID --release backup "$extra_lock_msg" ||
+		    abort "should have waited forever for backup lock, then -r"
+	fi
 
-		lock_PID $wait_opt $type "$lock_msg" &&
-		    break || { $xtrace; return 1; }
-	done
-
-	_lock_type2lock_path[$type]=$lock_path # lock_PID sets lock_path
+	_lock_type2lock_path[$type]=$primary_lock_path
 	 lock_type2locked_resource[$type]=$resource
 
 	[[ $type == copy ]] && suspend_job prune
@@ -3974,7 +3958,7 @@ regression_test() {
 	is_arg1_in_arg2 p $tests && {
 	show_test_header prune all
 	is_test_cache_stale_opts=-r	# we prune all drives ...
-	run_debug_cmds z prune-drives all
+	run_debug_cmds p prune-drives all
 	}
 
 	# --------------------------------------------
