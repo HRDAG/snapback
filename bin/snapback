@@ -432,31 +432,6 @@ unlock() {
 # enumerating/showing/signaling/killing process groups
 ##############################################################################
 
-lock_PGIDs=
-
-set_lock_PGIDs() {
-	local type=$1
-
-	lock_PGIDs=
-
-	eval "set -- $lock_dir/$type-${names_pat:-*}.pid"
-	local lock locks=
-	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
-	set -- $locks
-	[[ $# != 0 ]] || return 1
-
-	[[ $type == prune && ! ( $debug_opt || $show_all ) ]] &&
-	set -- $(echo $* | tr ' ' '\n' | fgrep -v /$type-Z.)
-
-	set -- $(cat  $* 2>/dev/null)
-	[[ $# != 0 ]] || return 1
-
-	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
-	lock_PGIDs=$*
-}
-
-# -----------------------------------------------------------------------------
-
 process_group_PIDs() {
 
 	local PGID
@@ -554,6 +529,31 @@ kill_all_jobs() {
 	for type in $lock_types
 	    do	kill_jobs $opt $type "$@"
 	done
+}
+
+# -----------------------------------------------------------------------------
+
+lock_PGIDs=
+
+set_lock_PGIDs() {
+	local type=$1
+
+	lock_PGIDs=
+
+	eval "set -- $lock_dir/$type-${names_pattern:-*}.pid"
+	local lock locks=
+	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
+	set -- $locks
+	[[ $# != 0 ]] || return 1
+
+	[[ $type == prune && ! ( $debug_opt || $show_all ) ]] &&
+	set -- $(echo $* | tr ' ' '\n' | fgrep -v /$type-Z.)
+
+	set -- $(cat  $* 2>/dev/null)
+	[[ $# != 0 ]] || return 1
+
+	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
+	lock_PGIDs=$*
 }
 
 # -----------------------------------------------------------------------------
@@ -2222,14 +2222,16 @@ update_drive() {
 		   then prev_date_time=$date_time # new date, process prev ones
 		   else [[ $prev_date_time ]] ||
 			prev_date_time=$date_time
+			[[ -d $src_snapshot ]] &&
 			src_snapshots+=" $src_snapshot"
 			continue
 		fi
 
-		copy_snapshot -u $src_snapshots $drive_name
+		[[ $src_snapshots ]] &&
+		copy_snapshot -u $src_snapshots $drive_name # loads a var
 		 src_snapshots=$src_snapshot # prepare to process new date
-		set -- $copy_snapshot_args
-		[[ $# != 0 ]] || continue
+		set -- $copy_snapshot_args   # variable set by copy_snapshot
+		[[ $# != 0 ]] || continue    # src might not have been needed
 
 		local    dst_snapshot=${!#}
 		[[ ! -d $dst_snapshot.links ]] &&
@@ -2663,11 +2665,11 @@ watch() {
 	   else show_all=$false
 		drive_dirs=$all_drive_dirs
 	fi
-	[[ $names ]] && names_pat="{$names}" &&
+	[[ $names ]] && names_pattern="{$names}" &&
 	    names_msg=" for $names " || names_msg=
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
-	TraceV 1 names drive_dirs names_pat ps_opt cron_opt show_all
+	TraceV 1 names drive_dirs names_pattern ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
 
