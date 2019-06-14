@@ -91,8 +91,9 @@ Usage: $our_name [options] action [args]
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
     kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
     kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
-     suspend-* names: as above, but defaults to -STOP signal
     continue-* names: as above, but defaults to -CONT signal
+     suspend-* names: as above, but defaults to -STOP signal
+        stop-* names: 'stop' is a synonym for 'suspend'
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -361,7 +362,7 @@ declare -A  lock_type2locked_resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
 #    After grab non-backup lock, waits for no-backup if ! is_drive_multi_writer
-lock() {
+function lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
@@ -398,8 +399,10 @@ lock() {
 
 	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
 	local primary_lock_path=$lock_path # lock_PID sets lock_path
+
 	if ! [[ $type == backup || $is_drive_multi_writer ]]
-	   then lock_PID --wait    backup "$extra_lock_msg" &&
+	   then # grab last: primary lock appears on dashboard, can be killed
+		lock_PID --wait    backup "$extra_lock_msg" &&
 		lock_PID --release backup "$extra_lock_msg" ||
 		    abort "should have waited forever for backup lock, then -r"
 	fi
@@ -1403,7 +1406,7 @@ _do_skip_newest_span_of_days() {
 
 # ---------------------------------------------------------
 
-# The locking and job-management strategy is documented before lock() function.
+# The locking & job-management policy is documented in front of function lock()
 
 # for goals of this function, see prune-variable comments in configure.sh
 prune_drive() {
@@ -1425,7 +1428,8 @@ prune_drive() {
 	   then if $IfRun is_drive_usage_too_high
 		   then  suspend_job copy
 		   else continue_job copy
-			[[ $is_drive_multi_writer ]] || return 1
+			[[ $is_drive_multi_writer ]] || {
+			 suspend_job prune; return 1; }
 		fi
 	fi
 
@@ -1833,7 +1837,7 @@ run_backup_rsync() {
 
 # ----------------------
 
-# The locking and job-management strategy is documented before lock() function.
+# The locking & job-management policy is documented in front of function lock()
 
 run_backup() {
 	local drive_name=$1 drive_dir
@@ -2037,6 +2041,8 @@ copy_snapshot() {
 }
 
 # -------------------------------------------------------
+
+# The locking & job-management policy is documented in front of function lock()
 
 # The following is similar to the second half of run_backup_rsync;
 # it's called by copy_snapshot and update_drive, to do the real work.
@@ -2334,6 +2340,8 @@ run_jobs_in_parallel() {
 # and since we can be killed to steal either our source or destination
 # lock, we need to manage all locks.
 run_copy_job() {
+
+	abort "will finish this if src drives need to be locked"
 
 	if [[ $1 != -r ]]		# not Recursing, so need new job?
 	   then $Trace
@@ -4108,47 +4116,48 @@ case $action in
 	$Trace
 	kill_all_jobs $*
 	;;
-   #  suspend-* names: as above, but defaults to -STOP signal
-   ( sus*b* | sb ) undo_action_abbrev suspend-backup
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_jobs -s backup $*
-	;;
-   ( sus*p* | sp ) undo_action_abbrev suspend-prune
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_jobs -s prune $*
-	;;
-   ( sus*c* | sc | su ) undo_action_abbrev suspend-copy
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_jobs -s copy $*
-	;;
-   ( sus*a | sa ) undo_action_abbrev suspend-all
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_all_jobs -s_jobs $*
-	;;
    # continue-* names: as above, but defaults to -STOP signal
-   ( con*b | cb ) undo_action_abbrev continue-backup
+   ( con*b* | cb ) undo_action_abbrev continue-backup
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
 	kill_jobs -c backup $*
 	;;
-   ( con*p | cp ) undo_action_abbrev continue-prune
+   ( con*p* | cp ) undo_action_abbrev continue-prune
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
 	kill_jobs -c prune $*
 	;;
-   ( con*c | cc | cu ) undo_action_abbrev continue-copy
+   ( con*c* | cc | cu ) undo_action_abbrev continue-copy
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
 	kill_jobs -c copy $*
 	;;
-   ( con*a| ca ) undo_action_abbrev continue-all
+   ( con*a* | ca ) undo_action_abbrev continue-all
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
 	kill_all_jobs -c_jobs $*
+	;;
+   #  suspend-* names: as above, but defaults to -STOP signal
+   #     stop-* names: 'stop' is a synonym for 'suspend'
+   ( sus*b* | sto*b* | sb ) undo_action_abbrev suspend-backup
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -s backup $*
+	;;
+   ( sus*p* | sto*p* | sp ) undo_action_abbrev suspend-prune
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -s prune $*
+	;;
+   ( sus*c* | sto*c* | sc | su ) undo_action_abbrev suspend-copy
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -s copy $*
+	;;
+   ( sus*a* | sto*a | sa ) undo_action_abbrev suspend-all
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_all_jobs -s_jobs $*
 	;;
 
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)

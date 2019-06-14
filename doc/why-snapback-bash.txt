@@ -6,7 +6,7 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
    Every config variable can have a per-drive value, in-line or separate-file
       (can use smaller drives (e.g. flash memory) to backup subset of system).
    When an off-site drive is returned and plugged in, missing snapshots are
-     copied from all other drives (without slowing down any regular backups).
+     copied from all other drives (with minimal impact on regular backups).
    Integrated with 'snapcrypt', for easy use of encrypted, named drives.
    Easy control over backup frequency (& can exclude list of off-peak hours).
    Snapshots named by date (similar to rsync-snapshot), for transparency.
