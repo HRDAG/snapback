@@ -82,7 +82,7 @@ Usage: $our_name [options] action [args]
     copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-    w: show pruning & backup activity, and the status of pruning and backups
+    w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
 
     ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
@@ -2196,7 +2196,7 @@ remove_empty_partial_snapshots() {
 
 # ---------------------------------
 
-function cleanup_after_updates() {
+cleanup_after_updates() {
 
 	set_sudo_lockpid
 
@@ -2204,11 +2204,13 @@ function cleanup_after_updates() {
 	for drive_dir in $(list_drive_dirs -a)
 	    do	_set_drive_name $drive_dir
 		set_lock_path copy	# update could be running
-		$sudo_lockpid    $lock_path &> /dev/null || continue
+		(
+		$sudo_lockpid    $lock_path &> /dev/null &&	  {
 		$IfRun remove_empty_partial_snapshots $drive_dir
-		$sudo_lockpid -r $lock_path
+		$sudo_lockpid -r $lock_path			; }
+		) &			# do them in parallel
 	done
-	return 0
+	wait				# 'w' wants us to have finished
 }
 
 # --------------------------------------------
@@ -2652,18 +2654,22 @@ watch() {
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 	[[ ${1-} != -* ]] ||abort "$FUNCNAME: unknown option $1, order matters"
-	[[ $is_cron ]] && cron_opt=-C
 
 	local all_opts="$ps_opt $cron_opt"
 	if [[ $names ]]
 	   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
 		all_opts+=" -N $names"
 	fi
-	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.5 # >= 0.5 best for -C w/sudo access
-	[[ $watch_opt   ]] || cleanup_after_updates &  # don't wait for it ...
-	[[ $action == w ]] && cleanup_after_updates || # .. unless full details
-	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
+	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5 # >= 0.5 best for -C w/sudo access
+	if [[ $action == watch ]]
+	   then cleanup_after_updates &	# don't wait for it to finish, slow
+		exec \
+		watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
+		abort "exec failed"
+	fi
 
+	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
+	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
 	set -- $(list_drive_dirs -a)
 	local all_drive_dirs=$*
 	local drive_dirs= show_all=$false
@@ -2682,7 +2688,6 @@ watch() {
 	fi
 	[[ $names ]] && names_pattern="{$names}" &&
 	    names_msg=" for $names " || names_msg=
-	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 
 	TraceV 1 names drive_dirs names_pattern ps_opt cron_opt show_all
 
@@ -4093,7 +4098,7 @@ case $action in
 	echo "$dir contains >= $du_size of files in no other directories"
 	;;
 
-   # w: show pruning & backup activity, and the status of pruning and backups
+   # w: show full details on all jobs and drives
    # watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
    ( watch | wa* | wt* | w ) [[ $action == w?* ]] && undo_action_abbrev watch
 	watch "$@"
