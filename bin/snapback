@@ -152,7 +152,6 @@ unset arg
 
 [[ $Trace && $debug_opt ]] && IfRun=:
 
-trap '' HUP TERM
 trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
 
 readonly tmp_1=$tmp_dir/$our_name-1-$$	; tmp=$tmp_1
@@ -346,14 +345,18 @@ lock_PID() {
 
 # ------------------------------------------------------------------
 
-# Unless $is_drive_multi_writer, only one job can be modifying the drive at
-# once; this paragraph describes the policy to meet that requirement.  lock()
-# won't return from a request for a non-backup lock while a backup is running.
-# Similarly, when run_backup is called, it suspends (possible) copy and prune,
-# then runs the backup, then drops its lock, then fires of a prune_drive job
-# ...  When prune_drive is called, if a copy job exists: Suspend the copy (and
-# do a prune) if drive space is tight, otherwise un-suspend the copy and don't
-# do a prune.
+# Unless $is_multi_writer_drive, only one job can be modifying the drive at
+# once; this paragraph describes the policy to meet that requirement.  There's
+# a (per-drive) lock for each writer, and the backup job gets priority
+# (i.e. non-backup jobs must be suspended when a backup job is running).  A
+# lock() call for a non-backup lock will get its requested lock (and thus the
+# job will appear on the dashboard), but lock() won't return until any running
+# backup finishes.  Similarly, when run_backup() is called, it suspends copy
+# and prune (if they exist), then runs its backup, then drops its backup lock,
+# then fires off a prune job ...  When prune_drive() is called, if a copy job
+# exists: Suspend the copy (and do a prune) if drive space is tight, otherwise
+# continue (i.e. un-suspend) the copy and don't do a prune (but the
+# continue_job function will ignore the continue if a backup job is running).
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -361,7 +364,7 @@ declare -A  lock_type2locked_resource
 # Usage: lock [-w] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
-#    After grab non-backup lock, waits for no-backup if ! is_drive_multi_writer
+#    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -400,7 +403,7 @@ function lock() {
 	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
 	local primary_lock_path=$lock_path # lock_PID sets lock_path
 
-	if ! [[ $type == backup || $is_drive_multi_writer ]]
+	if ! [[ $type == backup || $is_multi_writer_drive ]]
 	   then # grab last: primary lock appears on dashboard, can be killed
 		lock_PID --wait    backup "$extra_lock_msg" &&
 		lock_PID --release backup "$extra_lock_msg" ||
@@ -489,7 +492,7 @@ signal_job() {
 
 # ---------------------------------
 
-_signal_job() {
+function _signal_job() {
 	local signal=$1; shift
 
 	[[ $IfRun ]] && echo "${FUNCNAME[1]} $*" && return 0
@@ -498,16 +501,16 @@ _signal_job() {
 	local type
 	for type
 	    do	have_job $type || continue
-		if [[ $signal == *CONT && $type != backup ]]
-		   then lock_PID -w backup "$lock_msg" || continue
-			lock_PID -r backup "$lock_msg"
-		fi
+		[[ ! $is_multi_writer_drive &&
+		   $signal == *CONT && $type != backup ]] && have_job backup &&
+		    return 1  # only 1 writer allowed, and backup has priority
 		signal_job $signal $type
 	done
+	return 0
 }
 
- suspend_job() { _signal_job -STOP "$@"; }
-continue_job() { _signal_job -CONT "$@"; }
+function  suspend_job() { _signal_job -STOP "$@"; }
+function continue_job() { _signal_job -CONT "$@"; }
 
 # ---------------------------------
 
@@ -1434,20 +1437,15 @@ prune_drive() {
 	   then if $IfRun is_drive_usage_too_high
 		   then  suspend_job copy
 		   else continue_job copy
-			[[ $is_drive_multi_writer ]] || {
-			 suspend_job prune; return 1; }
+			[[ $is_multi_writer_drive ]] || {
+			   suspend_job prune; return 1; }
 		fi
 	fi
 
-	if ! lock prune
-	   then # since we're called, a non-backup job can be un-suspended
-		continue_job prune
-		return 1
-	fi
+	lock prune || { continue_job prune; return 1; }
 
 	_is_time_to_prune_drive || { unlock prune; return 0; }
 
-	trap '' HUP
 	setup_prune_drive_priority
 
 	} # [[ ! $is_update ]]
@@ -1858,7 +1856,7 @@ run_backup() {
 	   then $IfRun run_jobs_in_parallel prune
 		return
 	fi
-	if [[ $is_drive_multi_writer ]]
+	if [[ $is_multi_writer_drive ]]
 	   then $IfRun run_jobs_in_parallel prune
 	fi
 
@@ -1866,7 +1864,7 @@ run_backup() {
 	# suspended the backup and continued the prune (is it still relevant?)
 	lock -w backup || return 1	# wait for lock, so don't skip backup
 
-	if [[ ! $is_drive_multi_writer ]]
+	if [[ ! $is_multi_writer_drive ]]
 	   then suspend_job copy prune
 	fi
 
@@ -1875,7 +1873,7 @@ run_backup() {
 
 	unlock backup
 
-	if [[ ! $is_drive_multi_writer ]]
+	if [[ ! $is_multi_writer_drive ]]
 	   then $IfRun run_jobs_in_parallel prune # also manages copy job
 	fi
 
@@ -2083,7 +2081,7 @@ load__drive_name2do_suspend() {
 		suspend_tracing
 		customize_config_variables $drive_name
 		restore_tracing
-		if [[ $is_drive_multi_writer ]]
+		if [[ $is_multi_writer_drive ]]
 		   then local do_suspend=0
 		   else local do_suspend=1
 		fi
@@ -2655,14 +2653,15 @@ watch() {
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 	[[ ${1-} != -* ]] ||abort "$FUNCNAME: unknown option $1, order matters"
 
-	local all_opts="$ps_opt $cron_opt"
-	if [[ $names ]]
-	   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
-		all_opts+=" -N $names"
-	fi
-	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5 # >= 0.5 best for -C w/sudo access
 	if [[ $action == watch ]]
 	   then cleanup_after_updates &	# don't wait for it to finish, slow
+		local all_opts="$ps_opt $cron_opt"
+		if [[ $names ]]
+		   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
+			all_opts+=" -N $names"
+		fi
+		# >= 0.5 is best for watching wchan (-C w/sudo access)
+		[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
 		exec \
 		watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 		abort "exec failed"
