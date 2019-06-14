@@ -1,4 +1,4 @@
-# version=18
+# version=19
 
 ################################################################
 ################################################################
@@ -80,8 +80,8 @@ drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 # SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
 # described later).  Hard disks are different, so you can change that policy.
-	 is_multi_writer=$false		# non-striped hard-disk drive
-drv_name2is_multi_writer[X]=$true	# no (or little) seek penalty
+	 is_drive_multi_writer=$false	# non-striped hard-disk drive
+drv_name2is_drive_multi_writer[X]=$true	# no (or little) seek penalty
 
 # ------------------------------------------------
 # Variables used by run-backup* and prune-drive* #

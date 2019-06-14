@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=18			# has to match version= in configure.sh.sample
+version=19			# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -339,6 +339,14 @@ lock_PID() {
 
 # ------------------------------------------------------------------
 
+# When a job grabs the copy lock, lock() suspends any prune job (i.e. copy
+# takes priority).  When prune_drive is called, if a copy job exists: Suspend
+# the copy if disk space is tight, otherwise un-suspend the copy (and don't
+# prune unless $is_drive_multi_writer).  When run_backup is called, and not
+# $is_drive_multi_writer: Copy and prune are suspended, then we run the
+# backup, then we fire off a prune_drive job (which ensures that either copy
+# or prune will be un-suspended).
+
 readonly lock_share_secs=0.5
 
 declare -A _lock_type2lock_path
@@ -347,7 +355,7 @@ declare -A  lock_type2locked_resource
 # Usage: lock [-w] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
-#    Can't grab non-backup lock if 'backup' lock held and ! is_multi_writer
+#    Can't grab non-backup lock if 'backup' lock held & ! is_drive_multi_writer
 lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -364,9 +372,8 @@ lock() {
 	[[ ! $prev_lock_path ]] ||
 	   abort "hold $(basename $prev_lock_path), can't grab $type lock file"
 
-	local		 lock_msg="holds '$type' lock for $drive_name"
-	local non_backup_lock_msg="${lock_msg/$type/backup}, so can't $type"
-	[[ $type == prune ]] && lock_msg+=" (could be copy or update)"
+	local	    lock_msg="holds '$type' lock for $drive_name"
+	local extra_lock_msg="${lock_msg/$type/backup}, so can't $type"
 
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
 	[[ $do_wait ]] &&
@@ -380,15 +387,17 @@ lock() {
 		   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
 		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
 		fi
-	elif [[ $type == prune && $action == prune* ]] # not update-drive?
-	   then abort "if prune waits for prune lock, it suspends copy/update"
+	fi
+	if [[ $is_cron || $wait_opt || $debug_opt ]]
+	   then local extra_wait_opt=$wait_opt
+	   else local extra_wait_opt=--wait # if interactice user, wait
 	fi
 
 	while true
-	    do	if ! [[ $type == backup || $is_multi_writer ]]
+	    do	if ! [[ $type == backup || $is_drive_multi_writer ]]
 		   then # can't grab lock when backup is running
-			lock_PID $wait_opt backup "$non_backup_lock_msg" &&
-			lock_PID     -r    backup "$non_backup_lock_msg" ||
+			lock_PID $extra_wait_opt backup "$extra_lock_msg" &&
+			lock_PID	-r	 backup "$extra_lock_msg" ||
 			    { $xtrace; return 1; } # not waiting, or expired
 			if [[ $do_wait ]]
 			   then if lock_PID -q $type "$lock_msg"
@@ -408,6 +417,8 @@ lock() {
 
 	_lock_type2lock_path[$type]=$lock_path # lock_PID sets lock_path
 	 lock_type2locked_resource[$type]=$resource
+
+	[[ $type == copy ]] && suspend_job prune
 
 	 $xtrace
 	return 0
@@ -494,13 +505,12 @@ set_signal_is_kill() {
 # ----------------------
 
 signal_job() {
-	local signal=${1#-} type=$2 name=${3-}
+	local signal=${1#-} type=$2 drive_name=${3:-$drive_name}
 
 	suspend_tracing
-	[[ $name ]] && set_drive_name $name
+	_set_drive_name $drive_name; local name=$drive_name
+	set_lock_path $type
 	restore_tracing
-	name=$drive_name
-	set_lock_path $type $name
 
 	[[ -s $lock_path ]] || return 1
 	set_sudo_lockpid
@@ -519,6 +529,22 @@ signal_job() {
 
 	return 0
 }
+
+# ---------------------------------
+
+_signal_job() {
+	local signal=$1; shift
+
+	[[ $IfRun ]] && echo "${FUNCNAME[1]} $*" && return 0
+
+	local type
+	for type
+	    do	have_job $type && signal_job $signal $type
+	done
+}
+
+ suspend_job() { _signal_job SIGSTOP "$@"; }
+continue_job() { _signal_job SIGCONT "$@"; }
 
 # ---------------------------------
 
@@ -1028,23 +1054,6 @@ setup_prune_drive_priority() {
 	fi
 }
 
-# ---------------------------------
-
-_backup_management_of_prune() {
-	local state=$1
-
-	[[ $is_cron ]] || return
-
-	if [[ (   $is_multi_writer && $state ==  pre-rsync ) ||
-	      ( ! $is_multi_writer && $state == post-rsync ) ]]
-	   then $IfRun run_jobs_in_parallel prune $drive_dir
-		return
-	fi
-
-	[[ ! $is_multi_writer && $state == pre-rsync ]] &&
-	$IfRun signal_job SIGSTOP prune $drive_name
-}
-
 ##############################################################################-
 ##############################################################################-
 # Functions and variables used to prune old backup snapshots.
@@ -1069,7 +1078,7 @@ update_snapshots_ls() {
 # -----------------------------------------------------------------------------
 
 _is_time_to_prune_drive() {
-	local dir=$1
+	local dir=${1:-$drive_dir}
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
@@ -1412,6 +1421,8 @@ _do_skip_newest_span_of_days() {
 
 # ---------------------------------------------------------
 
+# The locking and job-management strategy is documented before lock() function.
+
 # for goals of this function, see prune-variable comments in configure.sh
 prune_drive() {
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
@@ -1427,23 +1438,27 @@ prune_drive() {
 
 	[[ ! $is_update ]] && {		# for update, we just rmdir empty dirs
 
-	# if use suspend, priority is "which job should run" not renice/ionice
-	if is_drive_usage_too_high && [[ ! $is_multi_writer ]]
-	   then local lock_opt=	  # desparately need pruning, borrow copy lock
-	   else local lock_opt=
+	# typically, priority is "which job should run", not renice/ionice
+	if have_job copy		# (it might be suspended)
+	   then if $IfRun is_drive_usage_too_high
+		   then  suspend_job copy
+		   else continue_job copy
+			[[ $is_drive_multi_writer ]] || return 1
+		fi
 	fi
-	# lock_opt+=" -w"	    # this would keep copy or update suspended
 
-	lock $lock_opt prune ||
-	    # since we're called, the old lock holder should be un-suspended
-	    { signal_job SIGCONT prune $drive_name; return 1; }
+	if ! lock prune
+	   then # since we're called, a non-backup job can be un-suspended
+		continue_job prune
+		return 1
+	fi
 
-	_is_time_to_prune_drive $drive_dir || { unlock prune; return 0; }
+	_is_time_to_prune_drive || { unlock prune; return 0; }
 
 	trap '' HUP
 	setup_prune_drive_priority
 
-	}
+	} # [[ ! $is_update ]]
 
 	$Trace
 	local  snapshots_to_prune_file=$tmp_4
@@ -1601,7 +1616,6 @@ set_hours() {
 # ---------------------------------
 
 _is_time_to_run_backup() {
-	local dir=$1
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
@@ -1837,6 +1851,8 @@ run_backup_rsync() {
 
 # ----------------------
 
+# The locking and job-management strategy is documented before lock() function.
+
 run_backup() {
 	local drive_name=$1 drive_dir
 
@@ -1846,33 +1862,30 @@ run_backup() {
 	local date_time
 	set_date_time
 
-	if _is_time_to_run_backup $drive_dir
-	   then local do_run_backup=$true
-	   else local do_run_backup=$false
+	if ! _is_time_to_run_backup
+	   then $IfRun run_jobs_in_parallel prune
+		return
 	fi
-
-	if [[ $do_run_backup ]]
-	   then local lock_opt=-w	# wait for lock, so don't skip backup
-	   else local lock_opt=		# (we still want to manage prune)
+	if [[ $is_drive_multi_writer ]]
+	   then $IfRun run_jobs_in_parallel prune
 	fi
-
-	# the following is similar to the second half of copy_snapshot
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
-	# suspended the backup and continued the prune
-	lock $lock_opt backup || return 1
+	# suspended the backup and continued the prune (is it still relevant?)
+	lock -w backup || return 1	# wait for lock, so don't skip backup
 
-	_backup_management_of_prune pre-rsync
-
-	if [[ $do_run_backup ]]
-	   then	run_backup_rsync $date_time
-		local status=$?
-	   else local status=1
+	if [[ ! $is_drive_multi_writer ]]
+	   then suspend_job copy prune
 	fi
 
-	_backup_management_of_prune post-rsync # last, for testing
+	run_backup_rsync $date_time
+	local status=$?
 
 	unlock backup
+
+	if [[ ! $is_drive_multi_writer ]]
+	   then $IfRun run_jobs_in_parallel prune # also manages copy job
+	fi
 
 	return $status
 }
@@ -2048,10 +2061,6 @@ copy_snapshot() {
 copy_snapshot_rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	[[ $is_multi_writer ]] ||
-	# grab prune lock, so backup job can suspend us
-	lock -w prune $dst_snapshot || exit 1
-
 	setup_copy_priority
 
 	# lower nice value is higher priority
@@ -2062,9 +2071,6 @@ copy_snapshot_rsync() {
 	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
 	run_rsync -c  $src_snapshot/. $dst_snapshot
 	cd_ $cwd
-
-	[[ $is_multi_writer ]] ||
-	unlock -s prune
 }
 
 # -----------------------------------------------------------------------------
@@ -2081,7 +2087,7 @@ load__drive_name2do_suspend() {
 		suspend_tracing
 		customize_config_variables $drive_name
 		restore_tracing
-		if [[ $is_multi_writer ]]
+		if [[ $is_drive_multi_writer ]]
 		   then local do_suspend=0
 		   else local do_suspend=1
 		fi
@@ -2275,22 +2281,30 @@ update_drive() {
 ##############################################################################-
 
 # Run a bunch of jobs in parallel, each in its own session (so lock files
-# will hold PGID (process-group ID), making 'kill' and 'ps' easy).
+# will hold PGID (process-group ID), making 'kill' and 'ps' and 'watch' easy).
 # We run backups simultaneously, so they all share the cached source files;
-# we run prunes  simultaneously, since a prune's I/O stays on its own drive.
+# we run prunes  simultaneously, since a prune's I/O stays on its own drive;
+# we run copy's  simultaneously, cuz uses fastest_snapshots to find idle src.
+# See action update-drives for the weird dance we do when passed options.
 run_jobs_in_parallel() {
 	local type=$1; shift
 	local opts= are_recursing=$false
-	while [[ $1 == -[^r]* ]] ; do opts+=" $1"; shift; done
-	[[ $1 == -r  ]] && { are_recursing=$true; shift; }
-	if [[ $debug_opt && ${HOSTNAME-} == eleanor ]]
-	   then local excluded_regex='\bG$' # G is too slow
-	   else local excluded_regex=NoThInG
+	while [[ ${1-} == -[^r]* ]] ; do opts+=" $1"; shift; done
+	[[ ${1-} == -r ]] && { are_recursing=$true; shift; }
+
+	if [[ $# == 0 ]]
+	   then set -- ${drive_name-}
+	elif [[ $1 == all ]]
+	   then if [[ $debug_opt && ${HOSTNAME-} == eleanor ]]
+		   then local excluded_regex='\bG$' # G is sometimes slow
+		   else local excluded_regex=NoThInG
+		fi
+		set -- $(list_drive_dirs | egrep -v "$excluded_regex")
 	fi
-	[[ $1 == all ]] &&
-	set -- $(list_drive_dirs | egrep -v "$excluded_regex")
+	[[ $# != 0 ]] || abort "$FUNCNAME $type: pass a drive name"
+
 	[[ ! $debug_opt ]] &&
-	set -- $(echo $* | tr ' ' '\n' | tac) # ps shows new proc 1st
+	set -- $(echo $* | tr ' ' '\n' | tac) # 'ps' shows newest process first
 
 	case $type in
 	   ( backup ) function=run_backup   exe=$run_backup_exe  ;;
@@ -2714,7 +2728,7 @@ watch() {
 		   ps_wchan_width=max_ps_wchan_width
 	fi
 
-	}
+	} # [[ $cron_opt ][
 
 	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
@@ -3912,7 +3926,7 @@ run_debug_cmds() {
 	cmp --quiet $tmp_o $tmp_t && { echo "-- same results!"; return; }
 	}
 
-	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t"
+	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t | less"
 }
 
 # ---------------------------------
@@ -4099,6 +4113,7 @@ case $action in
 	$Trace
 	kill_all_jobs $*
 	;;
+
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
    ( ps )
 	ps_locks "$@"
