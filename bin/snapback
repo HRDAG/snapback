@@ -261,11 +261,15 @@ set_sudo_lockpid() {
 
 	[[ $sudo_lockpid ]] && return
 
-	if [[ $action == kill-* ]] || sudo -n lockpid -h &> /dev/null
+	if [[ $action =~ (kill|suspend|continue)-* ]]
+	   then local is_signaling=$true
+	   else local is_signaling=$false
+	fi
+	if [[ $is_signaling ]] || sudo -n lockpid -h &> /dev/null
 	   then sudo_lockpid="sudo lockpid --pid=$BASHPID"
 	   else sudo_lockpid=lockpid  # only reclaim locks that user can write
 	fi
-	[[ $action == kill-* ]] && sudo_lockpid="$IfRun $sudo_lockpid"
+	[[ $is_signaling ]] && sudo_lockpid="$IfRun $sudo_lockpid"
 	readonly sudo_lockpid
 }
 
@@ -341,15 +345,14 @@ lock_PID() {
 
 # ------------------------------------------------------------------
 
-# When a job grabs the copy lock, lock() suspends any prune job (i.e. copy
-# takes priority).  When prune_drive is called, if a copy job exists: Suspend
-# the copy if disk space is tight, otherwise un-suspend the copy (and don't
-# prune unless $is_drive_multi_writer).  When run_backup is called, and not
-# $is_drive_multi_writer: Copy and prune are suspended, then we run the
-# backup, then we fire off a prune_drive job (which ensures that either copy
-# or prune will be un-suspended).
-
-readonly lock_share_secs=0.5
+# Unless $is_drive_multi_writer, only one job can be modifying the drive at
+# once; this paragraph describes the policy to meet that requirement.  lock()
+# won't return from a request for a non-backup lock while a backup is running.
+# Similarly, when run_backup is called, it suspends (possible) copy and prune,
+# then runs the backup, then drops its lock, then fires of a prune_drive job
+# ...  When prune_drive is called, if a copy job exists: Suspend the copy (and
+# do a prune) if drive space is tight, otherwise un-suspend the copy and don't
+# do a prune.
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -357,7 +360,7 @@ declare -A  lock_type2locked_resource
 # Usage: lock [-w] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed.
-#    Can't grab non-backup lock if 'backup' lock held & ! is_drive_multi_writer
+#    After grab non-backup lock, waits for no-backup if ! is_drive_multi_writer
 lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -404,8 +407,6 @@ lock() {
 	_lock_type2lock_path[$type]=$primary_lock_path
 	 lock_type2locked_resource[$type]=$resource
 
-	[[ $type == copy ]] && suspend_job prune
-
 	 $xtrace
 	return 0
 }
@@ -414,8 +415,6 @@ lock() {
 
 unlock() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ $1 == -s ]] && { shift; local do_share=$true; } || local do_share=
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
 
 	local type
 	for type
@@ -425,7 +424,7 @@ unlock() {
 		unset _lock_type2lock_path[$type]
 		unset  lock_type2locked_resource[$type]
 	done
-	[[ $do_share ]] && $IfRun sleep $lock_share_secs
+
 	$xtrace
 }
 
@@ -434,7 +433,6 @@ unlock() {
 ##############################################################################
 
 lock_PGIDs=
-copy_lock_msg=
 
 set_lock_PGIDs() {
 	local type=$1
@@ -452,9 +450,6 @@ set_lock_PGIDs() {
 
 	set -- $(cat  $* 2>/dev/null)
 	[[ $# != 0 ]] || return 1
-
-	[[ $type == copy ]] && set_locks prune $* &&
-	    copy_lock_msg="; PRUNE LOCKS: ${locks//prune-/}"
 
 	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
 	lock_PGIDs=$*
@@ -504,12 +499,10 @@ signal_job() {
 	$sudo_lockpid    $lock_path &> /dev/null && # missing or stale?
 	$sudo_lockpid -r $lock_path && return 1
 
-	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
-	[[ $action == kill-prune ]] && grep -s -w $1 ${lock_path/prune/copy} &&
-	    { warn "ignoring $type-$name lock, held by copy job"; return 1; }
-	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
+	set -- $(< $lock_path) && [[ $# == 1 ]] || return 1
+	$IfRun sudo kill -s ${signal^^} -$1 || return 1
 
-	set_signal_is_kill $signal &&
+	set_signal_is_kill $signal &&	# if terminated job, release its lock
 	$sudo_lockpid    $lock_path &> /dev/null && # avoid race
 	$sudo_lockpid -r $lock_path
 
@@ -2050,6 +2043,8 @@ copy_snapshot() {
 copy_snapshot_rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
+	suspend_job prune # hourly cron will continue prune if drive space low
+
 	setup_copy_priority
 
 	# lower nice value is higher priority
@@ -2554,6 +2549,7 @@ run_df() {
 
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
+	(( ${cols:-999} >= 86 )) || df_fields=${df_fields/,size/}
 	df --block-size=G --output=$df_fields $drive_dirs
 }
 
@@ -2683,6 +2679,7 @@ watch() {
 	# figure out how many columns are needed for cron (if needed
 	#
 
+	(( $cols >= 83 )) && ps_opt=-f
 	[[ $cron_opt ]] && {
 
 	# since the contents of $() are run in subshell, have to echo results
@@ -2925,9 +2922,8 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	# copy-snapshots uses prune lock
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
-	header "copy (& update)${copy_lock_msg-}"
+	header "copy (& update)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$copy_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
