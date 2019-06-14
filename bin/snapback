@@ -1522,12 +1522,12 @@ set_link_dest_opts() {
 	declare -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	_have_full_snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
 	local snapshot
-	for snapshot
+	for snapshot in $*
 	    do	[[ -d  $snapshot ]] || continue
 		set -- $snapshot/*
-		[[ -d  $1 ]] || continue # update's empty snapshot?
+		[[ -e  $1 ]] || continue # update's empty snapshot?
 		# don't consider *.partial or *.links to be adequate;
-		# 20 --link-dest options max (10 per direction)
+		# rsync allows 20 --link-dest options max (10 per direction)
 		case $snapshot in
 		    ( *.links ) (( ++links_snapshots > 3 )) && continue ;;
 		    ( *.*     ) (( ++junky_snapshots > 2 )) && continue ;;
