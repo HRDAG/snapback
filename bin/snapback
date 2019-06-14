@@ -74,7 +74,7 @@ readonly coder=sweikart@gmail.com
 
 Usage="
 Usage: $our_name [options] action [args]
-  Current actions are:
+  Current actions are (NOTE: most have abbreviations, see process_action):
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
@@ -91,6 +91,8 @@ Usage: $our_name [options] action [args]
     kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
     kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
     kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
+     suspend-* names: as above, but defaults to -STOP signal
+    continue-* names: as above, but defaults to -CONT signal
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -519,7 +521,7 @@ signal_job() {
 	$sudo_lockpid -r $lock_path && return 1
 
 	set -- $(< $lock_path) && [[ $# != 0 ]] || return 1
-	[[ $action == kill-prune ]] &&fgrep -s -w $1 ${lock_path/prune/copy} &&
+	[[ $action == kill-prune ]] && grep -s -w $1 ${lock_path/prune/copy} &&
 	    { warn "ignoring $type-$name lock, held by copy job"; return 1; }
 	$IfRun sudo kill -s ${signal^^} -$1 2> /dev/null || return 1
 
@@ -543,14 +545,17 @@ _signal_job() {
 	done
 }
 
- suspend_job() { _signal_job SIGSTOP "$@"; }
-continue_job() { _signal_job SIGCONT "$@"; }
+ suspend_job() { _signal_job -STOP "$@"; }
+continue_job() { _signal_job -CONT "$@"; }
 
 # ---------------------------------
 
 kill_jobs() {
+	local signal=-KILL
+	[[ $1 == -s  ]] && { signal=-STOP ; shift; }
+	[[ $1 == -c  ]] && { signal=-CONT ; shift; }
 	local type=$1; shift
-	[[ $1 == -*  ]] && { local signal=${1^^}; shift; } ||local signal=-KILL
+	[[ $1 == -*  ]] && { signal=${1^^}; shift; }
 	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
 	[[ $* == all ]] && set -- $(list_drive_dirs -a)
 
@@ -3487,7 +3492,7 @@ mkfs_backup_drive() {
 	fi
 
 	echo -e "\nTo populate newly-created drive, run:\n
-	$_our_name update-drive $drive_name"
+	nohup $_our_name update-drive $drive_name	# creates new job"
 
 	warn "DON'T FORGET to add \`$name' to drive_name_regex= in $config_file"
 	return 0
@@ -4012,6 +4017,14 @@ process_action() {
 
 stack_frame_to_show=0		# show line-number inside the 'case' statement
 
+abort_with_kill_Usage() {
+
+	local signal=${action%-*}
+	abort_with_action_Usage ${action/*-/kill-} |&
+	   sed "s/ *\[-sig\]//; s/\bkill\b/$signal/g"
+	exit 1
+}
+
 case $action in
   # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
    ( l*s*dr*v* | ld | ls | df ) undo_action_abbrev list-drives
@@ -4112,6 +4125,48 @@ case $action in
 	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
 	kill_all_jobs $*
+	;;
+   #  suspend-* names: as above, but defaults to -STOP signal
+   ( sus*b* | sb ) undo_action_abbrev suspend-backup
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -s backup $*
+	;;
+   ( sus*p* | sp ) undo_action_abbrev suspend-prune
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -s prune $*
+	;;
+   ( sus*c* | sc | su ) undo_action_abbrev suspend-copy
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -s copy $*
+	;;
+   ( sus*a | sa ) undo_action_abbrev suspend-all
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_all_jobs -s_jobs $*
+	;;
+   # continue-* names: as above, but defaults to -STOP signal
+   ( con*b | cb ) undo_action_abbrev continue-backup
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -c backup $*
+	;;
+   ( con*p | cp ) undo_action_abbrev continue-prune
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -c prune $*
+	;;
+   ( con*c | cc | cu ) undo_action_abbrev continue-copy
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_jobs -c copy $*
+	;;
+   ( con*a| ca ) undo_action_abbrev continue-all
+	[[ $# != 0 ]] || abort_with_kill_Usage
+	$Trace
+	kill_all_jobs -c_jobs $*
 	;;
 
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
