@@ -2196,7 +2196,7 @@ remove_empty_partial_snapshots() {
 
 # ---------------------------------
 
-cleanup_after_updates() {
+function cleanup_after_updates() {
 
 	set_sudo_lockpid
 
@@ -2208,6 +2208,7 @@ cleanup_after_updates() {
 		$IfRun remove_empty_partial_snapshots $drive_dir
 		$sudo_lockpid -r $lock_path
 	done
+	return 0
 }
 
 # --------------------------------------------
@@ -2659,8 +2660,8 @@ watch() {
 		all_opts+=" -N $names"
 	fi
 	[[ ${SSH_TTY-}  ]] && n=0.5 || n=0.5 # >= 0.5 best for -C w/sudo access
-	[[ $watch_opt   ]] || cleanup_after_updates
-	[[ $action == w ]] ||
+	[[ $watch_opt   ]] || cleanup_after_updates &  # don't wait for it ...
+	[[ $action == w ]] && cleanup_after_updates || # .. unless full details
 	   exec watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 
 	set -- $(list_drive_dirs -a)
