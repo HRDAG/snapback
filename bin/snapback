@@ -357,13 +357,14 @@ lock_PID() {
 # creates a lock for each of those jobs.  The backup job gets priority
 # (i.e. non-backup jobs will be suspended when a backup job is initiated).
 #
-# cron calls action run-backups, which calls create_jobs() to create a
-# run_backup() job for each drive; each run_backup() job starts a
+# An hourly cron job calls action run-backups, which calls create_jobs() to
+# create a run_backup() job for each drive; each run_backup() job starts a
 # prune_drive() job, and prune_drive() may start an update_drive() job.
-# [A lock() call for a non-backup lock will get its requested lock (so the job
-# will then appear on the dashboard), but lock() won't return until that
-# drive's backup finishes.  Similarly, a call to continue_job for a non-backup
-# job will be silently ignored if a backup is running.]
+#
+# A lock() call for a non-backup lock will get its requested lock immediately
+# (so the job will then appear on the dashboard), but lock() won't return
+# until that drive's backup finishes.  Similarly, a call to continue_job() for
+# a non-backup job will be silently ignored if a backup is running.
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -1701,7 +1702,7 @@ _handle_rsync_results() {
 	local new_snapshot=$1 status=$2 log=$3
 
 	if [[ -s $log ]]
-	   then [[ ${is_interactive-$IfRun} ]] && { bzcat $log; rm $log; }
+	   then [[ $IfRun ]] && { bzcat $log; rm $log; }
 	   else rm -f $log
 	fi
 
@@ -1832,18 +1833,7 @@ run_backup_rsync() {
 
 	setup_run_backup_priority && priority=high || priority=low
 
-	if [[ -t 2 ]]
-	   then local is_interactive=$true
-	   else local is_interactive=$false
-	fi
-
 	local new_snapshot=$drive_dir/$date_time
-
-	if [[ $is_interactive && $drive_name != Z ]] # Z = debug "drive"
-	   then echo -n "rsync $dirs_to_backup $new_snapshot/; can CTRL-C ..."
-		$IfRun sleep 5
-		echo " too late."
-	fi
 
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
@@ -1877,18 +1867,16 @@ run_backup() {
 	# suspended the backup and continued the prune (is it still relevant?)
 	lock -w backup || return 1	# wait for lock, so don't skip backup
 
-	if [[ ! $is_multi_writer_drive ]]
-	   then suspend_job copy prune
-	fi
+	[[ ! $is_multi_writer_drive ]] &&
+	suspend_job copy prune
 
 	run_backup_rsync $date_time
 	local status=$?
 
 	unlock backup
 
-	if [[ ! $is_multi_writer_drive ]]
-	   then $IfRun create_jobs prune # also manages copy job
-	fi
+	[[ ! $is_multi_writer_drive ]] &&
+	$IfRun create_jobs prune	# also manages copy job
 
 	return $status
 }
@@ -1935,6 +1923,7 @@ set_backup_type() {
 	backup_type=${drive_name2backup_type[$drive_name]-}
 	[[ $backup_type ]] && return
 
+	[[    $custom_config_vars ]] &&
 	local $custom_config_vars
 	if [[ $drive_name =~ ^$admin_drive_name_regex$ ]]
 	   then [[ $is_drive_name_capitalized ]] && drive_name=${drive_name^}
@@ -2085,6 +2074,7 @@ declare -A drive_name2do_suspend
 
 load__drive_name2do_suspend() {
 
+	[[    $custom_config_vars ]] &&
 	local $custom_config_vars	# for customize_config_variables
 
 	local drive drive_name
@@ -2298,7 +2288,8 @@ update_drive() {
 # We run backups simultaneously, so they all share the cached source files;
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive;
 # we run copy's  simultaneously, cuz uses fastest_snapshots to find idle src.
-# See action update-drives for the weird dance we perform when passed options.
+# See action update-drives for the weird dance we perform when passed options,
+# and action copy-snapshots for handling an arbitrary number of source args.
 create_jobs() {
 	local type=$1; shift
 	local opts= are_recursing=$false

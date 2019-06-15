@@ -1,3 +1,5 @@
+snapback is short for "snapshot backups"
+
 Why snapback not rsnapshot or rsync-snapshot (or dirvish):
 
    Supports many USB disk/flash drives (plugged in and off-site): efficiently
