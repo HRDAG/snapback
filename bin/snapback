@@ -83,7 +83,7 @@ Usage: $our_name [options] action [args]
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show full details on all jobs and drives
-    watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
+    watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
 
     ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
@@ -345,18 +345,25 @@ lock_PID() {
 
 # ------------------------------------------------------------------
 
-# Unless $is_multi_writer_drive, only one job can be modifying the drive at
-# once; this paragraph describes the policy to meet that requirement.  There's
-# a (per-drive) lock for each writer, and the backup job gets priority
-# (i.e. non-backup jobs must be suspended when a backup job is running).  A
-# lock() call for a non-backup lock will get its requested lock (and thus the
-# job will appear on the dashboard), but lock() won't return until any running
-# backup finishes.  Similarly, when run_backup() is called, it suspends copy
-# and prune (if they exist), then runs its backup, then drops its backup lock,
-# then fires off a prune job ...  When prune_drive() is called, if a copy job
-# exists: Suspend the copy (and do a prune) if drive space is tight, otherwise
-# continue (i.e. un-suspend) the copy and don't do a prune (but the
-# continue_job function will ignore the continue if a backup job is running).
+# When $is_multi_writer_drive == $true, all writer jobs run in parallel, with
+# their (relative) IO and CPU priorities controlled by setup_copy_priority(),
+# setup_lower_priority(), and setup_higher_priority().  [Locking and job
+# creation are described in the next section.]
+
+# When $is_multi_writer_drive == $false, only one job can be writing to a
+# drive at once (any other jobs will be suspended); this section describes
+# the policy (and mechanism) to meet that requirement.  For each drive,
+# create_jobs() creates a job for each writer, and lock() ( see lock_types= )
+# creates a lock for each of those jobs.  The backup job gets priority
+# (i.e. non-backup jobs will be suspended when a backup job is initiated).
+#
+# cron calls action run-backups, which calls create_jobs() to create a
+# run_backup() job for each drive; each run_backup() job starts a
+# prune_drive() job, and prune_drive() may start an update_drive() job.
+# [A lock() call for a non-backup lock will get its requested lock (so the job
+# will then appear on the dashboard), but lock() won't return until that
+# drive's backup finishes.  Similarly, a call to continue_job for a non-backup
+# job will be silently ignored if a backup is running.]
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -491,6 +498,8 @@ signal_job() {
 }
 
 # ---------------------------------
+
+# The locking & job-management policy is documented in front of function lock()
 
 function _signal_job() {
 	local signal=$1; shift
@@ -1436,12 +1445,13 @@ prune_drive() {
 	if have_job copy		# (it might be suspended)
 	   then if $IfRun is_drive_usage_too_high
 		   then  suspend_job copy
-		   else continue_job copy
+		   else continue_job copy # may do nothing if backup is running
 			[[ $is_multi_writer_drive ]] || {
 			   suspend_job prune; return 1; }
 		fi
 	fi
 
+	# continue_job does nothing if bkp running && ! $is_multi_writer_drive
 	lock prune || { continue_job prune; return 1; }
 
 	_is_time_to_prune_drive || { unlock prune; return 0; }
@@ -1853,11 +1863,11 @@ run_backup() {
 	set_date_time
 
 	if ! _is_time_to_run_backup
-	   then $IfRun run_jobs_in_parallel prune
+	   then $IfRun create_jobs prune
 		return
 	fi
 	if [[ $is_multi_writer_drive ]]
-	   then $IfRun run_jobs_in_parallel prune
+	   then $IfRun create_jobs prune
 	fi
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
@@ -1874,7 +1884,7 @@ run_backup() {
 	unlock backup
 
 	if [[ ! $is_multi_writer_drive ]]
-	   then $IfRun run_jobs_in_parallel prune # also manages copy job
+	   then $IfRun create_jobs prune # also manages copy job
 	fi
 
 	return $status
@@ -2039,7 +2049,7 @@ copy_snapshot() {
 	    copy_snapshot_args="$src_snapshots $dst_snapshot" && return 0
 
 	# use this if backup and/or prune needs to kill copy job
-	# run_copy_job $src_snapshots $dst_snapshot; return
+	# create_copy_job $src_snapshots $dst_snapshot; return
 
 	copy_snapshot_rsync $src_snapshot $dst_snapshot
 }
@@ -2279,13 +2289,15 @@ update_drive() {
 ##############################################################################-
 ##############################################################################-
 
+# The locking & job-management policy is documented in front of function lock()
+
 # Run a bunch of jobs in parallel, each in its own session (so lock files
 # will hold PGID (process-group ID), making 'kill' and 'ps' and 'watch' easy).
 # We run backups simultaneously, so they all share the cached source files;
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive;
 # we run copy's  simultaneously, cuz uses fastest_snapshots to find idle src.
 # See action update-drives for the weird dance we do when passed options.
-run_jobs_in_parallel() {
+create_jobs() {
 	local type=$1; shift
 	local opts= are_recursing=$false
 	while [[ ${1-} == -[^r]* ]] ; do opts+=" $1"; shift; done
@@ -2330,7 +2342,6 @@ run_jobs_in_parallel() {
 	    do	_set_drive_name $name && name=$drive_name # cleanup for 'ps'
 		if [[ ! $debug_opt && $drive_name != Z ]]
 		   then trap '' HUP
-			# Can't "$function name &", processes share lock files.
 			# Want new process-group so can ps/kill independently.
 			setsid \
 			$exe $opts -r $name &
@@ -2342,13 +2353,10 @@ run_jobs_in_parallel() {
 
 # -----------------------------------------------------------------------------
 
-# We can be killed by either a prune job that desparately needs our source
-# drive, or a backup job to our destination drive, so we need to restart;
-# and since we can be killed to steal either our source or destination
-# lock, we need to manage all locks.
-run_copy_job() {
-
-	abort "will finish this if src drives need to be locked"
+# We could be suspended by either a prune job that desparately needs our
+# source lock, or a backup job to our destination drive; thus we might
+# need to manage all locks.
+create_copy_job() {
 
 	if [[ $1 != -r ]]		# not Recursing, so need new job?
 	   then $Trace
@@ -2359,6 +2367,8 @@ run_copy_job() {
 		done
 		return 0
 	fi
+
+	abort "will finish this if src drives need to be locked"
 
 	shift				# toss -r; we're now a new job
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
@@ -4035,13 +4045,13 @@ case $action in
    ( r*b*k*p* | rb* ) undo_action_abbrev run-backups
 	[[ $# != 0 ]] || abort_with_action_Usage
 	[[ $1 == all ]] && rm_stale_locks
-	run_jobs_in_parallel backup "$@"
+	create_jobs backup "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo_action_abbrev prune-drives
 	[[ $# != 0 ]] || abort_with_action_Usage
-	run_jobs_in_parallel prune "$@"
+	create_jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
@@ -4052,7 +4062,7 @@ case $action in
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
 	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
 	[[ $# != 0   ]] || abort_with_action_Usage
-	run_jobs_in_parallel update ${src_names_regex_opt-} $recurse_opt $*
+	create_jobs update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
@@ -4066,7 +4076,7 @@ case $action in
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cps ) undo_action_abbrev copy-snapshots # cpss
-	[[ $1 == -r ]] && { run_copy_job "$@"; exit $?; }
+	[[ $1 == -r ]] && { create_copy_job "$@"; exit $?; }
 	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
 	[[ $1 == -q ]] && {  quiet_opt=$1; shift; } ||  quiet_opt=
 	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
@@ -4098,8 +4108,8 @@ case $action in
 	;;
 
    # w: show full details on all jobs and drives
-   # watch [-f][-C][-N names] [watch opts]: 'watch w' (-f: wide; -C: cron jobs)
-   ( watch | wa* | wt* | w ) [[ $action == w?* ]] && undo_action_abbrev watch
+   # watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
+   ( watch | wa* | wt* | w ) [[ $action != w ]] && undo_action_abbrev watch
 	watch "$@"
 	;;
 
