@@ -160,7 +160,8 @@ readonly no_log_rsync_exit_statuses="20" # can add 31
 # After you change this variable, touch excludes.txt to alert run-prune that
 # a full exclude-style prune run is needed, so new excludes delete files.
 #
-# yumdb/ has inodes with 1K links: overwhelms ext*; OK with XFS/Btrfs/etc
+# Best not to customize, since that prevents use by update-drives (see above).
+# yumdb/ has inodes with 1K links: overwhelms ext*, but OK with XFS/Btrfs/APFS.
 readonly extra_excludes="/var/lib/yum/yumdb" # per-drive custom excludes
 
 # Skip backups when there aren't many users, to avoid 'Too many links" problem.

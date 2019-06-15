@@ -410,7 +410,8 @@ function lock() {
 	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
 	local primary_lock_path=$lock_path # lock_PID sets lock_path
 
-	if ! [[ $type == backup || $is_multi_writer_drive ]]
+	# this logic is similar to the logic in _signal_job()
+	if ! [[ $is_multi_writer_drive || $type == backup ]]
 	   then # grab last: primary lock appears on dashboard, can be killed
 		lock_PID --wait    backup "$extra_lock_msg" &&
 		lock_PID --release backup "$extra_lock_msg" ||
@@ -510,8 +511,9 @@ function _signal_job() {
 	local type
 	for type
 	    do	have_job $type || continue
-		[[ ! $is_multi_writer_drive &&
-		   $signal == *CONT && $type != backup ]] && have_job backup &&
+		# this logic is similar to the logic in lock()
+		! [[ $is_multi_writer_drive || $type == backup ]] &&
+		[[ $signal == *CONT ]] && have_job backup &&
 		    return 1  # only 1 writer allowed, and backup has priority
 		signal_job $signal $type
 	done
@@ -1074,6 +1076,7 @@ count_rsyncs_using_resource() {
 
 update_snapshots_ls() {
 
+	[[ ! $debug_opt ]] &&
 	echo $snapshot_pattern{,.links} | tr ' ' '\n' |
 	    sort > $drive_log_dir/snapshots.ls
 }
@@ -2007,17 +2010,19 @@ is_dst_snapshot_needed() {
 # ---------------------------------
 
 dst_dir=
-copy_snapshot_args=
+copy_snapshot_args=			# holds result for update_drive
 
 copy_snapshot() {
+	[[ $1 == -s* ]] && { local src=${1#-s}   ; shift; } || local src=
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
+	[[ $src     ]] && set -- $src $1
 	(( $# >= 2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
 	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
-	copy_snapshot_args=
+	copy_snapshot_args=		# holds result when $is_update
 
 	$Trace
 	[[ $dst_minimal_snapshot_regex ]] || { # don't repeat dst setup
@@ -2047,9 +2052,6 @@ copy_snapshot() {
 
 	[[ $is_update ]] &&
 	    copy_snapshot_args="$src_snapshots $dst_snapshot" && return 0
-
-	# use this if backup and/or prune needs to kill copy job
-	# create_copy_job $src_snapshots $dst_snapshot; return
 
 	copy_snapshot_rsync $src_snapshot $dst_snapshot
 }
@@ -2296,7 +2298,7 @@ update_drive() {
 # We run backups simultaneously, so they all share the cached source files;
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive;
 # we run copy's  simultaneously, cuz uses fastest_snapshots to find idle src.
-# See action update-drives for the weird dance we do when passed options.
+# See action update-drives for the weird dance we perform when passed options.
 create_jobs() {
 	local type=$1; shift
 	local opts= are_recursing=$false
@@ -2318,9 +2320,10 @@ create_jobs() {
 	set -- $(echo $* | tr ' ' '\n' | tac) # 'ps' shows newest process first
 
 	case $type in
-	   ( backup ) function=run_backup   exe=$run_backup_exe  ;;
-	   ( prune  ) function=prune_drive  exe=$prune_drive_exe ;;
-	   ( update ) function=update_drive exe=$update_drive_exe ;;
+	   ( backup ) function=run_backup     exe=$run_backup_exe    ;;
+	   ( copy   ) function=copy_snapshot  exe=$copy_snapshot_exe ;;
+	   ( prune  ) function=prune_drive    exe=$prune_drive_exe   ;;
+	   ( update ) function=update_drive   exe=$update_drive_exe  ;;
 	   (   *    ) abort "'$type' is not supported" ;;
 	esac
 
@@ -2336,7 +2339,6 @@ create_jobs() {
 
 		$_our_name watch
 "
-
 	$Trace
 	for name
 	    do	_set_drive_name $name && name=$drive_name # cleanup for 'ps'
@@ -2349,44 +2351,6 @@ create_jobs() {
 			echo
 		fi
 	done
-}
-
-# -----------------------------------------------------------------------------
-
-# We could be suspended by either a prune job that desparately needs our
-# source lock, or a backup job to our destination drive; thus we might
-# need to manage all locks.
-create_copy_job() {
-
-	if [[ $1 != -r ]]		# not Recursing, so need new job?
-	   then $Trace
-		trap '' HUP
-		# backup job or (desparate) prune job can kill us to steal lock
-		until setsid $copy_snapshot_exe -r "$@"
-		   do	$IfRun sleep $lock_share_secs
-		done
-		return 0
-	fi
-
-	abort "will finish this if src drives need to be locked"
-
-	shift				# toss -r; we're now a new job
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
-	local dst_snapshot=${!#}
-	local src_snapshots=${*%$dst_snapshot}
-
-	$Trace
-	until   lock -w prune $src_snapshots &&
-		lock   backup $dst_snapshot 2> /dev/null
-	   do	unlock -s prune	# didn't get backup lock; drop/share prune lock
-		set +x
-	done
-	local src_snapshot=${lock_type2locked_resource[prune]}
-	$Trace
-	copy_snapshot_rsync $src_snapshot $dst_snapshot
-	unlock backup
-	unlock -s prune
-	return 0		# else infinite loop, see above
 }
 
 ##############################################################################-
@@ -2954,7 +2918,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
-	header "copy (& update)"
+	header "copy (e.g. update)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$copy_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
@@ -2999,7 +2963,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	[[ $copy_rsync_cmds ]] && {
-	header "copy's & update's rsync processes (full details)"
+	header "copy (e.g. update) rsync processes (full details)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
@@ -4076,19 +4040,23 @@ case $action in
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cps ) undo_action_abbrev copy-snapshots # cpss
-	[[ $1 == -r ]] && { create_copy_job "$@"; exit $?; }
-	[[ $1 == -d ]] && { debug_copy=$1; shift; } || debug_copy=
-	[[ $1 == -q ]] && {  quiet_opt=$1; shift; } ||  quiet_opt=
-	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
-	(( $# >= 2  )) || abort_with_action_Usage
+	[[ $1 == -d  ]] && {   debug_copy=$1; shift; } ||   debug_copy=
+	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
+	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
+	[[ $1 == -r  ]] && {  recurse_opt=$1; shift; } ||  recurse_opt=
+	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
+	(( $# >= 2   )) || [[ $src_snap_opt && ${1-} ]] ||
+	    abort_with_action_Usage
 	drive_name=${!#}
 	src_snapshots=${*%$drive_name}
+
+	[[ $recurse_opt ]] && { create_jobs copy $src_snap_opt -r $*; exit; }
 
 	set_drive_name $drive_name
 
 	lock copy || exit 1
 	for snapshot in $src_snapshots
-	    do	copy_snapshot $quiet_opt $snapshot $drive_name
+	    do	create_jobs copy $quiet_opt -s$snapshot $drive_name
 	done
 	unlock copy
 	;;

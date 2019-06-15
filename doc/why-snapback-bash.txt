@@ -12,14 +12,14 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
    Snapshots named by date (similar to rsync-snapshot), for transparency.
    Sophisticated pruning of old snapshots: different retention policy over the
      hours vs days vs months vs years (high -T debug_level shows how it works).
-   Prune/copy & backup simultaneously (separate nice/ionice): never miss backup
-      (no seek penalty with SSDs; can optionally suspend prune on disk drives);
+   Backup, copy, prune simultaneously (separate nice/ionice): never miss backup
+      (no seek penalty with SSDs; can enforce single writer with disk drives);
       when FS usage threshold is exceeded, pruning gets the higher priority.
    Manages rsync's "Too many links" error (admin solves by adjusting pruning);
      such errors are emailed to (per-drive) sysadmin(s).
    Built-in statistical tool to optimize filesystem inode-size and block-size.
-   Has 'watch' action, a dashboard (or 'w' to see everything).
-   Can safely and easily kill any backup, prune, copy job, e.g. to eject drive.
+   Has adaptable, comprehensive, real-time dashboard (can dump full snapshot).
+   Can safely/easily kill/suspend backup, copy, prune job, e.g. to eject drive.
    Maintains history of snapshots on each ejected drive (for offsite requests).
    Built-in regression tests to ensure reliable development.
    Written in bash ...
