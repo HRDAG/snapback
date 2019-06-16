@@ -795,6 +795,9 @@ _set_drive_name() {
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_pattern*}
 
+	[[ $name != *[\ \	]* ]] ||
+	   abort "drive_name can not contain white-space"
+
 	[[ $name =~ ^$admin_drive_name_regex$ ]] || return 1
 
 	  if [[ $is_drive_name_upper_cased ]]
@@ -815,6 +818,8 @@ set_drive_name() {
 	[[ $# == 1 && $1 ]] || abort "set_drive_name takes a single argument"
 
 	local name=$1
+	[[ $name != *[\ \	]* ]] ||
+	   abort "drive_name can not contain white-space"
 
 	if [[ ! $name =~ ^$admin_drive_name_regex$ ]]
 	   then if [[ $name == /dev/* ]]
@@ -956,6 +961,9 @@ validate_config_variables() {
 	#
 	[[ $excluded_backup_hours != *[^-\ \	0-9]* ]] ||
 	   abort "excluded_backup_hours must be list of (ranges of) numbers"
+
+	[[ $drive_dir_prefix != *[\ \	]* ]] ||
+	   abort "drive_dir_prefix can not contain white-space"
 
 	set -- $config_file $drive_config_file
 
@@ -3904,11 +3912,18 @@ run_debug_cmds() {
 
 # ---------------------------------
 
+readonly regression_tests="-b c z p u"
+
 regression_test() {
-	local tests=${*:-b c z p u}
+	local tests=${*:-$regression_tests}
+	[[ $tests == [A-Z] ]] && tests=${regression_tests/${tests,}/}
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
+
+	[[ ! $debug_opt ]] || abort "-d not supported in $FUNCNAME"
+
+	echo -e "\nComparing $old_cmd to $tst_cmd"
 
 	# --------------------------------------------
 
