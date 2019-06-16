@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=19			# has to match version= in configure.sh.sample
+version=20			# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -2106,25 +2106,20 @@ fastest_snapshots() {
 	    do	_set_drive_name $snapshot
 		local do_suspend=${drive_name2do_suspend[$drive_name]}
 
-		if have_job backup || have_job copy
-		   then local doing_backup=1
-		   else local doing_backup=0
-		fi
-
-		if have_job prune
-		   then local doing_prune=1
-		   else local doing_prune=0
-		fi
+		declare -i writer_count=0
+		for writer in backup copy prune
+		    do	have_job $writer && writer_count+=1
+		done
 
 		_set_drive_dir
 		count_rsyncs_using_resource " $drive_dir/"
 		local rsync_count=$?
 
 		local ss=$snapshot
-		echo "$do_suspend|$doing_backup|$doing_prune|$rsync_count|$ss"
+		echo "$do_suspend|$writer_count|$rsync_count|$ss"
 	done | sort -t\| -n |		# numeric sort
 	# cat; return			# uncomment to debug with action 'test'
-	cut -d\| -f5
+	cut -d\| -f4
 }
 
 # --------------------------------------------
@@ -3957,19 +3952,18 @@ regression_test() {
 	# --------------------------------------------
 
 	is_arg1_in_arg2 u $tests && {
-	local src=${update_test_src-}
-	local dst=${update_test_dst-}
-	[[ $src && $dst ]] ||
-	   abort "$config_file needs update_test_src & update_test_dst for 'u'"
-	show_test_header update -s $src $dst
+	local dst=${update_test_dst_drive-}
+	[[ $dst ]] ||
+	   abort "$config_file needs update_test_dst_drive for 'u'"
+	show_test_header update $dst
 
 	_set_drive_name $dst
 	have_job copy &&
 	$our_path kill-copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
 
-	is_test_cache_stale_opts="-d $src,$dst"
-	run_debug_cmds u update-drives -s $src $dst
+	is_test_cache_stale_opts=-r	# looks on all drives for fastest src
+	run_debug_cmds u update-drives $dst
 
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
