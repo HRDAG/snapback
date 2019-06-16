@@ -363,8 +363,8 @@ lock_PID() {
 #
 # A lock() call for a non-backup lock will get its requested lock immediately
 # (so the job will then appear on the dashboard), but lock() won't return
-# until that drive's backup finishes.  Similarly, a call to continue_job() for
-# a non-backup job will be silently ignored if a backup is running.
+# until that drive's backup finishes.  Similarly, a call to continue_jobs()
+# for a non-backup job will be silently ignored if a backup is running.
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -503,7 +503,7 @@ signal_job() {
 
 # The locking & job-management policy is documented in front of function lock()
 
-function _signal_job() {
+function _signal_jobs() {
 	local signal=$1; shift
 
 	[[ $IfRun ]] && echo "${FUNCNAME[1]} $*" && return 0
@@ -521,12 +521,13 @@ function _signal_job() {
 	return 0
 }
 
-function  suspend_job() { _signal_job -STOP "$@"; }
-function continue_job() { _signal_job -CONT "$@"; }
+# these take multiple types, and work with the current $drive_name
+function  suspend_jobs() { _signal_jobs -STOP "$@"; }
+function continue_jobs() { _signal_jobs -CONT "$@"; }
 
-# ---------------------------------
+# -------------------------------------------------
 
-kill_jobs() {
+kill_job_on_drives() {
 	local signal=-KILL
 	[[ $1 == -s  ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c  ]] && { signal=-CONT ; shift; }
@@ -545,13 +546,13 @@ kill_jobs() {
 
 # ---------------------------------
 
-kill_all_jobs() {
+kill_all_jobs_on_drives() {
 	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
 
 	local type
 	for type in $lock_types
-	    do	kill_jobs $opt $type "$@"
+	    do	kill_job_on_drives $opt $type "$@"
 	done
 }
 
@@ -1448,15 +1449,15 @@ prune_drive() {
 	# typically, priority is "which job should run", not renice/ionice
 	if have_job copy		# (it might be suspended)
 	   then if $IfRun is_drive_usage_too_high
-		   then  suspend_job copy
-		   else continue_job copy # may do nothing if backup is running
+		   then  suspend_jobs copy
+		   else continue_jobs copy # may do nothing if backup is running
 			[[ $is_multi_writer_drive ]] || {
-			   suspend_job prune; return 1; }
+			   suspend_jobs prune; return 1; }
 		fi
 	fi
 
-	# continue_job does nothing if bkp running && ! $is_multi_writer_drive
-	lock prune || { continue_job prune; return 1; }
+	# continue_jobs does nothing if bkp running && ! $is_multi_writer_drive
+	lock prune || { continue_jobs prune; return 1; }
 
 	_is_time_to_prune_drive || { unlock prune; return 0; }
 
@@ -1868,7 +1869,7 @@ run_backup() {
 	lock -w backup || return 1	# wait for lock, so don't skip backup
 
 	[[ ! $is_multi_writer_drive ]] &&
-	suspend_job copy prune
+	suspend_jobs copy prune
 
 	run_backup_rsync $date_time
 	local status=$?
@@ -2054,7 +2055,7 @@ copy_snapshot() {
 copy_snapshot_rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	suspend_job prune # hourly cron will continue prune if drive space low
+	suspend_jobs prune # hourly cron will continue prune if drive space low
 
 	setup_copy_priority
 
@@ -2981,7 +2982,7 @@ unmount_drives() {
 
 	$Trace
 	# do this early, since takes a while for processes to die
-	$IfRun kill_all_jobs "$@"
+	$IfRun kill_all_jobs_on_drives "$@"
 
 	[[ $debug_opt ]] && local output=/dev/stdout || local output=/dev/null
 	local name drive_name drive_dir status=0
@@ -3595,7 +3596,7 @@ _prepare_for_dump_restore() {
 	    do	is_drive_mounted $drive || $IfRun abort "mount drive $drive"
 	done
 
-	kill_all_jobs $src_name $dst_name
+	kill_all_jobs_on_drives $src_name $dst_name
 
 	if [[ ${drive_name_regex-} ]]
 	   then local where=drive_name_regex=
@@ -4086,68 +4087,68 @@ case $action in
    ( kill-backup* | kb ) undo_action_abbrev kill-backup
 	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
-	kill_jobs backup $*
+	kill_job_on_drives backup $*
 	;;
    # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
    ( kill-prune* | kp ) undo_action_abbrev kill-prune
 	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
-	kill_jobs prune $*
+	kill_job_on_drives prune $*
 	;;
    # kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
    ( kill-copy* | kc | ku ) undo_action_abbrev kill-copy
 	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
-	kill_jobs copy $*
+	kill_job_on_drives copy $*
 	;;
    # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
    ( kill-all | ka | kk ) undo_action_abbrev kill-all
 	[[ $# != 0 ]] || abort_with_action_Usage
 	$Trace
-	kill_all_jobs $*
+	kill_all_jobs_on_drives $*
 	;;
    # continue-* names: as above, but defaults to -STOP signal
    ( con*b* | cb ) undo_action_abbrev continue-backup
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_jobs -c backup $*
+	kill_job_on_drives -c backup $*
 	;;
    ( con*p* | cp ) undo_action_abbrev continue-prune
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_jobs -c prune $*
+	kill_job_on_drives -c prune $*
 	;;
    ( con*c* | cc | cu ) undo_action_abbrev continue-copy
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_jobs -c copy $*
+	kill_job_on_drives -c copy $*
 	;;
    ( con*a* | ca ) undo_action_abbrev continue-all
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_all_jobs -c_jobs $*
+	kill_all_jobs_on_drives -c $*
 	;;
    #  suspend-* names: as above, but defaults to -STOP signal
    #     stop-* names: 'stop' is a synonym for 'suspend'
    ( sus*b* | sto*b* | sb ) undo_action_abbrev suspend-backup
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_jobs -s backup $*
+	kill_job_on_drives -s backup $*
 	;;
    ( sus*p* | sto*p* | sp ) undo_action_abbrev suspend-prune
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_jobs -s prune $*
+	kill_job_on_drives -s prune $*
 	;;
    ( sus*c* | sto*c* | sc | su ) undo_action_abbrev suspend-copy
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_jobs -s copy $*
+	kill_job_on_drives -s copy $*
 	;;
    ( sus*a* | sto*a | sa ) undo_action_abbrev suspend-all
 	[[ $# != 0 ]] || abort_with_kill_Usage
 	$Trace
-	kill_all_jobs -s_jobs $*
+	kill_all_jobs_on_drives -s $*
 	;;
 
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
