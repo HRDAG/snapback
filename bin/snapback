@@ -1,9 +1,9 @@
 #! /usr/bin/env bash
 
-#     snapback is a utility to backup a system to multiple drives
+#    snapback (short for "snapshot backups") manages backups on multiple drives
 #
-#     Copyright (C) 2018-2019, Human Rights Data Analysis Group (HRDAG)
-#     https://hrdag.org
+#    Copyright (C) 2018-2019, Human Rights Data Analysis Group (HRDAG)
+#    https://hrdag.org
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -136,7 +136,7 @@ while getopts "C cnvqr: dtT: hk"  arg
 	   ( q ) our_rsync_opts+=" --quiet"	;; # cancels --verbose
 	   ( r ) our_rsync_opts+=" $OPTARG"	;;
 
-	   ( d ) IfRun="echo -e" debug_opt=-d ;; # $IfRun prevents side-effects
+	   ( d ) IfRun="echo -e" debug_opt=-d ;; # put $IfRun b4 'active' cmds
 	   ( t ) Trace="set -x"  trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
 
@@ -162,9 +162,9 @@ readonly tmp_5=$tmp_dir/$our_name-5-$$
 
 need_cmds lockpid			# from libsnap repo
 
-shopt -s extglob
+shopt -s checkhash extglob
 
-umask 02				# log and lock dirs are setgid sudo/whatever
+umask 02			  # log and lock dirs are setgid sudo/whatever
 
 set -u					# abort if access unset variable
 
@@ -2305,7 +2305,10 @@ create_jobs() {
 		fi
 		set -- $(list_drive_dirs | egrep -v "$excluded_regex")
 	fi
-	[[ $# != 0 ]] || abort "$FUNCNAME $type: pass a drive name"
+	if [[ $# == 0 ]]
+	   then [[ $is_cron ]] && exit 0
+		abort "$FUNCNAME $type: pass a (non-excluded) drive name"
+	fi
 
 	[[ ! $debug_opt ]] &&
 	set -- $(echo $* | tr ' ' '\n' | tac) # 'ps' shows newest process first
@@ -2634,7 +2637,10 @@ watch() {
 
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
 	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
+	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 	set -- $(list_drive_dirs -a)
+	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
+	$Trace
 	local all_drive_dirs=$*
 	local drive_dirs= show_all=$false
 	if [[ $names ]]
@@ -3848,7 +3854,7 @@ is_test_cache_stale() {
 			_drives+=" $drive_dir"
 		done
 		drives=${_drives# }
-	   else drives=$(snapback list-drives -a)
+	   else drives=$($_our_name list-drives -a)
 	fi
 
 	for drive in $drives
@@ -3920,9 +3926,13 @@ regression_test() {
 
 	is_arg1_in_arg2 c $tests && {
 	show_test_header copy to Z
-	is_test_cache_stale_opts=    # will use oldest snapshot, never deleted
-	set_oldest_snapshot
-	run_debug_cmds c copy-snapshot $oldest_snapshot Z
+	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
+	[[ -d $1 ]] || abort "copy test needs at least one snapshot somewhere"
+	_set_drive_name $1
+	src_snapshots=$1; shift
+	[[ -d $1 ]] && src_snapshots+=" $1"
+	is_test_cache_stale_opts="-d $drive_name"
+	run_debug_cmds c copy-snapshot $src_snapshots Z
 	}
 
 	# --------------------------------------------
@@ -4397,7 +4407,9 @@ case $action in
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
 	load__drive_name2do_suspend
+	suspend_tracing
 	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
+	restore_tracing
 	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
 
