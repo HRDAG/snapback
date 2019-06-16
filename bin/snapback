@@ -291,7 +291,7 @@ rm_stale_locks() {
 
 # -----------------------------------------------------------------------------
 
-readonly lock_types="backup prune copy" # kill_all_jobs uses also
+readonly writer_lock_types="backup prune copy" # kill_all_jobs_on_drives uses
 
 lock_path=				# used by lock() and signal_job()
 set_lock_path() {
@@ -310,7 +310,7 @@ lock_PID() {
 	while [[ $1 == -* ]] ; do lock_opts+=" $1"; shift; done
 	local type=$1 lock_holder_action=$2
 
-	is_arg1_in_arg2 $type $lock_types ||
+	is_arg1_in_arg2 $type $writer_lock_types ||
 	   abort "$FUNCNAME: '$type' is unknown lock type"
 	set_lock_path $type $name
 	local lock_file=$(basename $lock_path)
@@ -351,10 +351,10 @@ lock_PID() {
 # creation are described in the next section.]
 
 # When $is_multi_writer_drive == $false, only one job can be writing to a
-# drive at once (any other jobs will be suspended); this section describes
-# the policy (and mechanism) to meet that requirement.  For each drive,
-# create_jobs() creates a job for each writer, and lock() ( see lock_types= )
-# creates a lock for each of those jobs.  The backup job gets priority
+# drive at once (any other jobs will be suspended); this section describes the
+# policy (and mechanism) to meet that requirement.  For each drive,
+# create_jobs() creates a job for each writer, and lock() creates a lock for
+# each of those jobs ( see writer_lock_types= ).  The backup job gets priority
 # (i.e. non-backup jobs will be suspended when a backup job is initiated).
 #
 # An hourly cron job calls action run-backups, which calls create_jobs() to
@@ -551,7 +551,7 @@ kill_all_jobs_on_drives() {
 	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
 
 	local type
-	for type in $lock_types
+	for type in $writer_lock_types
 	    do	kill_job_on_drives $opt $type "$@"
 	done
 }
@@ -3965,11 +3965,14 @@ regression_test() {
 
 	_set_drive_name $dst
 	have_job copy &&
-	$our_path kill-copy $dst &> /dev/null &&
-	    warn "killed update-drive (or copy) to $dst"
+	$our_path kill-copy $dst &> /dev/null && killed_dst=$dst &&
+	    warn "killed update-drive (or copy) on drive $dst"
 
 	is_test_cache_stale_opts="-d $src,$dst"
 	run_debug_cmds u update-drives -s $src $dst
+
+	[[ ${killed_dst-} ]] &&
+	warn "remember to restart your copy/update job on drive $killed_dst"
 	}
 
 	echo
