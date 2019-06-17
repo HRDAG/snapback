@@ -127,7 +127,7 @@ declare -r -A level2CPU_priority_cmd=(
      [lower]="renice 20 -g"
     [medium]="renice 20 -g"
     [higher]="renice 20 -g"
-)
+) ||
 declare -r -A level2CPU_priority_cmd=(
      [lower]="renice 16 -g"
     [medium]="renice 15 -g"
