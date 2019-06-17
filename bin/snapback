@@ -346,25 +346,28 @@ lock_PID() {
 # ------------------------------------------------------------------
 
 # When $is_multi_writer_drive == $true, all writer jobs run in parallel, with
-# their (relative) IO and CPU priorities controlled by setup_copy_priority(),
-# setup_lower_priority(), and setup_higher_priority().  [Locking and job
-# creation are described in the next section.]
+# their (relative) IO and CPU priorities controlled by
+# set_job_type2priority_level() .  [Locking and job creation are described in
+# the next section.]
 
 # When $is_multi_writer_drive == $false, only one job can be writing to a
 # drive at once (any other jobs will be suspended); this section describes the
 # policy (and mechanism) to meet that requirement.  For each drive,
-# create_jobs() creates a job for each writer, and lock() creates a lock for
-# each of those jobs ( see writer_lock_types= ).  The backup job gets priority
-# (i.e. non-backup jobs will be suspended when a backup job is initiated).
+# create_job_on_drives() creates a job for a tyoe of writer, and lock()
+# creates a lock for each of those jobs ( see writer_lock_types= ).  The
+# backup job gets priority (i.e. non-backup jobs will be suspended when a
+# backup job is initiated).
 #
-# An hourly cron job calls action run-backups, which calls create_jobs() to
-# create a run_backup() job for each drive; each run_backup() job starts a
-# prune_drive() job, and prune_drive() may start an update_drive() job.
+# An hourly cron job calls action run-backups (with argument 'all'), which
+# calls create_job_on_drives() to create a run_backup() job for each drive;
+# each run_backup() job starts a prune_drive() job, and prune_drive() may
+# start an update_drive() job.
 #
 # A lock() call for a non-backup lock will get its requested lock immediately
 # (so the job will then appear on the dashboard), but lock() won't return
 # until that drive's backup finishes.  Similarly, a call to continue_jobs()
-# for a non-backup job will be silently ignored if a backup is running.
+# for a non-backup job will be silently ignored if a backup is running (and
+# returns 'failed').
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -512,10 +515,14 @@ function _signal_jobs() {
 	local type
 	for type
 	    do	have_job $type || continue
-		# this logic is similar to the logic in lock()
-		! [[ $is_multi_writer_drive || $type == backup ]] &&
-		[[ $signal == *CONT ]] && have_job backup &&
-		    return 1  # only 1 writer allowed, and backup has priority
+		if [[ $signal == *CONT ]]
+		   then # this logic is similar to the logic in lock()
+			! [[ $is_multi_writer_drive || $type == backup ]] &&
+			have_job backup &&
+			    return 1  # only 1 writer allowed, bkp has priority
+			set_lock_path $type
+			set_priority  $type $(< $lock_path)
+		fi
 		signal_job $signal $type
 	done
 	return 0
@@ -698,7 +705,7 @@ set_admin_group() {
 	local users_groups=$(id -G -n $user)
 
 	local group
-	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / MacOS
+	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / macOS
 	    do	is_arg1_in_arg2 $group $users_groups && break
 	done
 	[[ $group != NoNe ]] && admin_group=$group
@@ -1024,48 +1031,48 @@ is_drive_usage_too_high() {
 	return 1
 }
 
-# -----------------------
+# --------------------------------------
 
-setup_copy_priority() {
+declare -A job_type2priority_level
 
-	$IfRun $cmd_to_set_copy_CPU_priority $BASHPID > /dev/null
-	$IfRun $cmd_to_set_copy_IO_priority  $BASHPID > /dev/null
-}
-
-# --------------
-
-setup_lower_priority() {
-
-	$IfRun $cmd_to_set_lower_CPU_priority $BASHPID > /dev/null
-	$IfRun $cmd_to_set_lower_IO_priority  $BASHPID > /dev/null
-}
-
-# --------------
-
-setup_higher_priority() {
-
-	$IfRun $cmd_to_set_higher_CPU_priority $BASHPID > /dev/null
-	$IfRun $cmd_to_set_higher_IO_priority  $BASHPID > /dev/null
-}
-
-# -----------------------
-
-# returns success if run at higher priority
-setup_run_backup_priority() {
+# this is mostly relevant when $is_multi_writer_drive
+set_job_type2priority_level() {
 
 	if is_drive_usage_too_high
-	   then  setup_lower_priority ; return 1
-	   else setup_higher_priority ; return 0
+	   then job_type2priority_level=(
+		    [prune]=higher
+		   [backup]=medium
+		     [copy]=lower
+		)
+	   else job_type2priority_level=(
+		   [backup]=higher
+		     [copy]=medium
+		    [prune]=lower
+		)
 	fi
 }
 
-# --------------
+# -----------------------
 
-setup_prune_drive_priority() {
+priority=				# global, for logging
 
-	if is_drive_usage_too_high
-	   then setup_higher_priority
-	   else  setup_lower_priority
+# this sets the 'priority' variable _and_ changes the process priority
+set_priority() {
+	local job_type=$1 PGID=${2:-$$}
+
+	set_job_type2priority_level
+	priority=${job_type2priority_level[$job_type]}
+
+	local CPU_priority_cmd=${level2CPU_priority_cmd[$priority]}
+	local  IO_priority_cmd=${level2IO_priority_cmd[$priority]}
+
+	{
+	$IfRun $CPU_priority_cmd $PGID	; [[ $IO_priority_cmd ]] &&
+	$IfRun  $IO_priority_cmd $PGID
+	} |
+	if [[ $IfRun ]]
+	   then sed "s@\b$PGID\b@<our_PGID>@"
+	   else egrep -v ' new priority '
 	fi
 }
 
@@ -1454,11 +1461,10 @@ prune_drive() {
 
 	[[ ! $is_update ]] && {		# for update, we just rmdir empty dirs
 
-	# typically, priority is "which job should run", not renice/ionice
 	if have_job copy		# (it might be suspended)
 	   then if $IfRun is_drive_usage_too_high
 		   then  suspend_jobs copy
-		   else continue_jobs copy # may do nothing if backup is running
+		   else continue_jobs copy # may do nothing if backup running
 			[[ $is_multi_writer_drive ]] || {
 			   suspend_jobs prune; return 1; }
 		fi
@@ -1469,7 +1475,7 @@ prune_drive() {
 
 	_is_time_to_prune_drive || { unlock prune; return 0; }
 
-	setup_prune_drive_priority
+	set_priority prune
 
 	} # [[ ! $is_update ]]
 
@@ -1730,7 +1736,7 @@ _handle_rsync_results() {
 		record_rsync_time $new_snapshot $start_seconds
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
-		$IfRun log "created $new_snapshot (at ${priority}er priority)"
+		$IfRun log "created $new_snapshot (at $priority priority)"
 	   else set -- $(bzcat $log 2>/dev/null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
@@ -1840,7 +1846,7 @@ run_rsync() {
 run_backup_rsync() {
 	local date_time=$1
 
-	setup_run_backup_priority && priority=high || priority=low
+	set_priority backup
 
 	local new_snapshot=$drive_dir/$date_time
 
@@ -2065,11 +2071,7 @@ copy_snapshot_rsync() {
 
 	suspend_jobs prune # hourly cron will continue prune if drive space low
 
-	setup_copy_priority
-
-	# lower nice value is higher priority
-	[[   $cmd_to_set_copy_IO_priority < \
-	   $cmd_to_set_higher_IO_priority ]] && priority=high || priority=low
+	set_priority copy
 
 	local cwd=$PWD
 	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
@@ -2287,13 +2289,14 @@ update_drive() {
 
 # The locking & job-management policy is documented in front of function lock()
 
-# Run a bunch of jobs in parallel, each in its own session (so lock files
-# will hold PGID (process-group ID), making 'kill' and 'ps' and 'watch' easy).
+# Create a unique job on each specified drive (default $drive_name).
+# Each job has its own session: lock files will hold PGID (process-group ID),
+# making 'kill'/'suspend' and 'ps' and 'watch' (dashboard) easy to manage.
 # We run backups simultaneously, so they all share the cached source files;
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive;
 # we run copy's  simultaneously, cuz uses fastest_snapshots to find idle src.
-# See action update-drives for the weird dance we perform when passed options,
-# and action copy-snapshots for handling an arbitrary number of source args.
+# See action update-drives for the weird dance we perform when passed options;
+# see action copy-snapshots for handling an arbitrary number of source args.
 create_jobs() {
 	local type=$1; shift
 	local opts= are_recursing=$false
@@ -3381,7 +3384,7 @@ mkfs_backup_drive() {
 	local cmd=$1; shift; local opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
-		[[ $(which mkfs.xfs) ]] || $IfRun abort "install xfsprogs"
+		type -t mkfs.xfs > /dev/null || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
 		# using isize=1024 resulted in 40% more directory drive space.
@@ -3912,7 +3915,7 @@ run_debug_cmds() {
 
 # ---------------------------------
 
-readonly regression_tests="-b c z p u"
+readonly regression_tests="b c z p u"
 
 regression_test() {
 	local tests=${*:-$regression_tests}
