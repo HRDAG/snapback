@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=20			# has to match version= in configure.sh.sample
+version=21			# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -57,6 +57,7 @@ fi ;						readonly config_file_sample
 # for each config var, create associative array for per-drive customization
 readonly uncustomizable_config_vars="
 	     drive_dir_prefix old_crypt_name_prefixes drive_config_file
+	     level2CPU_priority_cmd level2IO_priority_cmd
 	     drive_name_regex admin_drive_name_regex is_drive_name_capitalized"
 readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
 		       sed -n -r 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' | sort -u)
@@ -908,7 +909,9 @@ customize_config_variables() {
 	local var_name
 	[[ ${config_var2default_value[*]-} ]] ||
 	for var_name in $config_vars
-	    do	is_set $var_name ||
+	    do	is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
+		   continue
+		is_set $var_name ||
 		   abort "need to set '$var_name=' in $config_file"
 		config_var2default_value[$var_name]=${!var_name}
 		suspend_tracing
@@ -924,15 +927,17 @@ customize_config_variables() {
 	done
 
 	for var_name in $config_vars
-	    do	local array_name=drv_name2$var_name
+	    do	[[ $(declare -p $var_name) =~ ^declare.-i?r ]] ||
+		is_arg1_in_arg2 $var_name $uncustomizable_config_vars ||
+		custom_config_vars+=" $var_name"
+
+		local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
 		[[ $drv_names ]] || continue
 		suspend_tracing
 
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
-
-		custom_config_vars+=" $var_name"
 
 		is_arg1_in_arg2 $drive_name $drv_names ||
 		   { eval "$var_name=\${config_var2default_value[$var_name]}"
