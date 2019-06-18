@@ -597,6 +597,7 @@ set_lock_PGIDs() {
 # -----------------------------------------------------------------------------
 
 ps_locks() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 	local ps_opts=
 	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
@@ -620,6 +621,7 @@ ps_locks() {
 		ps $ps_opts -$1 || ps ${no_header_opt-} $ps_opts $1
 		status=$?
 	done
+	$xtrace
 	return $status
 }
 
@@ -1611,22 +1613,21 @@ set_link_dest_opts___for_copy_snapshot() {
 # misc functions to support run_rsync
 # -----------------------------------------------------------------------------
 
-set_hours() {
-	local var_name=$1
+set_excluded_hours() {
 
 	set -- $(
-	for hour in ${!var_name}
+	for hour
 	    do	[[ $hour =~ ^0+$ ]] && continue # pruning needs midnight backup
 		[[ $hour == *-*  ]] || { echo $hour; continue; }
 		[[ $hour != *-*-* ]] || abort "bad $var_name range"
 		first=${hour%-*} last=${hour#*-}
 		if (( $first <= $last ))
-		   then eval echo \{$first..$last\}
-		   else eval echo \{$first..23\} \{1..$last\}
+		   then eval "echo {$first..$last}"
+		   else eval "echo {$first..23} {1..$last}" # exclude midnight
 		fi
 	done
 	)
-	hours=$*
+	excluded_hours=$*
 }
 
 # ---------------------------------
@@ -1636,8 +1637,8 @@ _is_time_to_run_backup() {
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
 	local current_hour=$(date '+%k') hours
-	set_hours excluded_backup_hours
-	is_arg1_in_arg2 $current_hour $hours && return 1
+	set_excluded_hours $excluded_backup_hours
+	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
 
 	return 1
@@ -4433,7 +4434,8 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
-	set_drive_dir B
+	set_excluded_hours 23-3 0 1 5-7
+	echo $excluded_hours
 	exit
 
 	load__drive_name2do_suspend
