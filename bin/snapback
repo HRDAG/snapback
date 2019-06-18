@@ -1645,15 +1645,30 @@ _is_time_to_run_backup() {
 
 # -------------------------------------------------------
 
+set_hours() {
+	local minutes=$1
+
+	printf -v hours "%s.%02d" $((minutes/60)) $(( (minutes%60)*100 / 60 ))
+}
+
+# ---------------------------------
+
 readonly rsync_time_subdir=stats/rsync-minutes
 
 [[	 ${days_to_keep-} ]] ||		# custom version in $config_file?
 declare -i days_to_keep=3		# ensure more than weekend-only data
 
+rsync_hours=
+
 record_rsync_time() {
 	local snapshot=$(basename $1)
 
 	declare -i minutes=$(( (30 + $SECONDS) / 60 ))
+	set_hours $minutes
+	rsync_hours=$hours
+
+	# $rsync_time_subdir/* used to set backup_period, so don't save copy
+	[[ ! $is_copy_snapshot ]] || return
 
 	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
 	$IfRun mkdir -p $(dirname $file)
@@ -1727,11 +1742,11 @@ _handle_rsync_results() {
 		set -- $snapshot_pattern &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update_snapshots_ls
-		[[ ! $is_copy_snapshot ]] && # time used to set backup_period
 		record_rsync_time $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
-		$IfRun log "created $new_snapshot (at $priority priority)"
+		$IfRun log \
+	  "created $new_snapshot (at $priority priority) in $rsync_hours hours"
 	   else set -- $(bzcat $log 2>/dev/null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
