@@ -121,7 +121,7 @@ declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 
 [[ $is_darwin ]] &&
 #https://serverfault.com/questions/100124/equivalent-of-nice-for-filesystem-io)
-# reports that, on Darwin (macOS, Mac OS X), you'll notice a slowdown
+# reports that, on Darwin (aka macOS aka Mac OS X), you'll notice a slowdown
 # from rsync unless you use a nice value of 20 (maximum niceness).
 declare -r -A level2CPU_priority_cmd=(
      [lower]="renice 20 -g"
@@ -136,9 +136,9 @@ declare -r -A level2CPU_priority_cmd=(
 
 type ionice &> /dev/null &&
 declare -r -A level2IO_priority_cmd=(
-     [lower]="ionice -c 2 -n 7 -g"
-    [medium]="ionice -c 2 -n 6 -g"
-    [higher]="ionice -c 2 -n 5 -g"
+     [lower]="ionice -c 2 -n 7 -P"
+    [medium]="ionice -c 2 -n 6 -P"
+    [higher]="ionice -c 2 -n 5 -P"
 ) ||
 # replace this if you have a command to set I/O priority
 declare -r -A level2IO_priority_cmd=([lower]= [medium]= [higher]=)

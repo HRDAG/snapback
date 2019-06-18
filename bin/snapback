@@ -54,7 +54,8 @@ fi ;						readonly config_file_sample
 [[ -s $config_file_sample ]] ||
    abort "have to install $config_file_sample"
 
-# for each config var, create associative array for per-drive customization
+# For each config var, create associative array for per-drive customization.
+# [customize_config_variables currently fails when try to customize an array.]
 readonly uncustomizable_config_vars="
 	     drive_dir_prefix old_crypt_name_prefixes drive_config_file
 	     level2CPU_priority_cmd level2IO_priority_cmd
@@ -243,6 +244,7 @@ set_locks() {
 
 	[[ $PIDs ]] || return 1
 
+	[[ -d $lock_dir ]] || create_log_dirs
 	local cwd=$PWD
 	cd $lock_dir || abort "cd $lock_dir"
 	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
@@ -280,6 +282,7 @@ rm_stale_locks() {
 
 	set_sudo_lockpid
 
+	[[ -d $lock_dir ]] || create_log_dirs
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
@@ -299,6 +302,7 @@ set_lock_path() {
 	local type=$1 name=${2:-$drive_name}
 
 	[[ $name ]] || abort "$FUNCNAME: missing \$2 and \$drive_name null"
+	[[ -d $lock_dir ]] || create_log_dirs
 	lock_path=$lock_dir/$type-$name.pid
 }
 
@@ -573,6 +577,7 @@ set_lock_PGIDs() {
 
 	lock_PGIDs=
 
+	[[ -d $lock_dir ]] || create_log_dirs
 	eval "set -- $lock_dir/$type-${names_pattern:-*}.pid"
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
@@ -604,6 +609,7 @@ ps_locks() {
 	   name_pattern=${name_pattern^^}
 
 	[[ $do_rm ]] && rm_stale_locks
+	[[ -d $lock_dir ]] || create_log_dirs
 	cd_ $lock_dir
 	local status=1			# assume all locks are missing/stale
 	eval "set -- $type_pattern*-$name_pattern.pid"
@@ -650,29 +656,6 @@ is_drive_mounted() {
 	df | grep -q " $drive_dir$" || [[ $drive_dir == *[-/]Z ]]
 }
 
-# -----------------------------------------------------------------------------
-
-function fix_snapshot_names {
-	local drive_dir=$1
-
-	set -- $drive_dir/$old_snapshot_pattern*
-	[[ -d $1 ]] || return 0
-
-	# this --kill -9 is completely safe
-	$IfRun sudo fuser -k -9 -M $drive_dir
-	local msg="$old_snapshot_pattern to $snapshot_pattern"
-	log "renaming snapshots from $msg, first waiting ..."
-	$IfRun sleep 5			# wait for kill
-
-	local old_name
-	cd_ $drive_dir
-	for old_name in $old_snapshot_pattern*
-	    do	[[ -d $old_name ]] || continue
-		set_new_name $old_name
-		$IfRun sudo mv $old_name $new_name || abort "need sudo privs"
-	done
-}
-
 # ----------------------------------------------------------------------------
 
 set_oldest_snapshot() {
@@ -715,18 +698,20 @@ set_admin_group() {
 
 # ----------------------
 
-_create_log_dirs() {
+create_log_dirs() {
 
 	set_admin_group
 	local group=$admin_group
 
-	[[ -d $log_dir ]] || {
+	[[ -d $log_dir && -d $lock_dir ]] || {
 	sudo mkdir -p --mode=1777 $lock_dir
 	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
 	sudo chgrp $group  $log_dir $lock_dir &&
 	sudo chmod g+w,g+s $log_dir $lock_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
+
+	[[ ${drive_log_dir-} ]] || return
 
 	[[ $group ]] && group=:$group
 	if [[ ! -d $drive_log_dir ]]
@@ -764,7 +749,7 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	fi
 	TraceV 3 drive_log_dir
 	file_for_logging=$drive_log_dir/messages.log
-	[[ -d $drive_log_dir ]] || _create_log_dirs
+	[[ -d $drive_log_dir ]] || create_log_dirs
 
 	suspend_tracing
 	customize_and_validate_configuration_variables $drive_name
@@ -881,7 +866,8 @@ set_drive_dir() {
 	fi
 
 	if  is_drive_mounted  $drive_dir
-	   then fix_snapshot_names $drive_dir # must call last
+	   then have_cmd fix_snapshot_names &&
+		fix_snapshot_names $drive_dir # must call last
 		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null # optional
 	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
 		    warn "no filesystem mounted on $drive_dir" ||
@@ -927,7 +913,7 @@ customize_config_variables() {
 	done
 
 	for var_name in $config_vars
-	    do	[[ $(declare -p $var_name) =~ ^declare.-i?r ]] ||
+	    do	[[ $(declare -p $var_name) =~ ^declare.-[aA]?i?r ]]   ||
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars ||
 		custom_config_vars+=" $var_name"
 
@@ -1255,8 +1241,6 @@ _rm_pruned_snapshots() {
 # snapshot basename format is Year-Mo-Da,Hr, all implemented in this section;
 #    to implement snapshot_date_time_separator, search for: ,00 ,?? ,$ ,/
 
-#			       _Year_MoDa-Hr
-readonly old_snapshot_pattern="[1-9]?????-??"
 readonly     snapshot_pattern="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
 readonly max_snapshot_pattern="9999-12-31,23"		  # max supported value
 readonly snapshot_day_pattern=${snapshot_pattern%,??}	  # Year-Mo-Da
@@ -2525,7 +2509,8 @@ setup_snapshot_stats() {
 	_recalculate_stats_vars
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
-	[[ -w $log_dir ]] || return # might not have write access to the cache
+	[[ -w $log_dir  ]] || return # might not have write access to the cache
+	[[ -d $lock_dir ]] || create_log_dirs
 	local lockpid_args="--dir=$lock_dir $lock_name"
 	lockpid $lockpid_args > /dev/null || return
 
@@ -4427,6 +4412,9 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	set_drive_dir B
+	exit
+
 	load__drive_name2do_suspend
 	suspend_tracing
 	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
