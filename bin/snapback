@@ -711,8 +711,7 @@ create__lock_dir__log_dirs() {
 	local group=
 
 	[[ -d $log_dir && -d $lock_dir ]] || {
-	set_admin_group
-	group=$admin_group
+	set_admin_group && group=$admin_group
 	sudo mkdir -p --mode=1777 $lock_dir
 	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
 	sudo chgrp $group  $log_dir $lock_dir &&
@@ -722,9 +721,9 @@ create__lock_dir__log_dirs() {
 
 	[[ ${drive_log_dir-} ]] || return
 
-	[[ $group ]] && group=:$group
 	if [[ ! -d $drive_log_dir ]]
-	   then sudo mkdir -p -m g+w,o-w $drive_log_dir
+	   then set_admin_group && group=$admin_group && group=:$group
+		sudo mkdir -p -m g+w,o-w $drive_log_dir
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
 		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
