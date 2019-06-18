@@ -1647,9 +1647,17 @@ _is_time_to_run_backup() {
 # -------------------------------------------------------
 
 set_hours() {
+	if [[ $1 == -[1-9] ]]		# 0 is harder to support
+	   then declare -i decimal_digits=${1#-} ; shift
+	   else declare -i decimal_digits=2
+	fi
+	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
 	local minutes=$1
 
-	printf -v hours "%s.%02d" $((minutes/60)) $(( (minutes%60)*100 / 60 ))
+	local format="%s.%0${decimal_digits}d"
+	declare -i multiplier=10**$decimal_digits
+	printf -v hours "$format" $((minutes/60)) \
+				  $(( ($multiplier*(minutes%60) + 30) / 60 ))
 }
 
 # ---------------------------------
@@ -1664,7 +1672,7 @@ rsync_hours=
 record_rsync_time() {
 	local snapshot=$(basename $1)
 
-	declare -i minutes=$(( (30 + $SECONDS) / 60 ))
+	declare -i minutes=$(( ($SECONDS + 30) / 60 ))
 	set_hours $minutes
 	rsync_hours=$hours
 
@@ -2407,10 +2415,12 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 		if [[ $# != 0 ]]
 		   then local sum=$(cat $* | tr '\n' '+')
 			declare -i total=${sum%+}
-			hour_avg=$(echo $total $# |
-				   awk '{ printf "%.1f", $1/($2*60) }')
-			hour_max=$(sort -n -r $* |
-				   awk '{ printf "%.1f", $1/60; exit }')
+			declare -i avg=$(( ($total+($#/2)) / $# ))
+			set_hours -1 $avg # only want 1 decimal point
+			hour_avg=$hours
+			set -- $(sort -n -r $*)
+			set_hours -1 $1
+			hour_max=$hours
 		   else hour_avg= hour_max=
 		fi
 		hour_avgs+=" $name=$hour_avg"
@@ -2804,9 +2814,10 @@ watch() {
 	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
 	TraceV 1 PD CS RB && let rows-=3
 	# min overhead: 1 watch line, 1 blank line, 2 hours to create,
-	#   2 good snapshots, 4 lines of empty backup section.
+	#   1 Number pruned, 1 # .partial, 1 age of good snapshots,
+	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
-	declare -i min_rows=$((  6 + 4 + PD + CS + RB )); [[ $cron_opt ]] &&
+	declare -i min_rows=$((  7 + 4 + PD + CS + RB )); [[ $cron_opt ]] &&
 		   min_rows+=$(( 4 + 5*num_bkp_rsyncs + PD ))
 	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
@@ -2836,33 +2847,35 @@ watch() {
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
+	setup_snapshot_stats .rm
+	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
+	setup_snapshot_stats .partial
+	echo "# .partial snaps pending update (+err):  $stats_number"
 	setup_snapshot_stats ''
-	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
 	echo "  Age of newest good snapshot, in days:  $stats_newest_age"
 
 	# --------------------------------------------
 
-	declare -i rows_used=7
+	declare -i rows_used=5
 	(( $rows >= ($min_rows + $rows_used) )) || [[ $show_all ]] && {
-	echo
+	echo				# first row used
 	setup_snapshot_stats .rm
-	echo " Number pruned snapshots awaiting 'rm':  $stats_number"
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
 	setup_snapshot_stats .links
 	echo " Number .links (failed 'ln') snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
 	setup_snapshot_stats .partial
-	echo "Number .partial snapshots, updates+err:  $stats_number"
 	echo "Days from most recent snapshot.partial:  $stats_newest_age"
 	let rows-=$rows_used
 	}
 
 	# --------------------------------------------
 
-	declare -i rows_used=6
+	declare -i rows_used=7
 	(( $rows >= ($min_df_rows + $rows_used) )) || [[ $show_all ]] && {
-	echo
+	echo				# first row used
 	setup_snapshot_stats ''
+	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
 	echo "     Total number successful snapshots:  $stats_number"
 	setup_snapshot_stats '' hour
 	echo "  Total number  days  w/good snapshots:  $stats_number"
@@ -4434,15 +4447,21 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
-	set_excluded_hours 23-3 0 1 5-7
-	echo $excluded_hours
-	exit
-
 	load__drive_name2do_suspend
 	suspend_tracing
 	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
 	restore_tracing
 	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
+	exit
+
+	for minutes in 0 10 20 30 50 60 90 120 125 150
+	    do	set_hours    $minutes; printf "%3s -> %s\n" $minutes $hours
+		set_hours -1 $minutes; printf "%3s -> %s\n" $minutes $hours
+	done
+	exit
+
+	set_excluded_hours 23-3 0 1 5-7
+	echo $excluded_hours
 	exit
 
 	set_absolute_path /dev/mapper/backup_C
