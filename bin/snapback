@@ -699,18 +699,20 @@ function set_admin_group() {
 	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / macOS
 	    do	is_arg1_in_arg2 $group $users_groups && break
 	done
-	[[ $group != NoNe ]] && admin_group=$group
+	[[ $group == NoNe ]] && admin_group= || admin_group=$group
 	restore_tracing group
+	[[ $admin_group ]]
 }
 
 # ----------------------
 
 create__lock_dir__log_dirs() {
 
-	set_admin_group
-	local group=$admin_group
+	local group=
 
 	[[ -d $log_dir && -d $lock_dir ]] || {
+	set_admin_group
+	group=$admin_group
 	sudo mkdir -p --mode=1777 $lock_dir
 	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
 	sudo chgrp $group  $log_dir $lock_dir &&
