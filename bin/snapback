@@ -1651,10 +1651,8 @@ declare -i days_to_keep=3		# ensure more than weekend-only data
 
 record_rsync_time() {
 	local snapshot=$(basename $1)
-	declare -i start_secs=$2
 
-	declare -i end_secs=$(date '+%s')
-	declare -i minutes=$(( (30 + $end_secs - $start_secs) / 60 ))
+	declare -i minutes=$(( (30 + $SECONDS) / 60 ))
 
 	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
 	$IfRun mkdir -p $(dirname $file)
@@ -1729,7 +1727,7 @@ _handle_rsync_results() {
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update_snapshots_ls
 		[[ ! $is_copy_snapshot ]] && # time used to set backup_period
-		record_rsync_time $new_snapshot $start_seconds
+		record_rsync_time $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
 		$IfRun log "created $new_snapshot (at $priority priority)"
@@ -1745,7 +1743,7 @@ _handle_rsync_results() {
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links_error_msg "$error_msg")
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
-			record_rsync_time $new_snapshot $start_seconds
+			record_rsync_time $new_snapshot
 		fi
 		if is_arg1_in_arg2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
@@ -1816,8 +1814,8 @@ run_rsync() {
 	[[ ! $is_copy_snapshot ]] &&
 	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
-	declare -i start_seconds=$(date '+%s')
 
+	SECONDS=0			# time the rsync
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\
@@ -4210,7 +4208,7 @@ case $action in
 	# The following designed to work with (custom) configure.sh span of 1,
 	#    and are memorialized in action test-prune.
 	# Test pruning of hours: snapback mk-Z 12/22/2099 0..23 # 0, 2 seconds
-	#    ...  days & months: snapback mk-Z 1/1/2094   0	 # 5,14 seconds
+	#    ...  days & months: snapback mk-Z 1/1/2094   0	# 5,14 seconds
 	#    ... months & years: snapback mk-Z 1/1/2010   month # 58,8 seconds
 
 	# 1/1/2010 is earliest day, earlier days (e.g. 091231) look like octal
