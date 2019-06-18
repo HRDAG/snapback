@@ -244,7 +244,7 @@ set_locks() {
 
 	[[ $PIDs ]] || return 1
 
-	[[ -d $lock_dir ]] || create_log_dirs
+	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	local cwd=$PWD
 	cd $lock_dir || abort "cd $lock_dir"
 	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
@@ -282,7 +282,7 @@ rm_stale_locks() {
 
 	set_sudo_lockpid
 
-	[[ -d $lock_dir ]] || create_log_dirs
+	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
@@ -302,7 +302,7 @@ set_lock_path() {
 	local type=$1 name=${2:-$drive_name}
 
 	[[ $name ]] || abort "$FUNCNAME: missing \$2 and \$drive_name null"
-	[[ -d $lock_dir ]] || create_log_dirs
+	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	lock_path=$lock_dir/$type-$name.pid
 }
 
@@ -577,7 +577,7 @@ set_lock_PGIDs() {
 
 	lock_PGIDs=
 
-	[[ -d $lock_dir ]] || create_log_dirs
+	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	eval "set -- $lock_dir/$type-${names_pattern:-*}.pid"
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
@@ -609,7 +609,7 @@ ps_locks() {
 	   name_pattern=${name_pattern^^}
 
 	[[ $do_rm ]] && rm_stale_locks
-	[[ -d $lock_dir ]] || create_log_dirs
+	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	cd_ $lock_dir
 	local status=1			# assume all locks are missing/stale
 	eval "set -- $type_pattern*-$name_pattern.pid"
@@ -679,11 +679,18 @@ set_oldest_snapshot() {
 
 admin_group=
 
-set_admin_group() {
+function set_admin_group() {
 
 	suspend_tracing
+	local env_var env_var_values="${SUDO_USER-} ${USER-} ${LOGNAME-}"
+	for env_var in HOME MAIL
+	    do	is_set $env_var || continue
+		local path=${!env_var}
+		env_var_values+=" ${path##*/}"
+	done
+
 	local user
-	for user in ${SUDO_USER-} ${USER-} ${LOGNAME-} ${HOME##*/} ${MAIL##*/}
+	for user in $env_var_values
 	    do	[[ $user != root ]] && break
 	done
 	local users_groups=$(id -G -n $user)
@@ -698,7 +705,7 @@ set_admin_group() {
 
 # ----------------------
 
-create_log_dirs() {
+create__lock_dir__log_dirs() {
 
 	set_admin_group
 	local group=$admin_group
@@ -749,7 +756,7 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	fi
 	TraceV 3 drive_log_dir
 	file_for_logging=$drive_log_dir/messages.log
-	[[ -d $drive_log_dir ]] || create_log_dirs
+	[[ -d $drive_log_dir ]] || create__lock_dir__log_dirs
 
 	suspend_tracing
 	customize_and_validate_configuration_variables $drive_name
@@ -2510,7 +2517,7 @@ setup_snapshot_stats() {
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir  ]] || return # might not have write access to the cache
-	[[ -d $lock_dir ]] || create_log_dirs
+	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	local lockpid_args="--dir=$lock_dir $lock_name"
 	lockpid $lockpid_args > /dev/null || return
 
