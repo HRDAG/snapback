@@ -24,17 +24,20 @@ version=21			# has to match version= in configure.sh.sample
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
 ###############################################################################
 
-# libsnap.sh has these functions/variables: $tmp_dir, $our_name, $our_path,
-# $true, $false, have_cmd, need_cmds, $is_darwin, set_FS_type___from_path,
+# libsnap.sh has these functions/variables:
+# $tmp_dir, $our_name, $our_path, $true, $false,
+# have_var, have_cmd, need_cmds, $is_darwin, set_FS_type___from_path,
 # set__inode_size__data_block_size__dir_block_size___from_path,
 # $FS_label, set_FS_label___from_FS_device, label_drive,
 # set_FS_device___from_FS_label, set_device_KB___from_block_device, $FS_device,
 # set_FS_device___from_path, set_mount_dir___from_FS_device,
 # set_mount_dir___from_FS_label,  set_FS_label___from_mount_dir,
-# warn, abort, echoE, echoEV, Trace, TraceV, suspend_tracing, restore_tracing,
+# is_arg1_in_arg2, print_call_stack, warn,
+# abort, abort_function, assert_not_option, echoE, echoEV, Trace, TraceV,
+# remember_tracing, suspend_tracing, restore_tracing,
 # print_or_egrep_Usage_then_exit, abort_with_action_Usage,
 # log, $file_for_logging, $log_level, $log_msg_prefix, header,
-# cd_ , confirm, is_arg1_in_arg2, run_function
+# cd_ , set_popped_word___from_list, set_division, confirm, run_function
 #
 # search for '####' in libsnap.sh to see environment and coding conventions
 source libsnap.sh || exit 1
@@ -306,6 +309,8 @@ set_lock_path() {
 	lock_path=$lock_dir/$type-$name.pid
 }
 
+# ---------------------------------
+
 xtrace=				  # in case comment-out first line of function
 
 lock_PID() {
@@ -342,7 +347,8 @@ lock_PID() {
 	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
 	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
 		log  "process $lock_holder_PID $lock_holder_action"
-	   else log "$lock_cmd -> $lockpid_output (status=$status)"
+	elif [[ $lock_opts != *-q* ]]
+	   then log "$lock_cmd -> $lockpid_output (status=$status)"
 	fi >&2
 	$xtrace
 	return 1
@@ -385,7 +391,7 @@ function lock() {
 	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
-	[[ $1 != -*   ]] || abort "$FUNCNAME: unknown option $1, order matters"
+	assert_not_option ${1-}
 	[[ $# == [12] ]] || abort "$FUNCNAME [-w] type resource"
 	local type=$1 resource=${2:-$drive_name}
 
@@ -412,6 +418,7 @@ function lock() {
 		   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
 		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
 		fi
+		wait_opt+=" --quiet"
 	elif [[ ! $is_cron ]]		# interactive user?
 	    then wait_opt=--wait
 	fi
@@ -1646,18 +1653,34 @@ _is_time_to_run_backup() {
 
 # -------------------------------------------------------
 
-set_hours() {
-	if [[ $1 == -[1-9] ]]		# 0 is harder to support
-	   then declare -i decimal_digits=${1#-} ; shift
-	   else declare -i decimal_digits=2
-	fi
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
-	local minutes=$1
+hours=
 
-	local format="%s.%0${decimal_digits}d"
-	declare -i multiplier=10**$decimal_digits
-	printf -v hours "$format" $((minutes/60)) \
-				  $(( ($multiplier*(minutes%60) + 30) / 60 ))
+set_hours() {
+	if [[ $1 == -* ]]
+	   then local decimal_digits_opt=$1  minutes=$2
+	   else local decimal_digits_opt=-2  minutes=$1
+	fi
+
+	local division
+	set_division $decimal_digits_opt $minutes 60
+	hours=$division
+}
+
+set_hours 10; [[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
+
+# ----------------------
+
+seconds=
+
+set_seconds___from_msecs() {
+	if [[ $1 == -* ]]
+	   then local decimal_digits_opt=$1  msecs=$2
+	   else local decimal_digits_opt=-2  msecs=$1
+	fi
+
+	local division
+	set_division $decimal_digits_opt $msecs 1000
+	seconds=$division
 }
 
 # ---------------------------------
@@ -2039,7 +2062,7 @@ copy_snapshot() {
 	[[ $1 == -s* ]] && { local src=${1#-s}   ; shift; } || local src=
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
+	assert_not_option -o ${1-}
 	[[ $src     ]] && set -- $src $1
 	(( $# >= 2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
@@ -2595,6 +2618,7 @@ trim() {
 	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
 	    -e "s@ --pid=[0-9]* --dir=$lock_dir @ @"	\
 	    -e "s@ --pid=[0-9]* @ @"	\
+	    -e "s@ --quiet @ @"		\
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
@@ -2648,7 +2672,7 @@ watch() {
 	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
-	[[ ${1-} != -* ]] ||abort "$FUNCNAME: unknown option $1, order matters"
+	assert_not_option -o ${1-}
 
 	if [[ $action == watch ]]
 	   then cleanup_after_updates &	# don't wait for it to finish, slow
@@ -3001,9 +3025,104 @@ watch() {
 
 ##############################################################################-
 ##############################################################################-
-# Functions for creating/altering filesystems.
+# Functions for monitoring/creating/altering filesystems.
 ##############################################################################-
 ##############################################################################-
+
+readonly status_dir=/run/$our_name
+
+# if make check_period_msecs smaller, we'll check each drive more frequently
+# (but also consume more CPU, because 1 fork per drive per check-period)
+have_var      check_period_msecs ||	# can customize
+declare -r -i check_period_msecs=200
+
+have_var      min_hung_msecs ||		# can customize
+declare -r -i min_hung_msecs=2000
+have_var      min_slow_msecs ||		# can customize
+declare -r -i min_slow_msecs=200	# also the disk read timeout ...
+# set_seconds___from_msecs $min_slow_msecs
+# readonly disk_read_timeout=$seconds
+
+declare -r -i msec_increment=10
+readonly       sec_increment=0.01
+
+_monitor_drives() {
+
+	for dir
+	    do	_set_drive_name $dir || abort "bad $dir"
+		[[ ${name2PID[$name]-} ]] && continue	   # hung drive?
+		( set -- $dir/*.not ) & name2PID[$name]=$! # not, test it
+		name2msecs[$name]=0	# we just started the test
+		for file in $status_dir/{hung,slow}/$name
+		    do	echo $false > $file
+		done
+		echo 0 > $response_dir/test-run/$name
+	done
+
+	local response_dir=$status_dir/response-msecs
+
+	declare -i msecs=0
+	# for speed, the following loop nevever forks (except 'sleep' at end)
+	while (( $msecs < $check_period_msecs )) # not waited long?
+	   do	set -- ${!name2PID[*]}		 # any slow drives?
+		[[ $# == 0 ]] && break		 # if not, time to re-test
+		for name
+		    do	if ! kill -0 ${name2PID[$name]} 2> /dev/null # done?
+			   then unset  name2PID[$name]
+				continue
+			fi
+
+			# drive is (a little bit?) slow
+
+			local  count_file=$response_dir/counter/$name
+			[[ -s $count_file ]] || echo 0 > $count_file
+			declare -i count=$(< $count_file)
+			count+=1
+			echo $count > $count_file
+
+			hung_msecs=${name2msecs[$name]}
+			name2msecs[$name]+=$msec_increment
+			echo $hung_msecs > $response_dir/test-run/$name
+
+			  if (( $hung_msecs >= $min_hung_msecs ))
+			   then echo $true  > $status_dir/hung
+				echo $true  > $status_dir/slow
+			elif (( $hung_msecs >= $min_slow_msecs ))
+			   then echo $false > $status_dir/hung
+				echo $true  > $status_dir/slow
+			   else echo $false > $status_dir/hung
+				echo $false > $status_dir/slow
+			fi
+		done
+
+		sleep   $sec_increment
+		msecs+=$msec_increment
+	done
+}
+
+# ---------------------------------
+
+readonly drive_monitor_lock_path=$lock_dir/monitor.pid
+
+monitor_drives() {
+	local dirs=${*-}		# only for testing
+
+	lockpid -q $drive_monitor_lock_path || exit 0 # probably running
+
+	trap '' HUP			# we want to run forever
+
+	for sub_dir in slow hung response-msecs/{average,counter,test-run}
+	    do	mkdir -p $status_dir/$sub_dir
+	done
+
+	SECONDS=0
+	declare -i -A name2PID name2msecs
+	while true			# monitor forever
+	    do	_monitor_drives ${dirs:-$(list_drive_dirs -a)} # new drive?
+	done
+}
+
+# -----------------------------------------------------------------------------
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
 unmount_drives() {
@@ -3033,6 +3152,8 @@ unmount_drives() {
 	return $status
 }
 
+# -----------------------------------------------------------------------------
+
 # add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
 add_extN_journal() {
 	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
@@ -3043,7 +3164,7 @@ add_extN_journal() {
 	   then shift;  local FS_label=$1
 	   else local name=$1 FS_label=
 	fi
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1 (order matters)"
+	assert_not_option -o ${1-}
 	local FS_device=${2-} VG_name=${3-}
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
@@ -3862,7 +3983,7 @@ was_test_cache_stale=
 is_test_cache_stale() {
 	[[ $1 == -d ]] && { local drives=$2 ; shift 2; } || local drives=
 	[[ $1 == -r ]] && { is_debug_drive= ; shift; } || is_debug_drive=$true
-	[[ $1 != -* ]] || abort "unknown option $1 (order matters)"
+	assert_not_option -o ${1-}
 	local cached_file=$1
 
 	was_test_cache_stale=$true	# assume cached file is stale
@@ -4052,7 +4173,11 @@ case $action in
 	[[ $# != 0 ]] || abort_with_action_Usage
 	[[ $1 == all ]] && rm_stale_locks
 	create_jobs backup "$@"
-	[[ ! $is_cron ]] || wait	# so see master cron job in ps
+	if [[ $is_cron ]]
+	   then wait			# want to stay in 'ps'; but ...
+#		$IfRun setsid $_our_path monitor-drives # ... not for monitor
+	   else true
+	fi
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo_action_abbrev prune-drives
@@ -4066,7 +4191,7 @@ case $action in
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
-	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
+	assert_not_option -o ${1-}
 	[[ $# != 0   ]] || abort_with_action_Usage
 	create_jobs update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
@@ -4086,7 +4211,7 @@ case $action in
 	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
 	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
 	[[ $1 == -r  ]] && {  recurse_opt=$1; shift; } ||  recurse_opt=
-	[[ $1 != -*  ]] || abort "unknown option $1 (order matters)"
+	assert_not_option -o ${1-}
 	(( $# >= 2   )) || [[ $src_snap_opt && ${1-} ]] ||
 	    abort_with_action_Usage
 	drive_name=${!#}
@@ -4147,6 +4272,11 @@ case $action in
 	$Trace
 	kill_all_jobs_on_drives $*
 	;;
+   # kill-monitor [-sig]: kill drive monitor
+   ( kill-mon* | km ) undo_action_abbrev kill-monitor
+	$Trace
+	kill "$@" $(< $drive_monitor_lock_path)
+	;;
    # continue-* names: as above, but defaults to -STOP signal
    ( con*b* | cb ) undo_action_abbrev continue-backup
 	[[ $# != 0 ]] || abort_with_kill_Usage
@@ -4199,6 +4329,13 @@ case $action in
    ###########################################################################
    # filesystem maintenance actions
    ###########################################################################
+
+   # monitor-drives: start run-forever monitor of drive response time
+   ( mon* | m ) undo_action_abbrev monitor-drives
+	[[ $UID == 0 ]] || $IfRun sudo setsid $our_path $action
+	trap '' HUP
+	monitor_drives "$@" &
+	;;
 
    ( add*extN*journal | aej ) undo_action_abbrev add-extN-journal
      add_extN_journal "$@"
@@ -4447,17 +4584,17 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	for minutes in 0 10 20 30 50 60 90 120 125 150
+	    do	set_hours    $minutes; printf "%3s -> %s\n" $minutes $hours
+		set_hours -1 $minutes; printf "%3s -> %s\n" $minutes $hours
+	done
+	exit
+
 	load__drive_name2do_suspend
 	suspend_tracing
 	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
 	restore_tracing
 	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
-	exit
-
-	for minutes in 0 10 20 30 50 60 90 120 125 150
-	    do	set_hours    $minutes; printf "%3s -> %s\n" $minutes $hours
-		set_hours -1 $minutes; printf "%3s -> %s\n" $minutes $hours
-	done
 	exit
 
 	set_excluded_hours 23-3 0 1 5-7
