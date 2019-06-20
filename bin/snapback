@@ -304,7 +304,7 @@ lock_path=				# used by lock() and signal_job()
 set_lock_path() {
 	local type=$1 name=${2:-$drive_name}
 
-	[[ $name ]] || abort "$FUNCNAME: missing \$2 and \$drive_name null"
+	[[ $name ]] || abort_function "missing \$2 and \$drive_name null"
 	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	lock_path=$lock_dir/$type-$name.pid
 }
@@ -321,7 +321,7 @@ lock_PID() {
 	local type=$1 lock_holder_action=$2
 
 	is_arg1_in_arg2 $type $writer_lock_types ||
-	   abort "$FUNCNAME: '$type' is unknown lock type"
+	   abort_function "'$type' is unknown lock type"
 	set_lock_path $type $name
 	local lock_file=$(basename $lock_path)
 
@@ -392,7 +392,7 @@ function lock() {
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
 	assert_not_option ${1-}
-	[[ $# == [12] ]] || abort "$FUNCNAME [-w] type resource"
+	[[ $# == [12] ]] || abort_function "[-w] type resource"
 	local type=$1 resource=${2:-$drive_name}
 
 	local drive_name drive_dir	# don't mess up caller's values
@@ -552,7 +552,7 @@ kill_job_on_drives() {
 	[[ $1 == -c  ]] && { signal=-CONT ; shift; }
 	local type=$1; shift
 	[[ $1 == -*  ]] && { signal=${1^^}; shift; }
-	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option -o ${1-}
 	[[ $* == all ]] && set -- $(list_drive_dirs -a)
 
 	local name status=1		# assume nothing to kill
@@ -567,7 +567,7 @@ kill_job_on_drives() {
 
 kill_all_jobs_on_drives() {
 	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option ${1-}
 
 	local type
 	for type in $writer_lock_types
@@ -1455,7 +1455,7 @@ _do_skip_newest_span_of_days() {
 # for goals of this function, see prune-variable comments in configure.sh
 prune_drive() {
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option ${1-}
 	local drive_name=$1 drive_dir
 
 	suspend_tracing
@@ -1818,7 +1818,7 @@ run_rsync() {
 		local is_copy_snapshot=$true
 	   else local is_copy_snapshot=$false
 	fi
-	[[ $1 != -* ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option ${1-}
 	local dst_snapshot=${!#}
 	local src_dirs=${*%$dst_snapshot}
 
@@ -2064,7 +2064,7 @@ copy_snapshot() {
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	assert_not_option -o ${1-}
 	[[ $src     ]] && set -- $src $1
-	(( $# >= 2  )) || abort "call as: $FUNCNAME src(s) dst_drive_name"
+	(( $# >= 2  )) || abort_function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
 	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
@@ -2178,7 +2178,7 @@ fastest_snapshots() {
 
 sorted_useful_srcs() {
 	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
-	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option ${1-}
 	[[ $# == 1   ]] || abort "need to specify one drive name"
 
 	suspend_tracing
@@ -2356,7 +2356,7 @@ create_jobs() {
 	fi
 	if [[ $# == 0 ]]
 	   then [[ $is_cron ]] && exit 0
-		abort "$FUNCNAME $type: pass a (non-excluded) drive name"
+		abort_function "$type: pass a (non-excluded) drive name"
 	fi
 
 	[[ ! $debug_opt ]] &&
@@ -3127,7 +3127,7 @@ monitor_drives() {
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
 unmount_drives() {
 	[[ $1 == -q  ]] && { shift; is_OK_if_drive_dir_unmounted=$true; }
-	[[ $1 != -*  ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option ${1-}
 	[[ $* == all ]] && set -- $(list_drive_dirs)
 
 	$Trace
@@ -3267,7 +3267,7 @@ dir_sizes() {
 		   abort_with_action_Usage
 		set_drive_name $1
 	fi
-	[[ ${1-} != -* ]] || abort "$FUNCNAME: unknown option $1"
+	assert_not_option ${1-}
 
 	[[ $file ]] || {
 
@@ -4070,7 +4070,7 @@ regression_test() {
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
 
-	[[ ! $debug_opt ]] || abort "-d not supported in $FUNCNAME"
+	[[ ! $debug_opt ]] || abort_function "-d not supported"
 
 	echo -e "\nComparing $old_cmd to $tst_cmd"
 
