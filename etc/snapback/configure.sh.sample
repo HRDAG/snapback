@@ -96,19 +96,13 @@ readonly drive_dir_prefix=/backup/
 readonly old_crypt_name_prefixes=
 
 # Where send warning and error messages.
-readonly sysadmin_email_addresses="sweikart@gmail.com"
+readonly sysadmin_email_addresses=
 
 # level 0: log when create *,00 snapshot; log # pruned & also # *.rm deleted
 # level 1: log every backup (plus above)
 # level 2: log the new snapshots that will be pruned (plus above)
 # level 3: log the deleted snapshots (plus above); misses deletions before kill
 declare -i -r log_level=0	     # verbosity of logs in /var/log/snapback/
-
-# ----------------------------------
-
-# How high can FileSystem usage get before warning $sysadmin_email_addresses?
-# Also, if usage is too high, pruning takes priority over other actions.
-declare -i -r min_FS_usage_percent=90	# for "df" and "df -i"
 
 # ---------------------------------------------------------
 
@@ -134,7 +128,7 @@ declare -r -A level2CPU_priority_cmd=(
     [higher]="renice 13 -g"
 )
 
-type ionice &> /dev/null &&
+have_cmd ionice &&
 declare -r -A level2IO_priority_cmd=(
      [lower]="ionice -c 2 -n 7 -P"
     [medium]="ionice -c 2 -n 6 -P"
@@ -196,6 +190,11 @@ declare -i backup_period=1		# need much RAM for small period
 # Variables that control prune-drives.  NOTE: backup_period, extra_excludes, #
 #    and excluded_backup_hours (above) are also used in pruning.	     #
 # ----------------------------------------------------------------------------
+
+# How high can FileSystem usage get before making pruning highest priority?
+declare -i -r min_FS_usage_percent=95	# for "df" and "df -i"
+
+# -----------------------------------------------------------------------------
 
 # Dirs that contain files with massive numbers of hard-links; don't
 # need to set this if using a filesystem (like XFS) that supports a zillion

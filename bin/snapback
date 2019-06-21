@@ -1014,7 +1014,7 @@ customize_and_validate_configuration_variables() {
 
 	suspend_tracing
 
-	type -t source_drive_specific_config_file > /dev/null && # optional
+	have_cmd source_drive_specific_config_file && # optional
 	source_drive_specific_config_file $name
 
 	customize_config_variables $name
@@ -1029,10 +1029,16 @@ customize_and_validate_configuration_variables() {
 ##############################################################################
 
 is_drive_usage_too_high() {
+	local drive_dir=${1:-$drive_dir}
 
 	suspend_tracing
 	set -- $(df --output=pcent,ipcent $drive_dir | tail -n1)
 	declare -i block_percent=${1%\%} inode_percent=${2%\%}
+	# caller can declare max_drive_usage_percent to use it
+	if (( $block_percent > $inode_percent ))
+	   then max_drive_usage_percent=b$block_percent
+	   else max_drive_usage_percent=i$inode_percent
+	fi
 	restore_tracing
 	(( $block_percent <= $min_FS_usage_percent )) || return 0
 	(( $inode_percent <= $min_FS_usage_percent )) || return 0
@@ -2457,6 +2463,30 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 
 # -----------------------------------------------------------------------------
 
+set_drive_usage() {
+
+	local max_drive_usage_percent warning_string
+	for drive_dir in $drive_dirs
+	    do	is_drive_usage_too_high && local warn=$true || local warn=
+		local    type=${max_drive_usage_percent:0:1}
+		local percent=${max_drive_usage_percent#?}
+		(( ${#percent} ==   1 )) && percent=0$percent
+		if (($percent  == 100 ))
+		   then set_warning_string error FULL
+			percent=$warning_string
+		elif [[ $warn ]]
+		   then set_warning_string warning $percent%$type
+			percent=$warning_string
+		   else percent=$percent%$type
+		fi
+		_set_drive_name $drive_dir
+		percents+=" $drive_name=$percent"
+	done
+	printf -v drive_usage "$stats_format" $percents
+}
+
+# -----------------------------------------------------------------------------
+
 _set_age() {
 	local snapshot=$1
 
@@ -2595,7 +2625,7 @@ run_df() {
 run_lsblk() {
 	local drive_dirs=${*:-$(list_drive_dirs -a)}
 
-	type -t lsblk > /dev/null || return 1
+	have_cmd lsblk || return 1
 
 	local dir devices=
 	for dir in $drive_dirs
@@ -2684,7 +2714,7 @@ watch() {
 		# >= 0.5 is best for watching wchan (-C w/sudo access)
 		[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
 		exec \
-		watch -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
+		watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 		abort "exec failed"
 	fi
 
@@ -2871,6 +2901,8 @@ watch() {
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
+	declare drive_usage; set_drive_usage
+	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
 	setup_snapshot_stats .rm
 	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
 	setup_snapshot_stats .partial
@@ -3033,13 +3065,13 @@ readonly status_dir=/run/$our_name
 
 # if make check_period_msecs smaller, we'll check each drive more frequently
 # (but also consume more CPU, because 1 fork per drive per check-period)
-have_var      check_period_msecs ||	# can customize
+have_var      check_period_msecs ||	# can set custom value in $config_file
 declare -r -i check_period_msecs=200
 
-have_var      min_hung_msecs ||		# can customize
+have_var      min_hung_msecs ||		# can set custom value in $config_file
 declare -r -i min_hung_msecs=2000
-have_var      min_slow_msecs ||		# can customize
-declare -r -i min_slow_msecs=200	# also the disk read timeout ...
+have_var      min_slow_msecs ||		# can set custom value in $config_file
+declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
 # set_seconds___from_msecs $min_slow_msecs
 # readonly disk_read_timeout=$seconds
 
@@ -3530,7 +3562,7 @@ mkfs_backup_drive() {
 	local cmd=$1; shift; local opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
-		type -t mkfs.xfs > /dev/null || $IfRun abort "install xfsprogs"
+		have_cmd mkfs.xfs || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
 		# using isize=1024 resulted in 40% more directory drive space.
@@ -3543,8 +3575,8 @@ mkfs_backup_drive() {
 		[[ $opts == *"-i size="* ]] || opts+=" -i size=512"
 		[[ $opts == *maxpct=*    ]] || opts+=" -i maxpct=0"
 		mount_opts="$XFS_mount_options"
-		type -t set_FS_external_log > /dev/null && # optional
-			set_FS_external_log $FS_label &&
+		have_cmd set_FS_external_log	       && # optional
+			 set_FS_external_log $FS_label &&
 		logdev="logdev=$FS_external_log" &&
 		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
 	elif [[ $cmd == mkfs.ext? ]]
@@ -3572,8 +3604,8 @@ mkfs_backup_drive() {
 		[[ $opts != *extent* ]] && opts+=" $ext4_extent_opt"
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$extN_mount_options"
-		type -t set_FS_external_log > /dev/null	&& # optional
-			set_FS_external_log $FS_label	&&
+		have_cmd set_FS_external_log		&& # optional
+			 set_FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
@@ -4584,11 +4616,14 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
-	for minutes in 0 10 20 30 50 60 90 120 125 150
-	    do	set_hours    $minutes; printf "%3s -> %s\n" $minutes $hours
-		set_hours -1 $minutes; printf "%3s -> %s\n" $minutes $hours
-	done
+	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
+	for m in $ml; do set_hours    $m; printf "%3s -> %s\n" $m $hours; done
+	for m in $ml; do set_hours -1 $m; printf "%3s -> %s\n" $m $hours; done
 	exit
+
+	for level in warning error
+	    do set_warning_string $level $level; echo "$warning_string."; done
+	print_string_colors; exit
 
 	load__drive_name2do_suspend
 	suspend_tracing
@@ -4597,13 +4632,9 @@ case $action in
 	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
 
-	set_excluded_hours 23-3 0 1 5-7
-	echo $excluded_hours
-	exit
+	set_excluded_hours 23-3 0 1 5-7; echo $excluded_hours; exit
 
-	set_absolute_path /dev/mapper/backup_C
-	echo $absolute_path
-	exit
+	set_absolute_path /dev/mapper/backup_C; echo $absolute_path; exit
 
 	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
 	new_snapshot=$1
@@ -4612,25 +4643,18 @@ case $action in
 	echo "status=$?"
 	exit
 
-	cleanup_after_updates
-	exit
+	cleanup_after_updates; exit
 
 	set_drive_name "$@"
 	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
 	exit
 
-	sorted_useful_srcs "$@"
-	exit
+	sorted_useful_srcs "$@"; exit
 
-	count_rsyncs_using_resource $1
-	echo $?
-	exit
+	count_rsyncs_using_resource $1; echo $?; exit
 
-	echo $$
-	lock prune G
-	echo $?
-	exit
+	echo $$; lock prune G; echo $?; exit
 
 	lock backup x
 	lock backup x || abort badness 1
@@ -4644,52 +4668,39 @@ case $action in
 	exit
 
 	declare -a digit2name=(zero one two three)
-	echoEV action digit2name[2]
-	exit
+	echoEV action digit2name[2]; exit
 
-	$Trace
-	customize_config_variables ${1:-G}
-	exit
+	customize_config_variables ${1:-G}; exit
 
 	validate_config_variables
 	set__OS_release_file__OS_release
-	TraceV 0 OS_release_file OS_release
-	exit
+	TraceV 0 OS_release_file OS_release; exit
 
 	log test 1
-	customize_and_validate_configuration_variables Z
-	echo $drive_name
-	log test 2
-	exit
+	customize_and_validate_configuration_variables Z; echo $drive_name;
+	log test 2; exit
 
-	copy_snapshot 1 2 3
-	exit
+	copy_snapshot 1 2 3; exit
 
-	set_FS_label___from_FS_device foo
-	exit
+	set_FS_label___from_FS_device foo; exit
 
-	set_FS_block_size___from_path $1
-	echo $FS_block_size
-	exit
+	set_FS_block_size___from_path $1; echo $FS_block_size; exit
 
 	for dev in $(df | cut -d' ' -f1)
 	    do	[[ -b $dev ]] || continue
 		set_FS_label___from_FS_device $dev
 		echo "$dev -> $FS_label"
-	done
-	exit
+	done; exit
 
 	for path in ${drive_dir_prefix}A ${drive_dir_prefix}A/latest /dev/sdb5
 	    do	set_FS_type___from_path $path
 		echo "$path -> $FS_type"
-	done
-	exit
+	done; exit
 
 	set_drive_name ${1:-a}
 	set_drive_dir $drive_name
 	set_FS_label___from_mount_dir $drive_dir
-	echo $FS_label
-	exit
+	echo $FS_label/ exit
 
 	print_call_stack 1
 	abort test
@@ -4712,38 +4723,29 @@ case $action in
 		TraceV 0 i i
 		abort "aborting test"
 	}
-	foo
-	exit
+	foo; exit
 
 	set_drive_dir ${1^}
 	$Trace
-	is_drive_usage_too_high
-	abort $?
+	is_drive_usage_too_high; echo $?; exit
 
-	set_oldest_snapshot
-	echo $oldest_snapshot
-	exit
+	set_oldest_snapshot; echo $oldest_snapshot; exit
 
 	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
 	    do	set_readable_du_size $size; echo "$readable_du_size from $size"
-	done
-	exit
+	done; exit
 
 	drive_dir=${drive_dir_prefix}F
 	cd $drive_dir
 	log=/tmp/root/F-190126-15.bz2
-	_links_error_msg "nnn 'Too many links'"
-	exit
+	_links_error_msg "nnn 'Too many links'"; exit
 
-	$Trace
 	set_drive_dir ${1-''}
-	log "test with drive ${1-}"
-	exit
+	log "test with drive ${1-}"; exit
 	;;
 
    ( * )
-	warn "'$action' is not a recognized action, run: $_our_name -h"
-	exit 1
+	warn "'$action' is not a recognized action, run: $_our_name -h"; exit 1
 	;;
 esac
 
