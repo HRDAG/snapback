@@ -1,11 +1,18 @@
 # version=21
 
-################################################################
-################################################################
-### This file and exclude.txt specify backup & prune policy. ###
-### Email requests for more variables to sweikart@gmail.com  ###
-################################################################
-################################################################
+##################################################################
+##################################################################
+### This file and exclude.txt specify backup & prune policy.   ###
+### Email requests for more variables to sweikart@gmail.com    ###
+##################################################################
+##################################################################
+### Note: some default functions and variables in snapback can ###
+### be over-ridden by defining them in here; to see which ones ###
+### you can over-ride, run: grep -A1 '^have_[cv]' snapback     ###
+##################################################################
+##################################################################
+
+
 
 renice 1 $$ &> /dev/null		# lower priority than logins
 
@@ -217,12 +224,12 @@ hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
 # Skip 'span' days of the newest snapshots, rm half the older ones; repeat this
 # loop until all the oldest snapshots are only *,00 (i.e. one per day),
 # which encompasses 1.5 months for an hourly 'span' of 7 days.
-declare -i days_per_span_for_hour_prune=4	# prune-drive* can change this
+declare -i days_per_span_for_hour_prune=3	# prune-drive* can change this
   drv_name2days_per_span_for_hour_prune[Z]=1	# for action test-prune
 #
 # At date where hour_prune rm's all but *,00, repeat algorithm for months,
 # until all the oldest snapshots are only *-01,00 (i.e. one per month).
-declare -i months_per_span_for_day_prune=4	# prune-drive* can change this
+declare -i months_per_span_for_day_prune=2	# prune-drive* can change this
   drv_name2months_per_span_for_day_prune[Z]=1	# for action test-prune
 #
 # At date where the day_prune rm's all but *-01,00, repeat algorithm for years,
@@ -267,10 +274,6 @@ readonly very_old_immutable_files=
 # --------------------------------------------------------------------------
 # Naming policy (can be re-implemented with custom functions defined here) #
 # --------------------------------------------------------------------------
-
-# -----------------------------------
-# to see the functions you can change, run: grep -A1 '^have_cmd \\$*' snapback
-# -----------------------------------
 
 # Set to 'T' for ISO standard, code will automagically rename snapshots.
 # [Code is hard-wired to ',' ; email sweikart@gmail.com to implement variable.]

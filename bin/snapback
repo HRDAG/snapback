@@ -420,18 +420,18 @@ function lock() {
 		fi
 		wait_opt+=" --quiet"
 	elif [[ ! $is_cron ]]		# interactive user?
-	    then wait_opt=--wait
+	    then wait_opt=--wait	# don't forget their request
 	fi
 
+	# be sure to grab primary lock first, so job appears on dashboard
 	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
 	local primary_lock_path=$lock_path # lock_PID sets lock_path
 
-	# this logic is similar to the logic in _signal_job()
+	# the 'if' logic is similar to the logic in _signal_job()
 	if ! [[ $is_multi_writer_drive || $type == backup ]]
-	   then # grab last: primary lock appears on dashboard, can be killed
-		lock_PID --wait    backup "$extra_lock_msg" &&
+	   then lock_PID $wait_opt backup "$extra_lock_msg" &&
 		lock_PID --release backup "$extra_lock_msg" ||
-		    abort "should have waited forever for backup lock, then -r"
+		   { lockpid --release $primary_lock_path; $xtrace; return 1; }
 	fi
 
 	_lock_type2lock_path[$type]=$primary_lock_path
@@ -2982,6 +2982,7 @@ watch() {
 	   let rows+=$(wc -l < $tmp_1)
 	rm $tmp_1
 
+	# FIXME: want to show snapback cmd if child is lockpid not rm
 	let snapback_cmd_count="($PD-4)/2" # 4 is section overhead
 	(( $rows < ( $min_rows + $snapback_cmd_count ) )) &&
 	   fgrep_opt="-e prune-drive" && # just want 'rm' commands
@@ -2989,7 +2990,7 @@ watch() {
 	prune_cmds=$(echo "$prune_cmds" |fgrep -v -w -e xargs -e tr $fgrep_opt)
 
 	[[ $prune_cmds || $show_all ]] && {
-	header "run-prune"
+	header "prune-drive"
 	echo
 	}
 
@@ -3003,7 +3004,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
-	header "copy (e.g. update)"
+	header "copy (update-drive or copy-snapshots)"
 	echo
 	echo "$hdr" | trim_ps_cols
 	echo "$copy_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
