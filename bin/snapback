@@ -90,6 +90,7 @@ Usage: $our_name [options] action [args]
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
 
+    reset-priority [names]: reset job priorities on drives (defaults to all)
     ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
     # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
     kill-backup [-sig] names: for each name (can be 'all'), kill backup job
@@ -364,7 +365,7 @@ lock_PID() {
 # When $is_multi_writer_drive == $false, only one job can be writing to a
 # drive at once (any other jobs will be suspended); this section describes the
 # policy (and mechanism) to meet that requirement.  For each drive,
-# create_job_on_drives() creates a job for a tyoe of writer, and lock()
+# create_job_on_drives() creates a job for a type of writer, and lock()
 # creates a lock for each of those jobs ( see writer_lock_types= ).  The
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
 # backup job is initiated).
@@ -375,7 +376,7 @@ lock_PID() {
 # start an update_drive() job.
 #
 # A lock() call for a non-backup lock will get its requested lock immediately
-# (so the job will then appear on the dashboard), but lock() won't return
+# (so the job will then appear on the dashboard), but "lock -w" won't return
 # until that drive's backup finishes.  Similarly, a call to continue_jobs()
 # for a non-backup job will be silently ignored if a backup is running (and
 # returns 'failed').
@@ -476,6 +477,19 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
+set_job_PGID() {
+	local type=$1 lock_path
+
+	set_lock_path $type
+	if [[ -s $lock_path ]]
+	   then job_PGID=$(< $lock_path)
+	   else job_PGID=
+	fi
+	[[ $job_PGID ]]
+}
+
+# ----------------------------------------------------------------------------
+
 signal_is_kill=
 
 set_signal_is_kill() {
@@ -532,8 +546,8 @@ function _signal_jobs() {
 			! [[ $is_multi_writer_drive || $type == backup ]] &&
 			have_job backup &&
 			    return 1  # only 1 writer allowed, bkp has priority
-			set_lock_path $type
-			set_priority  $type $(< $lock_path)
+			set_job_PGID $type &&
+			set_priority $type $job_PGID
 		fi
 		signal_job $signal $type
 	done
@@ -1090,6 +1104,37 @@ set_priority() {
 	fi
 }
 
+# -----------------------------------------------------------------------------
+
+suspended_prune_when_checked_drive_usage() {
+
+	have_job copy || return 1
+
+	if is_drive_usage_too_high
+	   then  suspend_jobs copy
+		continue_jobs prune	# may do nothing if backup running
+	   else continue_jobs copy	# may do nothing if backup running
+		[[ $is_multi_writer_drive ]] ||
+		   { suspend_jobs prune; return 0; }
+	fi
+	return 1
+}
+
+# -----------------------------------------------------------------------------
+
+reset_priority() {
+
+	local drive_name
+	for drive_name in ${*:-$drive_name}
+	    do	suspended_prune_when_checked_drive_usage
+		local type priority
+		for type in $writer_lock_types
+		    do	set_job_PGID $type &&
+			set_priority $type $job_PGID
+		done
+	done
+}
+
 ##############################################################################-
 ##############################################################################-
 # Functions and variables used to prune old backup snapshots.
@@ -1273,9 +1318,14 @@ readonly snapshot_day_regex=${snapshot_regex%,??}
 
 set_date_time() { date_time=$(date '+%Y-%m-%d,%H' "$@"); }
 set_day      () {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
-set_seconds  () {   seconds=$(date '+%s'       -d "$(basename $1 |
-				        sed 's/\..*//;s/,/ /;s/$/:00:00/')" ||
-				warn "$FUNCNAME: can't parse $1"; ); }
+set_seconds  () {
+	snapshot_date_time=$1
+
+	snapshot_date_time=${snapshot_date_time##*/}	# basename
+	snapshot_date_time=${snapshot_date_time%%.*}	# toss .* suffix
+	snapshot_date_time=${snapshot_date_time/,/ }:00	# ,hours -> hours:00
+	seconds=$(date '+%s' -d "$snapshot_date_time")
+}
 
 # --------------------------------------------
 
@@ -1368,6 +1418,19 @@ scale_date_span() {
 	date_span=$( echo "$date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
 }
+
+# --------------------------------------------
+
+reverse_sorted_snapshot_basenames() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+
+	echo $snapshot_pattern*  |	# prune everything
+	   tr ' ' '\n' | sort -u -r |
+	   grep -v '\.rm$'		# _rm_pruned_snapshots handles *.rm
+	$xtrace
+}
+
+# --------------------------------------------
 
 _oldest_snapshot=
 
@@ -1471,39 +1534,23 @@ prune_drive() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
-	[[ ! $is_update ]] && {		# for update, we just rmdir empty dirs
+		[[ ! $is_update ]] && {	# for update, we just rmdir empty dirs
+	suspended_prune_when_checked_drive_usage && return 1
 
-	if have_job copy		# (it might be suspended)
-	   then if $IfRun is_drive_usage_too_high
-		   then  suspend_jobs copy
-		   else continue_jobs copy # may do nothing if backup running
-			[[ $is_multi_writer_drive ]] || {
-			   suspend_jobs prune; return 1; }
-		fi
-	fi
-
-	# continue_jobs does nothing if bkp running && ! $is_multi_writer_drive
 	lock prune || { continue_jobs prune; return 1; }
 
 	_is_time_to_prune_drive || { unlock prune; return 0; }
 
 	set_priority prune
+		} # [[ ! $is_update ]]
 
-	} # [[ ! $is_update ]]
-
-	$Trace
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
 
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
-	# set -- <all the snapshot basenames, reverse sorted>
-	suspend_tracing
-	set -- $(cd $drive_dir &&
-		   echo $snapshot_pattern*  | # prune everything
-		   tr ' ' '\n' | sort -u -r |
-		   grep -v '\.rm$')	# _rm_pruned_snapshots handles *.rm
-	restore_tracing
+	$Trace
+	set -- $(reverse_sorted_snapshot_basenames)
 	# prune_type_to_file returns dates remaining, to check for more pruning
 	set -- $(prune_type_to_file hour  $snapshots_to_prune_file $*)
 	set -- $(prune_type_to_file day   $snapshots_to_prune_file $*);#$Trace
@@ -2355,7 +2402,7 @@ create_jobs() {
 	   then set -- ${drive_name-}
 	elif [[ $1 == all ]]
 	   then if [[ $debug_opt && ${HOSTNAME-} == eleanor ]]
-		   then local excluded_regex='\bG$' # G is sometimes slow
+		   then local excluded_regex='\bG$' # G sometimes hangs
 		   else local excluded_regex=NoThInG
 		fi
 		set -- $(list_drive_dirs | egrep -v "$excluded_regex")
@@ -2466,7 +2513,7 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 set_drive_usage() {
 
 	local max_drive_usage_percent warning_string
-	for drive_dir in $drive_dirs
+	for drive_dir in $all_drive_dirs
 	    do	is_drive_usage_too_high && local warn=$true || local warn=
 		local    type=${max_drive_usage_percent:0:1}
 		local percent=${max_drive_usage_percent#?}
@@ -2492,8 +2539,7 @@ _set_age() {
 
 	set_seconds $snapshot
 	declare -i snap_secs=$seconds
-	declare -i  now_secs=$(date '+%s')
-	age=$(( ($now_secs - $snap_secs)/(24*60*60) ))
+	age=$(( ($SECONDS - $snap_secs)/(24*60*60) ))
 }
 
 # ------------------
@@ -2538,6 +2584,15 @@ _recalculate_stats_vars() {
 		   then _setup_ages $*
 			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
+		fi
+		if [[ ! $suffix ]]
+		   then case $new in
+			    ( '' ) set_warning_string error   NONE ;;
+			    ( 0  )     warning_string=$new	   ;;
+			    ( 1  ) set_warning_string warning $new ;;
+			    ( *  ) set_warning_string error   $new ;;
+			esac
+			new=$warning_string
 		fi
 		oldies+=" $name=$old"
 		newies+=" $name=$new"
@@ -2718,9 +2773,11 @@ watch() {
 		abort "exec failed"
 	fi
 
-	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true
+	local do_tput=$true
+	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
+	SECONDS=$(date '+%s')		# for _set_age()
 	set -- $(list_drive_dirs -a)
 	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
 	$Trace
@@ -4354,6 +4411,10 @@ case $action in
 	kill_all_jobs_on_drives -s $*
 	;;
 
+   # reset-priority [names]: reset job priorities on drives (defaults to all)
+   ( r*p* ) undo_action_abbrev reset-priority
+	reset_priority ${*:-$(list_drive_dirs -a)}
+	;;
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
    ( ps )
 	ps_locks "$@"
@@ -4617,14 +4678,19 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
+	for level in warning error
+	    do set_warning_string $level $level; echo "$warning_string."; done
+	print_string_colors; exit
+
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
 	for m in $ml; do set_hours    $m; printf "%3s -> %s\n" $m $hours; done
 	for m in $ml; do set_hours -1 $m; printf "%3s -> %s\n" $m $hours; done
 	exit
 
-	for level in warning error
-	    do set_warning_string $level $level; echo "$warning_string."; done
-	print_string_colors; exit
+	snapshot=/backup/X/2019-06-20,12
+	declare snapshot_date_time
+	set_seconds   $snapshot; echo $snapshot_date_time; echo $seconds
+	date '+%s' -r $snapshot; exit
 
 	load__drive_name2do_suspend
 	suspend_tracing
