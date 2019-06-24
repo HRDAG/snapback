@@ -2,12 +2,12 @@ snapback is short for "snapshot backups"
 
 Why snapback not rsnapshot or rsync-snapshot (or dirvish):
 
-   Supports many USB disk/flash drives (plugged in and off-site): efficiently
+   Supports many USB disk/flash drives (online and offsite): efficiently
       runs simultaneous backups (system of cheap USB drives is reliable through
       redundancy); separate logs & policies for each flexibly-named drive ...
    Every config variable can have a per-drive value, in-line or separate-file
       (can use smaller drives (e.g. flash memory) to backup subset of system).
-   When an off-site drive is returned and plugged in, missing snapshots are
+   When an offsite drive is returned and online, missing snapshots are
      copied from all other drives (with minimal impact on regular backups).
    Integrated with 'snapcrypt', for easy use of encrypted, named drives.
    Easy control over backup frequency (& can exclude list of off-peak hours).

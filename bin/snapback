@@ -79,7 +79,13 @@ readonly coder=sweikart@gmail.com
 
 Usage="
 Usage: $our_name [options] action [args]
-  Current actions are (NOTE: most have abbreviations, see process_action):
+
+  $our_name (snapshot backups) maintains multiple, uniquely-named,
+      online and offsite backup drives (partitions), each with separate
+      logging and policy (see files in $config_dir/); to see its operation,
+      run: $our_name watch
+
+  Current actions are (you can specify their acronym, see process_action):
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
@@ -1723,6 +1729,10 @@ set_excluded_hours() {
 _is_time_to_run_backup() {
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
+
+	# we're called more than hourly, to reset priorities, and to prune
+	local current_minute=$(date '+%M')
+	(( $current_minute == 0 )) || return 1
 
 	local current_hour=$(date '+%k') hours
 	set_excluded_hours $excluded_backup_hours
