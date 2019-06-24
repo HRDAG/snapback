@@ -4170,8 +4170,8 @@ run_debug_cmds() {
 	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
 
 	is_test_cache_stale $is_test_cache_stale_opts  $tmp_o &&
-	$old_cmd -d $args &> $tmp_o ; show_test_results $tmp_o
-	$tst_cmd -d $args &> $tmp_t ; show_test_results $tmp_t
+	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
+	$tst_cmd -C -d $args &> $tmp_t ; show_test_results $tmp_t
 	cmp --quiet $tmp_o $tmp_t && { echo "-- same results!"; return; }
 
 	[[ $was_test_cache_stale ]] || {
