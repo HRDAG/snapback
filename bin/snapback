@@ -489,11 +489,12 @@ process_group_PIDs() {
 
 set_job_PGID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local type=$1 lock_path
+	local job_type=$1 lock_path
 
-	set_lock_path $type
+	set_lock_path $job_type
 	if [[ -s $lock_path ]]
-	   then job_PGID=$(< $lock_path)
+	   then set -- $(< $lock_path)
+		job_PGID=$1
 	   else job_PGID=
 	fi
 	$xtrace
@@ -515,11 +516,11 @@ set_signal_is_kill() {
 # ----------------------
 
 signal_job() {
-	local signal=${1#-} type=$2 drive_name=${3:-$drive_name}
+	local signal=${1#-} job_type=$2 drive_name=${3:-$drive_name}
 
 	suspend_tracing
 	_set_drive_name $drive_name; local name=$drive_name
-	set_lock_path $type
+	set_lock_path $job_type
 	restore_tracing
 
 	[[ -s $lock_path ]] || return 1
@@ -547,7 +548,6 @@ function _signal_jobs() {
 
 	[[ $IfRun ]] && echo "${FUNCNAME[1]} $*" && return 0
 
-	local lock_msg="waiting for backup to finish so can CONTinue $type"
 	local type
 	for type
 	    do	have_job $type || continue
@@ -574,7 +574,7 @@ kill_job_on_drives() {
 	local signal=-KILL
 	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
-	local type=$1; shift
+	local job_type=$1; shift
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
 	assert_not_option -o ${1-}
 	[[ $* == all   ]] && set -- $(list_drive_dirs -a)
@@ -582,7 +582,7 @@ kill_job_on_drives() {
 
 	local name status=1		# assume nothing to kill
 	for name
-	    do	signal_job $signal $type $name && status=0
+	    do	signal_job $signal $job_type $name && status=0
 	done
 
 	return $status
@@ -594,9 +594,9 @@ kill_all_jobs_on_drives() {
 	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
 	assert_not_option ${1-}
 
-	local type
-	for type in $writer_types
-	    do	kill_job_on_drives $opt $type "$@"
+	local job_type
+	for job_type in $writer_types
+	    do	kill_job_on_drives $opt $job_type "$@"
 	done
 }
 
