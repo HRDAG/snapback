@@ -302,7 +302,7 @@ rm_stale_locks() {
 
 # -----------------------------------------------------------------------------
 
-readonly writer_lock_types="backup prune copy" # kill_all_jobs_on_drives uses
+readonly writer_types="backup prune copy"
 
 set_lock_path() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -325,7 +325,7 @@ lock_PID() {
 	while [[ $1 == -* ]] ; do lock_opts+=" $1"; shift; done
 	local type=$1 lock_holder_action=$2
 
-	is_arg1_in_arg2 $type $writer_lock_types ||
+	is_arg1_in_arg2 $type $writer_types ||
 	   abort_function "'$type' is unknown lock type"
 	set_lock_path $type $name
 	local lock_file=$(basename $lock_path)
@@ -370,7 +370,7 @@ lock_PID() {
 # drive at once (any other jobs will be suspended); this section describes the
 # policy (and mechanism) to meet that requirement.  For each drive,
 # create_job_on_drives() creates a job for a type of writer, and lock()
-# creates a lock for each of those jobs ( see writer_lock_types= ).  The
+# creates a lock for each of those jobs ( see writer_types= ).  The
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
 # backup job is initiated).  When no backup job is running, and copy and prune
 # jobs both exist, suspended_prune_as_drive_usage_response decides
@@ -595,7 +595,7 @@ kill_all_jobs_on_drives() {
 	assert_not_option ${1-}
 
 	local type
-	for type in $writer_lock_types
+	for type in $writer_types
 	    do	kill_job_on_drives $opt $type "$@"
 	done
 }
@@ -1111,7 +1111,7 @@ function set_priority() {
 function set_drive_jobs_priorities {
 
 	local type job_PGID priority status=1
-	for type in $writer_lock_types
+	for type in $writer_types
 	    do	set_job_PGID $type || continue
 		set_priority $type $job_PGID
 		status=0
