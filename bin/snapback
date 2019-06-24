@@ -393,16 +393,18 @@ declare -A  lock_type2locked_resource
 #    If -w and lock is held by other job, Wait for lock to be freed.
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
-	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
-	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+#	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
+#	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
 	assert_not_option ${1-}
 	[[ $# == [12] ]] || abort_function "[-w] type resource"
 	local type=$1 resource=${2:-$drive_name}
 
+	suspend_tracing
 	local drive_name drive_dir	# don't mess up caller's values
 	_set_drive_name $resource
 	_set_drive_dir
+	restore_tracing drive_name
 
 	local prev_lock_path=${_lock_type2lock_path[$type]-}
 	[[ ! $prev_lock_path ]] ||
@@ -449,13 +451,13 @@ function lock() {
 # ---------------------------------
 
 unlock() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+#	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	local type
 	for type
 	    do	local lock_path=${_lock_type2lock_path[$type]-}
 		[[   $lock_path ]] || abort "don't hold lock of type '$type'"
-		RunCmd lockpid -r $lock_path
+		RunCmd lockpid --release $lock_path
 		unset _lock_type2lock_path[$type]
 		unset  lock_type2locked_resource[$type]
 	done
@@ -519,8 +521,8 @@ signal_job() {
 	[[ -s $lock_path ]] || return 1
 	set_sudo_lockpid
 	[[ ! $debug_opt ]] &&
-	$sudo_lockpid    $lock_path &> /dev/null && # missing or stale?
-	$sudo_lockpid -r $lock_path && return 1
+	$sudo_lockpid --not-hold $lock_path &> /dev/null && # missing or stale?
+	$sudo_lockpid --release  $lock_path && return 1
 
 	set -- $(< $lock_path) && [[ $# == 1 ]] || return 1
 	$IfRun sudo kill -s ${signal^^} -$1 || return 1
@@ -566,12 +568,13 @@ function continue_jobs() { _signal_jobs -CONT "$@"; }
 
 kill_job_on_drives() {
 	local signal=-KILL
-	[[ $1 == -s  ]] && { signal=-STOP ; shift; }
-	[[ $1 == -c  ]] && { signal=-CONT ; shift; }
+	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
+	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
 	local type=$1; shift
-	[[ $1 == -*  ]] && { signal=${1^^}; shift; }
+	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
 	assert_not_option -o ${1-}
-	[[ $* == all ]] && set -- $(list_drive_dirs -a)
+	[[ $* == all   ]] && set -- $(list_drive_dirs -a)
+	[[ $# != 0     ]] || set -- $drive_name
 
 	local name status=1		# assume nothing to kill
 	for name
@@ -1544,11 +1547,17 @@ function prune_drive() {
 
 		[[ ! $is_update ]] && {	# for update, we just rmdir empty dirs
 
+	# -----
 	# the following logic is odd, to ensure real-user's request is honored
+	# -----
 
-	[[ $is_cron ]] && suspended_prune_as_drive_usage_response && return 1
+	if [[ $is_cron ]]
+	   then suspended_prune_as_drive_usage_response && return 1
+	   else # if user increased backup_period, more snapshots to prune
+		kill_job_on_drives prune # kill old job, we're the new job
+	fi
 
-	lock prune  ||  { suspended_prune_as_drive_usage_response;  return 1; }
+	lock prune || { suspended_prune_as_drive_usage_response;  return 1; }
 
 	if [[ $is_cron ]]
 	   then _is_time_to_prune_drive || { unlock prune; return 1; }
@@ -1560,7 +1569,9 @@ function prune_drive() {
 
 		} # [[ ! $is_update ]]
 
+	# -----
 	# ... a prune is needed, do it
+	# -----
 
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
@@ -2338,7 +2349,8 @@ update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock copy > /dev/null || exit 1 # can run for days
+	IfRun= lock copy > /dev/null || exit 1	# can run for days
+	suspended_prune_as_drive_usage_response # we might get suspended
 
 	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
