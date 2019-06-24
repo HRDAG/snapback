@@ -1548,16 +1548,19 @@ function prune_drive() {
 		[[ ! $is_update ]] && {	# for update, we just rmdir empty dirs
 
 	# -----
-	# the following logic is odd, to ensure real-user's request is honored
+	# the following logic is odd, it ensures real-user's request is honored
 	# -----
 
 	if [[ $is_cron ]]
 	   then suspended_prune_as_drive_usage_response && return 1
-	   else # if user increased backup_period, more snapshots to prune
-		kill_job_on_drives prune # kill old job, we're the new job
+		local lock_opt=
+	   else local lock_opt=-w	# wait for backup to finish
+		# if user changed backup_period or prune-rate, need to rescan
+		kill_job_on_drives prune # kill old job, we'll be new job
 	fi
 
-	lock prune || { suspended_prune_as_drive_usage_response;  return 1; }
+	lock $lock_opt prune ||
+	    { suspended_prune_as_drive_usage_response; return 1; }
 
 	if [[ $is_cron ]]
 	   then _is_time_to_prune_drive || { unlock prune; return 1; }
@@ -2348,8 +2351,10 @@ cleanup_after_updates() {
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 
+	# if real user, wait for backup job to finish
+	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock copy > /dev/null || exit 1	# can run for days
+	IfRun= lock $lock_opt copy > /dev/null || exit 1 # can run for days
 	suspended_prune_as_drive_usage_response # we might get suspended
 
 	set_drive_dir $drive_name
