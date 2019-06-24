@@ -1190,6 +1190,31 @@ _is_time_to_prune_drive() {
 
 # ----------------------
 
+function _should_run_prune {
+
+	[[ ! $is_update ]] || return 0	# for update, we just rmdir empty dirs
+
+	# the following logic is odd, it ensures real-user's request is honored
+
+	if [[ $is_cron ]]
+	   then suspended_prune_as_drive_usage_response && return 1
+	   else # if user changed backup_period or prune-rate, need to rescan
+		kill_job_on_drives prune # kill old job, we'll be new job
+	fi
+
+	lock prune || { suspended_prune_as_drive_usage_response; return 1; }
+
+	if [[ $is_cron ]]
+	   then _is_time_to_prune_drive || { unlock prune; return 1; }
+	   else # this could suspend ourself, which is OK ...
+		suspended_prune_as_drive_usage_response # real person, can wait
+	fi
+
+	return 0
+}
+
+# -----------------------------------------------------------------------------
+
 _rm_pruned_snapshots() {
 	local snapshots_file=$1
 
@@ -1311,9 +1336,9 @@ _rm_pruned_snapshots() {
 	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
 }
 
-# ------------------------------------------------------------------------------------
-# variables and functions that implement the snapshot date-time format, and pruning) #
-# ------------------------------------------------------------------------------------
+# --------------------------------------------------------------------
+# vars & funcs that implement snapshot date-time format, and pruning #
+# --------------------------------------------------------------------
 
 # snapshot basename format is Year-Mo-Da,Hr, all implemented in this section;
 #    to implement snapshot_date_time_separator, search for: ,00 ,?? ,$ ,/
@@ -1405,9 +1430,9 @@ function load__type2date_span {
     )
 }
 
-# -------------------------------------------------------------------------------------------
-# end of variables and functions that implement the snapshot date-time format, and pruning) #
-# -------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# end of: vars & funcs that implement snapshot date-time format, and pruning #
+# ----------------------------------------------------------------------------
 
 declare -A backup_period2minimal_snapshot_regex
 #
@@ -1543,35 +1568,9 @@ function prune_drive() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
-	# figure out whether a prune is needed ...
-
-		[[ ! $is_update ]] && {	# for update, we just rmdir empty dirs
-
-	# -----
-	# the following logic is odd, it ensures real-user's request is honored
-	# -----
-
-	if [[ $is_cron ]]
-	   then suspended_prune_as_drive_usage_response && return 1
-	   else # if user changed backup_period or prune-rate, need to rescan
-		kill_job_on_drives prune # kill old job, we'll be new job
-	fi
-
-	lock prune || { suspended_prune_as_drive_usage_response; return 1; }
-
-	if [[ $is_cron ]]
-	   then _is_time_to_prune_drive || { unlock prune; return 1; }
-	   else # this could suspend ourself, which is OK ...
-		suspended_prune_as_drive_usage_response # real person, can wait
-	fi
+	_should_run_prune || return 1
 
 	set_priority prune
-
-		} # [[ ! $is_update ]]
-
-	# -----
-	# ... a prune is needed, do it
-	# -----
 
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
