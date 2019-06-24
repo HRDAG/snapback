@@ -2346,6 +2346,7 @@ cleanup_after_updates() {
 
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
+	set_drive_dir $drive_name
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	IfRun= lock copy > /dev/null || exit 1 # can run for days
