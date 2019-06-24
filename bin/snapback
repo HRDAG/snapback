@@ -488,6 +488,7 @@ process_group_PIDs() {
 # ----------------------------------------------------------------------------
 
 set_job_PGID() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local type=$1 lock_path
 
 	set_lock_path $type
@@ -495,6 +496,7 @@ set_job_PGID() {
 	   then job_PGID=$(< $lock_path)
 	   else job_PGID=
 	fi
+	$xtrace
 	[[ $job_PGID ]]
 }
 
@@ -817,13 +819,14 @@ have_cmd \
 _set_drive_name ||		      # configure.sh can replace this function
 # ignore invalid names, fix the case of valid names
 _set_drive_name() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_pattern*}
 
 	[[ $name != *[\ \	]* ]] ||
 	   abort "drive_name can not contain white-space"
 
-	[[ $name =~ ^$admin_drive_name_regex$ ]] || return 1
+	[[ $name =~ ^$admin_drive_name_regex$ ]] || { $xtrace; return 1; }
 
 	  if [[ $is_drive_name_upper_cased ]]
 	   then drive_name=${name^^}
@@ -832,6 +835,7 @@ _set_drive_name() {
 	   else drive_name=$name
 	fi
 	_last_fully_initialized_drive_name= # prevent weird bugs
+	$xtrace
 }
 
 # ----------------------
@@ -1082,7 +1086,7 @@ set_job_type2priority_level() {
 # -----------------------
 
 # this sets the 'priority' variable _and_ changes the process priority
-set_priority() {
+function set_priority() {
 	local job_type=$1 PGID=${2:-$$}
 
 	set_job_type2priority_level
@@ -1092,23 +1096,25 @@ set_priority() {
 	local  IO_priority_cmd=${level2IO_priority_cmd[$priority]}
 
 	{
-	$IfRun $CPU_priority_cmd $PGID	; [[ $IO_priority_cmd ]] &&
-	$IfRun  $IO_priority_cmd $PGID
+	$IfRun $CPU_priority_cmd $PGID && { [[ ! $IO_priority_cmd ]] ||
+	$IfRun  $IO_priority_cmd $PGID					; }
 	} |
 	if [[ $is_regression_test ]]
 	   then sed "s@\b$PGID\b@<a_PGID>@"
 	   else egrep -v ' new priority '
 	fi
+	[[ ${PIPESTATUS[0]} == 0 ]]
 }
 
 # -----------------------------------------------------------------------------
 
 function set_drive_jobs_priorities {
 
-	local type priority status=1
+	local type job_PGID priority status=1
 	for type in $writer_lock_types
-	    do	set_job_PGID $type &&
-		set_priority $type $job_PGID && status=0
+	    do	set_job_PGID $type || continue
+		set_priority $type $job_PGID
+		status=0
 	done
 	return $status
 }
@@ -1187,8 +1193,6 @@ _is_time_to_prune_drive() {
 function _should_run_prune {
 
 	[[ ! $is_update ]] || return 0	# for update, we just rmdir empty dirs
-
-	[[ $is_regression_test ]] && return 0
 
 	# the following logic is odd, it ensures real-user's request is honored
 
@@ -2337,10 +2341,9 @@ update_drive() {
 	set_drive_dir $drive_name
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock copy > /dev/null || exit 1 # can run for days
+	IfRun= lock copy > /dev/null || exit 1	# can run for days
 	suspended_prune_as_drive_usage_response # we might get suspended
 
-	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
 
 	local srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
