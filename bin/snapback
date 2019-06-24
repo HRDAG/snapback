@@ -414,7 +414,7 @@ function lock() {
 	local extra_lock_msg="${lock_msg/$type/backup}, so can't $type"
 
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
-	[[ $do_wait ]] &&
+	[[ $do_wait || ! $is_cron ]] &&	# interactive user waits for lock
 	if [[ $type == backup ]]
 	   then declare -i half_backup_period_mins=$backup_period*60/2
 		  if [[ $date_time == *-01,00 ]] # kept a very long time?
@@ -426,9 +426,9 @@ function lock() {
 		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
 		fi
 		wait_opt+=" --quiet"
-	elif [[ ! $is_cron ]]		# interactive user?
-	    then wait_opt=--wait	# don't forget their request
 	fi
+	# if interactive user, want to honor their request eventually
+	[[ ! $is_cron ]] && : ${wait_opt:=--wait}
 
 	# be sure to grab primary lock first, so job appears on dashboard
 	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
@@ -1553,14 +1553,11 @@ function prune_drive() {
 
 	if [[ $is_cron ]]
 	   then suspended_prune_as_drive_usage_response && return 1
-		local lock_opt=
-	   else local lock_opt=-w	# wait for backup to finish
-		# if user changed backup_period or prune-rate, need to rescan
+	   else # if user changed backup_period or prune-rate, need to rescan
 		kill_job_on_drives prune # kill old job, we'll be new job
 	fi
 
-	lock $lock_opt prune ||
-	    { suspended_prune_as_drive_usage_response; return 1; }
+	lock prune || { suspended_prune_as_drive_usage_response; return 1; }
 
 	if [[ $is_cron ]]
 	   then _is_time_to_prune_drive || { unlock prune; return 1; }
@@ -2351,10 +2348,8 @@ cleanup_after_updates() {
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 
-	# if real user, wait for backup job to finish
-	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock $lock_opt copy > /dev/null || exit 1 # can run for days
+	IfRun= lock copy > /dev/null || exit 1 # can run for days
 	suspended_prune_as_drive_usage_response # we might get suspended
 
 	set_drive_dir $drive_name
