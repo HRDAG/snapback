@@ -60,7 +60,7 @@ fi ;						readonly config_file_sample
 # For each config var, create associative array for per-drive customization.
 # [customize_config_variables currently fails when try to customize an array.]
 readonly uncustomizable_config_vars="
-	     drive_dir_prefix old_crypt_name_prefixes drive_config_file
+	     drive_dir_prefix old_crypt_name_prefixes drive_specific_config_file
 	     level2CPU_priority_cmd level2IO_priority_cmd
 	     drive_name_regex admin_drive_name_regex is_drive_name_capitalized"
 readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
@@ -77,7 +77,7 @@ readonly coder=sweikart@gmail.com
 [[ -s $exclude_file ]] ||
    abort "install/edit $exclude_file, see included .sample"
 
-Usage="
+readonly Usage="
 Usage: $our_name [options] action [args]
 
   $our_name (snapshot backups) maintains multiple, uniquely-named,
@@ -206,7 +206,7 @@ readonly hostname=${HOSTNAME%%.*}
 readonly log_dir=/var/log/$our_name
 
 file_for_logging=$log_dir/messages.log	     # set__drive_dir__* sets it
-log_msg_prefix=' ${action-} ${drive_name-}' # this gets eval'ed each time
+log_msg_prefix=' ${action-} ${drive_name-}'  # this gets eval'ed each time
 
 ##############################################################################
 # Miscellaneous functions used by for making and pruning backup snapshots.
@@ -247,7 +247,6 @@ assert_drive_dir_writable() {
 
 readonly lock_dir=/var/lock/$our_name
 
-locks=
 set_locks() {
 	local type_regex=$1; shift
 	local PIDs=$*
@@ -268,11 +267,9 @@ set_locks() {
 
 # -----------------------------------------------------------------------------
 
-sudo_lockpid=
-
 set_sudo_lockpid() {
 
-	[[ $sudo_lockpid ]] && return
+	[[ ${sudo_lockpid-} ]] && return
 
 	if [[ $action =~ (kill|suspend|continue)-* ]]
 	   then local is_signaling=$true
@@ -307,13 +304,14 @@ rm_stale_locks() {
 
 readonly writer_lock_types="backup prune copy" # kill_all_jobs_on_drives uses
 
-lock_path=				# used by lock() and signal_job()
 set_lock_path() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local type=$1 name=${2:-$drive_name}
 
 	[[ $name ]] || abort_function "missing \$2 and \$drive_name null"
 	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	lock_path=$lock_dir/$type-$name.pid
+	$xtrace
 }
 
 # ---------------------------------
@@ -343,8 +341,8 @@ lock_PID() {
 	rm $status_file
 
 	if [[ $status == 0 ]]
-	   then [[ $IfRun ]] &&
-		echo "$lockpid_output" | sed "s@$our_PID@<our_PID>@"
+	   then [[ $is_regression_test ]] &&
+		echo "$lockpid_output" | sed "s@$our_PID@<a_PID>@"
 		$xtrace
 		return 0
 	fi
@@ -502,8 +500,6 @@ set_job_PGID() {
 
 # ----------------------------------------------------------------------------
 
-signal_is_kill=
-
 set_signal_is_kill() {
 	local signal=${1#-}
 
@@ -603,8 +599,6 @@ kill_all_jobs_on_drives() {
 }
 
 # -----------------------------------------------------------------------------
-
-lock_PGIDs=
 
 set_lock_PGIDs() {
 	local type=$1
@@ -713,8 +707,6 @@ set_oldest_snapshot() {
 # Setup variables for working with a specific backup drive.
 ##############################################################################-
 
-admin_group=
-
 function set_admin_group() {
 
 	suspend_tracing
@@ -770,7 +762,6 @@ create__lock_dir__log_dirs() {
 # -----------------------------------
 
 is_regression_test=$false
-drive_log_dir=
 
 readonly none=NoNe
 _last_fully_initialized_drive_name=
@@ -785,7 +776,8 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	   else return 0		# skip very-long, duplicative setup
 	fi
 
-	[[ $drive_name == Z ]] && is_regression_test=$true
+	[[ $drive_name == Z || ( $debug_opt && $is_cron ) ]] &&
+	    is_regression_test=$true
 
 	if [[ $drive_name ]]
 	   then drive_log_dir=$log_dir/$drive_name
@@ -804,8 +796,6 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 
 # ---------------------------------
 
-drive_config_file=
-
 have_cmd \
 source_drive_specific_config_file ||  # configure.sh can replace this function
 source_drive_specific_config_file() {
@@ -816,14 +806,12 @@ source_drive_specific_config_file() {
 
 	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
 	if [[ -s $_config_file ]]
-	   then drive_config_file=$_config_file	; source $_config_file
-	   else drive_config_file=		; true
+	   then drive_specific_config_file=$_config_file; source $_config_file
+	   else drive_specific_config_file=		; true
 	fi
 }
 
 # ---------------------------------
-
-drive_name=				# global, used by log() and etc
 
 have_cmd \
 _set_drive_name ||		      # configure.sh can replace this function
@@ -881,8 +869,6 @@ set_drive_name() {
 }
 
 # ---------------------------------
-
-drive_dir=				# global, just in case
 
 _set_drive_dir() {
 	local name=${1:-$drive_name}
@@ -1007,7 +993,7 @@ validate_config_variables() {
 	[[ $drive_dir_prefix != *[\ \	]* ]] ||
 	   abort "drive_dir_prefix can not contain white-space"
 
-	set -- $config_file $drive_config_file
+	set -- $config_file ${drive_specific_config_file-}
 
 	echo " $dirs_to_backup " | grep ' [^/]' &&
 	   abort "dirs_to_backup contains a non-absolute path in $*"
@@ -1095,8 +1081,6 @@ set_job_type2priority_level() {
 
 # -----------------------
 
-priority=				# global, for logging
-
 # this sets the 'priority' variable _and_ changes the process priority
 set_priority() {
 	local job_type=$1 PGID=${2:-$$}
@@ -1111,41 +1095,45 @@ set_priority() {
 	$IfRun $CPU_priority_cmd $PGID	; [[ $IO_priority_cmd ]] &&
 	$IfRun  $IO_priority_cmd $PGID
 	} |
-	if [[ $IfRun ]]
-	   then sed "s@\b$PGID\b@<our_PGID>@"
+	if [[ $is_regression_test ]]
+	   then sed "s@\b$PGID\b@<a_PGID>@"
 	   else egrep -v ' new priority '
 	fi
 }
 
 # -----------------------------------------------------------------------------
 
-suspended_prune_as_drive_usage_response() {
+function set_drive_jobs_priorities {
 
-	have_job copy || return 1
-
-	if is_drive_usage_too_high
-	   then  suspend_jobs copy
-		continue_jobs prune	# may do nothing if backup running
-	   else continue_jobs copy	# may do nothing if backup running
-		[[ $is_multi_writer_drive ]] ||
-		   { suspend_jobs prune; return 0; }
-	fi
-	return 1
+	local type priority status=1
+	for type in $writer_lock_types
+	    do	set_job_PGID $type &&
+		set_priority $type $job_PGID && status=0
+	done
+	return $status
 }
 
-# -----------------------------------------------------------------------------
+# ------------------------------------------
 
-reset_priority() {
+function suspended_prune_as_drive_usage_response() {
+	local drive_names=${*:-$drive_name}
 
-	local drive_name
-	for drive_name in ${*:-$drive_name}
-	    do	suspended_prune_as_drive_usage_response
-		local type priority
-		for type in $writer_lock_types
-		    do	set_job_PGID $type &&
-			set_priority $type $job_PGID
-		done
+	local drive_name status=1
+	for drive_name in $drive_names
+	    do	_set_drive_name $drive_name
+		set_drive_jobs_priorities || continue
+
+		have_job copy || { continue_jobs prune; continue; }
+
+		if is_drive_usage_too_high
+		   then  suspend_jobs copy
+			continue_jobs prune # may do nothing if backup running
+		   else continue_jobs copy  # may do nothing if backup running
+			[[ $is_multi_writer_drive ]] ||
+			   { suspend_jobs prune; status=0; }
+		fi
 	done
+	return $status
 }
 
 ##############################################################################-
@@ -1199,6 +1187,8 @@ _is_time_to_prune_drive() {
 function _should_run_prune {
 
 	[[ ! $is_update ]] || return 0	# for update, we just rmdir empty dirs
+
+	[[ $is_regression_test ]] && return 0
 
 	# the following logic is odd, it ensures real-user's request is honored
 
@@ -1714,6 +1704,8 @@ set_excluded_hours() {
 	    do	[[ $hour =~ ^0+$ ]] && continue # pruning needs midnight backup
 		[[ $hour == *-*  ]] || { echo $hour; continue; }
 		[[ $hour != *-*-* ]] || abort "bad $var_name range"
+		[[ $hour != 0-* ]] ||abort "$var_name range can't start with 0"
+		[[ $hour != *-0 ]] ||abort "$var_name range can't end with 0"
 		first=${hour%-*} last=${hour#*-}
 		if (( $first <= $last ))
 		   then eval "echo {$first..$last}"
@@ -1730,9 +1722,9 @@ _is_time_to_run_backup() {
 
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
-	# we're called more than hourly, to reset priorities, and to prune
+	# we're called more than hourly (to reset priorities, and to prune)
 	local current_minute=$(date '+%M')
-	(( $current_minute == 0 )) || return 1
+	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
 
 	local current_hour=$(date '+%k') hours
 	set_excluded_hours $excluded_backup_hours
@@ -1743,8 +1735,6 @@ _is_time_to_run_backup() {
 }
 
 # -------------------------------------------------------
-
-hours=
 
 set_hours() {
 	if [[ $1 == -* ]]
@@ -1760,8 +1750,6 @@ set_hours() {
 set_hours 10; [[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
 
 # ----------------------
-
-seconds=
 
 set_seconds___from_msecs() {
 	if [[ $1 == -* ]]
@@ -1780,8 +1768,6 @@ readonly rsync_time_subdir=stats/rsync-minutes
 
 [[	 ${days_to_keep-} ]] ||		# custom version in $config_file?
 declare -i days_to_keep=3		# ensure more than weekend-only data
-
-rsync_hours=
 
 record_rsync_time() {
 	local snapshot=$(basename $1)
@@ -2062,7 +2048,6 @@ bad_copy() {
 
 # ---------------------------------
 
-backup_type=
 declare -A drive_name2backup_type
 
 set_backup_type() {
@@ -2086,8 +2071,6 @@ set_backup_type() {
 
 # ---------------------------------
 
-dst_backup_type=
-
 matches_dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dir=$1 drive_name
@@ -2099,8 +2082,6 @@ matches_dst_backup_type() {
 }
 
 # ----------------------
-
-dst_minimal_snapshot_regex=
 
 is_src_snapshot_useful() {
 	local src_snapshot=$1
@@ -2146,9 +2127,6 @@ is_dst_snapshot_needed() {
 
 # ---------------------------------
 
-dst_dir=
-copy_snapshot_args=			# holds result for update_drive
-
 copy_snapshot() {
 	[[ $1 == -s* ]] && { local src=${1#-s}   ; shift; } || local src=
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
@@ -2158,11 +2136,11 @@ copy_snapshot() {
 	(( $# >= 2  )) || abort_function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
-	local drive_name=$drive_name drive_dir=$drive_dir # don't messup caller
+	local drive_name=$drive_name drive_dir=${drive_dir-} # protect caller
 	copy_snapshot_args=		# holds result when $is_update
 
 	$Trace
-	[[ $dst_minimal_snapshot_regex ]] || { # don't repeat dst setup
+	[[ ${dst_minimal_snapshot_regex-} ]] || { # don't repeat dst setup
 	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
 	dst_dir=$drive_dir
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
@@ -2514,9 +2492,6 @@ set_stats_format() {
 
 # ---------------------------------
 
-rsync_hour_avgs=
-rsync_hour_maxs=
-
 set__rsync_hour_avgs__rsync_hour_maxs() {
 
 	set_stats_format $all_drive_dirs
@@ -2584,9 +2559,6 @@ _set_age() {
 
 # ------------------
 
-oldest_age=
-newest_age=
-
 _setup_ages() {
 
 	_set_age $1    ; oldest_age=$age
@@ -2594,10 +2566,6 @@ _setup_ages() {
 }
 
 # ---------------------------------
-
-stats_number=
-stats_oldest_age=
-stats_newest_age=
 
 _recalculate_stats_vars() {
 
@@ -3341,9 +3309,6 @@ add_extN_journal() {
 }
 
 # -----------------------------------------------------------------------------
-
-total_dir_MB=
-avg_dir_KB=
 
 set__total_dir_MB__avg_dir_KB() {
 	local file=${1%.bz2}.bz2
@@ -4106,8 +4071,6 @@ check-snapshot-hard-links() {
 # regression tests for "old" (installed) vs "tst" (workspace) snapback
 # -----------------------------------------------------------------------------
 
-was_test_cache_stale=
-
 # -d is used to specify a comma-separated list of Drives
 # -r means using data on a Real backup drive
 is_test_cache_stale() {
@@ -4350,6 +4313,7 @@ case $action in
 	[[ $recurse_opt ]] && { create_jobs copy $src_snap_opt -r $*; exit; }
 
 	set_drive_name $drive_name
+	set_drive_dir  $drive_name
 
 	lock copy || exit 1
 	for snapshot in $src_snapshots
@@ -4453,7 +4417,8 @@ case $action in
 
    # reset-priority [names]: reset job priorities on drives (defaults to all)
    ( r*p* ) undo_action_abbrev reset-priority
-	reset_priority ${*:-$(list_drive_dirs -a)}
+	$Trace
+	suspended_prune_as_drive_usage_response ${*:-$(list_drive_dirs -a)}
 	;;
    # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
    ( ps )
@@ -4485,7 +4450,7 @@ case $action in
 	;;
 
    # mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
-   ( mkfs )
+   ( mkfs | mf* ) undo_action_abbrev mkfs
      mkfs_backup_drive "$@"
 	;;
    # copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
@@ -4730,6 +4695,8 @@ case $action in
 	snapshot=/backup/X/2019-06-20,12
 	set_seconds   $snapshot; echo $snapshot_date_time; echo $seconds
 	date '+%s' -r $snapshot; exit
+
+	_set_drive_name $2; set_job_PGID $1; echo $? $job_PGID; exit
 
 	load__drive_name2do_suspend
 	suspend_tracing
