@@ -213,7 +213,7 @@ log_msg_prefix=' ${action-} ${drive_name-}' # this gets eval'ed each time
 ##############################################################################
 
 set_readable_du_size() {
-	declare -i size=$1
+	local -i size=$1
 
 	local suffix=K
 	while (( $size >= 1024 ))
@@ -1060,7 +1060,7 @@ is_drive_usage_too_high() {
 
 	suspend_tracing
 	set -- $(df --output=pcent,ipcent $drive_dir | tail -n1)
-	declare -i block_percent=${1%\%} inode_percent=${2%\%}
+	local -i block_percent=${1%\%} inode_percent=${2%\%}
 	# caller can declare max_drive_usage_percent to use it
 	if (( $block_percent > $inode_percent ))
 	   then max_drive_usage_percent=b$block_percent
@@ -1479,7 +1479,7 @@ prune_type_to_file() {
 	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten_date $type)
 	local remaining_reverse_sorted_snapshot_dates=$*
 
-	declare -A type2date_span
+	local -A type2date_span
 	load__type2date_span	# run after call to customize_config_variables
 	local date_span=${type2date_span[$type]}
 	scale_date_span
@@ -1488,7 +1488,7 @@ prune_type_to_file() {
 	[[ $type == hour ]] && _oldest_snapshot=$drive_dir/${!#},00
 
 	Trace 5 "\n==> $type prune <=="
-	declare -i period=$backup_period
+	local -i period=$backup_period
 	local prune_pattern
 	while set_popped_word___from_list prune_type_patterns
 	    do	local prune_type_pattern=$popped_word
@@ -1639,7 +1639,7 @@ set_link_dest_opts() {
 	fi
 
 	suspend_tracing
-	declare -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
+	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	_have_full_snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
 	local snapshot
 	for snapshot in $*
@@ -1786,7 +1786,7 @@ rsync_hours=
 record_rsync_time() {
 	local snapshot=$(basename $1)
 
-	declare -i minutes=$(( ($SECONDS + 30) / 60 ))
+	local -i minutes=$(( ($SECONDS + 30) / 60 ))
 	set_hours $minutes
 	rsync_hours=$hours
 
@@ -1806,8 +1806,8 @@ record_rsync_time() {
 	   else eval "$cmd"
 	fi || return 1
 
-	declare -i number_files_per_day=24/$backup_period
-	declare -i number_files_to_keep=$number_files_per_day*$days_to_keep
+	local -i number_files_per_day=24/$backup_period
+	local -i number_files_to_keep=$number_files_per_day*$days_to_keep
 	set -- $(dirname $file)/$snapshot_pattern.txt
 	while (( $# > $number_files_to_keep ))
 	    do	$IfRun rm $1
@@ -1821,8 +1821,8 @@ _links_error_msg() {
 	local msg=$*
 
 	# since contents of $() are run in subshell, have to echo results
-	declare -i max_src_links=$(
-	declare -i max_src_links=0
+	local -i max_src_links=$(
+	local -i max_src_links=0
 	bzcat $log | tr -d '"' | cut -d' ' -f3 |
 	while read dst_file
 	    do	src_file=${dst_file#$drive_dir/$snapshot_pattern.partial}
@@ -1834,7 +1834,7 @@ _links_error_msg() {
 	done | tail -n1
 	)
 
-	declare -i link_dest_wait=$(( num_link_dests * backup_period ))
+	local -i link_dest_wait=$(( num_link_dests * backup_period ))
 	set -- *.rm
 	msg="$msg; Worst case, tried to add $max_src_links links to a snapshot file; these files will eventually appear in a new snapshot after $link_dest_wait hours; $# snapshots waiting to be pruned, newer prunes subtract ~$max_src_links links"
 
@@ -2249,7 +2249,7 @@ fastest_snapshots() {
 	    do	_set_drive_name $snapshot
 		local do_suspend=${drive_name2do_suspend[$drive_name]}
 
-		declare -i writer_count=0
+		local -i writer_count=0
 		for writer in backup copy prune
 		    do	have_job $writer && writer_count+=1
 		done
@@ -2499,7 +2499,7 @@ set_stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dirs=$*
 
-	declare -i format_width
+	local -i format_width
 	local format=
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
@@ -2530,8 +2530,8 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 		[[ -f $1 ]] || shift
 		if [[ $# != 0 ]]
 		   then local sum=$(cat $* | tr '\n' '+')
-			declare -i total=${sum%+}
-			declare -i avg=$(( ($total+($#/2)) / $# ))
+			local -i total=${sum%+}
+			local -i avg=$(( ($total+($#/2)) / $# ))
 			set_hours -1 $avg # only want 1 decimal point
 			hour_avg=$hours
 			set -- $(sort -n -r $*)
@@ -2578,7 +2578,7 @@ _set_age() {
 	local snapshot=$1
 
 	set_seconds $snapshot
-	declare -i snap_secs=$seconds
+	local -i snap_secs=$seconds
 	age=$(( ($SECONDS - $snap_secs)/(24*60*60) ))
 }
 
@@ -2844,7 +2844,7 @@ watch() {
 	# ------------------------------------------------------------------
 
 	set -f; set -- $(stty -a); set +f
-	declare -i rows=${5%;} cols=${7%;}
+	local -i rows=${5%;} cols=${7%;}
 	export COLUMNS=$cols		# for 'ps'
 
 	#
@@ -2856,10 +2856,10 @@ watch() {
 
 	# since the contents of $() are run in subshell, have to echo results
 	set -- $(
-	declare -i max_device_len=0 max_mount_len=0
+	local -i max_device_len=0 max_mount_len=0
 	df --block-size=G $drive_dirs |
 	while read device size used avail used mount junk
-	    do	declare -i device_len=${#device} mount_len=${#mount}
+	    do	local -i device_len=${#device} mount_len=${#mount}
 		is_new_max=$false
 		[[ $mount == /* ]] &&	# skip header
 		(( $max_mount_len  < $mount_len  )) &&
@@ -2870,15 +2870,15 @@ watch() {
 		exit
 	done
 	)
-	declare -i max_device_len=$1 max_mount_len=$2
+	local -i max_device_len=$1 max_mount_len=$2
 
 	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
-	declare -i max_ps_wchan_width=${#widest_wchan_value}+1
-	declare -i ps_wchan_width=10	 # min useful
-	declare -i ps_overhead=79
+	local -i max_ps_wchan_width=${#widest_wchan_value}+1
+	local -i ps_wchan_width=10	 # min useful
+	local -i ps_overhead=79
 
 	if (( $cols >= $ps_overhead + $ps_wchan_width + $max_mount_len ))
 	   then ps_wchan_width=cols-ps_overhead-max_mount_len  ps_opt=-f
@@ -2912,13 +2912,13 @@ watch() {
 	# figure out how many rows are needed
 	#
 
-	declare -i num_drives=$(set -- $drive_dirs; echo $#)
+	local -i num_drives=$(set -- $drive_dirs; echo $#)
 
 	set_lock_PGIDs backup && {
 	bkp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
 			   grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
-	declare -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
-	declare -i num_bkp_rsyncs=0 ;	   bkp_rsync_cmds= ; }
+	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
+	local -i num_bkp_rsyncs=0 ;	   bkp_rsync_cmds= ; }
 
 	set_lock_PGIDs prune &&
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
@@ -2956,11 +2956,11 @@ watch() {
 
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
-	declare -i PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
+	local -i PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
 	(( PD > 0 )) && let PD=PD*2+4	# add in 'rm' plus section-overhead
-	declare -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
+	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && let CS=CS*2+4	# add in 'rsync' plus section-overhead
-	declare -i RB=$num_bkp_rsyncs
+	local -i RB=$num_bkp_rsyncs
 	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
 	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
 	TraceV 1 PD CS RB && let rows-=3
@@ -2968,9 +2968,9 @@ watch() {
 	#   1 Number pruned, 1 # .partial, 1 age of good snapshots,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
-	declare -i min_rows=$((  7 + 4 + PD + CS + RB )); [[ $cron_opt ]] &&
-		   min_rows+=$(( 4 + 5*num_bkp_rsyncs + PD ))
-	declare -i min_df_rows=$(( min_rows + 2 + num_drives ))
+	local -i min_rows=$((  7 + 4 + PD + CS + RB )); [[ $cron_opt ]] &&
+		 min_rows+=$(( 4 + 5*num_bkp_rsyncs + PD ))
+	local -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
 
@@ -2979,7 +2979,7 @@ watch() {
 	# now we're ready to start showing stuff to the user
 	# ------------------------------------------------------------------
 
-	declare -i min_for_rare=$(( min_df_rows + 6 + 7 + 6 ))
+	local -i min_for_rare=$(( min_df_rows + 6 + 7 + 6 ))
 	[[ ! -s /etc/sudoers.d/$_our_name &&
 	   ( $rows -gt $min_for_rare || $show_all ) ]] && {
 		header -E "to not fill the log with frequent 'sudo ps'"
@@ -2998,7 +2998,7 @@ watch() {
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
-	declare drive_usage; set_drive_usage
+	local drive_usage; set_drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
 	setup_snapshot_stats .rm
 	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
@@ -3009,7 +3009,7 @@ watch() {
 
 	# --------------------------------------------
 
-	declare -i rows_used=5
+	local -i rows_used=5
 	(( $rows >= ($min_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
 	setup_snapshot_stats .rm
@@ -3024,7 +3024,7 @@ watch() {
 
 	# --------------------------------------------
 
-	declare -i rows_used=7
+	local -i rows_used=7
 	(( $rows >= ($min_df_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
 	setup_snapshot_stats ''
@@ -3059,8 +3059,8 @@ watch() {
 	# ------------------------------------------------------------------
 
 	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp_1
-	declare -i admin_PD=$(wc -l < $tmp_1)+3 # 3 is the overhead
-	declare -i ad_hoc_min_rows=$min_rows+$admin_PD
+	local -i admin_PD=$(wc -l < $tmp_1)+3 # 3 is the overhead
+	local -i ad_hoc_min_rows=$min_rows+$admin_PD
 	if [[ -s $tmp_1 && ( $rows -ge $ad_hoc_min_rows || $show_all ) ]]
 	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
@@ -3191,7 +3191,7 @@ _monitor_drives() {
 
 	local response_dir=$status_dir/response-msecs
 
-	declare -i msecs=0
+	local -i msecs=0
 	# for speed, the following loop nevever forks (except 'sleep' at end)
 	while (( $msecs < $check_period_msecs )) # not waited long?
 	   do	set -- ${!name2PID[*]}		 # any slow drives?
@@ -3206,7 +3206,7 @@ _monitor_drives() {
 
 			local  count_file=$response_dir/counter/$name
 			[[ -s $count_file ]] || echo 0 > $count_file
-			declare -i count=$(< $count_file)
+			local -i count=$(< $count_file)
 			count+=1
 			echo $count > $count_file
 
@@ -3246,7 +3246,7 @@ monitor_drives() {
 	done
 
 	SECONDS=0
-	declare -i -A name2PID name2msecs
+	local -i -A name2PID name2msecs
 	while true			# monitor forever
 	    do	_monitor_drives ${dirs:-$(list_drive_dirs -a)} # new drive?
 	done
@@ -3443,8 +3443,8 @@ dir_sizes() {
 	header $file
 
 	set -- $(bzcat $file.bz2 | wc -l)
-	declare -i dir_count=$1
-	declare -i median_line=$dir_count/2
+	local -i dir_count=$1
+	local -i median_line=$dir_count/2
 	set -- $(bzcat $file.bz2 | sed -n ${median_line}p)
 	printf "\n%7s directories.\n" $dir_count
 	bzcat $file.bz2 |
@@ -3455,8 +3455,8 @@ dir_sizes() {
 	echo -e " Median directory size is ${1%K} KB ...\n"
 	$Trace
 	(( $dir_count > 100 )) && {
-	declare -i decile_count=$(( ($dir_count + 5) / 10 )) i
-	declare -i decile_median_line=decile_count/2
+	local -i decile_count=$(( ($dir_count + 5) / 10 )) i
+	local -i decile_median_line=decile_count/2
 	for i in {0..9}
 	    do	set -- $(bzcat $file.bz2 | sed -n ${decile_median_line}p)
 		echo "Decile $i has median directory size of ${1}B"
@@ -3761,10 +3761,10 @@ _assert_dst_big_enough() {
 	if set_device_KB___from_block_device $src_device
 	   then declare -i src_KB=$device_KB
 		set_device_KB___from_block_device $dst_device
-		declare -i KB_missing=$(( src_KB - device_KB ))
+		local -i KB_missing=$(( src_KB - device_KB ))
 		(( KB_missing > 0 )) || return 1
-		declare -i MB=KB_missing/1024
-		declare -i GB=MB/1024 &&
+		local -i MB=KB_missing/1024
+		local -i GB=MB/1024 &&
 		msg="$dst_name's $dst_device is too-small by $MB MB ($GB GB)"
 		abort "$msg;\n  specify -D to *not* use 'dd' (use dump/retore)"
 	   else msg="$dst_device MUST be as-large as $src_name's $src_device"
@@ -4071,7 +4071,7 @@ check-snapshot-hard-links() {
 
 	set -- $snapshot_pattern*
 
-	declare -A file2inum
+	local -A file2inum
 	for old_file in $very_old_immutable_files
 	    do	$IfRun sudo -n chattr +i $old_file &> /dev/null # optional
 		file=$1$old_file
@@ -4529,9 +4529,9 @@ case $action in
 	    ( * ) eval "set -- {$period}" ; hours=$* ;;
 	esac
 
-	declare -i start_secs=$(date -d "$start_date" '+%s')
-	declare -i   end_secs=$(date -d   "$end_date" '+%s')
-	declare -i secs=start_secs secs_per_day=24*60*60
+	local -i start_secs=$(date -d "$start_date" '+%s')
+	local -i   end_secs=$(date -d   "$end_date" '+%s')
+	local -i secs=start_secs secs_per_day=24*60*60
 	let end_secs-=3600		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
 	   do	set_day $secs
@@ -4546,7 +4546,7 @@ case $action in
 	done | xargs -r $IfRun mkdir || abort mkdir
 
 	# setup partial snapshots mid-date, to test pruning
-	declare -i mid_secs="start_secs+(end_secs-start_secs)/2"
+	local -i mid_secs="start_secs+(end_secs-start_secs)/2"
 	set_day $mid_secs; mid_day=$day
 	TraceV 7 start_date mid_day end_date
 	for hour in 00 02 04 08 09 12
@@ -4590,7 +4590,7 @@ case $action in
 	set_drive_dir Z
 
 	# see the comment at the top of the mk-Z option, above
-	declare -A prune_type2mk_Z_args=(
+	local -A prune_type2mk_Z_args=(
 	      [hour]="12/22/2099 0..23"
 	 [month-day]="1/1/2094 0"
 	[year-month]="1/1/2010 month"
@@ -4682,7 +4682,7 @@ case $action in
 	[[  -d $1  ]] || shift
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
-	declare -i secs_per_day=24*60*60
+	local -i secs_per_day=24*60*60
 	$Trace
 	max_drive=$1; shift
 	while [[ $# != 0 ]]
@@ -4728,7 +4728,6 @@ case $action in
 	exit
 
 	snapshot=/backup/X/2019-06-20,12
-	declare snapshot_date_time
 	set_seconds   $snapshot; echo $snapshot_date_time; echo $seconds
 	date '+%s' -r $snapshot; exit
 
@@ -4774,7 +4773,7 @@ case $action in
 	lock backup y && abort badness 2
 	exit
 
-	declare -a digit2name=(zero one two three)
+	local -a digit2name=(zero one two three)
 	echoEV action digit2name[2]; exit
 
 	customize_config_variables ${1:-G}; exit
