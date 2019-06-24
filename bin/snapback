@@ -368,12 +368,16 @@ lock_PID() {
 # create_job_on_drives() creates a job for a type of writer, and lock()
 # creates a lock for each of those jobs ( see writer_lock_types= ).  The
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
-# backup job is initiated).
+# backup job is initiated).  When no backup job is running, and copy and prune
+# jobs both exist, suspended_prune_as_drive_usage_response decides
+# which one should be suspended.
 #
 # An hourly cron job calls action run-backups (with argument 'all'), which
 # calls create_job_on_drives() to create a run_backup() job for each drive;
 # each run_backup() job starts a prune_drive() job, and prune_drive() may
-# start an update_drive() job.
+# start an update_drive() job.  If the cron job is called more frequently
+# than hourly, the off-hour jobs just call reset_priority and prune_drive
+# (for drives with too-high usage, suspend any copy and start a prune).
 #
 # A lock() call for a non-backup lock will get its requested lock immediately
 # (so the job will then appear on the dashboard), but "lock -w" won't return
@@ -1106,7 +1110,7 @@ set_priority() {
 
 # -----------------------------------------------------------------------------
 
-suspended_prune_when_checked_drive_usage() {
+suspended_prune_as_drive_usage_response() {
 
 	have_job copy || return 1
 
@@ -1126,7 +1130,7 @@ reset_priority() {
 
 	local drive_name
 	for drive_name in ${*:-$drive_name}
-	    do	suspended_prune_when_checked_drive_usage
+	    do	suspended_prune_as_drive_usage_response
 		local type priority
 		for type in $writer_lock_types
 		    do	set_job_PGID $type &&
@@ -1165,6 +1169,8 @@ _is_time_to_prune_drive() {
 	[[ ! $is_cron ]] && return 0	# run by a person?
 
 	[[ $(date '+%H') == 00 ]] && return 0 # time for our daily prune?
+
+	is_drive_usage_too_high   && return 0 # desparately need a prune?
 
 	set -- $dir/*.rm
 	[[ -d $1 ]] && return 0		# have partially-deleted snapshots?
@@ -1521,8 +1527,8 @@ _do_skip_newest_span_of_days() {
 
 # The locking & job-management policy is documented in front of function lock()
 
-# for goals of this function, see prune-variable comments in configure.sh
-prune_drive() {
+# for the goals of this function, see prune-variable comments in configure.sh
+function prune_drive() {
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	assert_not_option ${1-}
 	local drive_name=$1 drive_dir
@@ -1534,15 +1540,27 @@ prune_drive() {
 
 	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
+	# figure out whether a prune is needed ...
+
 		[[ ! $is_update ]] && {	# for update, we just rmdir empty dirs
-	suspended_prune_when_checked_drive_usage && return 1
 
-	lock prune || { continue_jobs prune; return 1; }
+	# the following logic is odd, to ensure real-user's request is honored
 
-	_is_time_to_prune_drive || { unlock prune; return 0; }
+	[[ $is_cron ]] && suspended_prune_as_drive_usage_response && return 1
+
+	lock prune  ||  { suspended_prune_as_drive_usage_response;  return 1; }
+
+	if [[ $is_cron ]]
+	   then _is_time_to_prune_drive || { unlock prune; return 1; }
+	   else # this could suspend ourself, which is OK ...
+		suspended_prune_as_drive_usage_response # real person, can wait
+	fi
 
 	set_priority prune
+
 		} # [[ ! $is_update ]]
+
+	# ... a prune is needed, do it
 
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
@@ -1560,7 +1578,7 @@ prune_drive() {
 	_rm_pruned_snapshots $snapshots_to_prune_file # it deletes the file
 	rm -f $snapshots_to_prune_file
 
-	[[ $is_update ]] && return
+	[[ $is_update ]] && return 0
 
 	$IfRun touch $drive_dir/$pruned_timestamp # touch even if did nothing
 
