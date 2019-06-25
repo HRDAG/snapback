@@ -96,16 +96,13 @@ Usage: $our_name [options] action [args]
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
 
+    # -sig in kill defaults to -KILL (-9), i.e. terminates job & deletes lock
+    kill [-sig] type-pattern name-pattern: send signal; either arg can be 'all'
+    continue    type-pattern name-pattern: as above, but -CONT signal
+    suspend     type-pattern name-pattern: as above, but -STOP signal
+    stop        type-pattern name-pattern: as above, but -STOP signal
+    ps [ps-opts] [type-pattern [name-pattern]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
-    ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
-    # -sig in kill-* defaults to -KILL (-9), i.e. terminates job & deletes lock
-    kill-backup [-sig] names: for each name (can be 'all'), kill backup job
-    kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
-    kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
-    kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
-    continue-* names: as above, but defaults to -CONT signal
-     suspend-* names: as above, but defaults to -STOP signal
-        stop-* names: 'stop' is a synonym for 'suspend'
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -316,6 +313,34 @@ set_lock_path() {
 
 # ---------------------------------
 
+set_lock_paths() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ $# == [0-2] ]] ||
+	    abort_function "$*: must be 0-2 args (can use patterns)"
+	local type_pattern=${1:-*} name_pattern=${2:-${drive_name:-*}}
+
+	[[    $type_pattern == all ]] && type_pattern=*
+	if [[ $name_pattern == all ]]
+	   then name_pattern=*
+	elif [[ $name_pattern == /* ]]
+	   then local drive_name
+		_set_drive_name $name_pattern
+		name_pattern=$drive_name
+	elif [[ ${is_drive_name_upper_cased-} ]]
+	   then name_pattern=${name_pattern^^}
+	elif [[ ${is_drive_name_capitalized-} && $name_pattern != *[[,]* ]]
+	   then name_pattern=${name_pattern^} # only capitalize a single name
+	fi
+
+	eval "set -- $lock_dir/$type_pattern*-$name_pattern.pid"
+	[[ -e $1 ]] || shift
+	lock_paths=$*
+	$xtrace
+	[[ $lock_paths ]]
+}
+
+# ---------------------------------
+
 xtrace=				  # in case comment-out first line of function
 
 lock_PID() {
@@ -516,12 +541,15 @@ set_signal_is_kill() {
 # ----------------------
 
 signal_job() {
-	local signal=${1#-} job_type=$2 drive_name=${3:-$drive_name}
-
-	suspend_tracing
-	_set_drive_name $drive_name; local name=$drive_name
-	set_lock_path $job_type
-	restore_tracing
+	local signal=${1#-}; shift
+	if [[ $# == 1 && $1 == /* ]]
+	   then lock_path=$1		# global variable, caller can use it
+	   else local job_type=$1 drive_name=${2:-$drive_name}
+		suspend_tracing
+		_set_drive_name $drive_name
+		set_lock_path $job_type
+		restore_tracing
+	fi
 
 	[[ -s $lock_path ]] || return 1
 	set_sudo_lockpid
@@ -574,30 +602,16 @@ kill_job_on_drives() {
 	local signal=-KILL
 	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
-	local job_type=$1; shift
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
-	assert_not_option -o ${1-}
-	[[ $* == all   ]] && set -- $(list_drive_dirs -a)
-	[[ $# != 0     ]] || set -- $drive_name
+	assert_not_option ${1-}
+	set_lock_paths "$@"
 
-	local name status=1		# assume nothing to kill
-	for name
-	    do	signal_job $signal $job_type $name && status=0
+	local path status=1		# assume nothing to kill
+	for path in $lock_paths
+	    do	signal_job $signal $path && status=0
 	done
 
 	return $status
-}
-
-# ---------------------------------
-
-kill_all_jobs_on_drives() {
-	[[ $1 == -* ]] && { local opt=$1; shift; } || local opt=
-	assert_not_option ${1-}
-
-	local job_type
-	for job_type in $writer_types
-	    do	kill_job_on_drives $opt $job_type "$@"
-	done
 }
 
 # -----------------------------------------------------------------------------
@@ -634,19 +648,14 @@ ps_locks() {
 	   do ps_opts+=" $1"; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
-	local type_pattern=${1:-*} name_pattern=${2:-${drive_name:-*}}
-
-	[[ ${is_drive_name_upper_cased-} ]] &&
-	   name_pattern=${name_pattern^^}
+	set_lock_paths "$@"
 
 	[[ $do_rm ]] && rm_stale_locks
 	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
-	cd_ $lock_dir
 	local status=1			# assume all locks are missing/stale
-	eval "set -- $type_pattern*-$name_pattern.pid"
-	for lock
-	    do	header $PWD/$lock
-		[[ -s $lock ]] || { echo "no such lock"; continue; }
+	for lock in $lock_paths
+	    do	header $lock
+		[[ -s  $lock ]] || { echo "no such lock"; continue; }
 		set -- $(< $lock)
 		ps $ps_opts -$1 || ps ${no_header_opt-} $ps_opts $1
 		status=$?
@@ -2784,7 +2793,7 @@ watch() {
 		abort "exec failed"
 	fi
 
-	local do_tput=$true
+	local drive_dirs= do_tput=$true
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
@@ -2793,7 +2802,6 @@ watch() {
 	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
 	$Trace
 	local all_drive_dirs=$*
-	local drive_dirs= show_all=$false
 	if [[ $names ]]
 	   then local name_list=
 		for name in ${names//,/ }
@@ -2804,7 +2812,7 @@ watch() {
 		done
 		names=${name_list#,}
 		# show_all=$true   cron_opt=-C
-	   else show_all=$false
+	   else : ${show_all=$false}
 		drive_dirs=$all_drive_dirs
 	fi
 	[[ $names ]] && names_pattern="{$names}" &&
@@ -3233,7 +3241,9 @@ unmount_drives() {
 
 	$Trace
 	# do this early, since takes a while for processes to die
-	$IfRun kill_all_jobs_on_drives "$@"
+	for name
+	    do	$IfRun kill_job_on_drives all $name
+	done
 
 	[[ $debug_opt ]] && local output=/dev/stdout || local output=/dev/null
 	local name drive_name drive_dir status=0
@@ -3846,7 +3856,7 @@ _prepare_for_dump_restore() {
 	    do	is_drive_mounted $drive || $IfRun abort "mount drive $drive"
 	done
 
-	kill_all_jobs_on_drives $src_name $dst_name
+	kill_job_on_drives all {$src_name,$dst_name}
 
 	if [[ ${drive_name_regex-} ]]
 	   then local where=drive_name_regex=
@@ -4219,7 +4229,7 @@ regression_test() {
 
 	_set_drive_name $dst
 	have_job copy &&
-	$our_path kill-copy $dst &> /dev/null && killed_dst=$dst &&
+	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
 
 	is_test_cache_stale_opts=-r	# looks on all drives for fastest src
@@ -4250,14 +4260,6 @@ undo_action_abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
 process_action() {
 
 stack_frame_to_show=0		# show line-number inside the 'case' statement
-
-abort_with_kill_Usage() {
-
-	local signal=${action%-*}
-	abort_with_action_Usage ${action/*-/kill-} |&
-	   sed "s/ *\[-sig\]//; s/\bkill\b/$signal/g"
-	exit 1
-}
 
 case $action in
   # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
@@ -4345,87 +4347,35 @@ case $action in
 	watch "$@"
 	;;
 
-   # kill-backup [-sig] names: for each name (can be 'all'), kill backup job
-   ( kill-backup* | kb ) undo_action_abbrev kill-backup
-	[[ $# != 0 ]] || abort_with_action_Usage
+   # kill [-sig] type-pattern name-pattern: terminate; either arg can be 'all'
+   ( kil* | k ) undo_action_abbrev kill
+	[[ ${1-} == -* ]] && { signal=$1; shift; }
+	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
-	kill_job_on_drives backup $*
+	kill_job_on_drives ${signal-} "$@"
 	;;
-   # kill-prune  [-sig] names: for each name (can be 'all'), kill prune job
-   ( kill-prune* | kp ) undo_action_abbrev kill-prune
-	[[ $# != 0 ]] || abort_with_action_Usage
+   # continue    type-pattern name-pattern: as above, but -CONT signal
+   ( con* | c ) undo_action_abbrev continue
+	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
-	kill_job_on_drives prune $*
+	kill_job_on_drives -c "$@"
 	;;
-   # kill-copy   [-sig] names: for each name (can be 'all'), kill copy/update
-   ( kill-copy* | kc | ku ) undo_action_abbrev kill-copy
-	[[ $# != 0 ]] || abort_with_action_Usage
+   # suspend     type-pattern name-pattern: as above, but -STOP signal
+   # stop        type-pattern name-pattern: as above, but -STOP signal
+   ( sus* | st*p | s ) undo_action_abbrev suspend
+	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
-	kill_job_on_drives copy $*
+	kill_job_on_drives -s "$@"
 	;;
-   # kill-all    [-sig] names: for each name (can be 'all'), kill all jobs
-   ( kill-all | ka | kk ) undo_action_abbrev kill-all
-	[[ $# != 0 ]] || abort_with_action_Usage
-	$Trace
-	kill_all_jobs_on_drives $*
-	;;
-   # kill-monitor [-sig]: kill drive monitor
-   ( kill-mon* | km ) undo_action_abbrev kill-monitor
-	$Trace
-	kill "$@" $(< $drive_monitor_lock_path)
-	;;
-   # continue-* names: as above, but defaults to -STOP signal
-   ( con*b* | cb ) undo_action_abbrev continue-backup
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_job_on_drives -c backup $*
-	;;
-   ( con*p* | cp ) undo_action_abbrev continue-prune
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_job_on_drives -c prune $*
-	;;
-   ( con*c* | cc | cu ) undo_action_abbrev continue-copy
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_job_on_drives -c copy $*
-	;;
-   ( con*a* | ca ) undo_action_abbrev continue-all
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_all_jobs_on_drives -c $*
-	;;
-   #  suspend-* names: as above, but defaults to -STOP signal
-   #     stop-* names: 'stop' is a synonym for 'suspend'
-   ( sus*b* | sto*b* | sb ) undo_action_abbrev suspend-backup
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_job_on_drives -s backup $*
-	;;
-   ( sus*p* | sto*p* | sp ) undo_action_abbrev suspend-prune
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_job_on_drives -s prune $*
-	;;
-   ( sus*c* | sto*c* | sc | su ) undo_action_abbrev suspend-copy
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_job_on_drives -s copy $*
-	;;
-   ( sus*a* | sto*a | sa ) undo_action_abbrev suspend-all
-	[[ $# != 0 ]] || abort_with_kill_Usage
-	$Trace
-	kill_all_jobs_on_drives -s $*
+   # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
+   ( ps )
+	ps_locks "$@"
 	;;
 
    # reset-priority [names]: reset job priorities on drives (defaults to all)
    ( r*p* ) undo_action_abbrev reset-priority
 	$Trace
 	suspended_prune_as_drive_usage_response ${*:-$(list_drive_dirs -a)}
-	;;
-   # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
-   ( ps )
-	ps_locks "$@"
 	;;
 
    ###########################################################################
@@ -4448,7 +4398,7 @@ case $action in
 	;;
 
    # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
-   ( filesystem*geometry | fsg ) undo_action_abbrev filesystem-geometry
+   ( filesystem*geometry | f*g ) undo_action_abbrev filesystem-geometry
      filesystem_geometry "$@"
 	;;
 
