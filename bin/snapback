@@ -4375,7 +4375,11 @@ case $action in
    # reset-priority [names]: reset job priorities on drives (defaults to all)
    ( r*p* ) undo_action_abbrev reset-priority
 	$Trace
-	suspended_prune_as_drive_usage_response ${*:-$(list_drive_dirs -a)}
+	for drive in ${*:-$(list_drive_dirs -a)}
+	    do	_set_drive_name $drive
+		_set_drive_dir  $drive_name
+		suspended_prune_as_drive_usage_response
+	done
 	;;
 
    ###########################################################################
