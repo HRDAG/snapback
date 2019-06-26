@@ -96,7 +96,8 @@ Usage: $our_name [options] action [args]
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
 
-    # -sig in kill defaults to -KILL (-9), i.e. terminates job & deletes lock
+    # -sig in kill defaults to -KILL (-9), i.e. terminates job & deletes lock;
+    # a pattern can be a comma-separated list, or a shell glob pattern
     kill [-sig] type-pattern name-pattern: send signal; either arg can be 'all'
     continue    type-pattern name-pattern: as above, but -CONT signal
     suspend     type-pattern name-pattern: as above, but -STOP signal
@@ -171,7 +172,9 @@ readonly tmp_5=$tmp_dir/$our_name-5-$$
 
 need_cmds lockpid			# from libsnap repo
 
-shopt -s checkhash extglob
+shopt -s checkhash			# sometimes move commands for testing
+shopt -s extglob			# just in case we need them
+shopt -s nullglob			# so don't need to test for no matches
 
 umask 02			  # log and lock dirs are setgid sudo/whatever
 
@@ -314,14 +317,31 @@ set_lock_path() {
 
 # ---------------------------------
 
+function set_glob() {
+
+	[[ $# == 1 ]] || return 1
+
+	set -f
+	[[ $1 == *,* && $1 !=  '{'* ]] && set --   '{'$1
+	[[ $1 == *,* && $1 != *'}'  ]] && set -- $1'}'
+	set +f
+	glob=$1
+	[[ $glob == *[[*?,+@!]* ]]
+}
+
+# ---------------------------------
+
 set_lock_paths() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $# == [0-2] ]] ||
 	    abort_function "$*: must be 0-2 args (can use patterns)"
 	local type_pattern=${1:-*} name_pattern=${2:-${drive_name:-*}}
 
-	[[    $type_pattern == all ]] && type_pattern=*
-	if [[ $name_pattern == all ]]
+	set_glob "$type_pattern" && type_pattern=$glob
+	set_glob "$name_pattern" && name_pattern=$glob
+
+	[[    $type_pattern == a* ]] && type_pattern=*
+	if [[ $name_pattern == a* ]]
 	   then name_pattern=*
 	elif [[ $name_pattern == /* ]]
 	   then local drive_name
@@ -334,7 +354,6 @@ set_lock_paths() {
 	fi
 
 	eval "set -- $lock_dir/$type_pattern*-$name_pattern.pid"
-	[[ -e $1 ]] || shift
 	lock_paths=$*
 	$xtrace
 	[[ $lock_paths ]]
@@ -645,7 +664,8 @@ ps_locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 	local ps_opts=
-	while [[ ${1-} == -* || ${1-} == [^bcp] || $# -ge 3 ]]
+	# $1 could be (a)ll, (b)ackup, (c)opy, (p)rune, (u)pdate: not 'ps' opts
+	while [[ ${1-} == -* || ${1-} == [^abcpu] || $# -ge 3 ]]
 	   do ps_opts+=" $1"; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
@@ -706,6 +726,7 @@ set_oldest_snapshot() {
 	for FS in $(list_drive_dirs)
 	    do	suspend_tracing
 		set -- $FS/$snapshot_pattern
+		[[ $# != 0 ]] || continue
 		restore_tracing
 		[[ $oldest && $(basename $oldest) < $(basename $1) ]] &&
 		   continue
@@ -1060,6 +1081,7 @@ is_drive_usage_too_high() {
 
 	suspend_tracing
 	set -- $(df --output=pcent,ipcent $drive_dir | tail -n1)
+	[[ $# != 0 ]] || abort "$drive_dir is not mounted"
 	local -i block_percent=${1%\%} inode_percent=${2%\%}
 	# caller can declare max_drive_usage_percent to use it
 	if (( $block_percent > $inode_percent ))
@@ -1186,7 +1208,7 @@ _is_time_to_prune_drive() {
 	is_drive_usage_too_high   && return 0 # desparately need a prune?
 
 	set -- $dir/*.rm
-	[[ -d $1 ]] && return 0		# have partially-deleted snapshots?
+	[[ $# != 0 ]] && return 0	# have partially-deleted snapshots?
 
 	local pruned_TS=$dir/$pruned_timestamp
 
@@ -1259,7 +1281,7 @@ _rm_pruned_snapshots() {
 
 	if [[ $is_update ]]
 	   then set -- *.partial.rm	# some from update, some from pruning
-		[[ -d $1 ]] && $sudo rmdir --ignore-fail-on-non-empty $*
+		[[ $# != 0 ]] && $sudo rmdir --ignore-fail-on-non-empty $*
 		restore_tracing
 		return
 	fi
@@ -1267,7 +1289,6 @@ _rm_pruned_snapshots() {
 	update_snapshots_ls
 
 	set -- $snapshot_pattern*.rm
-	[[ -d $1 ]] || shift
 	local snapshot_basenames=$*
 	restore_tracing
 
@@ -1281,7 +1302,6 @@ _rm_pruned_snapshots() {
 	# put newest ones first, since they have the most hardlinks.
 	# use absolute paths, so the 'ps' output is more clear.
 	set -- $(echo $drive_dir/*.rm | tr ' ' '\n' | sort -r)
-	[[ -d $1 ]] || shift
 	local number_pruned_snapshots=$#
 	restore_tracing number_pruned_snapshots
 
@@ -1515,11 +1535,10 @@ prune_type_to_file() {
 		local first_prune_date=${1-}
 		[[ $first_prune_date ]] || break
 
-		set_prune_pattern $type $prune_type_pattern
+		set_prune_pattern $type "$prune_type_pattern"
 		TraceV 5 date_suffix_pattern first_prune_date \
 			  prune_type_pattern prune_pattern
 		eval "set -- $prune_pattern"
-		[[ -d $1 ]] || shift
 		Trace 5 "\n Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
 
 		# skip over the snapshot prune-matches that aren't old enough
@@ -1616,7 +1635,7 @@ function prune_drive() {
 _have_full_snapshot() {
 
 	set -- ${new_snapshot%/$snapshot_pattern*}/$snapshot_pattern
-	[[ -d $1 ]]
+	[[ $# != 0 ]]
 }
 
 # ---------------------------------
@@ -1652,7 +1671,7 @@ set_link_dest_opts() {
 	for snapshot in $*
 	    do	[[ -d  $snapshot ]] || continue
 		set -- $snapshot/*
-		[[ -e  $1 ]] || continue # update's empty snapshot?
+		[[ $# != 0 ]] || continue # update's empty snapshot?
 		# don't consider *.partial or *.links to be adequate;
 		# rsync allows 20 --link-dest options max (10 per direction)
 		case $snapshot in
@@ -1949,12 +1968,13 @@ run_rsync() {
 	fi
 	restore_tracing link_dest_opts
 
+	shopt -u nullglob		# nullglob messes up --foo=bar*
+
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
 	[[ ! $is_copy_snapshot ]] &&
 	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
-
 	SECONDS=0			# time the rsync
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
@@ -1964,6 +1984,8 @@ run_rsync() {
 		     $excludes		\
 			$src_dirs $partial_dst/ |& bzip2 -9 > $log
 	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
+
+	shopt -s nullglob
 
 	[[ ! $is_copy_snapshot ]] &&
 	$IfRun touch $partial_dst	# 'when we finished', not mdate of src
@@ -2121,11 +2143,11 @@ is_dst_snapshot_needed() {
 	local dst_snapshot=$1
 
 	set -- ${dst_snapshot%.*}*	# a version might exist
+	[[ $# == 0    ]] && return 0
 	[[ $# == 1    ]] ||
 	   bad_copy "'$*' exist, (mv then) delete worst one" || return 1
 	[[ $1 != *.rm ]] ||
 	   bad_copy "destination is waiting to be pruned" || return 1
-	[[ -e $1 ]] || return 0
 
 	local ext=${1##*.} junk_dir=${dst_snapshot%/*}/.junk
 	[[ ! -d $1 ]] &&
@@ -2352,7 +2374,6 @@ wait_for_full_snapshots() {
 
 	while true
 	   do	set -- $drive_dir/$snapshot_pattern
-		[[ -d $1 ]] || shift
 		(( $# >= $min_full_snapshots )) && return
 		sleep 1h
 	done
@@ -2454,7 +2475,7 @@ set_command_line_drive_dirs() {
 		suspend_tracing
 		set -- $drive_dir/*
 		restore_tracing
-		[[ -e $1 ]] && drive_dirs+=" $drive_dir"
+		[[ $# != 0 ]] && drive_dirs+=" $drive_dir"
 	done
 	command_line_drive_dirs=${drive_dirs# }
 }
@@ -2471,7 +2492,7 @@ set_command_line_drive_names() {
 		suspend_tracing
 		set -- $drive_dir/*
 		restore_tracing
-		[[ -e $1 ]] && drive_names+=" $drive_name"
+		[[ $# != 0 ]] && drive_names+=" $drive_name"
 	done
 	command_line_drive_names=${drive_names# }
 }
@@ -2584,7 +2605,6 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 		local name=$drive_name
 		local  dir=$log_dir/$name/$rsync_time_subdir
 		set -- $dir/$snapshot_pattern.txt
-		[[ -f $1 ]] || shift
 		if [[ $# != 0 ]]
 		   then local sum=$(cat $* | tr '\n' '+')
 			local -i total=${sum%+}
@@ -2661,7 +2681,6 @@ _recalculate_stats_vars() {
 		suspend_tracing
 		set -- $snapshot_pattern$suffix
 		restore_tracing
-		[[ -d $1 ]] || shift
 		[[ $# != 0 ]] &&
 		set -- $(echo $* | tr ' ' '\n' |
 			   sed "s/$ending_RE$//" | uniq)
@@ -3015,9 +3034,9 @@ watch() {
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
 	local -i PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
-	(( PD > 0 )) && let PD=PD*2+4	# add in 'rm' plus section-overhead
+	(( PD > 0 )) && PD=$((PD*2 + 4)) # add in 'rm' plus section-overhead
 	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
-	(( CS > 0 )) && let CS=CS*2+4	# add in 'rsync' plus section-overhead
+	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
 	local -i RB=$num_bkp_rsyncs
 	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
 	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
@@ -3714,6 +3733,7 @@ mkfs_backup_drive() {
 	fi
 
 	set -- $_mkfs_cmd_opts
+	[[ $# != 0 ]] || abort "need to set mkfs_cmd_opts= in $config_file"
 	local cmd=$1; shift; local opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
@@ -3796,7 +3816,7 @@ mkfs_backup_drive() {
 	mkdir -p $rsync_time_dir
 	cd_ $rsync_time_dir
 	set -- *.txt
-	if [[ -e $1 ]]
+	if [[ $# != 0 ]]
 	   then set_date_time -r .
 		dir=.${date_time%,*}
 		$IfRun mkdir -p $dir
@@ -4272,7 +4292,7 @@ regression_test() {
 	is_arg1_in_arg2 c $tests && {
 	show_test_header copy to Z
 	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
-	[[ -d $1 ]] || abort "copy test needs at least one snapshot somewhere"
+	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	_set_drive_name $1
 	src_snapshots=$1; shift
 	[[ -d $1 ]] && src_snapshots+=" $1"
@@ -4666,7 +4686,7 @@ case $action in
 	set -- $drive/$snapshot_pattern	# all the _successful_ snapshots
 	restore_tracing
 	latest_snapshot=${!#}
-	[[ -d $latest_snapshot ]] ||
+	[[ $# != 0 && -d $latest_snapshot ]] ||
 	    abort "$drive has no (successful) snapshots"
 	latest_date_time=$(basename $latest_snapshot)
 	latest_day=${latest_date_time%,??}
@@ -4685,7 +4705,6 @@ case $action in
 	fi
 
 	set -- ${*:-$(list_drive_dirs)}	# for debugging: | tac
-	[[  -d $1  ]] || shift
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
 	local -i secs_per_day=24*60*60
@@ -4697,10 +4716,10 @@ case $action in
 		    do	set_day $secs
 
 			set -- $new_drive/$day,??*
-			[[ -d $1 ]] || break
+			[[ $# != 0 ]] || break
 
 			set -- $max_drive/$day,??*
-			[[ -d $1 ]] && continue
+			[[ $# != 0 ]] && continue
 			max_drive=$new_drive
 			break
 		done
