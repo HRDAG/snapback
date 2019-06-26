@@ -1965,7 +1965,7 @@ run_rsync() {
 	fi
 	restore_tracing link_dest_opts
 
-	shopt -u nullglob		# nullglob messes up --foo=bar*
+	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
@@ -2427,11 +2427,12 @@ update_drive() {
 	load__drive_name2do_suspend
 	local args dst_snapshot=
 	while read args
-	    do	set -- $args
+	    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
+		set -- $args
 		local   dst_snapshot=${!#}
 		[[ -d  $dst_snapshot ]] && continue # undeleted?
 		set -- $dst_snapshot*
-		[[ -d  $1 ]] || continue # was it pruned away?
+		[[ $# != 0 ]] || continue # was it pruned away?
 		set -- $(fastest_snapshots ${args%$dst_snapshot}) # pass srcs
 		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
 	done < $srcs_dst_file
