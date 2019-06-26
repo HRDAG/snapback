@@ -2430,6 +2430,54 @@ update_drive() {
 ##############################################################################-
 ##############################################################################-
 
+_set_command_line_drive_names_or_dirs() {
+	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
+
+	if [[ $# == 0 || $1 == all || $1 == '*' ]]
+	   then set -- $(list_drive_dirs $all_opt)
+	   else set -- ${*//,/ }
+	fi
+	command_line_drive_names_or_dirs=$*
+}
+
+# ---------------------------------
+
+set_command_line_drive_dirs() {
+	[[ ${1-} == -[aA] ]] && local all_opt=$1 || local all_opt= # no shift..
+
+	local command_line_drive_names_or_dirs drive_dirs=
+	_set_command_line_drive_names_or_dirs "$@" # .. (optional) -a is passed
+	for drive_dir in $command_line_drive_names_or_dirs
+	    do	_set_drive_name $drive_dir  &&
+		_set_drive_dir  $drive_name ||
+		    { [[ $all_opt == -A ]] || continue; }
+		suspend_tracing
+		set -- $drive_dir/*
+		restore_tracing
+		[[ -e $1 ]] && drive_dirs+=" $drive_dir"
+	done
+	command_line_drive_dirs=${drive_dirs# }
+}
+
+# ---------------------------------
+
+set_command_line_drive_names() {
+
+	local command_line_drive_names_or_dirs drive_names=
+	_set_command_line_drive_names_or_dirs "$@"
+	for drive_name in $command_line_drive_names_or_dirs
+	    do	_set_drive_name $drive_name &&
+		_set_drive_dir  $drive_name || continue
+		suspend_tracing
+		set -- $drive_dir/*
+		restore_tracing
+		[[ -e $1 ]] && drive_names+=" $drive_name"
+	done
+	command_line_drive_names=${drive_names# }
+}
+
+# ---------------------------------
+
 # The locking & job-management policy is documented in front of function lock()
 
 # Create a unique job on each specified drive (default $drive_name).
@@ -2448,12 +2496,14 @@ create_jobs() {
 
 	if [[ $# == 0 ]]
 	   then set -- ${drive_name-}
-	elif [[ $1 == all ]]
+	elif [[ $1 == all || $1 == '*' ]]
 	   then if [[ $debug_opt && ${HOSTNAME-} == eleanor ]]
 		   then local excluded_regex='\bG$' # G sometimes hangs
 		   else local excluded_regex=NoThInG
 		fi
 		set -- $(list_drive_dirs | egrep -v "$excluded_regex")
+	   else set_command_line_drive_names "$@"
+		set -- $command_line_drive_names
 	fi
 	if [[ $# == 0 ]]
 	   then [[ $is_cron ]] && exit 0
@@ -2811,8 +2861,8 @@ watch() {
 	   then cleanup_after_updates &	# don't wait for it to finish, slow
 		local all_opts="$ps_opt $cron_opt"
 		if [[ $names ]]
-		   then [[ $is_drive_name_upper_cased ]] && names=${names^^}
-			all_opts+=" -N $names"
+		   then set_command_line_drive_names $names
+			all_opts+=" -N ${command_line_drive_names// /,}"
 		fi
 		# >= 0.5 is best for watching wchan (-C w/sudo access)
 		[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
@@ -2821,7 +2871,7 @@ watch() {
 		abort "exec failed"
 	fi
 
-	local drive_dirs= do_tput=$true
+	local drive_dirs= do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
@@ -2937,6 +2987,7 @@ watch() {
 	copy_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
 			       -e " [l]ockpid " \
+			       -e " [s]leep "	\
 			       -e "[0-9]     rsync" |
 			   sed -e 's/   rsync/ rsync/') || copy_rsync_cmds=
 			#      -e 's/   lockp/ lockp/')	# -> harder to notice
@@ -3488,8 +3539,8 @@ dir_sizes() {
 # -----------------------------------------------------------------------------
 
 filesystem_geometry() {
-	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
-	local drive_dirs=${*:-$(list_drive_dirs $all_opt)}
+	set_command_line_drive_dirs "$@"
+	drive_dirs=$command_line_drive_dirs
 
 	run_df    $drive_dirs
 	run_lsblk $drive_dirs
@@ -4058,7 +4109,7 @@ finish_copy_backup_drive() {
 ##############################################################################-
 ##############################################################################-
 
-check-snapshot-hard-links() {
+check_snapshot_hard_links() {
 	local name=$1
 
 	[[ ${very_old_immutable_files-} ]] ||
@@ -4301,7 +4352,7 @@ case $action in
 	create_jobs backup "$@"
 	if [[ $is_cron ]]
 	   then wait			# want to stay in 'ps'; but ...
-#		$IfRun setsid $_our_path monitor-drives # ... not for monitor
+#		$IfRun $our_path monitor-drives & # ... not for monitor
 	   else true
 	fi
 	;;
@@ -4326,9 +4377,10 @@ case $action in
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo_action_abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort_with_action_Usage
-	[[ $1 == all ]] && set -- $(list_drive_dirs)
-	for drive
-	    do	check-snapshot-hard-links $drive
+	set_command_line_drive_names "$@"
+
+	for name in $command_line_drive_names
+	    do	check_snapshot_hard_links $name
 	done
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
@@ -4402,10 +4454,11 @@ case $action in
 
    # reset-priority [names]: reset job priorities on drives (defaults to all)
    ( r*p* ) undo_action_abbrev reset-priority
+	set_command_line_drive_names "$@"
+
 	$Trace
-	for drive in ${*:-$(list_drive_dirs -a)}
-	    do	_set_drive_name $drive
-		_set_drive_dir  $drive_name
+	for drive_name in $command_line_drive_names
+	    do	_set_drive_dir $drive_name
 		suspended_prune_as_drive_usage_response
 	done
 	;;
@@ -4419,6 +4472,7 @@ case $action in
 	[[ $1 == -r ]] || $IfRun exec sudo setsid $our_path $action -r ||
 	    abort "you need sudo perms"
 	shift
+
 	trap '' HUP
 	monitor_drives "$@"
 	;;
