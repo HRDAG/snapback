@@ -243,6 +243,7 @@ assert_drive_dir_writable() {
 ##############################################################################
 
 readonly lock_dir=/var/lock/$our_name
+declare -x -r LOCKPID_DIR=$lock_dir
 
 set_locks() {
 	local type_regex=$1; shift
@@ -1178,7 +1179,7 @@ update_snapshots_ls() {
 _is_time_to_prune_drive() {
 	local dir=${1:-$drive_dir}
 
-	[[ ! $is_cron ]] && return 0	# run by a person?
+	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
 	[[ $(date '+%H') == 00 ]] && return 0 # time for our daily prune?
 
@@ -1575,8 +1576,6 @@ function prune_drive() {
 	set_drive_dir  $drive_name || return 1
 	restore_tracing
 
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
-
 	_should_run_prune || return 1
 
 	set_priority prune
@@ -1622,7 +1621,18 @@ _have_full_snapshot() {
 
 # ---------------------------------
 
-declare -i num_link_dests=0
+set_num_full_link_dests() {
+
+	# need at least 2 --link-dest args in case the sysadmnin borked one,
+	# and a few hours worth in case a file was deleted then recovered;
+	# don't make this too large, it slows recovery from "Too many links"
+	if (( $backup_period == 1 ))
+	   then declare -g -i num_full_link_dests=4
+	   else declare -g -i num_full_link_dests=2
+	fi
+}
+
+# ----------------------
 
 set_link_dest_opts() {
 	local new_snapshot=$1; shift
@@ -1633,13 +1643,7 @@ set_link_dest_opts() {
 	done
 	[[ -d ${1-} ]] || return
 
-	# need at least 2 --link-dest args in case the sysadmnin borked one,
-	# and a few hours worth in case a file was deleted then recovered;
-	# don't make this too large, it slows recovery from "Too many links"
-	if (( $backup_period == 1 ))
-	   then num_link_dests=4
-	   else num_link_dests=2
-	fi
+	set_num_full_link_dests
 
 	suspend_tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
@@ -1652,10 +1656,10 @@ set_link_dest_opts() {
 		# don't consider *.partial or *.links to be adequate;
 		# rsync allows 20 --link-dest options max (10 per direction)
 		case $snapshot in
-		    ( *.links ) (( ++links_snapshots > 3 )) && continue ;;
-		    ( *.*     ) (( ++junky_snapshots > 2 )) && continue ;;
-		    (  *      ) (( ++goody_snapshots > $num_link_dests )) &&
-					break ;;
+		    (*.links) (( ++links_snapshots > 3 )) && continue ;;
+		    (*.*    ) (( ++junky_snapshots > 2 )) && continue ;;
+		    ( *     ) (( ++goody_snapshots > $num_full_link_dests )) &&
+				 break ;;
 		esac
 		link_dest_opts="$link_dest_opts --link-dest=$PWD/$snapshot"
 	done
@@ -1733,7 +1737,7 @@ set_excluded_hours() {
 
 _is_time_to_run_backup() {
 
-	[[ ! $is_cron ]] && return 0	# run by a person?
+	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
 	# we're called more than hourly (to reset priorities, and to prune)
 	local current_minute=$(date '+%M')
@@ -1833,7 +1837,7 @@ _links_error_msg() {
 	done | tail -n1
 	)
 
-	local -i link_dest_wait=$(( num_link_dests * backup_period ))
+	local -i link_dest_wait=$(( num_full_link_dests * backup_period ))
 	set -- *.rm
 	msg="$msg; Worst case, tried to add $max_src_links links to a snapshot file; these files will eventually appear in a new snapshot after $link_dest_wait hours; $# snapshots waiting to be pruned, newer prunes subtract ~$max_src_links links"
 
@@ -1914,8 +1918,6 @@ run_rsync() {
 
 	local date_time=$(basename $dst_snapshot)
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
-
-	[[ $UID == 0 || $is_regression_test ]] || $IfRun abort "run with sudo"
 
 	assert_drive_dir_writable $(dirname $dst_snapshot)
 
@@ -2345,6 +2347,19 @@ cleanup_after_updates() {
 
 # --------------------------------------------
 
+wait_for_full_snapshots() {
+	local min_full_snapshots=$1
+
+	while true
+	   do	set -- $drive_dir/$snapshot_pattern
+		[[ -d $1 ]] || shift
+		(( $# >= $min_full_snapshots )) && return
+		sleep 1h
+	done
+}
+
+# ---------------------------------
+
 update_drive() {
 	set_drive_name ${!#}		# sorted_useful_srcs handles options
 	set_drive_dir $drive_name
@@ -2354,6 +2369,9 @@ update_drive() {
 	suspended_prune_as_drive_usage_response # we might get suspended
 
 	remove_empty_partial_snapshots $drive_dir
+
+	set_num_full_link_dests
+	wait_for_full_snapshots $num_full_link_dests
 
 	local srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
 	local date_time prev_date_time=
@@ -2459,6 +2477,8 @@ create_jobs() {
 		exit $?
 	fi
 
+	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+
 	[[ ! $debug_opt && $* != [Zz] && -t 1 ]] && echo -e "
 	NOTE: your $action command will run as a separate, disconnected job;
 	      and it might wait for a lock before it can start.  See it with:
@@ -2542,10 +2562,10 @@ set_drive_usage() {
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
 	    do	is_drive_usage_too_high && local warn=$true || local warn=
-		local    type=${max_drive_usage_percent:0:1}
-		local percent=${max_drive_usage_percent#?}
-		(( ${#percent} ==   1 )) && percent=0$percent
-		if (($percent  == 100 ))
+		local     type=${max_drive_usage_percent:0:1}
+		local  percent=${max_drive_usage_percent#?}
+		((  ${#percent} ==   1 )) && percent=0$percent
+		if [[ $percent  == 100 ]]
 		   then set_warning_string error FULL
 			percent=$warning_string
 		elif [[ $warn ]]
@@ -2629,6 +2649,23 @@ _recalculate_stats_vars() {
 readonly watch_cache_dir=$log_dir/stats/watch
 readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
 
+function _is_stats_cache_fresh {
+
+	if [[ $drive_dirs != "$(< $cached_drive_dirs_file)" ]]
+	   then rm -f $cached_drive_dirs_file $watch_cache_dir/*/*,*.txt
+		return 1
+	fi
+
+	local dir drive_name
+	for dir in $drive_dirs
+	    do	[[ $number_cache_file -nt $dir/. ]] || return 1
+	done
+
+	return 0
+}
+
+# ----------------------
+
 setup_snapshot_stats() {
 	local suffix=$1
 	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
@@ -2647,16 +2684,7 @@ setup_snapshot_stats() {
 	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
 	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_dirs=$all_drive_dirs
-	local dir drive_name
-	local found_modified_drive=$false
-	for dir in $drive_dirs
-	    do	[[ $number_cache_file -nt $dir/. ]] && continue
-		found_modified_drive=$true
-		break
-	done
-	[[ -s $cached_drive_dirs_file ]] &&
-	[[ $drive_dirs == "$(< $cached_drive_dirs_file)" ]] &&
-	if [[ ! $found_modified_drive ]]
+	if _is_stats_cache_fresh
 	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
 		stats_oldest_age=$(< $oldest_age_cache_file)
@@ -4388,9 +4416,11 @@ case $action in
 
    # monitor-drives: start run-forever monitor of drive response time
    ( mon* | m ) undo_action_abbrev monitor-drives
-	[[ $UID == 0 ]] || $IfRun sudo setsid $our_path $action
+	[[ $1 == -r ]] || $IfRun exec sudo setsid $our_path $action -r ||
+	    abort "you need sudo perms"
+	shift
 	trap '' HUP
-	monitor_drives "$@" &
+	monitor_drives "$@"
 	;;
 
    ( add*extN*journal | aej ) undo_action_abbrev add-extN-journal

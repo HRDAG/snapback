@@ -1,21 +1,9 @@
-# for HRDAG.resource-utils, with snapper
-# PB, 2014.05.03
-
-# Ignore all blobstores
-.blobstore/
-
-# Ignore ipynb checkpoints
-.ipynb_checkpoints/
-
-# Ignore IDE generated files
-.idea/
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-
 # ignore tmp files
 \~*
 *~
-*/#*
+#*
+.#*
 
+# Scott's junk
+bin/snapback-*
+doc/w-*.txt

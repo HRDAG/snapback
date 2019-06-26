@@ -12,8 +12,6 @@
 ##################################################################
 ##################################################################
 
-
-
 renice 1 $$ &> /dev/null		# lower priority than logins
 
 ##############################################################################
@@ -54,9 +52,9 @@ readonly common_mount_options="nodev,nosuid,relatime,nodiratime"
 readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
 readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
-# -----------------------------------------
-# Rotational disks need special handling. #
-# -----------------------------------------
+# ----------------------------------------------
+# Rotational hard disks need special handling. #
+# ----------------------------------------------
 
 # Optional function to allocate an external filesystem log/journal
 # on fast storage (SSD, or always-plugged-in flash memory stick),
@@ -87,7 +85,7 @@ drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 # SSDs have no seek penalty, so can run an rsync backup and deletion of pruned
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
 # described later).  Hard disks are different, so you can change that policy.
-	 is_multi_writer_drive=$false	# non-striped hard-disk drive
+	 is_multi_writer_drive=$false	# non-striped rotational disk drive
 drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 
 # ------------------------------------------------
