@@ -98,7 +98,7 @@ Usage: $our_name [options] action [args]
 
     # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
     # a glob can be a comma-separated list, a shell glob pattern, or 'all'.
-    kill [-signal] job-type-glob  name-glob: job-type is e.g. backup,prune,copy
+    kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
     continue       job-type-glob  name-glob: as above, but -CONT signal
     suspend        job-type-glob  name-glob: as above, but -STOP signal
     stop           job-type-glob  name-glob: as above, but -STOP signal
@@ -664,8 +664,8 @@ ps_locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 	local ps_opts=
-	# $1 could be (a)ll, (b)ackup, (c)opy, (p)rune, (u)pdate: not 'ps' opts
-	while [[ ${1-} == -* || ${1-} == [^abcpu] || $# -ge 3 ]]
+	# $1 type abbrevs are (a)ll, (b)ackup, (c)opy, (p)rune: so not 'ps' opt
+	while [[ ${1-} == -* || ${1-} == [^abcp] || $# -ge 3 ]]
 	   do ps_opts+=" $1"; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
@@ -4738,7 +4738,7 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
-	for level in warning error
+	for level in warning error stale
 	    do set_warning_string $level $level; echo "$warning_string."; done
 	print_string_colors; exit
 
