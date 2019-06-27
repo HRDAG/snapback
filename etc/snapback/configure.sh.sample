@@ -1,4 +1,4 @@
-# version=21
+# version=22
 
 ##################################################################
 ##################################################################
@@ -8,7 +8,7 @@
 ##################################################################
 ### Note: some default functions and variables in snapback can ###
 ### be over-ridden by defining them in here; to see which ones ###
-### you can over-ride, run: grep -A1 '^have_[cv]' snapback     ###
+### you can over-ride, run: grep -A1 '^have-[cv]' snapback     ###
 ##################################################################
 ##################################################################
 
@@ -16,7 +16,7 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 
 ##############################################################################
 # Most variables can have per-drive values (must remove -r or readonly label),
-#   using either source_drive_specific_config_file (which can be modified) or
+#   using either source-drive-specific-config-file (which can be modified) or
 #   eg: drv_name2dirs_to_backup[Z]=/var/tmp/small-dir  # test w/pseudo-drive Z
 ##############################################################################
 
@@ -61,7 +61,7 @@ readonly    XFS_mount_options="logbsize=256k"	 # for performance
 # for use with rotational hard disks.
 # Rewrite this function if you're not using LVM.
 readonly FS_log_VG=			# should be fast & reliable
-set_FS_external_log() {
+set-FS_external_log() {
 	[[ ${1-} == -f ]] && { do_force=$true; shift; } || do_force=$false
 	local FS_label=$1 VG=${2:-$FS_log_VG}
 
@@ -76,7 +76,7 @@ set_FS_external_log() {
 	[[ $FS_external_log ]]
 }
 
-# Used by set_FS_external_log: should it setup an external filesystem journal?
+# Used by set-FS_external_log: should it setup an external filesystem journal?
 	 do_want_external_log=$FS_log_VG # value for (RAID of) rotational disks
 drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 #
@@ -133,7 +133,7 @@ declare -r -A level2CPU_priority_cmd=(
     [higher]="renice 13 -g"
 )
 
-have_cmd ionice &&
+have-cmd ionice &&
 declare -r -A level2IO_priority_cmd=(
      [lower]="ionice -c 2 -n 7 -P"
     [medium]="ionice -c 2 -n 6 -P"
@@ -279,7 +279,7 @@ readonly snapshot_date_time_separator=','
 
 # Default policy: drives are named as a single capitalized letter; you can
 # usually set your own policy by simply changing *drive_name_regex= ,
-# instead of defining your own 'set_drive_name' function in here.
+# instead of defining your own 'set-drive_name' & '_set-drive_name' functions.
 #
 # These regex variables are extended regular expressions; they're anchored when
 # used ( e.g. ^$drive_name_regex$ ).

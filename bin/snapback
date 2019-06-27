@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=21			# has to match version= in configure.sh.sample
+version=22			# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -26,7 +26,7 @@ version=21			# has to match version= in configure.sh.sample
 
 # libsnap.sh has these functions/variables:
 # $tmp_dir, $our_name, $our_path, $true, $false,
-# have_var, have_cmd, need_cmds, $is_darwin, set_FS_type___from_path,
+# have-var, have-cmd, need_cmds, $is_darwin, set_FS_type___from_path,
 # set__inode_size__data_block_size__dir_block_size___from_path,
 # $FS_label, set_FS_label___from_FS_device, label_drive,
 # set_FS_device___from_FS_label, set_device_KB___from_block_device, $FS_device,
@@ -68,7 +68,7 @@ readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
 for var in $config_vars; do eval "declare -A drv_name2$var"; done
 #
 # this grabs variables that control backup and pruning, and may also hold
-# customizable functions set_drive_name & source_drive_specific_config_file
+# customizable functions set-drive_name & source-drive-specific-config-file
 source $config_file || abort "$config_file broken"
 
 [[     ${coder-} ]] ||			# custom version in $config_file?
@@ -345,7 +345,7 @@ set_lock_paths() {
 	   then name_pattern=*
 	elif [[ $name_pattern == /* ]]
 	   then local drive_name
-		_set_drive_name $name_pattern
+		_set-drive_name $name_pattern
 		name_pattern=$drive_name
 	elif [[ ${is_drive_name_upper_cased-} ]]
 	   then name_pattern=${name_pattern^^}
@@ -451,7 +451,7 @@ function lock() {
 
 	suspend_tracing
 	local drive_name drive_dir	# don't mess up caller's values
-	_set_drive_name $resource
+	_set-drive_name $resource
 	_set_drive_dir
 	restore_tracing drive_name
 
@@ -566,7 +566,7 @@ signal_job() {
 	   then lock_path=$1		# global variable, caller can use it
 	   else local job_type=$1 drive_name=${2:-$drive_name}
 		suspend_tracing
-		_set_drive_name $drive_name
+		_set-drive_name $drive_name
 		set_lock_path $job_type
 		restore_tracing
 	fi
@@ -799,10 +799,10 @@ is_regression_test=$false
 readonly none=NoNe
 _last_fully_initialized_drive_name=
 
-# this is normally called by set_drive_name; but you can pass
+# this is normally called by set-drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
 set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
-	local  drive_name=${1-}	     # called from set_drive_name, so $1 valid
+	local  drive_name=${1-}	     # called from set-drive_name, so $1 valid
 
 	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
 	   then _last_fully_initialized_drive_name=${drive_name:-$none}
@@ -827,12 +827,12 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 
 # ---------------------------------
 
-have_cmd \
-source_drive_specific_config_file ||  # configure.sh can replace this function
-source_drive_specific_config_file() {
+have-cmd \
+source-drive-specific-config-file ||  # configure.sh can replace this function
+source-drive-specific-config-file() {
 	[[ $# == 0 ]] && return
 	local _name=$1  _main_config_file=${2:-${config_file-}}
-	set_drive_name $_name
+	set-drive_name $_name
 	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
 
 	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
@@ -846,10 +846,10 @@ source_drive_specific_config_file() {
 
 readonly allowed_name_dir_chars='-_.a-zA-Z0-9'
 
-have_cmd \
-_set_drive_name ||		      # configure.sh can replace this function
+have-cmd \
+_set-drive_name ||		      # configure.sh can replace this function
 # ignore invalid names, fix the case of valid names
-_set_drive_name() {
+_set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_pattern*}
@@ -871,11 +871,11 @@ _set_drive_name() {
 
 # ----------------------
 
-have_cmd \
-set_drive_name ||		      # configure.sh can replace this function
+have-cmd \
+set-drive_name ||		      # configure.sh can replace this function
 # pass: directory (that holds snapshots), filesystem label, or valid name
-set_drive_name() {
-	[[ $# == 1 && $1 ]] || abort "set_drive_name takes a single argument"
+set-drive_name() {
+	[[ $# == 1 && $1 ]] || abort "set-drive_name takes a single argument"
 	local name=$1
 
 	if [[ ! $name =~ ^$admin_drive_name_regex$ ]]
@@ -893,7 +893,7 @@ set_drive_name() {
 		   abort "$name is not drive-dir or FS-label or valid-name"
 		name=${drive_dir#$drive_dir_prefix}
 	fi
-	_set_drive_name $name
+	_set-drive_name $name
 	TraceV 3 drive_name
 
 	set__drive_log_dir__file_for_logging__admin_group__is_regression_test \
@@ -911,7 +911,7 @@ _set_drive_dir() {
 is_OK_if_drive_dir_unmounted=$false
 
 set_drive_dir() {
-	local drive_name=$1		# result of set_drive_name, i.e. valid
+	local drive_name=$1		# result of set-drive_name, i.e. valid
 
 	[[ $drive_name != */* ]] ||
 	  abort "'/' in drive name not (yet)supported, add to drive_dir_prefix"
@@ -928,7 +928,7 @@ set_drive_dir() {
 	fi
 
 	if  is_drive_mounted  $drive_dir
-	   then have_cmd fix_snapshot_names &&
+	   then have-cmd fix_snapshot_names &&
 		fix_snapshot_names $drive_dir # must call last
 		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null # optional
 	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
@@ -1059,8 +1059,7 @@ customize_and_validate_configuration_variables() {
 
 	suspend_tracing
 
-	have_cmd source_drive_specific_config_file && # optional
-	source_drive_specific_config_file $name
+	source-drive-specific-config-file $name
 
 	customize_config_variables $name
 
@@ -1155,7 +1154,7 @@ function suspended_prune_as_drive_usage_response() {
 
 	local drive_name status=1
 	for drive_name in $drive_names
-	    do	_set_drive_name $drive_name
+	    do	_set-drive_name $drive_name
 		set_drive_jobs_priorities || continue
 
 		have_job copy || { continue_jobs prune; continue; }
@@ -1588,7 +1587,7 @@ function prune_drive() {
 	local drive_name=$1 drive_dir
 
 	suspend_tracing
-	set_drive_name $drive_name
+	set-drive_name $drive_name
 	set_drive_dir  $drive_name || return 1
 	restore_tracing
 
@@ -2017,7 +2016,7 @@ run_backup_rsync() {
 run_backup() {
 	local drive_name=$1 drive_dir
 
-	set_drive_name $drive_name
+	set-drive_name $drive_name
 	set_drive_dir  $drive_name || return 1
 
 	local date_time
@@ -2059,7 +2058,7 @@ assert_not_in_cron_jobs() {
 
 	local name  drive_name
 	for name
-	    do	set_drive_name $name
+	    do	set-drive_name $name
 		[[ $drive_name =~ ^$drive_name_regex$ ]] || continue
 		local regex=drive_name_regex
 		$IfRun abort "remove $drive_name from $regex= in $config_file"
@@ -2097,7 +2096,7 @@ set_backup_type() {
 		suspend_tracing
 		customize_config_variables $drive_name
 		restore_tracing
-	   else set_drive_name $drive_name # calls customize_config_variables
+	   else set-drive_name $drive_name # calls customize_config_variables
 	fi
 	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
 	drive_name2backup_type[$drive_name]=$backup_type
@@ -2109,7 +2108,7 @@ matches_dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dir=$1 drive_name
 
-	_set_drive_name $drive_dir
+	_set-drive_name $drive_dir
 	set_backup_type $drive_name
 	[[ $backup_type == $dst_backup_type ]]
 	$xtrace
@@ -2235,7 +2234,7 @@ load__drive_name2do_suspend() {
 
 	local drive drive_name
 	for drive in $(list_drive_dirs -a)
-	    do	_set_drive_name $drive
+	    do	_set-drive_name $drive
 		suspend_tracing
 		customize_config_variables $drive_name
 		restore_tracing
@@ -2258,7 +2257,7 @@ fastest_snapshots() {
 
 	local snapshot
 	for snapshot
-	    do	_set_drive_name $snapshot
+	    do	_set-drive_name $snapshot
 		local do_suspend=${drive_name2do_suspend[$drive_name]}
 
 		local -i writer_count=0
@@ -2285,7 +2284,7 @@ sorted_useful_srcs() {
 	[[ $# == 1   ]] || abort "need to specify one drive name"
 
 	suspend_tracing
-	set_drive_name $1
+	set-drive_name $1
 	set_drive_dir  $drive_name
 	restore_tracing
 
@@ -2353,7 +2352,7 @@ cleanup_after_updates() {
 
 	local drive_dir drive_name
 	for drive_dir in $(list_drive_dirs -a)
-	    do	_set_drive_name $drive_dir
+	    do	_set-drive_name $drive_dir
 		set_lock_path copy	# update could be running
 		(
 		$sudo_lockpid    $lock_path &> /dev/null &&	  {
@@ -2379,7 +2378,7 @@ wait_for_full_snapshots() {
 # ---------------------------------
 
 update_drive() {
-	set_drive_name ${!#}		# sorted_useful_srcs handles options
+	set-drive_name ${!#}		# sorted_useful_srcs handles options
 	set_drive_dir $drive_name
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
@@ -2467,7 +2466,7 @@ set_command_line_drive_dirs() {
 	local command_line_drive_names_or_dirs drive_dirs=
 	_set_command_line_drive_names_or_dirs "$@" # .. (optional) -a is passed
 	for drive_dir in $command_line_drive_names_or_dirs
-	    do	_set_drive_name $drive_dir  &&
+	    do	_set-drive_name $drive_dir  &&
 		_set_drive_dir  $drive_name ||
 		    { [[ $all_opt == -A ]] || continue; }
 		suspend_tracing
@@ -2485,7 +2484,7 @@ set_command_line_drive_names() {
 	local command_line_drive_names_or_dirs drive_names=
 	_set_command_line_drive_names_or_dirs "$@"
 	for drive_name in $command_line_drive_names_or_dirs
-	    do	_set_drive_name $drive_name &&
+	    do	_set-drive_name $drive_name &&
 		_set_drive_dir  $drive_name || continue
 		suspend_tracing
 		set -- $drive_dir/*
@@ -2556,7 +2555,7 @@ create_jobs() {
 "
 	$Trace
 	for name
-	    do	_set_drive_name $name && name=$drive_name # cleanup for 'ps'
+	    do	_set-drive_name $name && name=$drive_name # cleanup for 'ps'
 		if [[ ! $debug_opt && $drive_name != Z ]]
 		   then trap '' HUP
 			# Want new process-group so can ps/kill independently.
@@ -2582,7 +2581,7 @@ set_stats_format() {
 	local format=
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
-	    do	_set_drive_name $drive_dir
+	    do	_set-drive_name $drive_dir
 		format_width=${#drive_name}+5
 		format+=" %-${format_width}s"
 	done
@@ -2599,7 +2598,7 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
 	for dir in $all_drive_dirs
-	    do	_set_drive_name $dir
+	    do	_set-drive_name $dir
 		local name=$drive_name
 		local  dir=$log_dir/$name/$rsync_time_subdir
 		set -- $dir/$snapshot_pattern.txt
@@ -2641,7 +2640,7 @@ set_drive_usage() {
 			percent=$warning_string
 		   else percent=$percent%$type
 		fi
-		_set_drive_name $drive_dir
+		_set-drive_name $drive_dir
 		percents+=" $drive_name=$percent"
 	done
 	printf -v drive_usage "$stats_format" $percents
@@ -2671,7 +2670,7 @@ _recalculate_stats_vars() {
 
 	local cwd=$PWD nums= oldies= newies=
 	for dir in $all_drive_dirs
-	    do	_set_drive_name $dir
+	    do	_set-drive_name $dir
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
 		ending=${type2date_suffix_pattern[$ignored_date_ending_type]}
@@ -2795,7 +2794,7 @@ run_df() {
 run_lsblk() {
 	local drive_dirs=${*:-$(list_drive_dirs -a)}
 
-	have_cmd lsblk || return 1
+	have-cmd lsblk || return 1
 
 	local dir devices=
 	for dir in $drive_dirs
@@ -2900,7 +2899,7 @@ watch() {
 	if [[ $names ]]
 	   then local name_list=
 		for name in ${names//,/ }
-		    do	_set_drive_name $name
+		    do	_set-drive_name $name
 			_set_drive_dir
 			drive_dirs+=" $drive_dir"
 			name_list=$name_list,$drive_name
@@ -3238,12 +3237,12 @@ readonly status_dir=/run/$our_name
 
 # if make check_period_msecs smaller, we'll check each drive more frequently
 # (but also consume more CPU, because 1 fork per drive per check-period)
-have_var      check_period_msecs ||	# can set custom value in $config_file
+have-var      check_period_msecs ||	# can set custom value in $config_file
 declare -r -i check_period_msecs=200
 
-have_var      min_hung_msecs ||		# can set custom value in $config_file
+have-var      min_hung_msecs ||		# can set custom value in $config_file
 declare -r -i min_hung_msecs=2000
-have_var      min_slow_msecs ||		# can set custom value in $config_file
+have-var      min_slow_msecs ||		# can set custom value in $config_file
 declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
 # set_seconds___from_msecs $min_slow_msecs
 # readonly disk_read_timeout=$seconds
@@ -3254,7 +3253,7 @@ readonly       sec_increment=0.01
 _monitor_drives() {
 
 	for dir
-	    do	_set_drive_name $dir || abort "bad $dir"
+	    do	_set-drive_name $dir || abort "bad $dir"
 		[[ ${name2PID[$name]-} ]] && continue	   # hung drive?
 		( set -- $dir/*.not ) & name2PID[$name]=$! # not, test it
 		name2msecs[$name]=0	# we just started the test
@@ -3344,7 +3343,7 @@ unmount_drives() {
 	[[ $debug_opt ]] && local output=/dev/stdout || local output=/dev/null
 	local name drive_name drive_dir status=0
 	for name
-	    do	set_drive_name $name
+	    do	set-drive_name $name
 		set_drive_dir $drive_name
 		is_drive_mounted $drive_dir || continue
 		sudo umount -h &> /dev/null || warn "need sudo privs" || break
@@ -3378,7 +3377,7 @@ add_extN_journal() {
 
 	[[ ! $FS_label ]] && {
 	is_OK_if_drive_dir_unmounted=$true
-	set_drive_name $1
+	set-drive_name $1
 	set_drive_dir $drive_name
 	mount_dir=$drive_dir
 	set_FS_label___from_mount_dir $mount_dir ; }
@@ -3393,8 +3392,8 @@ add_extN_journal() {
 	warn "removing internal journal can take many minutes"
 	$IfRun tune2fs $force_opt -O ^has_journal $FS_device	; }
 
-	set_FS_external_log $force_opt $FS_label $VG_name ||
-	warn "invalid set_FS_external_log, or $config_file says log unwanted"||
+	set-FS_external_log $force_opt $FS_label $VG_name ||
+	warn "invalid set-FS_external_log, or $config_file says log unwanted"||
 	   { $IfRun tune2fs -j $FS_device; return $?; }
 	label=$(basename $FS_external_log)
 
@@ -3469,7 +3468,7 @@ dir_sizes() {
 	   else file=  name=${1-}
 		[[ $# == 1 && $name && $name != -* ]] ||
 		   abort_with_action_Usage
-		set_drive_name $1
+		set-drive_name $1
 	fi
 	assert_not_option ${1-}
 
@@ -3574,7 +3573,7 @@ filesystem_geometry() {
 	local drive_name drive_dir
 	for drive_dir in $drive_dirs
 	    do	set_FS_type___from_path $drive_dir
-		_set_drive_name $drive_dir
+		_set-drive_name $drive_dir
 		set_FS_device___from_path $drive_dir
 		[[ -L $FS_device ]] &&
 		set_absolute_path $FS_device && FS_device=$absolute_path
@@ -3654,8 +3653,8 @@ mkfs_backup_drive() {
 	[[ -b $device ]] || $IfRun abort "$device not a block device"
 
 	if [[ $name ]]
-	   then set_drive_name $name
-	   else set_drive_name $device
+	   then set-drive_name $name
+	   else set-drive_name $device
 	fi
 	local name=$drive_name drive_dir
 	_set_drive_dir
@@ -3735,7 +3734,7 @@ mkfs_backup_drive() {
 	local cmd=$1; shift; local opts=$*  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
-		have_cmd mkfs.xfs || $IfRun abort "install xfsprogs"
+		have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
 		# using isize=1024 resulted in 40% more directory drive space.
@@ -3748,8 +3747,8 @@ mkfs_backup_drive() {
 		[[ $opts == *"-i size="* ]] || opts+=" -i size=512"
 		[[ $opts == *maxpct=*    ]] || opts+=" -i maxpct=0"
 		mount_opts="$XFS_mount_options"
-		have_cmd set_FS_external_log	       && # optional
-			 set_FS_external_log $FS_label &&
+		have-cmd set-FS_external_log	       && # optional
+			 set-FS_external_log $FS_label &&
 		logdev="logdev=$FS_external_log" &&
 		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
 	elif [[ $cmd == mkfs.ext? ]]
@@ -3777,8 +3776,8 @@ mkfs_backup_drive() {
 		[[ $opts != *extent* ]] && opts+=" $ext4_extent_opt"
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$extN_mount_options"
-		have_cmd set_FS_external_log		&& # optional
-			 set_FS_external_log $FS_label	&&
+		have-cmd set-FS_external_log		&& # optional
+			 set-FS_external_log $FS_label	&&
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
@@ -3857,7 +3856,7 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 
 	[[ $name == /dev/* ]] && device=$name && name=
 
-	[[ $name ]] && set_drive_name $name && name=$drive_name
+	[[ $name ]] && set-drive_name $name && name=$drive_name
 	[[ !  $device ]] &&
 	   set_FS_label___from_mount_dir $drive_dir_prefix$name &&
 	   set_FS_device___from_FS_label $FS_label && device=$FS_device
@@ -3869,7 +3868,7 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 	fi
 
 	FS_device=$device
-	_set_drive_name $name
+	_set-drive_name $name
 	_set_drive_dir
 	set_FS_label___from_mount_dir $drive_dir
 
@@ -4003,7 +4002,7 @@ _dump_restore_extN_backup_drives() {
 
 	_prepare_for_dump_restore -S
 
-	have_cmd dump || abort "need to install the 'dump' command"
+	have-cmd dump || abort "need to install the 'dump' command"
 
 	$IfRun set -x
 
@@ -4131,7 +4130,7 @@ check_snapshot_hard_links() {
 	[[ ${very_old_immutable_files-} ]] ||
 	   abort "setup very_old_immutable_files= in $config_file"
 
-	set_drive_name $name
+	set-drive_name $name
 	set_drive_dir  $drive_name
 	cd_ $drive_dir
 
@@ -4203,7 +4202,7 @@ is_test_cache_stale() {
 	elif [[ $drives ]]
 	   then _drives=
 		for drive in ${drives//,/ }
-		    do	_set_drive_name $drive
+		    do	_set-drive_name $drive
 			_set_drive_dir
 			_drives+=" $drive_dir"
 		done
@@ -4289,7 +4288,7 @@ regression_test() {
 	show_test_header copy to Z
 	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
-	_set_drive_name $1
+	_set-drive_name $1
 	src_snapshots=$1; shift
 	[[ -d $1 ]] && src_snapshots+=" $1"
 	is_test_cache_stale_opts="-d $drive_name"
@@ -4322,7 +4321,7 @@ regression_test() {
 	   abort "$config_file needs update_test_dst_drive for 'u'"
 	show_test_header update $dst
 
-	_set_drive_name $dst
+	_set-drive_name $dst
 	have_job copy &&
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
@@ -4413,7 +4412,7 @@ case $action in
 
 	[[ $recurse_opt ]] && { create_jobs copy $src_snap_opt -r $*; exit; }
 
-	set_drive_name $drive_name
+	set-drive_name $drive_name
 	set_drive_dir  $drive_name
 
 	lock copy || exit 1
@@ -4695,7 +4694,7 @@ case $action in
    # for "snapcrypt close": find drive with max # snapshots since last mounted
    ( max*drive | max*backup* | md | mb ) undo_action_abbrev max-drive
 	if [[ $# == 1 ]]
-	   then  _set_drive_name $1 &&
+	   then  _set-drive_name $1 &&
 		 _set_drive_dir &&
 		echo $drive_dir && exit 0
 	fi
@@ -4725,7 +4724,7 @@ case $action in
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
-	 _set_drive_name $1 || abort "$1 is not a valid backup drive name"
+	 _set-drive_name $1 || abort "$1 is not a valid backup drive name"
 	 _set_drive_dir
 	echo $drive_dir
 	;;
@@ -4752,7 +4751,7 @@ case $action in
 	set_seconds   $snapshot; echo $snapshot_date_time; echo $seconds
 	date '+%s' -r $snapshot; exit
 
-	_set_drive_name $2; set_job_PGID $1; echo $? $job_PGID; exit
+	_set-drive_name $2; set_job_PGID $1; echo $? $job_PGID; exit
 
 	load__drive_name2do_suspend
 	suspend_tracing
@@ -4774,7 +4773,7 @@ case $action in
 
 	cleanup_after_updates; exit
 
-	set_drive_name "$@"
+	set-drive_name "$@"
 	set_drive_dir $drive_name
 	remove_empty_partial_snapshots $drive_dir
 	exit
@@ -4826,7 +4825,7 @@ case $action in
 		echo "$path -> $FS_type"
 	done; exit
 
-	set_drive_name ${1:-a}
+	set-drive_name ${1:-a}
 	set_drive_dir $drive_name
 	set_FS_label___from_mount_dir $drive_dir
 	echo $FS_label/ exit
@@ -4834,7 +4833,7 @@ case $action in
 	print_call_stack 1
 	abort test
 
-	set_drive_name ${1:-a}
+	set-drive_name ${1:-a}
 	TraceV 0 drive_name file_for_logging log_msg_prefix
 	echo  test1
 	echoE test2
