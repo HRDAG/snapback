@@ -4738,8 +4738,8 @@ case $action in
 	run_function "$@"		# can pass: -v "varname(s)"
 	;;
    ( test | t ) undo_action_abbrev test; $Trace
-	for level in warning error stale
-	    do set_warning_string $level $level; echo "$warning_string."; done
+	for l in ${!warning_level2tput_args[*]}
+	    do set_warning_string $l $l; echo -n "$warning_string  "; done;echo
 	print_string_colors; exit
 
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
