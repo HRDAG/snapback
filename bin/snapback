@@ -82,7 +82,7 @@ Usage: $our_name [options] action [args]
 
   $our_name (snapshot backups) maintains multiple, uniquely-named,
       online and offsite backup drives (partitions), each with separate
-      logging and policy (see files in $config_dir/); to see its operation,
+      logging and policy (see files in $config_dir/); for the dashboard,
       run: $our_name watch
 
   Current actions are (you can specify their acronym, see process_action):
@@ -96,13 +96,13 @@ Usage: $our_name [options] action [args]
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
 
-    # -sig in kill defaults to -KILL (-9), i.e. terminates job & deletes lock;
-    # a pattern can be a comma-separated list, or a shell glob pattern
-    kill [-sig] type-pattern name-pattern: send signal; either arg can be 'all'
-    continue    type-pattern name-pattern: as above, but -CONT signal
-    suspend     type-pattern name-pattern: as above, but -STOP signal
-    stop        type-pattern name-pattern: as above, but -STOP signal
-    ps [ps-opts] [type-pattern [name-pattern]]: show holder(s) of lock(s)
+    # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
+    # a glob can be a comma-separated list, a shell glob pattern, or 'all'.
+    kill [-signal] job-type-glob  name-glob: job-type is e.g. backup,prune,copy
+    continue       job-type-glob  name-glob: as above, but -CONT signal
+    suspend        job-type-glob  name-glob: as above, but -STOP signal
+    stop           job-type-glob  name-glob: as above, but -STOP signal
+    ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
@@ -334,26 +334,26 @@ function set_glob() {
 set_lock_paths() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $# == [0-2] ]] ||
-	    abort_function "$*: must be 0-2 args (can use patterns)"
-	local type_pattern=${1:-*} name_pattern=${2:-${drive_name:-*}}
+	    abort_function "$*: must be 0-2 args (can use globs)"
+	local type_glob=${1:-*} name_glob=${2:-${drive_name:-*}}
 
-	set_glob "$type_pattern" && type_pattern=$glob
-	set_glob "$name_pattern" && name_pattern=$glob
+	set_glob "$type_glob" && type_glob=$glob
+	set_glob "$name_glob" && name_glob=$glob
 
-	[[    $type_pattern == a* ]] && type_pattern=*
-	if [[ $name_pattern == a* ]]
-	   then name_pattern=*
-	elif [[ $name_pattern == /* ]]
+	[[    $type_glob == a* ]] && type_glob=*
+	if [[ $name_glob == a* ]]
+	   then name_glob=*
+	elif [[ $name_glob == /* ]]
 	   then local drive_name
-		_set-drive_name $name_pattern
-		name_pattern=$drive_name
+		_set-drive_name $name_glob
+		name_glob=$drive_name
 	elif [[ ${is_drive_name_upper_cased-} ]]
-	   then name_pattern=${name_pattern^^}
-	elif [[ ${is_drive_name_capitalized-} && $name_pattern != *[[,]* ]]
-	   then name_pattern=${name_pattern^} # only capitalize a single name
+	   then name_glob=${name_glob^^}
+	elif [[ ${is_drive_name_capitalized-} && $name_glob != *[[,]* ]]
+	   then name_glob=${name_glob^} # only capitalize a single name
 	fi
 
-	eval "set -- $lock_dir/$type_pattern*-$name_pattern.pid"
+	eval "set -- $lock_dir/$type_glob*-$name_glob.pid"
 	lock_paths=$*
 	$xtrace
 	[[ $lock_paths ]]
@@ -642,7 +642,7 @@ set_lock_PGIDs() {
 	lock_PGIDs=
 
 	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
-	eval "set -- $lock_dir/$type-${names_pattern:-*}.pid"
+	eval "set -- $lock_dir/$type-${names_glob:-*}.pid"
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
 	set -- $locks
@@ -725,7 +725,7 @@ set_oldest_snapshot() {
 	local oldest= FS
 	for FS in $(list_drive_dirs)
 	    do	suspend_tracing
-		set -- $FS/$snapshot_pattern
+		set -- $FS/$snapshot_glob
 		[[ $# != 0 ]] || continue
 		restore_tracing
 		[[ $oldest && $(basename $oldest) < $(basename $1) ]] &&
@@ -852,7 +852,7 @@ _set-drive_name ||		      # configure.sh can replace this function
 _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local  name=${1#$drive_dir_prefix}
-	name=${name%/$snapshot_pattern*}
+	name=${name%/$snapshot_glob*}
 
 	[[ $name == *[^$allowed_name_dir_chars]* ]] &&
 	   abort "drive_name has disallowed chars (can ask $coder to allow)"
@@ -1188,7 +1188,7 @@ count_rsyncs_using_resource() {
 update_snapshots_ls() {
 
 	[[ ! $debug_opt ]] &&
-	echo $snapshot_pattern{,.links} | tr ' ' '\n' |
+	echo $snapshot_glob{,.links} | tr ' ' '\n' |
 	    sort > $drive_log_dir/snapshots.ls
 }
 
@@ -1284,12 +1284,12 @@ _rm_pruned_snapshots() {
 
 	update_snapshots_ls
 
-	set -- $snapshot_pattern*.rm
+	set -- $snapshot_glob*.rm
 	local snapshot_basenames=$*
 	restore_tracing
 
 	if [[ ! -d latest ]]
-	   then set -- $snapshot_pattern # only the successful snapshots
+	   then set -- $snapshot_glob # only the successful snapshots
 		[[ -d ${!#} ]] && $IfRun rm -f latest &&
 		$IfRun ln -s $(basename ${!#}) latest
 	fi
@@ -1341,13 +1341,13 @@ _rm_pruned_snapshots() {
 	     ( ! -e $pruned_TS ||
 		    $pruned_TS -ot $exclude_file ) ) ]] &&
 	{
-	# prune exclude-patterns from _all_ snapshots, very slow
-	local exclude_pattern file
-	for snapshot in $drive_dir/$snapshot_pattern*
+	# prune exclude-globs from _all_ snapshots, very slow
+	local exclude_glob file
+	for snapshot in $drive_dir/$snapshot_glob*
 	    do	[[ $snapshot == *.rm ]] && continue
 		grep '^ */' $exclude_file | fgrep -v '**' |
-		while read exclude_pattern
-		    do	set -- $snapshot$exclude_pattern
+		while read exclude_glob
+		    do	set -- $snapshot$exclude_glob
 			for file	# can have SPACEs, need to quote it
 			   do	[[ -e "$file" ]] && echo "$file"
 			done
@@ -1357,7 +1357,7 @@ _rm_pruned_snapshots() {
 	}
 	restore_tracing
 
-	$IfRun log "pruned exclude-patterns from _all_ snapshots"
+	$IfRun log "pruned exclude-globs from _all_ snapshots"
 
 	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
 }
@@ -1369,11 +1369,11 @@ _rm_pruned_snapshots() {
 # snapshot basename format is Year-Mo-Da,Hr, all implemented in this section;
 #    to implement snapshot_date_time_separator, search for: ,00 ,?? ,$ ,/
 
-readonly     snapshot_pattern="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
-readonly max_snapshot_pattern="9999-12-31,23"		  # max supported value
-readonly snapshot_day_pattern=${snapshot_pattern%,??}	  # Year-Mo-Da
+readonly     snapshot_glob="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
+readonly max_snapshot_glob="9999-12-31,23"	       # max supported value
+readonly snapshot_day_glob=${snapshot_glob%,??}	       # Year-Mo-Da
 set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
-readonly     snapshot_regex=${snapshot_pattern//\?/.}
+readonly     snapshot_regex=${snapshot_glob//\?/.}
 readonly snapshot_day_regex=${snapshot_regex%,??}
 
 set_date_time() { date_time=$(date '+%Y-%m-%d,%H' "$@"); }
@@ -1398,47 +1398,47 @@ shorten_date() {
 	esac | uniq
 }
 
-declare -A type2date_suffix_pattern=(
+declare -A type2date_suffix_glob=(
 	 [NONE]=""
 	 [hour]=",??"
 	  [day]="-??,??"
 	[month]="-??-??,??"
 	 [year]="?-??-??,??"
 )
-[[ ${snapshot_pattern%${type2date_suffix_pattern[year]}} != \
-   "$snapshot_pattern" ]] ||
-	abort "snapshot_pattern has to end with type2date_suffix_pattern[year]"
+[[ ${snapshot_glob%${type2date_suffix_glob[year]}} != \
+   "$snapshot_glob" ]] ||
+	abort "snapshot_glob has to end with type2date_suffix_glob[year]"
 
-set_prune_pattern() {
-	local type=$1 pattern=$2
+set_prune_glob() {
+	local type=$1 glob=$2
 
-	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
-	local date_prefix_pattern=${snapshot_pattern%$date_suffix_pattern}
+	local date_suffix_glob=${type2date_suffix_glob[$type]}
+	local date_prefix_glob=${snapshot_glob%$date_suffix_glob}
 	case $type in
 	   (  hour ) local date_suffix_type=NONE  ;;
 	   (   day ) local date_suffix_type=hour  ;;
 	   ( month ) local date_suffix_type=day   ;;
 	   (  year ) local date_suffix_type=month ;;
 	esac
-	date_suffix_pattern=${type2date_suffix_pattern[$date_suffix_type]}
-	prune_pattern=$date_prefix_pattern$pattern$date_suffix_pattern{,.*}
+	date_suffix_glob=${type2date_suffix_glob[$date_suffix_type]}
+	prune_glob=$date_prefix_glob$glob$date_suffix_glob{,.*}
 }
 
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
-declare -A backup_period2minimal_snapshot_pattern=(
-    [1]="$snapshot_pattern"
-    [2]="$snapshot_day_pattern,?[02468]"
-    [4]="$snapshot_day_pattern,{[02][048],1[26]}"
-    [8]="$snapshot_day_pattern,{00,08,16}"
-   [12]="$snapshot_day_pattern,{00,12}"
-   [24]="$snapshot_day_pattern,00"
+declare -A backup_period2minimal_snapshot_glob=(
+    [1]="$snapshot_glob"
+    [2]="$snapshot_day_glob,?[02468]"
+    [4]="$snapshot_day_glob,{[02][048],1[26]}"
+    [8]="$snapshot_day_glob,{00,08,16}"
+   [12]="$snapshot_day_glob,{00,12}"
+   [24]="$snapshot_day_glob,00"
 )
 #
 # the [hour] chunks are the complement of the previous map's values
-[[	 ${type2prune_type_patterns-} ]] || # custom version in $config_file?
-declare -A type2prune_type_patterns=(
-# the ones these patterns skip: hour=00, day=01, month=01, year=00
+[[	 ${type2prune_type_globs-} ]] || # custom version in $config_file?
+declare -A type2prune_type_globs=(
+# the ones these globs skip: hour=00, day=01, month=01, year=00
 # period after prune: 2                4                 ~8          ~12   all
    [hour]=",?[13579]         ,{[02][26],1[048]}       ,{04,20}    ,{08,16} ,12"
     [day]="-{?[3579],[1-3]1} -{[02][26],1[048],30} -{04,12,20,28} -{08,24} -16"
@@ -1462,8 +1462,8 @@ function load__type2date_span {
 
 declare -A backup_period2minimal_snapshot_regex
 #
-for _period in ${!backup_period2minimal_snapshot_pattern[*]}
-    do	  value=${backup_period2minimal_snapshot_pattern[$_period]}
+for _period in ${!backup_period2minimal_snapshot_glob[*]}
+    do	  value=${backup_period2minimal_snapshot_glob[$_period]}
 	value=${value//\?/.}
 	value=${value//\{/(}
 	value=${value//\}/)}
@@ -1484,7 +1484,7 @@ scale_date_span() {
 reverse_sorted_snapshot_basenames() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
-	echo $snapshot_pattern*  |	# prune everything
+	echo $snapshot_glob*  |		# prune everything
 	   tr ' ' '\n' | sort -u -r |
 	   grep -v '\.rm$'		# _rm_pruned_snapshots handles *.rm
 	$xtrace
@@ -1503,15 +1503,15 @@ prune_type_to_file() {
 	load__type2date_span	# run after call to customize_config_variables
 	local date_span=${type2date_span[$type]}
 	scale_date_span
-	local prune_type_patterns=${type2prune_type_patterns[$type]}
-	local date_suffix_pattern=${type2date_suffix_pattern[$type]}
+	local prune_type_globs=${type2prune_type_globs[$type]}
+	local date_suffix_glob=${type2date_suffix_glob[$type]}
 	[[ $type == hour ]] && _oldest_snapshot=$drive_dir/${!#},00
 
 	Trace 5 "\n==> $type prune <=="
 	local -i period=$backup_period
-	local prune_pattern
-	while set_popped_word___from_list prune_type_patterns
-	    do	local prune_type_pattern=$popped_word
+	local prune_glob
+	while set_popped_word___from_list prune_type_globs
+	    do	local prune_type_glob=$popped_word
 		set -- $remaining_reverse_sorted_snapshot_dates
 
 		# might want to delete *all* the snapshots left to be pruned
@@ -1531,10 +1531,10 @@ prune_type_to_file() {
 		local first_prune_date=${1-}
 		[[ $first_prune_date ]] || break
 
-		set_prune_pattern $type "$prune_type_pattern"
-		TraceV 5 date_suffix_pattern first_prune_date \
-			  prune_type_pattern prune_pattern
-		eval "set -- $prune_pattern"
+		set_prune_glob $type "$prune_type_glob"
+		TraceV 5 date_suffix_glob first_prune_date \
+			  prune_type_glob prune_glob
+		eval "set -- $prune_glob"
 		Trace 5 "\n Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
 
 		# skip over the snapshot prune-matches that aren't old enough
@@ -1542,7 +1542,7 @@ prune_type_to_file() {
 		while [[ $# != 0 ]]
 		   do	[[ $1 == $drive_dir/[^1-9]* ]] && shift && continue
 			local day_hour=${1##*/}
-			local date=${day_hour%$date_suffix_pattern*}
+			local date=${day_hour%$date_suffix_glob*}
 			[[   $date > $first_prune_date ]] || break
 			shift
 		done
@@ -1630,7 +1630,7 @@ function prune_drive() {
 
 _have_full_snapshot() {
 
-	set -- ${new_snapshot%/$snapshot_pattern*}/$snapshot_pattern
+	set -- ${new_snapshot%/$snapshot_glob*}/$snapshot_glob
 	[[ $# != 0 ]]
 }
 
@@ -1690,7 +1690,7 @@ set_link_dest_opts___for_run_backup() {
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $snapshot_pattern{,.links,.partial} |
+	set -- $(echo $snapshot_glob{,.links,.partial} |
 		 tr ' ' '\n' | sort -r)
 	restore_tracing
 
@@ -1706,7 +1706,7 @@ set_link_dest_opts___for_copy_snapshot() {
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $snapshot_pattern{,.links,.partial} |
+	set -- $(echo $snapshot_glob{,.links,.partial} |
 		 tr ' ' '\n' | sort -r |
 		 while  read  snapshot
 		    do	[[   $snapshot < $new_snapshot ]] || continue
@@ -1715,7 +1715,7 @@ set_link_dest_opts___for_copy_snapshot() {
 	restore_tracing
 	set_link_dest_opts $new_snapshot $* # newest to oldest
 
-	set -- $(echo $snapshot_pattern{,.links,.partial} |
+	set -- $(echo $snapshot_glob{,.links,.partial} |
 		 tr ' ' '\n' |
 		 while  read  snapshot
 		    do	[[   $snapshot > $new_snapshot ]] || continue
@@ -1826,7 +1826,7 @@ record_rsync_time() {
 
 	local -i number_files_per_day=24/$backup_period
 	local -i number_files_to_keep=$number_files_per_day*$days_to_keep
-	set -- $(dirname $file)/$snapshot_pattern.txt
+	set -- $(dirname $file)/$snapshot_glob.txt
 	while (( $# > $number_files_to_keep ))
 	    do	$IfRun rm $1
 		shift
@@ -1843,7 +1843,7 @@ _links_error_msg() {
 	local -i max_src_links=0
 	bzcat $log | tr -d '"' | cut -d' ' -f3 |
 	while read dst_file
-	    do	src_file=${dst_file#$drive_dir/$snapshot_pattern.partial}
+	    do	src_file=${dst_file#$drive_dir/$snapshot_glob.partial}
 		[[ -f $src_file ]] || continue
 		set -- $(ls -l $src_file)
 		((   $max_src_links >= $2 )) && continue
@@ -1880,7 +1880,7 @@ _handle_rsync_results() {
 	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
 	   then $IfRun mv $new_snapshot.partial $new_snapshot &&
 		[[ $new_snapshot != *.links ]] &&
-		set -- $snapshot_pattern &&
+		set -- $snapshot_glob &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update_snapshots_ls
 		record_rsync_time $new_snapshot
@@ -2121,8 +2121,8 @@ is_src_snapshot_useful() {
 
 	[[ -d $src_snapshot ]] || bad_copy "no snapshot '$1'" || return 1
 	local  src_basename=${src_snapshot##*/}
-	[[ $src_basename == $snapshot_pattern ||
-	   $src_basename == $snapshot_pattern.links ]] ||
+	[[ $src_basename == $snapshot_glob ||
+	   $src_basename == $snapshot_glob.links ]] ||
 	   bad_copy "$src_snapshot is not a reliable snapshot" || return 1
 	[[ $src_basename =~ $dst_minimal_snapshot_regex(|\..*) ]] ||
 	   bad_copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
@@ -2311,7 +2311,7 @@ sorted_useful_srcs() {
 	)
 
 	period=$backup_period
-	min_snapshot_pattern=${backup_period2minimal_snapshot_pattern[$period]}
+	min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
 
 	set -f
 	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
@@ -2320,7 +2320,7 @@ sorted_useful_srcs() {
 	let snapshot_key=$# drive_name_key=$#-1
 	local sort_key_args="--key=$snapshot_key --key=$drive_name_key"
 
-	TraceV 1 drive_dirs min_snapshot_pattern sort_key_args
+	TraceV 1 drive_dirs min_snapshot_glob sort_key_args
 
 	cd $drive_dir || exit 1	# so can kill job with: fuser -k -M $drive_dir
 
@@ -2328,8 +2328,8 @@ sorted_useful_srcs() {
 
 	for dir in $drive_dirs
 	    do	suspend_tracing
-		eval "echo $dir/$min_snapshot_pattern{,.links}" # useful ones
-		      echo $dir/$max_snapshot_pattern # token to terminate loop
+		eval "echo $dir/$min_snapshot_glob{,.links}" # useful ones
+		      echo $dir/$max_snapshot_glob # token to terminate loop
 		restore_tracing
 	done | tr ' ' '\n' |
 	sort --field-separator=/ $sort_key_args
@@ -2369,7 +2369,7 @@ wait_for_full_snapshots() {
 	local min_full_snapshots=$1
 
 	while true
-	   do	set -- $drive_dir/$snapshot_pattern
+	   do	set -- $drive_dir/$snapshot_glob
 		(( $# >= $min_full_snapshots )) && return
 		sleep 1h
 	done
@@ -2601,7 +2601,7 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 	    do	_set-drive_name $dir
 		local name=$drive_name
 		local  dir=$log_dir/$name/$rsync_time_subdir
-		set -- $dir/$snapshot_pattern.txt
+		set -- $dir/$snapshot_glob.txt
 		if [[ $# != 0 ]]
 		   then local sum=$(cat $* | tr '\n' '+')
 			local -i total=${sum%+}
@@ -2673,10 +2673,10 @@ _recalculate_stats_vars() {
 	    do	_set-drive_name $dir
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
-		ending=${type2date_suffix_pattern[$ignored_date_ending_type]}
+		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		ending_RE=${ending//\?/.}
 		suspend_tracing
-		set -- $snapshot_pattern$suffix
+		set -- $snapshot_glob$suffix
 		restore_tracing
 		[[ $# != 0 ]] &&
 		set -- $(echo $* | tr ' ' '\n' |
@@ -2909,10 +2909,10 @@ watch() {
 	   else : ${show_all=$false}
 		drive_dirs=$all_drive_dirs
 	fi
-	[[ $names ]] && names_pattern="{$names}" &&
+	[[ $names ]] && names_glob="{$names}" &&
 	    names_msg=" for $names " || names_msg=
 
-	TraceV 1 names drive_dirs names_pattern ps_opt cron_opt show_all
+	TraceV 1 names drive_dirs names_glob ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
 
@@ -4141,7 +4141,7 @@ check_snapshot_hard_links() {
 		[[ $inum ]]
 	}
 
-	set -- $snapshot_pattern*
+	set -- $snapshot_glob*
 
 	local -A file2inum
 	for old_file in $very_old_immutable_files
@@ -4286,7 +4286,7 @@ regression_test() {
 
 	is_arg1_in_arg2 c $tests && {
 	show_test_header copy to Z
-	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
+	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	_set-drive_name $1
 	src_snapshots=$1; shift
@@ -4298,7 +4298,7 @@ regression_test() {
 	# --------------------------------------------
 
 	is_arg1_in_arg2 z $tests && {
-	set -- ${drive_dir_prefix}Z/$snapshot_pattern
+	set -- ${drive_dir_prefix}Z/$snapshot_glob
 	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
 	show_test_header prune Z
 	is_test_cache_stale_opts=	# test-prune always leaves same files
@@ -4442,27 +4442,27 @@ case $action in
 	watch "$@"
 	;;
 
-   # kill [-sig] type-pattern name-pattern: terminate; either arg can be 'all'
+   # kill [-sig] type-glob name-glob: terminate; either arg can be 'all'
    ( kil* | k ) undo_action_abbrev kill
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
 	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
 	kill_job_on_drives ${signal-} "$@"
 	;;
-   # continue    type-pattern name-pattern: as above, but -CONT signal
+   # continue    type-glob name-glob: as above, but -CONT signal
    ( con* | c ) undo_action_abbrev continue
 	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
 	kill_job_on_drives -c "$@"
 	;;
-   # suspend     type-pattern name-pattern: as above, but -STOP signal
-   # stop        type-pattern name-pattern: as above, but -STOP signal
+   # suspend     type-glob name-glob: as above, but -STOP signal
+   # stop        type-glob name-glob: as above, but -STOP signal
    ( sus* | st*p | s ) undo_action_abbrev suspend
 	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
 	kill_job_on_drives -s "$@"
 	;;
-   # ps [ps-opts] [type-pattern [name-pattern]]: show holders of lock(s)
+   # ps [ps-opts] [type-glob [name-glob]]: show holders of lock(s)
    ( ps )
 	ps_locks "$@"
 	;;
@@ -4620,7 +4620,7 @@ case $action in
 	clone_stashed_mk_Z() {
 		local type=$1 stash=.mk-Z.$1
 		suspend_tracing
-		rm -rf $snapshot_pattern* la* && cp -al $stash/* . ||
+		rm -rf $snapshot_glob* la* && cp -al $stash/* . ||
 		   abort "failed to clone $stash"
 		restore_tracing
 	}
@@ -4678,7 +4678,7 @@ case $action in
 	$Trace
 	is_drive_mounted $drive || exit 0
 	suspend_tracing
-	set -- $drive/$snapshot_pattern	# all the _successful_ snapshots
+	set -- $drive/$snapshot_glob	# all the _successful_ snapshots
 	restore_tracing
 	latest_snapshot=${!#}
 	[[ $# != 0 && -d $latest_snapshot ]] ||
@@ -4755,7 +4755,7 @@ case $action in
 
 	load__drive_name2do_suspend
 	suspend_tracing
-	set -- $drive_dir_prefix*/$snapshot_day_pattern,00
+	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	restore_tracing
 	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
@@ -4764,7 +4764,7 @@ case $action in
 
 	set_absolute_path /dev/mapper/backup_C; echo $absolute_path; exit
 
-	set -- $drive_dir_prefix${1^^}/$snapshot_pattern*
+	set -- $drive_dir_prefix${1^^}/$snapshot_glob*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
 	_have_full_snapshot
