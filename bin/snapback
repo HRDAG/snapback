@@ -944,7 +944,7 @@ set_drive_dir() {
 
 custom_config_vars=
 
-declare -A config_var2default_value
+declare -A config_var2default_value	# set_drive_usage also uses this
 
 customize_config_variables() {
 	local drive_name=${1-}
@@ -2628,10 +2628,12 @@ set_drive_usage() {
 
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
-	    do	_set-drive_name $drive_dir
+	    do	# a speedup to avoid (slow) call to set-drive_name
+		_set-drive_name $drive_dir
 		[[ ${!config_var2default_value[*]} ]] ||
 		    customize_config_variables $drive_name
 		min_FS_usage_percent=${drv_name2min_FS_usage_percent[$drive_name]-${config_var2default_value[min_FS_usage_percent]}}
+
 		is_drive_usage_too_high && local warn=$true || local warn=
 		local     type=${max_drive_usage_percent:0:1}
 		local  percent=${max_drive_usage_percent#?}
