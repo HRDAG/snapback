@@ -955,7 +955,7 @@ customize_config_variables() {
 
 	remember_tracing		# since suspend_tracing maybe not run
 	local var_name
-	[[ ${config_var2default_value[*]-} ]] ||
+	[[ ${!config_var2default_value[*]} ]] ||
 	for var_name in $config_vars
 	    do	is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   continue
@@ -2628,7 +2628,11 @@ set_drive_usage() {
 
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
-	    do	is_drive_usage_too_high && local warn=$true || local warn=
+	    do	_set-drive_name $drive_dir
+		[[ ${!config_var2default_value[*]} ]] ||
+		    customize_config_variables $drive_name
+		min_FS_usage_percent=${drv_name2min_FS_usage_percent[$drive_name]-${config_var2default_value[min_FS_usage_percent]}}
+		is_drive_usage_too_high && local warn=$true || local warn=
 		local     type=${max_drive_usage_percent:0:1}
 		local  percent=${max_drive_usage_percent#?}
 		((  ${#percent} ==   1 )) && percent=0$percent
