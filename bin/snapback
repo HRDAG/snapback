@@ -451,8 +451,8 @@ function lock() {
 
 	suspend_tracing
 	local drive_name drive_dir	# don't mess up caller's values
-	_set-drive_name $resource
-	_set_drive_dir
+	 _set-drive_name $resource
+	 _set_drive_dir
 	restore_tracing drive_name
 
 	local prev_lock_path=${_lock_type2lock_path[$type]-}
@@ -624,9 +624,10 @@ kill_job_on_drives() {
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
 	assert_not_option ${1-}
-	set_lock_paths "$@"
 
-	local path status=1		# assume nothing to kill
+	set_lock_paths "$@" || return 1
+
+	local path status=1		# assume nothing we're allowed to kill
 	for path in $lock_paths
 	    do	signal_job $signal $path && status=0
 	done
@@ -942,44 +943,45 @@ set_drive_dir() {
 
 # -----------------------------------------------------------------------------
 
-custom_config_vars=
-
-declare -A config_var2default_value	# set_drive_usage also uses this
+declare -A custom_config_var2default_value # set_drive_usage also uses this
 
 customize_config_variables() {
 	local drive_name=${1-}
-
-	[[ $drive_name ]] || return
 
 	[[ $drive_name == Z ]] && is_regression_test=$true
 
 	remember_tracing		# since suspend_tracing maybe not run
 	local var_name
-	[[ ${!config_var2default_value[*]} ]] ||
-	for var_name in $config_vars
+	[[ ${custom_config_vars-} ]] || {
+	# set__drive_log_dir__file_for_logging__admin_group__is_regression_test
+	declare -g custom_config_vars="drive_log_dir file_for_logging"
+	declare -g custom_config_var_assignments= # for 'local'
+	for var_name in $custom_config_vars $config_vars
 	    do	is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   continue
+
+		is_arg1_in_arg2 $var_name $custom_config_vars ||
 		is_set $var_name ||
 		   abort "need to set '$var_name=' in $config_file"
-		config_var2default_value[$var_name]=${!var_name}
+
+		! is_set $var_name ||
+		[[ $(declare -p $var_name) =~ ^declare.-[aA]?i?r ]]   ||
+		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
+		   continue
+
+		local default_value=${!var_name}
+		custom_config_var2default_value[$var_name]=$default_value
+		custom_config_var_assignments+=" $var_name=$default_value"
+
 		suspend_tracing
 	done
+	custom_config_vars=${!custom_config_var2default_value[*]} ; }
 	restore_tracing
 
-	# set__drive_log_dir__file_for_logging__admin_group__is_regression_test
-	custom_config_vars="drive_log_dir file_for_logging"
-
-	for var_name in config_file exclude_file
-	    do	[[ $(declare -p $var_name) == "declare -r "* ]] ||
-		custom_config_vars+=" $var_name"
-	done
+	[[ $drive_name ]] || return
 
 	for var_name in $config_vars
-	    do	[[ $(declare -p $var_name) =~ ^declare.-[aA]?i?r ]]   ||
-		is_arg1_in_arg2 $var_name $uncustomizable_config_vars ||
-		custom_config_vars+=" $var_name"
-
-		local array_name=drv_name2$var_name
+	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
 		[[ $drv_names ]] || continue
 		suspend_tracing
@@ -987,15 +989,14 @@ customize_config_variables() {
 		is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
 
-		is_arg1_in_arg2 $drive_name $drv_names ||
-		   { eval "$var_name=\${config_var2default_value[$var_name]}"
-		     continue; }
+		is_arg1_in_arg2 $drive_name $drv_names || {
+		eval "$var_name=\${custom_config_var2default_value[$var_name]}"
+		continue; }
 
 		eval "local custom_value=\${$array_name[\$drive_name]-}"
 		eval "$var_name=\$custom_value"
 		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
-	custom_config_vars=${custom_config_vars# }
 	restore_tracing custom_config_vars
 }
 
@@ -1011,9 +1012,8 @@ validate_config_variables() {
 	[[ ${!var} == ',' ]] ||
 	   abort "$var is not implemented, email $coder"
 	#
-	local var=extra_excludes
-	[[ ! ${!var} ]] ||
-	   abort "$var is not implemented, email $coder"
+	[[ ! $extra_excludes ]] ||
+	   abort "extra_excludes is not implemented, email $coder"
 	#
 	local bad_punctuation="[-.:0-9]" # you could ask $coder to change this
 	[[ $snapshot_date_time_separator != *$bad_punctuation* ]] ||
@@ -2086,20 +2086,14 @@ declare -A drive_name2backup_type
 set_backup_type() {
 	local drive_name=$1	  # fastest if it's a drive_name not drive_dir
 
-	backup_type=${drive_name2backup_type[$drive_name]-}
+	backup_type=${drive_name2backup_type[$drive_name]-} # cached?
 	[[ $backup_type ]] && return
 
-	[[    $custom_config_vars ]] &&
-	local $custom_config_vars
-	if [[ $drive_name =~ ^$admin_drive_name_regex$ ]]
-	   then [[ $is_drive_name_capitalized ]] && drive_name=${drive_name^}
-		suspend_tracing
-		customize_config_variables $drive_name
-		restore_tracing
-	   else set-drive_name $drive_name # calls customize_config_variables
-	fi
+	[[   ${custom_config_var_assignments-} ]] &&
+	local $custom_config_var_assignments # don't trash caller's values
+	set-drive_name $drive_name	# calls customize_config_variables
 	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
-	drive_name2backup_type[$drive_name]=$backup_type
+	drive_name2backup_type[$drive_name]=$backup_type # cache it
 }
 
 # ---------------------------------
@@ -2229,8 +2223,8 @@ declare -A drive_name2do_suspend
 
 load__drive_name2do_suspend() {
 
-	[[    $custom_config_vars ]] &&
-	local $custom_config_vars	# for customize_config_variables
+	[[    $custom_config_var_assignments ]] &&
+	local $custom_config_var_assignments # for customize_config_variables
 
 	local drive drive_name
 	for drive in $(list_drive_dirs -a)
@@ -2350,7 +2344,7 @@ cleanup_after_updates() {
 
 	set_sudo_lockpid
 
-	local drive_dir drive_name
+	local drive_dir drive_name	# protect caller's values
 	for drive_dir in $(list_drive_dirs -a)
 	    do	_set-drive_name $drive_dir
 		set_lock_path copy	# update could be running
@@ -2626,13 +2620,16 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 
 set_drive_usage() {
 
+	customize_config_variables
+	local var_name=min_FS_usage_percent \
+	    default_min_FS_usage=${custom_config_var2default_value[$var_name]-}
+
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
 	    do	# a speedup to avoid (slow) call to set-drive_name
 		_set-drive_name $drive_dir
-		[[ ${!config_var2default_value[*]} ]] ||
-		    customize_config_variables $drive_name
-		min_FS_usage_percent=${drv_name2min_FS_usage_percent[$drive_name]-${config_var2default_value[min_FS_usage_percent]}}
+		[[ ${default_min_FS_usage-} ]] &&
+		min_FS_usage_percent=${drv_name2min_FS_usage_percent[$drive_name]-$default_min_FS_usage}
 
 		is_drive_usage_too_high && local warn=$true || local warn=
 		local     type=${max_drive_usage_percent:0:1}
@@ -2828,6 +2825,7 @@ trim() {
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
 	    -e "s@ $HOME/@ ~/@g"
+	return 0
 }
 
 # --------------------------------------------
@@ -2838,6 +2836,7 @@ trim_backup() {
 	sed -e 's@run-backup -r @run-backup @g' \
 	    -e 's@ --.* @ $opts -R $dirs @' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
+	return 0
 }
 
 # --------------------------------------------
@@ -2846,6 +2845,7 @@ trim_prune() {
 
 	trim |
 	sed -e 's@prune-drive -r @prune-drive @g'
+	return 0
 }
 
 # --------------------------------------------
@@ -2866,6 +2866,7 @@ trim_copy_update() {
 	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$snap/. /@' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
+	return 0
 }
 
 # ------------------------------------------------------------------
@@ -2999,19 +3000,19 @@ watch() {
 	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
 	local -i num_bkp_rsyncs=0 ;	   bkp_rsync_cmds= ; }
 
-	set_lock_PGIDs prune &&
+	! set_lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
-			trim_prune) || prune_cmds=
+			trim_prune)
 
 	# both update-drive and copy-snapshot use the copy lock
-	set_lock_PGIDs copy &&
+	! set_lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
 			       -e " [l]ockpid " \
 			       -e " [s]leep "	\
 			       -e "[0-9]     rsync" |
-			   sed -e 's/   rsync/ rsync/') || copy_rsync_cmds=
+			   sed -e 's/   rsync/ rsync/')
 			#      -e 's/   lockp/ lockp/')	# -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
@@ -3078,7 +3079,7 @@ watch() {
 	set__rsync_hour_avgs__rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
-	local drive_usage; set_drive_usage
+	set_drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
 	setup_snapshot_stats .rm
 	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
@@ -3576,7 +3577,7 @@ filesystem_geometry() {
       printf "$f" Mount	FS-type	sector	inode	block	block  "unit  "	"$wdth"
       printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
-	local drive_name drive_dir
+	local drive_name drive_dir	# protect caller's values
 	for drive_dir in $drive_dirs
 	    do	set_FS_type___from_path $drive_dir
 		_set-drive_name $drive_dir
@@ -4250,6 +4251,12 @@ run_debug_cmds() {
 	local tmp_o=$tmp_dir/o$test	# holds output from "old" cmd
 	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
 
+	if [[ $debug_opt ]]
+	   then echo "$old_cmd -C -d $args &> $tmp_o"
+		echo "$tst_cmd -C -d $args &> $tmp_t"
+		return
+	fi
+
 	is_test_cache_stale $is_test_cache_stale_opts  $tmp_o &&
 	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
 	$tst_cmd -C -d $args &> $tmp_t ; show_test_results $tmp_t
@@ -4275,8 +4282,6 @@ regression_test() {
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
-
-	[[ ! $debug_opt ]] || abort_function "-d not supported"
 
 	echo -e "\nComparing $old_cmd to $tst_cmd"
 
@@ -4405,7 +4410,7 @@ case $action in
 	done
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
-   ( c*p*s*s* | cs* | cps ) undo_action_abbrev copy-snapshots # cpss
+   ( c*p*s*s* | cs* | cp* ) undo_action_abbrev copy-snapshots # cpss
 	[[ $1 == -d  ]] && {   debug_copy=$1; shift; } ||   debug_copy=
 	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
 	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
