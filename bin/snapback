@@ -2621,7 +2621,7 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 set_drive_usage() {
 
 	customize_config_variables
-	local var_name=min_FS_usage_percent \
+	local var_name=min_FS_usage_percent; local \
 	    default_min_FS_usage=${custom_config_var2default_value[$var_name]-}
 
 	local max_drive_usage_percent warning_string
