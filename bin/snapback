@@ -971,7 +971,7 @@ customize_config_variables() {
 
 		local default_value=${!var_name}
 		custom_config_var2default_value[$var_name]=$default_value
-		custom_config_var_assignments+=" $var_name=$default_value"
+		custom_config_var_assignments+="$var_name='$default_value' "
 
 		suspend_tracing
 	done
@@ -980,7 +980,7 @@ customize_config_variables() {
 
 	[[ $drive_name ]] || return
 
-	for var_name in $config_vars
+	for var_name in $custom_config_vars
 	    do	local array_name=drv_name2$var_name
 		eval "local drv_names=\${!$array_name[*]}"
 		[[ $drv_names ]] || continue
@@ -2089,7 +2089,7 @@ set_backup_type() {
 	backup_type=${drive_name2backup_type[$drive_name]-} # cached?
 	[[ $backup_type ]] && return
 
-	[[   ${custom_config_var_assignments-} ]] &&
+	[[   ${custom_config_var_assignments-} ]] && eval \
 	local $custom_config_var_assignments # don't trash caller's values
 	set-drive_name $drive_name	# calls customize_config_variables
 	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
@@ -2223,7 +2223,7 @@ declare -A drive_name2do_suspend
 
 load__drive_name2do_suspend() {
 
-	[[    $custom_config_var_assignments ]] &&
+	[[    $custom_config_var_assignments ]] && eval \
 	local $custom_config_var_assignments # for customize_config_variables
 
 	local drive drive_name
@@ -2628,7 +2628,7 @@ set_drive_usage() {
 	for drive_dir in $all_drive_dirs
 	    do	# a speedup to avoid (slow) call to set-drive_name
 		_set-drive_name $drive_dir
-		[[ ${default_min_FS_usage-} ]] &&
+		[[ $default_min_FS_usage ]] &&
 		min_FS_usage_percent=${drv_name2min_FS_usage_percent[$drive_name]-$default_min_FS_usage}
 
 		is_drive_usage_too_high && local warn=$true || local warn=
