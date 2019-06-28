@@ -78,7 +78,7 @@ readonly coder=sweikart@gmail.com
    abort "install/edit $exclude_file, see included .sample"
 
 readonly Usage="
-Usage: $our_name [options] action [args]
+Usage: $our_name [options] action [options] [args]
 
   $our_name (snapshot backups) maintains multiple, uniquely-named,
       online and offsite backup drives (partitions), each with separate
@@ -483,6 +483,7 @@ function lock() {
 	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
 	local primary_lock_path=$lock_path # lock_PID sets lock_path
 
+	! [[ $action == update* && $debug_opt ]] &&
 	# the 'if' logic is similar to the logic in _signal_job()
 	if ! [[ $is_multi_writer_drive || $type == backup ]]
 	   then lock_PID $wait_opt backup "$extra_lock_msg" &&
@@ -955,7 +956,7 @@ customize_config_variables() {
 	[[ ${custom_config_vars-} ]] || {
 	# set__drive_log_dir__file_for_logging__admin_group__is_regression_test
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
-	declare -g custom_config_var_assignments= # for 'local'
+	declare -g custom_config_var_assignments= # to localize with 'local'
 	for var_name in $custom_config_vars $config_vars
 	    do	is_arg1_in_arg2 $var_name $uncustomizable_config_vars &&
 		   continue
@@ -4187,55 +4188,6 @@ check_snapshot_hard_links() {
 # regression tests for "old" (installed) vs "tst" (workspace) snapback
 # -----------------------------------------------------------------------------
 
-# -d is used to specify a comma-separated list of Drives
-# -r means using data on a Real backup drive
-is_test_cache_stale() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ $1 == -d ]] && { local drives=$2 ; shift 2; } || local drives=
-	[[ $1 == -r ]] && { is_debug_drive= ; shift; } || is_debug_drive=$true
-	assert_not_option -o ${1-}
-	local cached_file=$1
-
-	was_test_cache_stale=$true	# assume cached file is stale
-
-	[[ -s $cached_file ]] || { $xtrace; return 0; }
-
-	for file in $old_cmd $config_file
-	    do	[[ $cached_file -nt $file ]] && continue
-		echo "$file is newer, recomputing ..."
-		$xtrace
-		return 0
-	done
-
-	local drive drive_name drive_dir
-	if [[ $is_debug_drive ]]
-	   then drives=${drive_dir_prefix}Z
-	elif [[ $drives ]]
-	   then _drives=
-		for drive in ${drives//,/ }
-		    do	_set-drive_name $drive
-			_set_drive_dir
-			_drives+="$drive_dir "
-		done
-		drives=${_drives% }
-	   else drives=$($_our_name list-drives -a)
-	fi
-
-	for drive in $drives
-	    do	[[ $cached_file -nt $drive/. ]] && continue
-		echo "$drive is newer, recomputing ..."
-		$xtrace
-		return 0
-	done
-
-	was_test_cache_stale=$false	# we found no problems
-
-	$xtrace
-	return 1
-}
-
-# --------------------------------------------
-
 show_test_header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	header "$* (first number is sorted md5sum, second is unsorted)"
@@ -4268,19 +4220,16 @@ run_debug_cmds() {
 	fi
 
 	$Trace
-	is_test_cache_stale $is_test_cache_stale_opts  $tmp_o &&
-	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
+					 show_test_results $tmp_o
 	$tst_cmd -C -d $args &> $tmp_t ; show_test_results $tmp_t
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
-	[[ $was_test_cache_stale ]] || {
 	echo -e "\nSince different results, we'll regenerate cached data ..."
 	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
 					 show_test_results $tmp_t
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
-	}
-	set +x
 
+	set +x
 	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t | less"
 }
 
@@ -4301,7 +4250,6 @@ regression_test() {
 
 	is_arg1_in_arg2 b $tests && {
 	show_test_header backup all
-	is_test_cache_stale_opts=-r	# we backup all drives ...
 	run_debug_cmds b run-backups all
 	}
 
@@ -4311,10 +4259,8 @@ regression_test() {
 	show_test_header copy to Z
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
-	_set-drive_name $1
 	src_snapshots=$1
 	[[ -d $2 ]] && src_snapshots+=" $2"
-	is_test_cache_stale_opts="-d $drive_name"
 	run_debug_cmds c copy-snapshot $src_snapshots Z
 	}
 
@@ -4324,7 +4270,6 @@ regression_test() {
 	set -- ${drive_dir_prefix}Z/$snapshot_glob
 	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
 	show_test_header prune Z
-	is_test_cache_stale_opts=	# test-prune always leaves same files
 	run_debug_cmds z prune-drive Z
 	}
 
@@ -4332,7 +4277,6 @@ regression_test() {
 
 	is_arg1_in_arg2 p $tests && {
 	show_test_header prune all
-	is_test_cache_stale_opts=-r	# we prune all drives ...
 	run_debug_cmds p prune-drives all
 	}
 
@@ -4340,8 +4284,7 @@ regression_test() {
 
 	is_arg1_in_arg2 u $tests && {
 	local dst=${update_test_dst_drive-}
-	[[ $dst ]] ||
-	   abort "$config_file needs update_test_dst_drive for 'u'"
+	[[ $dst ]] || abort "$config_file needs update_test_dst_drive for 'u'"
 	show_test_header update $dst
 
 	_set-drive_name $dst
@@ -4349,7 +4292,6 @@ regression_test() {
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
 
-	is_test_cache_stale_opts=-r	# looks on all drives for fastest src
 	run_debug_cmds u update-drives $dst
 
 	[[ ${killed_dst-} ]] &&
@@ -4679,7 +4621,8 @@ case $action in
 	;;
 
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
-   ( r*t* ) undo_action_abbrev regression-test; $Trace
+   ( r*t* ) undo_action_abbrev regression-test
+	# $Trace
 	regression_test "$@"
 	;;
 
