@@ -136,15 +136,15 @@ is_cron=$false   cron_opt=
 IfRun= Trace=    debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
 while getopts "C cnvqr: dtT: hk"  arg
-    do	our_opts+=" -$arg ${OPTARG-}"
+    do	our_opts+="-$arg ${OPTARG-} "
 	case $arg in
 	   ( C ) is_cron=$true	cron_opt=-C ;;
 
-	   ( c ) our_rsync_opts+=" --checksum"	;;
-	   ( n ) our_rsync_opts+=" --verbose --dry-run" ;;
-	   ( v ) our_rsync_opts+=" --verbose"	;;
-	   ( q ) our_rsync_opts+=" --quiet"	;; # cancels --verbose
-	   ( r ) our_rsync_opts+=" $OPTARG"	;;
+	   ( c ) our_rsync_opts+="--checksum "	;;
+	   ( n ) our_rsync_opts+="--verbose --dry-run " ;;
+	   ( v ) our_rsync_opts+="--verbose "	;;
+	   ( q ) our_rsync_opts+="--quiet "	;; # cancels --verbose
+	   ( r ) our_rsync_opts+="$OPTARG "	;;
 
 	   ( d ) IfRun="echo -e" debug_opt=-d ;; # put $IfRun b4 'active' cmds
 	   ( t ) Trace="set -x"  trace_opt=-t ;;
@@ -194,7 +194,7 @@ head -n1 $config_file_sample | fgrep -q -x "# version=$version" ||
 # touched when prune ends; its time is compared to files in $config_dir/
 readonly pruned_timestamp=.pruned.ts
 
-readonly our_opts=${our_opts# }
+readonly our_opts=${our_opts% }
 # need to fork and exec ourselves for session control with 'setsid'
 readonly    run_backup_exe="$our_path $our_opts run-backup"
 readonly   prune_drive_exe="$our_path $our_opts prune-drive"
@@ -367,7 +367,7 @@ lock_PID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
-	while [[ $1 == -* ]] ; do lock_opts+=" $1"; shift; done
+	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
 	local type=$1 lock_holder_action=$2
 
 	is_arg1_in_arg2 $type $writer_types ||
@@ -645,7 +645,7 @@ set_lock_PGIDs() {
 	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	eval "set -- $lock_dir/$type-${names_glob:-*}.pid"
 	local lock locks=
-	for lock; do [[ -s $lock ]] && locks+=" $lock"; done
+	for lock; do [[ -s $lock ]] && locks+="$lock "; done
 	set -- $locks
 	[[ $# != 0 ]] || return 1
 
@@ -667,7 +667,7 @@ ps_locks() {
 	local ps_opts=
 	# $1 type abbrevs are (a)ll, (b)ackup, (c)opy, (p)rune: so not 'ps' opt
 	while [[ ${1-} == -* || ${1-} == [^abcp] || $# -ge 3 ]]
-	   do ps_opts+=" $1"; shift; done
+	   do ps_opts+="$1 "; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
 	set_lock_paths "$@"
@@ -2085,8 +2085,8 @@ declare -A drive_name2backup_type
 set_backup_type() {
 	local drive_name=$1	  # fastest if it's a drive_name not drive_dir
 
-	backup_type=${drive_name2backup_type[$drive_name]-} # cached?
-	[[ $backup_type ]] && return
+	backup_type=${drive_name2backup_type[$drive_name]-}
+	[[ $backup_type ]] && return	# was it in the cache?
 
 	[[   ${custom_config_var_assignments-} ]] && eval \
 	local $custom_config_var_assignments # don't trash caller's values
@@ -2290,6 +2290,7 @@ sorted_useful_srcs() {
 	fi
 
 	set_backup_type $drive_name
+
 	dst_backup_type=$backup_type
 	local drive_dirs=$(
 		set -- $(
@@ -2305,6 +2306,8 @@ sorted_useful_srcs() {
 
 	period=$backup_period
 	min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
+	[[ $min_snapshot_glob ]] ||
+	    abort "backup_period2minimal_snapshot_glob is broken"
 
 	set -f
 	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
@@ -2325,7 +2328,7 @@ sorted_useful_srcs() {
 		      echo $dir/$max_snapshot_glob # token to terminate loop
 		restore_tracing
 	done | tr ' ' '\n' |
-	sort --field-separator=/ $sort_key_args
+	sort --field-separator=/ $sort_key_args # > /dev/null; abort "test"
 }
 
 # -----------------------------------------------------------------------------
@@ -2397,7 +2400,7 @@ update_drive() {
 		   else [[ $prev_date_time ]] ||
 			prev_date_time=$date_time
 			[[ -d $src_snapshot ]] &&
-			src_snapshots+=" $src_snapshot"
+			src_snapshots+=" $src_snapshot" # put SPACE in front
 			continue
 		fi
 
@@ -2465,9 +2468,9 @@ set_command_line_drive_dirs() {
 		suspend_tracing
 		set -- $drive_dir/*
 		restore_tracing
-		[[ $# != 0 ]] && drive_dirs+=" $drive_dir"
+		[[ $# != 0 ]] && drive_dirs+="$drive_dir "
 	done
-	command_line_drive_dirs=${drive_dirs# }
+	command_line_drive_dirs=${drive_dirs% }
 }
 
 # ---------------------------------
@@ -2482,9 +2485,9 @@ set_command_line_drive_names() {
 		suspend_tracing
 		set -- $drive_dir/*
 		restore_tracing
-		[[ $# != 0 ]] && drive_names+=" $drive_name"
+		[[ $# != 0 ]] && drive_names+="$drive_name "
 	done
-	command_line_drive_names=${drive_names# }
+	command_line_drive_names=${drive_names% }
 }
 
 # ---------------------------------
@@ -2502,7 +2505,7 @@ set_command_line_drive_names() {
 create_jobs() {
 	local type=$1; shift
 	local opts= are_recursing=$false
-	while [[ ${1-} == -[^r]* ]] ; do opts+=" $1"; shift; done
+	while [[ ${1-} == -[^r]* ]] ; do opts+="$1 "; shift; done
 	[[ ${1-} == -r ]] && { are_recursing=$true; shift; }
 
 	if [[ $# == 0 ]]
@@ -2576,9 +2579,9 @@ set_stats_format() {
 	for drive_dir in $drive_dirs
 	    do	_set-drive_name $drive_dir
 		format_width=${#drive_name}+5
-		format+=" %-${format_width}s"
+		format+="%-${format_width}s "
 	done
-	stats_format=${format# }
+	stats_format=${format% }
 	TraceV 1 stats_format
 	$xtrace
 }
@@ -2606,8 +2609,8 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 			hour_max=$hours
 		   else hour_avg= hour_max=
 		fi
-		hour_avgs+=" $name=$hour_avg"
-		hour_maxs+=" $name=$hour_max"
+		hour_avgs+="$name=$hour_avg "
+		hour_maxs+="$name=$hour_max "
 
 	done
 
@@ -2643,7 +2646,7 @@ set_drive_usage() {
 		   else percent=$percent%$type
 		fi
 		_set-drive_name $drive_dir
-		percents+=" $drive_name=$percent"
+		percents+="$drive_name=$percent "
 	done
 	printf -v drive_usage "$stats_format" $percents
 }
@@ -2685,7 +2688,7 @@ _recalculate_stats_vars() {
 			   sed "s/$ending_RE$//" | uniq)
 		restore_tracing
 
-		nums+=" $name=$#"
+		nums+="$name=$# "
 
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
@@ -2702,8 +2705,8 @@ _recalculate_stats_vars() {
 			esac
 			new=$warning_string
 		fi
-		oldies+=" $name=$old"
-		newies+=" $name=$new"
+		oldies+="$name=$old "
+		newies+="$name=$new "
 	done
 	cd $cwd || abort "cd $cwd"
 
@@ -2801,7 +2804,7 @@ run_lsblk() {
 	local dir devices=
 	for dir in $drive_dirs
 	    do	set_FS_device___from_path $dir &&
-		devices+=" $FS_device"
+		devices+="$FS_device "
 	done
 
 	echo
@@ -2893,7 +2896,7 @@ watch() {
 		abort "exec failed"
 	fi
 
-	local drive_dirs= do_tput=$true show_all=$false
+	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
@@ -2901,13 +2904,13 @@ watch() {
 	set -- $(list_drive_dirs -a)
 	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
 	$Trace
-	local all_drive_dirs=$*
+	local all_drive_dirs=$* drive_dirs=
 	if [[ $names ]]
 	   then local name_list=
 		for name in ${names//,/ }
 		    do	_set-drive_name $name
 			_set_drive_dir
-			drive_dirs+=" $drive_dir"
+			drive_dirs+="$drive_dir "
 			name_list=$name_list,$drive_name
 		done
 		names=${name_list#,}
@@ -3664,8 +3667,8 @@ mkfs_backup_drive() {
 	fi
 	local name=$drive_name drive_dir
 	_set_drive_dir
-	local _mkfs_cmd_opts=$mkfs_cmd_opts
-	_mkfs_cmd_opts+=" $mkfs_opts"
+	local _mkfs_cmd_opts="$mkfs_cmd_opts "
+	_mkfs_cmd_opts+="$mkfs_opts "
 
 	set_FS_label___from_mount_dir $drive_dir
 
@@ -3737,7 +3740,7 @@ mkfs_backup_drive() {
 
 	set -- $_mkfs_cmd_opts
 	[[ $# != 0 ]] || abort "need to set mkfs_cmd_opts= in $config_file"
-	local cmd=$1; shift; local opts=$*  log_opt=
+	local cmd=$1; shift; local opts="$* "  log_opt=
 	  if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
@@ -3748,10 +3751,10 @@ mkfs_backup_drive() {
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		#
 		# See much-earlier long comment for discussion of block size.
-		[[ $opts == *"-b size="* ]] || opts+=" -b size=4096"
-		[[ $opts == *"-n size="* ]] || opts+=" -n size=4096"
-		[[ $opts == *"-i size="* ]] || opts+=" -i size=512"
-		[[ $opts == *maxpct=*    ]] || opts+=" -i maxpct=0"
+		[[ $opts == *"-b size="* ]] || opts+="-b size=4096 "
+		[[ $opts == *"-n size="* ]] || opts+="-n size=4096 "
+		[[ $opts == *"-i size="* ]] || opts+="-i size=512 "
+		[[ $opts == *maxpct=*    ]] || opts+="-i maxpct=0 "
 		mount_opts="$XFS_mount_options"
 		have-cmd set-FS_external_log	       && # optional
 			 set-FS_external_log $FS_label &&
@@ -3773,13 +3776,13 @@ mkfs_backup_drive() {
 		warn "running mkfs.$FS_type in debug mode ..."
 	fi
 	if [[ $FS_type == ext? ]]
-	   then opts+=" -v"
+	   then opts+="-v "
 		[[ $opts != *-T* ]] && {
-		[[ $opts != *-b* ]]	&& opts+=" -b $block_size"
-		[[ $opts != *-i* ]]	&& opts+=" -i $bytes_per_inode"
-		[[ $opts != *-I* ]]	&& opts+=" -I 128"	; }
-		[[ $opts != *-m* ]]	&& opts+=" -m .1"
-		[[ $opts != *extent* ]] && opts+=" $ext4_extent_opt"
+		[[ $opts != *-b* ]]	&& opts+="-b $block_size "
+		[[ $opts != *-i* ]]	&& opts+="-i $bytes_per_inode "
+		[[ $opts != *-I* ]]	&& opts+="-I 128 "	; }
+		[[ $opts != *-m* ]]	&& opts+="-m .1 "
+		[[ $opts != *extent* ]] && opts+="$ext4_extent_opt "
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$extN_mount_options"
 		have-cmd set-FS_external_log		&& # optional
@@ -3885,7 +3888,7 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 
 copy_backup_drive() {
 	action_opts=
-	while [[ ${1-} == -* ]] ; do action_opts+=" $1"; shift; done
+	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
 	[[ $# != 0 ]] ||
 	abort "[-f] [-D] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
 	local src=$1 dst_name=$2 dst_device=${3-}
@@ -4091,7 +4094,7 @@ _copy_extN_backup_drive() {
 # finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
 finish_copy_backup_drive() {
 	action_opts=
-	while [[ ${1-} == -* ]] ; do action_opts+=" $1"; shift; done
+	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
 	local cmd=$(echo "$Usage" |
 		    grep copy-drive | sed "s/^ */$_our_name -d /; s/:.*//")
 	[[ $# == 4 ]] || abort "to see args, run: $cmd"
@@ -4169,7 +4172,7 @@ check_snapshot_hard_links() {
 			break
 		done
 		[[ $found_good_link ]] && partials= && shift && continue
-		[[ $1 == *.partial  ]] && partials+=" $1" &&
+		[[ $1 == *.partial  ]] && partials+="$1 " &&
 						       shift && continue
 
 		$IfRun mkdir -p .rm
@@ -4187,6 +4190,7 @@ check_snapshot_hard_links() {
 # -d is used to specify a comma-separated list of Drives
 # -r means using data on a Real backup drive
 is_test_cache_stale() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -d ]] && { local drives=$2 ; shift 2; } || local drives=
 	[[ $1 == -r ]] && { is_debug_drive= ; shift; } || is_debug_drive=$true
 	assert_not_option -o ${1-}
@@ -4194,11 +4198,12 @@ is_test_cache_stale() {
 
 	was_test_cache_stale=$true	# assume cached file is stale
 
-	[[ -s $cached_file ]] || return 0
+	[[ -s $cached_file ]] || { $xtrace; return 0; }
 
 	for file in $old_cmd $config_file
 	    do	[[ $cached_file -nt $file ]] && continue
 		echo "$file is newer, recomputing ..."
+		$xtrace
 		return 0
 	done
 
@@ -4210,35 +4215,41 @@ is_test_cache_stale() {
 		for drive in ${drives//,/ }
 		    do	_set-drive_name $drive
 			_set_drive_dir
-			_drives+=" $drive_dir"
+			_drives+="$drive_dir "
 		done
-		drives=${_drives# }
+		drives=${_drives% }
 	   else drives=$($_our_name list-drives -a)
 	fi
 
 	for drive in $drives
 	    do	[[ $cached_file -nt $drive/. ]] && continue
 		echo "$drive is newer, recomputing ..."
+		$xtrace
 		return 0
 	done
 
 	was_test_cache_stale=$false	# we found no problems
 
+	$xtrace
 	return 1
 }
 
 # --------------------------------------------
 
 show_test_header() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	header "$* (first number is sorted md5sum, second is unsorted)"
+	$xtrace
 }
 
 # ---------------------------------
 
 show_test_results() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local output_file=$1
 
 	echo "$(sort $output_file | md5sum) $(md5sum $output_file)"
+	$xtrace
 }
 
 # --------------------------------------------
@@ -4256,17 +4267,19 @@ run_debug_cmds() {
 		return
 	fi
 
+	$Trace
 	is_test_cache_stale $is_test_cache_stale_opts  $tmp_o &&
 	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
 	$tst_cmd -C -d $args &> $tmp_t ; show_test_results $tmp_t
-	cmp --quiet $tmp_o $tmp_t && { echo "-- same results!"; return; }
+	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	[[ $was_test_cache_stale ]] || {
 	echo -e "\nSince different results, we'll regenerate cached data ..."
 	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
 					 show_test_results $tmp_t
-	cmp --quiet $tmp_o $tmp_t && { echo "-- same results!"; return; }
+	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 	}
+	set +x
 
 	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t | less"
 }
@@ -4299,8 +4312,8 @@ regression_test() {
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	_set-drive_name $1
-	src_snapshots=$1; shift
-	[[ -d $1 ]] && src_snapshots+=" $1"
+	src_snapshots=$1
+	[[ -d $2 ]] && src_snapshots+=" $2"
 	is_test_cache_stale_opts="-d $drive_name"
 	run_debug_cmds c copy-snapshot $src_snapshots Z
 	}
