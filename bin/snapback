@@ -330,6 +330,7 @@ set_lock_paths() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $# == [0-2] ]] ||
 	    abort_function "$*: must be 0-2 args (can use globs)"
+	[[ $1 == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
 	local type_glob=${1:-*} name_glob=${2:-${drive_name:-*}}
 
 	set_glob "$type_glob" && type_glob=$glob
@@ -556,6 +557,33 @@ set_signal_is_kill() {
 
 # ----------------------
 
+function set-lock_PID() {
+	local lock=$1
+
+	lock_PID=
+	[[ -s $lock ]] && set -- $(< $lock) && [[ $# == 1 ]] || return 1
+	lock_PID=$1
+	return 0
+}
+
+# ----------------------
+
+function is-active-lock() {
+	set_lock_paths "$@"
+
+	local lock
+	for lock in $lock_paths
+	    do	set-lock_PID $lock && is_process_alive $lock_PID && return 0
+	done
+	return 1
+}
+
+# ----------------------
+
+have_job() { is-active-lock "$@"; }
+
+# ----------------------
+
 signal_job() {
 	local signal=${1#-}; shift
 	if [[ $# == 1 && $1 == *.pid ]]
@@ -567,16 +595,15 @@ signal_job() {
 		restore_tracing
 	fi
 
-	[[ -s $lock_path ]] || return 1
 	[[ ! $debug_opt ]] &&
-	# use -o because we don't really need to remove a stale lock
+	# use -o, because we don't really need to remove a stale lock
 	sudo-lockpid -o --not-hold $lock_path &> /dev/null && # stale?
 	sudo-lockpid    --release  $lock_path && return 1
 
-	set -- $(< $lock_path) && [[ $# == 1 ]] || return 1
+	set-lock_PID $lock_path || return 1
 	[[ $can_sudo_lockpid || ! -w $lock_path ]] &&
 	   local sudo=sudo || local sudo= # FIXME: remove this if newer sudo
-	$IfRun $sudo kill -s ${signal^^} -$1 || return 1
+	$IfRun $sudo kill -s ${signal^^} -$lock_PID || return 1
 
 	set_signal_is_kill $signal &&	# if terminated job, release its lock
 	sudo-lockpid -o $lock_path &> /dev/null && # avoid race
@@ -683,10 +710,6 @@ ps_locks() {
 	$xtrace
 	return $status
 }
-
-# ---------------------------------
-
-have_job() { ps_locks -R "$@" > /dev/null; }
 
 ##############################################################################
 # miscellaneous
