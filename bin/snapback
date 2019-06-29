@@ -99,9 +99,9 @@ Usage: $our_name [options] action [options] [args]
     # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
     # a glob can be a comma-separated list, a shell glob pattern, or 'all'.
     kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
-    continue       job-type-glob  name-glob: as above, but -CONT signal
-    suspend        job-type-glob  name-glob: as above, but -STOP signal
-    stop           job-type-glob  name-glob: as above, but -STOP signal
+    continue	   job-type-glob  name-glob: as above, but -CONT signal
+    suspend	   job-type-glob  name-glob: as above, but -STOP signal
+    stop	   job-type-glob  name-glob: as above, but -STOP signal
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
@@ -249,54 +249,48 @@ assert_drive_dir_writable() {
 readonly lock_dir=/var/lock/$our_name
 declare -x -r LOCKPID_DIR=$lock_dir
 
-set_locks() {
-	local type_regex=$1; shift
-	local PIDs=$*
+# use this instead of 'lockpid' when want/need to replace stale lock
+function sudo-lockpid() {
+	if [[ $1 == -o ]]
+	   then local is_optional=$true; shift
+	   else local is_optional=$false
+	fi
 
-	[[ $PIDs ]] || return 1
+	# we're used when locks maybe stale (sudo-lockpid $lock &> /dev/null);
+	# but they usuaully aren't, so "$IfRun lockpid" would only show release
+	[[ $debug_opt ]] && return 0
 
-	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
-	local cwd=$PWD
-	cd $lock_dir || abort "cd $lock_dir"
-	local fgrep_opts=$(echo " $PIDs" | sed 's/ / -e /g')
-	set -- $(fgrep -l -w $fgrep_opts *.pid | egrep "$type_regex" |
-		 sort | sed 's/\.pid//g')
-	locks=$*
-	cd $cwd
+	local  lock=${!#}
+	[[ -w $lock || ( ! -e $lock && -w $lock_dir ) ]] &&
+	   { lockpid "$@"; return; }
 
-	[[ $locks ]]
-}
+	is_set $can_sudo_lockpid ||
+	if sudo -n lockpid -h &> /dev/null
+	   then can_sudo_lockpid=$true
+	   else can_sudo_lockpid=$false
+	fi
 
-# -----------------------------------------------------------------------------
-
-set_sudo_lockpid() {
-
-	[[ ${sudo_lockpid-} ]] && return
-
-	if [[ $action =~ (kill|suspend|continue)-* ]]
+	if [[ $action =~ (kill|continue|suspend) ]]
 	   then local is_signaling=$true
 	   else local is_signaling=$false
 	fi
-	if [[ $is_signaling ]] || sudo -n lockpid -h &> /dev/null
-	   then sudo_lockpid="sudo lockpid --pid=$BASHPID"
-	   else sudo_lockpid=lockpid  # only reclaim locks that user can write
+	if [[ $is_signaling || $can_sudo_lockpid || ! $is_optional ]]
+	   then local sudo_lockpid="sudo lockpid --pid=$BASHPID"
+	   else local sudo_lockpid=lockpid # only reclaim writable locks
 	fi
-	[[ $is_signaling ]] && sudo_lockpid="$IfRun $sudo_lockpid"
-	readonly sudo_lockpid
+	$sudo_lockpid "$@"
 }
 
 # --------------------------------------------
 
 rm_stale_locks() {
 
-	set_sudo_lockpid
-
 	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
-		$sudo_lockpid    $lock_path &> /dev/null &&
-		$sudo_lockpid -r $lock_path
+		sudo-lockpid -o $lock_path &> /dev/null &&
+		sudo-lockpid -r $lock_path
 	done
 
 	return 0
@@ -564,7 +558,7 @@ set_signal_is_kill() {
 
 signal_job() {
 	local signal=${1#-}; shift
-	if [[ $# == 1 && $1 == /* ]]
+	if [[ $# == 1 && $1 == *.pid ]]
 	   then lock_path=$1		# global variable, caller can use it
 	   else local job_type=$1 drive_name=${2:-$drive_name}
 		suspend_tracing
@@ -574,17 +568,19 @@ signal_job() {
 	fi
 
 	[[ -s $lock_path ]] || return 1
-	set_sudo_lockpid
 	[[ ! $debug_opt ]] &&
-	$sudo_lockpid --not-hold $lock_path &> /dev/null && # missing or stale?
-	$sudo_lockpid --release  $lock_path && return 1
+	# use -o because we don't really need to remove a stale lock
+	sudo-lockpid -o --not-hold $lock_path &> /dev/null && # stale?
+	sudo-lockpid    --release  $lock_path && return 1
 
 	set -- $(< $lock_path) && [[ $# == 1 ]] || return 1
-	$IfRun sudo kill -s ${signal^^} -$1 || return 1
+	[[ $can_sudo_lockpid || ! -w $lock_path ]] &&
+	   local sudo=sudo || local sudo= # FIXME: remove this if newer sudo
+	$IfRun $sudo kill -s ${signal^^} -$1 || return 1
 
 	set_signal_is_kill $signal &&	# if terminated job, release its lock
-	$sudo_lockpid    $lock_path &> /dev/null && # avoid race
-	$sudo_lockpid -r $lock_path
+	sudo-lockpid -o $lock_path &> /dev/null && # avoid race
+	sudo-lockpid -r $lock_path
 
 	return 0
 }
@@ -2361,16 +2357,14 @@ remove_empty_partial_snapshots() {
 
 cleanup_after_updates() {
 
-	set_sudo_lockpid
-
 	local drive_dir drive_name	# protect caller's values
 	for drive_dir in $(list_drive_dirs -a)
 	    do	_set-drive_name $drive_dir
 		set_lock_path copy	# update could be running
 		(
-		$sudo_lockpid    $lock_path &> /dev/null &&	  {
+		sudo-lockpid -o $lock_path &> /dev/null &&	  {
 		$IfRun remove_empty_partial_snapshots $drive_dir
-		$sudo_lockpid -r $lock_path			; }
+		sudo-lockpid -r $lock_path			; }
 		) &			# do them in parallel
 	done
 	wait				# 'w' wants us to have finished
@@ -4224,7 +4218,7 @@ chroot-backup() {
 	local chroot_dir=$1
 
 	$Trace
-	[[ -e /proc/mounts ]] && {
+	have-proc && {
 	$IfRun sudo mount -o bind /proc    $chroot_dir/proc
 	$IfRun sudo mount -o bind /dev     $chroot_dir/dev
 	$IfRun sudo mount -o bind /dev/pts $chroot_dir/dev/pts
@@ -4240,7 +4234,7 @@ chroot-backup() {
 	$IfRun sudo chroot $chroot_dir $command
 	$IfRun sudo mount -o remount,nodev,nosuid $(dirname $chroot_dir)
 
-	[[ -e /proc/mounts ]] && {
+	have-proc && {
 	for dir in proc dev/pts dev/shm dev run sys
 	    do	$IfRun sudo umount $chroot_dir/$dir
 	done
@@ -4474,21 +4468,21 @@ case $action in
 	watch "$@"
 	;;
 
-   # kill [-sig] type-glob name-glob: terminate; either arg can be 'all'
+   # kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
    ( kil* | k ) undo_action_abbrev kill
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
 	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
 	kill_job_on_drives ${signal-} "$@"
 	;;
-   # continue    type-glob name-glob: as above, but -CONT signal
+   # continue	   job-type-glob  name-glob: as above, but -CONT signal
    ( con* | c ) undo_action_abbrev continue
 	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
 	kill_job_on_drives -c "$@"
 	;;
-   # suspend     type-glob name-glob: as above, but -STOP signal
-   # stop        type-glob name-glob: as above, but -STOP signal
+   # suspend	   job-type-glob  name-glob: as above, but -STOP signal
+   # stop	   job-type-glob  name-glob: as above, but -STOP signal
    ( sus* | st*p | s ) undo_action_abbrev suspend
 	[[ $# == 2 ]] || abort_with_action_Usage
 	$Trace
