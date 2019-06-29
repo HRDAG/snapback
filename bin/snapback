@@ -115,6 +115,7 @@ Usage: $our_name [options] action [options] [args]
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
     regression-test [tests]: check functionality, see $tmp_dir/?? for results
+    chroot-backup date,time [command]: chroot to snapshot on fastest drive
 
   NOTE: to see what an action would do, use -d option to simulate the action.
 
@@ -4188,8 +4189,6 @@ check_snapshot_hard_links() {
 # regression tests for "old" (installed) vs "tst" (workspace) snapback
 # -----------------------------------------------------------------------------
 
-readonly dynamic_files="/proc/self/fd/[0-2] /dev/tty /proc/self/mounts"
-
 chroot-backup() {
 	local date_time=$1; shift; local command=${*-}
 
@@ -4206,13 +4205,29 @@ chroot-backup() {
 			   set -- $(fastest_snapshots $snapshots) ; }
 	local chroot_dir=$1
 
-	eval "set -- $dynamic_files"
-	$IfRun sudo rsync --archive --relative $* $chroot_dir/ # --verbose
+	[[ -e /proc/mounts ]] && {
+	$IfRun sudo mkdir -p		   $chroot_dir/run
+	$IfRun sudo mount -o bind /proc    $chroot_dir/proc
+	$IfRun sudo mount -o bind /dev     $chroot_dir/dev
+	$IfRun sudo mount -o bind /dev/pts $chroot_dir/dev/pts
+	$IfRun sudo mount -t tmpfs tmpfs   $chroot_dir/dev/shm
+	$IfRun sudo mount -t tmpfs tmpfs   $chroot_dir/run
+	$IfRun sudo mount -t sysfs sys     $chroot_dir/sys
+	true; } ||
+	$IfRun sudo mount -t devfs devfs   $chroot_dir/dev # Darwin/BSD
+
 	[[ $is_regression_test ]] || echo "Have to remount drive, slow ..."
 	$Trace
 	$IfRun sudo mount -o remount,dev,suid	  $(dirname $chroot_dir)
 	$IfRun sudo chroot $chroot_dir $command
 	$IfRun sudo mount -o remount,nodev,nosuid $(dirname $chroot_dir)
+
+	[[ -e /proc/mounts ]] && {
+	for dir in proc dev/pts dev/shm dev run sys
+	    do	$IfRun sudo umount $chroot_dir/$dir
+	done
+	true; } ||
+	$IfRun sudo umount $chroot_dir/dev # Darwin/BSD
 }
 
 # -----------------------------------------------------------------------------
@@ -4649,14 +4664,14 @@ case $action in
 	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
 	;;
 
-   # chroot-backup date,time [command]: chroot to snapshot on fastest drive
-   ( chr* | cb ) undo_action_abbrev chroot-backup
-	chroot-backup "$@"
-	;;
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
    ( r*t* ) undo_action_abbrev regression-test
 	# $Trace
 	regression_test "$@"
+	;;
+   # chroot-backup date,time [command]: chroot to snapshot on fastest drive
+   ( chr* | cb ) undo_action_abbrev chroot-backup
+	chroot-backup "$@"
 	;;
 
    ###########################################################################
