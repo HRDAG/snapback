@@ -387,7 +387,7 @@ lock_PID() {
 	rm $status_file
 
 	if [[ $status == 0 ]]
-	   then [[ $is_regression_test ]] &&
+	   then [[ $is_regression_test && $lockpid_output ]] &&
 		echo "$lockpid_output" | sed "s@$our_PID@<a_PID>@"
 		$xtrace
 		return 0
@@ -1123,6 +1123,9 @@ function set_priority() {
 
 	local CPU_priority_cmd=${level2CPU_priority_cmd[$priority]}
 	local  IO_priority_cmd=${level2IO_priority_cmd[$priority]}
+
+	# test-prune is very noisy in here
+	[[ $action == prune-drive* && $drive_name == Z ]] && return 0
 
 	{
 	$IfRun $CPU_priority_cmd $PGID && { [[ ! $IO_priority_cmd ]] ||
