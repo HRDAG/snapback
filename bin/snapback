@@ -1969,7 +1969,7 @@ run_rsync() {
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
 	[[ ! $is_copy_snapshot ]] &&
-	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
+	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*/*
 					   --exclude-from=$exclude_file"
 	SECONDS=0			# time the rsync
 	$Trace
@@ -2223,7 +2223,7 @@ declare -A drive_name2do_suspend
 
 load__drive_name2do_suspend() {
 
-	[[    $custom_config_var_assignments ]] && eval \
+	[[   ${custom_config_var_assignments-} ]] && eval \
 	local $custom_config_var_assignments # for customize_config_variables
 
 	local drive drive_name
@@ -2542,7 +2542,7 @@ create_jobs() {
 		exit $?
 	fi
 
-	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
+	[[ $UID == 0 || $* == Z ]] || $IfRun abort "run with sudo"
 
 	[[ ! $debug_opt && $* != [Zz] && -t 1 ]] && echo -e "
 	NOTE: your $action command will run as a separate, disconnected job;
@@ -4188,6 +4188,35 @@ check_snapshot_hard_links() {
 # regression tests for "old" (installed) vs "tst" (workspace) snapback
 # -----------------------------------------------------------------------------
 
+readonly dynamic_files="/proc/self/fd/[0-2] /dev/tty /proc/self/mounts"
+
+chroot-backup() {
+	local date_time=$1; shift; local command=${*-}
+
+	local drive_dir snapshots=
+	[[ $date_time == /* ]] && snapshots=$date_time ||
+	for drive_dir in $(list_drive_dirs -a)
+	    do	local  snapshot=$drive_dir/$date_time
+		[[ -d $snapshot ]] && snapshots+="$snapshot "
+	done
+	[[ $snapshots ]] || abort "can't find snapshot matching $date_time"
+
+	set -- $snapshots
+	[[ $# == 1 ]] || { load__drive_name2do_suspend
+			   set -- $(fastest_snapshots $snapshots) ; }
+	local chroot_dir=$1
+
+	eval "set -- $dynamic_files"
+	$IfRun sudo rsync --archive --relative $* $chroot_dir/ # --verbose
+	[[ $is_regression_test ]] || echo "Have to remount drive, slow ..."
+	$Trace
+	$IfRun sudo mount -o remount,dev,suid	  $(dirname $chroot_dir)
+	$IfRun sudo chroot $chroot_dir $command
+	$IfRun sudo mount -o remount,nodev,nosuid $(dirname $chroot_dir)
+}
+
+# -----------------------------------------------------------------------------
+
 show_test_header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	header "$* (first number is sorted md5sum, second is unsorted)"
@@ -4620,6 +4649,10 @@ case $action in
 	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
 	;;
 
+   # chroot-backup date,time [command]: chroot to snapshot on fastest drive
+   ( chr* | cb ) undo_action_abbrev chroot-backup
+	chroot-backup "$@"
+	;;
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
    ( r*t* ) undo_action_abbrev regression-test
 	# $Trace
