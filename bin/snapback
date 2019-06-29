@@ -2273,6 +2273,16 @@ fastest_snapshots() {
 
 # --------------------------------------------
 
+set-excluded_drive_dirs_regex() {
+
+	if [[ $debug_opt  &&  ${flakey_drive_names_regex-} ]]
+	   then excluded_drive_dirs_regex=$flakey_drive_names_regex
+	   else excluded_drive_dirs_regex=NoThInG
+	fi
+}
+
+# --------------------------------------------
+
 sorted_useful_srcs() {
 	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
 	assert_not_option ${1-}
@@ -2292,12 +2302,14 @@ sorted_useful_srcs() {
 	fi
 
 	set_backup_type $drive_name
+	set-excluded_drive_dirs_regex
 
 	dst_backup_type=$backup_type
 	local drive_dirs=$(
 		set -- $(
 		# -a so include drives excluded from backups
 		set -- $(list_drive_dirs -a | fgrep -v -x $drive_dir |
+				egrep -v "\b$excluded_drive_dirs_regex$" |
 				egrep "$drive_dir_prefix${src_names_regex-.}")
 		for drive_dir
 		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
@@ -2375,6 +2387,11 @@ wait_for_full_snapshots() {
 
 # ---------------------------------
 
+set-srcs_dst_file() {
+
+	srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
+}
+
 update_drive() {
 	set-drive_name ${!#}		# sorted_useful_srcs handles options
 	set_drive_dir $drive_name
@@ -2388,7 +2405,7 @@ update_drive() {
 	set_num_full_link_dests
 	wait_for_full_snapshots $num_full_link_dests
 
-	local srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
+	set-srcs_dst_file
 	local date_time prev_date_time=
 	local src_snapshot src_snapshots=
 	sorted_useful_srcs "$@" |	# this checks/sets drive_* globals
@@ -2432,8 +2449,8 @@ update_drive() {
 		[[ $# != 0 ]] || continue # was it pruned away?
 		set -- $(fastest_snapshots ${args%$dst_snapshot}) # pass srcs
 		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
-	done < $srcs_dst_file
-	rm     $srcs_dst_file
+	done   <  $srcs_dst_file
+	$IfRun rm $srcs_dst_file
 
 	remove_empty_partial_snapshots $drive_dir
 
@@ -2513,11 +2530,9 @@ create_jobs() {
 	if [[ $# == 0 ]]
 	   then set -- ${drive_name-}
 	elif [[ $1 == all || $1 == '*' ]]
-	   then if [[ $debug_opt && ${HOSTNAME-} == eleanor ]]
-		   then local excluded_regex='\bG$' # G sometimes hangs
-		   else local excluded_regex=NoThInG
-		fi
-		set -- $(list_drive_dirs | egrep -v "$excluded_regex")
+	   then set-excluded_drive_dirs_regex
+		set -- $(list_drive_dirs |
+			     egrep -v "\b$excluded_drive_dirs_regex$")
 	   else set_command_line_drive_names "$@"
 		set -- $command_line_drive_names
 	fi
@@ -4205,8 +4220,8 @@ chroot-backup() {
 			   set -- $(fastest_snapshots $snapshots) ; }
 	local chroot_dir=$1
 
+	$Trace
 	[[ -e /proc/mounts ]] && {
-	$IfRun sudo mkdir -p		   $chroot_dir/run
 	$IfRun sudo mount -o bind /proc    $chroot_dir/proc
 	$IfRun sudo mount -o bind /dev     $chroot_dir/dev
 	$IfRun sudo mount -o bind /dev/pts $chroot_dir/dev/pts
@@ -4244,6 +4259,7 @@ show_test_results() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local output_file=$1
 
+	[[ -s $output_file ]] &&
 	echo "$(sort $output_file | md5sum) $(md5sum $output_file)"
 	$xtrace
 }
@@ -4266,15 +4282,19 @@ run_debug_cmds() {
 	$Trace
 					 show_test_results $tmp_o
 	$tst_cmd -C -d $args &> $tmp_t ; show_test_results $tmp_t
+	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	echo -e "\nSince different results, we'll regenerate cached data ..."
 	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
 					 show_test_results $tmp_t
+	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	set +x
 	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t | less"
+	[[ $test == u ]] &&
+	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
 }
 
 # ---------------------------------
