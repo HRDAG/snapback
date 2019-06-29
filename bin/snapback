@@ -584,6 +584,21 @@ have_job() { is-active-lock "$@"; }
 
 # ----------------------
 
+function sudo-kill() {
+	local PID=${!#}
+
+	$IfRun kill "$@" 2> /dev/null && return 0 # kill is built-in, so cheap
+	is_process_alive ${PID#-} || return 1
+	local  kill_msg=$(kill "$@" 2>&1)
+	if [[ $kill_msg == *"Operation not permitted"* ]]
+	   then sudo kill "$@"
+	   else echo "$kill_msg" >&2
+		return 1
+	fi
+}
+
+# ----------------------
+
 signal_job() {
 	local signal=${1#-}; shift
 	if [[ $# == 1 && $1 == *.pid ]]
@@ -601,9 +616,7 @@ signal_job() {
 	sudo-lockpid    --release  $lock_path && return 1
 
 	set-lock_PID $lock_path || return 1
-	[[ $can_sudo_lockpid || ! -w $lock_path ]] &&
-	   local sudo=sudo || local sudo= # FIXME: remove this if newer sudo
-	$IfRun $sudo kill -s ${signal^^} -$lock_PID || return 1
+	sudo-kill -s ${signal^^} -$lock_PID || return 1
 
 	set_signal_is_kill $signal &&	# if terminated job, release its lock
 	sudo-lockpid -o $lock_path &> /dev/null && # avoid race
