@@ -1284,9 +1284,11 @@ function _should_run_prune {
 
 # -----------------------------------------------------------------------------
 
-function sudo-unless-PWD-writable() {
+function sudo-unless-dir-writable() {
+	local path=${!#}
 
-	if [[ -w . ]]
+	[[ $path == */* ]] && local dir=${path%/*} || local dir=.
+	if [[ -w $dir ]]
 	   then      "$@"
 	   else sudo "$@"
 	fi
@@ -1314,7 +1316,7 @@ _rm_pruned_snapshots() {
 	fi
 
 	if [[ $is_update && $debug_opt ]]
-	   then local sudo=sudo-unless-PWD-writable
+	   then local sudo=sudo-unless-dir-writable
 	   else local sudo=
 	fi
 
@@ -2457,7 +2459,7 @@ update_drive() {
 	wait_for_full_snapshots $num_full_link_dests
 
 	if [[ $debug_opt ]]
-	   then local sudo=sudo-unless-PWD-writable
+	   then local sudo=sudo-unless-dir-writable
 	   else local sudo=
 	fi
 
