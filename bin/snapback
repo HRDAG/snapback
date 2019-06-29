@@ -2577,6 +2577,7 @@ create_jobs() {
 	[[ ! $debug_opt ]] &&
 	set -- $(echo $* | tr ' ' '\n' | tac) # 'ps' shows newest process first
 
+	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
 	   ( backup ) function=run_backup     exe=$run_backup_exe    ;;
 	   ( copy   ) function=copy_snapshot  exe=$copy_snapshot_exe ;;
@@ -4306,21 +4307,24 @@ run_debug_cmds() {
 	local tmp_o=$tmp_dir/o$test	# holds output from "old" cmd
 	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
 
+	local old_cmd_="$old_cmd -C -d $trace_opt $args"
+	local tst_cmd_="$tst_cmd -C -d $trace_opt $args"
+
 	if [[ $debug_opt ]]
-	   then echo "$old_cmd -C -d $args &> $tmp_o"
-		echo "$tst_cmd -C -d $args &> $tmp_t"
+	   then echo "$old_cmd_ &> $tmp_o"
+		echo "$tst_cmd_ &> $tmp_t"
 		return
 	fi
 
 	$Trace
-					 show_test_results $tmp_o
-	$tst_cmd -C -d $args &> $tmp_t ; show_test_results $tmp_t
+			      show_test_results $tmp_o
+	$tst_cmd_ &> $tmp_t ; show_test_results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	echo -e "\nSince different results, we'll regenerate cached data ..."
-	$old_cmd -C -d $args &> $tmp_o ; show_test_results $tmp_o
-					 show_test_results $tmp_t
+	$old_cmd_ &> $tmp_o ; show_test_results $tmp_o
+			      show_test_results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
