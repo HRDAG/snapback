@@ -176,6 +176,7 @@ need_cmds lockpid			# from libsnap repo
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# just in case we need them
 shopt -s nullglob			# so don't need to test for no matches
+# shopt -s globasciiranges		# so weird locales don't mess us up
 
 umask 02			  # log and lock dirs are setgid sudo/whatever
 
@@ -820,6 +821,10 @@ create__lock_dir__log_dirs() {
 	if [[ ! -d $drive_log_dir ]]
 	   then set_admin_group && group=$admin_group && group=:$group
 		sudo mkdir -p -m g+w,o-w $drive_log_dir
+		[[ $admin_group ]] &&
+		   chgrp $admin_group $drive_dir/. &&
+		   # this won't make non-empty snapshots deletable by group
+		   chmod g+w	      $drive_dir/. # for 'u' regression test
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
 		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
@@ -1279,6 +1284,16 @@ function _should_run_prune {
 
 # -----------------------------------------------------------------------------
 
+function sudo-unless-PWD-writable() {
+
+	if [[ -w . ]]
+	   then      "$@"
+	   else sudo "$@"
+	fi
+}
+
+# ---------------------------------
+
 _rm_pruned_snapshots() {
 	local snapshots_file=$1
 
@@ -1298,7 +1313,10 @@ _rm_pruned_snapshots() {
 		log "pruning $# snapshots: will rename to *.rm for deletion"
 	fi
 
-	[[ $is_update && $debug_opt ]] && local sudo=sudo || local sudo=
+	if [[ $is_update && $debug_opt ]]
+	   then local sudo=sudo-unless-PWD-writable
+	   else local sudo=
+	fi
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
@@ -2438,6 +2456,13 @@ update_drive() {
 	set_num_full_link_dests
 	wait_for_full_snapshots $num_full_link_dests
 
+	if [[ $debug_opt ]]
+	   then local sudo=sudo-unless-PWD-writable
+	   else local sudo=
+	fi
+
+	shopt -u lastpipe
+
 	set-srcs_dst_file
 	local date_time prev_date_time=
 	local src_snapshot src_snapshots=
@@ -2464,7 +2489,7 @@ update_drive() {
 
 		local    dst_snapshot=${!#}
 		[[ ! -d $dst_snapshot.links ]] &&
-		sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 # to prune
+		$sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 #to prune
 		echo "$@"
 	done > $srcs_dst_file
 	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }

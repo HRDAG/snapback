@@ -5,5 +5,5 @@
 .#*
 
 # Scott's junk
-bin/snapback-*
+bin/snapback[-.]*
 doc/w-*.txt
