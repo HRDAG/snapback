@@ -2463,8 +2463,6 @@ update_drive() {
 	   else local sudo=
 	fi
 
-	shopt -u lastpipe
-
 	set-srcs_dst_file
 	local date_time prev_date_time=
 	local src_snapshot src_snapshots=
