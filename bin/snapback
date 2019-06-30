@@ -2796,10 +2796,11 @@ _recalculate_stats_vars() {
 			    ( 1  ) set_warning_string warning $new ;;
 			    ( *  ) set_warning_string error   $new ;;
 			esac
-			if [[ $warning_string ]]
-			   then (( ${#new} <   10 )) && warning_string+="_"
-				(( ${#new} <  100 )) && warning_string+="_"
-				(( ${#new} < 1000 )) && warning_string+="_"
+			# "printf %7s" doesn't handle terminfo escape sequence
+			if [[ $warning_string && $new ]] # NONE fills the slot
+			   then (( ${#new} <= 1 )) && warning_string+='_'
+				(( ${#new} <= 2 )) && warning_string+='_'
+				(( ${#new} <= 3 )) && warning_string+='_'
 			fi
 			new=${warning_string:-$new}
 		fi
