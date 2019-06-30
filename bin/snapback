@@ -2826,6 +2826,7 @@ setup_snapshot_stats() {
 
 	[[ $suffix ]] &&
 	   local suffix_name=${suffix/\*/STAR} || local suffix_name=NONE
+	suffix_name=${suffix_name#/}
 	suffix_name=${suffix_name#.} ; local \
 	 cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type.txt"
 	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
@@ -3175,7 +3176,7 @@ watch() {
 
 	# --------------------------------------------
 
-	local -i rows_used=5
+	local -i rows_used=6
 	(( $rows >= ($min_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
 	setup_snapshot_stats .rm
@@ -3185,6 +3186,8 @@ watch() {
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
 	setup_snapshot_stats .partial
 	echo "Days from most recent snapshot.partial:  $stats_newest_age"
+	setup_snapshot_stats /.keep
+	echo "Numbr snaps never pruned (hold /.keep):  $stats_number"
 	let rows-=$rows_used
 	}
 
