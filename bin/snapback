@@ -2846,7 +2846,7 @@ setup_snapshot_stats() {
 	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
 
 	[[ $suffix == .rm ]] && suffix=*$suffix
-	[[ $ignored_date_ending_type == NONE ]] &&
+	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
 	   local dates=$true || local dates=$false
 
 	local     number_cache_file=$watch_cache_dir/number/$cache_name
@@ -3200,8 +3200,8 @@ watch() {
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
 	setup_snapshot_stats .partial
 	echo "Days from most recent snapshot.partial:  $stats_newest_age"
-	setup_snapshot_stats /.keep
-	echo "Numbr snaps never pruned (hold /.keep):  $stats_number"
+	setup_snapshot_stats /.keep	# doesn't set oldest/newest_age
+	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
 	let rows-=$rows_used
 	}
 

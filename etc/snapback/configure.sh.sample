@@ -254,7 +254,8 @@ drv_name2pruning_span_scale_factor[Z]=1	  # regression test of pruning uses Z
 readonly old_cmd=/usr/local/bin/$our_name # installed version
 readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 
-# The regression-test action won't test update-drives unless this is defined:
+# The regression-test action won't test update-drives unless this is defined;
+# have to specify a drive that has all the snapshots containing /.keep .
 # readonly update_test_dst_drive=
 
 # -----------------------------------------------------------------------------
