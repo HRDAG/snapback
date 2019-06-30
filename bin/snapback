@@ -2774,13 +2774,19 @@ _recalculate_stats_vars() {
 		   else local old=		new=
 		fi
 		if [[ ! $suffix ]]
-		   then case $new in
+		   then warning_string=
+			case $new in
 			    ( '' ) set_warning_string error   NONE ;;
-			    ( 0  )     warning_string=$new	   ;;
+			    ( 0  ) true				   ;;
 			    ( 1  ) set_warning_string warning $new ;;
 			    ( *  ) set_warning_string error   $new ;;
 			esac
-			new=$warning_string
+			if [[ $warning_string ]]
+			   then (( ${#new} <   10 )) && warning_string+="_"
+				(( ${#new} <  100 )) && warning_string+="_"
+				(( ${#new} < 1000 )) && warning_string+="_"
+			fi
+			new=${warning_string:-$new}
 		fi
 		oldies+="$name=$old "
 		newies+="$name=$new "
@@ -3247,7 +3253,7 @@ watch() {
 	prune_cmds=$(echo "$prune_cmds" |fgrep -v -w -e xargs -e tr $fgrep_opt)
 
 	[[ $prune_cmds || $show_all ]] && {
-	header "prune-drive"
+	header "prune-drive ($_our_name parent may be hidden to save rows)"
 	echo
 	}
 
