@@ -2476,6 +2476,7 @@ update_drive() {
 			is_keep=$true
 		   else is_keep=$false
 		fi
+		[[ -d $src_snapshot ]] || continue
 		# oddness: we get multiple src snapshots with the same date
 		date_time=${src_snapshot##*/}
 		date_time=${date_time%%.*}
@@ -4366,14 +4367,14 @@ run_debug_cmds() {
 	fi
 
 	$Trace
-			      show_test_results $tmp_o
-	$tst_cmd_ &> $tmp_t ; show_test_results $tmp_t
+					   show_test_results $tmp_o
+	$tst_cmd_ &> $tmp_t || abort tst ; show_test_results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	echo -e "\nSince different results, we'll regenerate cached data ..."
-	$old_cmd_ &> $tmp_o ; show_test_results $tmp_o
-			      show_test_results $tmp_t
+	$old_cmd_ &> $tmp_o || abort old ; show_test_results $tmp_o
+					   show_test_results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
