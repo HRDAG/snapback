@@ -1938,7 +1938,7 @@ _handle_rsync_results() {
 	if is_arg1_in_arg2 $status "$successful_rsync_exit_statuses"
 	   then $IfRun mv $new_snapshot.partial $new_snapshot &&
 		[[ $new_snapshot != *.links ]] &&
-		set -- $snapshot_glob &&
+		set -- $snapshot_glob && [[ $# != 0 ]] &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update_snapshots_ls
 		record_rsync_time $new_snapshot
@@ -2559,7 +2559,7 @@ set_command_line_drive_dirs() {
 		_set_drive_dir  $drive_name ||
 		    { [[ $all_opt == -A ]] || continue; }
 		suspend_tracing
-		set -- $drive_dir/*
+		set -- $drive_dir/$snapshot_glob*
 		restore_tracing
 		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
 		    drive_dirs+="$drive_dir "
@@ -2577,7 +2577,7 @@ set_command_line_drive_names() {
 	    do	_set-drive_name $drive_name &&
 		_set_drive_dir  $drive_name || continue
 		suspend_tracing
-		set -- $drive_dir/*
+		set -- $drive_dir/$snapshot_glob*
 		restore_tracing
 		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
 		    drive_names+="$drive_name "
