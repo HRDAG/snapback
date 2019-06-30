@@ -265,7 +265,7 @@ function sudo-lockpid() {
 	[[ -w $lock || ( ! -e $lock && -w $lock_dir ) ]] &&
 	   { lockpid "$@"; return; }
 
-	[[ -v $can_sudo_lockpid ]] ||
+	[[ -v can_sudo_lockpid ]] ||
 	if sudo -n lockpid -h &> /dev/null
 	   then can_sudo_lockpid=$true
 	   else can_sudo_lockpid=$false
@@ -1005,7 +1005,7 @@ customize_config_variables() {
 
 		[[ -v $var_name ]] &&
 		! [[ $(declare -p $var_name) =~ ^declare.-[aA]?i?r ]] ||
-		   continue
+		   continue		# readonly, can't customize
 
 		local default_value=${!var_name}
 		custom_config_var2default_value[$var_name]=$default_value
