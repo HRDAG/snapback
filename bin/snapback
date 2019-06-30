@@ -176,7 +176,7 @@ need_cmds lockpid			# from libsnap repo
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# just in case we need them
 shopt -s nullglob			# so don't need to test for no matches
-# shopt -s globasciiranges		# so weird locales don't mess us up
+shopt -s globasciiranges		# so weird locales don't mess us up
 
 umask 02			  # log and lock dirs are setgid sudo/whatever
 
@@ -265,7 +265,7 @@ function sudo-lockpid() {
 	[[ -w $lock || ( ! -e $lock && -w $lock_dir ) ]] &&
 	   { lockpid "$@"; return; }
 
-	is_set $can_sudo_lockpid ||
+	[[ -v $can_sudo_lockpid ]] ||
 	if sudo -n lockpid -h &> /dev/null
 	   then can_sudo_lockpid=$true
 	   else can_sudo_lockpid=$false
@@ -781,7 +781,7 @@ function set_admin_group() {
 	suspend_tracing
 	local env_var env_var_values="${SUDO_USER-} ${USER-} ${LOGNAME-}"
 	for env_var in HOME MAIL
-	    do	is_set $env_var || continue
+	    do	[[ -v $env_var ]] || continue
 		local path=${!env_var}
 		env_var_values+=" ${path##*/}"
 	done
@@ -1000,10 +1000,10 @@ customize_config_variables() {
 		   continue
 
 		is_arg1_in_arg2 $var_name $custom_config_vars ||
-		is_set $var_name ||
+		[[ -v $var_name ]] ||
 		   abort "need to set '$var_name=' in $config_file"
 
-		is_set $var_name &&
+		[[ -v $var_name ]] &&
 		! [[ $(declare -p $var_name) =~ ^declare.-[aA]?i?r ]] ||
 		   continue
 
