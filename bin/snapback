@@ -778,6 +778,8 @@ set_oldest_snapshot() {
 
 function set_admin_group() {
 
+	[[ -v admin_group ]] && { [[ $admin_group ]] ; return $?; }
+
 	suspend_tracing
 	local env_var env_var_values="${SUDO_USER-} ${USER-} ${LOGNAME-}"
 	for env_var in HOME MAIL
@@ -2267,10 +2269,9 @@ copy_snapshot_rsync() {
 
 	set_priority copy
 
-	local cwd=$PWD
 	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
 	run_rsync -c  $src_snapshot/. $dst_snapshot
-	cd_ $cwd
+	cd_ $OLDPWD
 }
 
 # -----------------------------------------------------------------------------
@@ -2749,7 +2750,7 @@ _setup_ages() {
 
 _recalculate_stats_vars() {
 
-	local cwd=$PWD nums= oldies= newies=
+	local nums= oldies= newies=
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
 		local name=$drive_name
@@ -2784,7 +2785,7 @@ _recalculate_stats_vars() {
 		oldies+="$name=$old "
 		newies+="$name=$new "
 	done
-	cd $cwd || abort "cd $cwd"
+	cd $OLDPWD || abort "cd $OLDPWD"
 
 	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
 	printf -v stats_oldest_age "$stats_format" $oldies
