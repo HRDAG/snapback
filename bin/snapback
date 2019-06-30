@@ -2132,7 +2132,7 @@ bad_copy() {
 	[[ $is_quiet || $is_update || $debug_opt ]] ||
 	   abort "$msg; use -q to not abort"
 
-	[[ ! $debug_opt ]] || echo "copy_snapshot: $msg"
+	[[ ! $debug_opt || $is_update ]] || echo "copy_snapshot: $msg"
 
 	return 1
 }
@@ -2394,7 +2394,8 @@ sorted_useful_srcs() {
 
 	for dir in $drive_dirs
 	    do	suspend_tracing
-		eval "echo $dir/$min_snapshot_glob{,.links}" # useful ones
+		eval "echo $dir/$min_snapshot_glob{,.links}"   # useful ones
+		eval "echo $dir/$snapshot_glob{,.links}/.keep" # never pruned
 		      echo $dir/$max_snapshot_glob # token to terminate loop
 		restore_tracing
 	done | tr ' ' '\n' |
@@ -2466,12 +2467,19 @@ update_drive() {
 
 	set-srcs_dst_file
 	local date_time prev_date_time=
-	local src_snapshot src_snapshots=
+	local src_snapshot src_snapshots= is_keep
+	local -A date_time2is_keep
 	sorted_useful_srcs "$@" |	# this checks/sets drive_* globals
 	while read src_snapshot
-	    do	# oddness: we get multiple src snapshots with the same date
-		date_time=$(basename $src_snapshot)
+	    do	if [[ $src_snapshot == */.keep ]]
+		   then src_snapshot=${src_snapshot%/.keep}
+			is_keep=$true
+		   else is_keep=$false
+		fi
+		# oddness: we get multiple src snapshots with the same date
+		date_time=${src_snapshot##*/}
 		date_time=${date_time%%.*}
+		[[ $is_keep ]] && date_time2is_keep[$date_time]=$true
 		if [[  $prev_date_time &&
 		       $prev_date_time != $date_time ]]
 		   then prev_date_time=$date_time # new date, process prev ones
@@ -2489,8 +2497,14 @@ update_drive() {
 		[[ $# != 0 ]] || continue    # src might not have been needed
 
 		local    dst_snapshot=${!#}
+		date_time=${dst_snapshot##*/}
+		date_time=${date_time%%.*}
 		[[ ! -d $dst_snapshot.links ]] &&
 		$sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 #to prune
+		[[ ${date_time2is_keep[$date_time]-} ]] &&
+		    echo > $dst_snapshot.partial/.keep  &&
+						   [[ $verbose_opt ]] && echo \
+		    touch  $dst_snapshot.partial/.keep  >&2
 		echo "$@"
 	done > $srcs_dst_file
 	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
