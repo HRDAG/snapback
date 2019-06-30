@@ -4384,6 +4384,8 @@ run_debug_cmds() {
 	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t | less"
 	[[ $test == u ]] &&
 	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
+
+	failed_tests+="$test "
 }
 
 # ---------------------------------
@@ -4398,6 +4400,8 @@ regression_test() {
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
 
 	echo -e "\nComparing $old_cmd to $tst_cmd"
+
+	local failed_tests=
 
 	# --------------------------------------------
 
@@ -4451,7 +4455,10 @@ regression_test() {
 	warn "remember to restart your copy/update job on drive $killed_dst"
 	}
 
-	echo
+	if [[ $failed_tests ]]
+	   then warn "ERROR: regressions in these tests: ${failed_tests% }"
+	   else	echo
+	fi
 }
 
 #############################################################################
