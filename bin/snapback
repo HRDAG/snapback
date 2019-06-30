@@ -2561,7 +2561,8 @@ set_command_line_drive_dirs() {
 		suspend_tracing
 		set -- $drive_dir/*
 		restore_tracing
-		[[ $# != 0 ]] && drive_dirs+="$drive_dir "
+		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
+		    drive_dirs+="$drive_dir "
 	done
 	command_line_drive_dirs=${drive_dirs% }
 }
@@ -2578,7 +2579,8 @@ set_command_line_drive_names() {
 		suspend_tracing
 		set -- $drive_dir/*
 		restore_tracing
-		[[ $# != 0 ]] && drive_names+="$drive_name "
+		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
+		    drive_names+="$drive_name "
 	done
 	command_line_drive_names=${drive_names% }
 }
