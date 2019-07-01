@@ -26,7 +26,7 @@ version=22			# has to match version= in configure.sh.sample
 
 # libsnap.sh has these functions/variables:
 # $tmp_dir, $our_name, $our_path, $true, $false,
-# have-var, have-cmd, need_cmds, $is_darwin, set_FS_type___from_path,
+# is-set, have-cmd, need_cmds, $is_darwin, set_FS_type___from_path,
 # set__inode_size__data_block_size__dir_block_size___from_path,
 # $FS_label, set_FS_label___from_FS_device, label_drive,
 # set_FS_device___from_FS_label, set_device_KB___from_block_device, $FS_device,
@@ -71,7 +71,7 @@ for var in $config_vars; do eval "declare -A drv_name2$var"; done
 # customizable functions set-drive_name & source-drive-specific-config-file
 source $config_file || abort "$config_file broken"
 
-have-var coder ||			# custom version in $config_file?
+is-set   coder ||			# custom version in $config_file?
 readonly coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
@@ -805,6 +805,17 @@ function set_admin_group() {
 
 # ----------------------
 
+fix_drive_dir_perms() {
+	local drive_dir=${1:-$drive_dir}
+
+	set_admin_group &&
+	chgrp $admin_group $drive_dir/. &&
+	# this will _not_ make non-empty snapshots deletable by group
+	chmod g+w	   $drive_dir/. # for 'u' regression test
+}
+
+# ----------------------
+
 create__lock_dir__log_dirs() {
 
 	local group=
@@ -822,11 +833,8 @@ create__lock_dir__log_dirs() {
 
 	if [[ ! -d $drive_log_dir ]]
 	   then set_admin_group && group=$admin_group && group=:$group
+		[[ ${drive_dir-} ]] && fix_drive_dir_perms
 		sudo mkdir -p -m g+w,o-w $drive_log_dir
-		[[ $admin_group ]] &&
-		   chgrp $admin_group $drive_dir/. &&
-		   # this won't make non-empty snapshots deletable by group
-		   chmod g+w	      $drive_dir/. # for 'u' regression test
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
 		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
@@ -1456,7 +1464,7 @@ shorten_date() {
 	esac | uniq
 }
 
-declare -A type2date_suffix_glob=(
+declare -r -A type2date_suffix_glob=(
 	 [NONE]=""
 	 [hour]=",??"
 	  [day]="-??,??"
@@ -1484,7 +1492,7 @@ set_prune_glob() {
 
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
-declare -A backup_period2minimal_snapshot_glob=(
+declare -r -A backup_period2minimal_snapshot_glob=(
     [1]="$snapshot_glob"
     [2]="$snapshot_day_glob,?[02468]"
     [4]="$snapshot_day_glob,{[02][048],1[26]}"
@@ -1494,8 +1502,8 @@ declare -A backup_period2minimal_snapshot_glob=(
 )
 #
 # the [hour] chunks are the complement of the previous map's values
-have-var   type2prune_type_globs ||	# custom version in $config_file?
-declare -A type2prune_type_globs=(
+is-set        type2prune_type_globs ||	# custom version in $config_file?
+declare -r -A type2prune_type_globs=(
 # the ones these globs skip: hour=00, day=01, month=01, year=00
 # period after prune: 2                4                 ~8          ~12   all
    [hour]=",?[13579]         ,{[02][26],1[048]}       ,{04,20}    ,{08,16} ,12"
@@ -1530,6 +1538,7 @@ for _period in ${!backup_period2minimal_snapshot_glob[*]}
 	backup_period2minimal_snapshot_regex[$_period]=$value
 done
 unset _period
+readonly backup_period2minimal_snapshot_regex
 
 scale_date_span() {
 
@@ -1856,7 +1865,24 @@ set_seconds___from_msecs() {
 
 readonly rsync_time_subdir=stats/rsync-minutes
 
-have-var   days_to_keep ||		# custom version in $config_file?
+archive_rsync_time_data() {
+
+	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+	mkdir -p $rsync_time_dir
+	cd $rsync_time_dir &&
+	set -- *.txt &&
+	if [[ $# != 0 ]]
+	   then set_date_time -r .
+		dir=.${date_time%,*}
+		$IfRun mkdir -p $dir
+		$IfRun mv -v *.txt $PWD/$dir/
+	fi
+	cd $OLDPWD
+}
+
+# ----------------------
+
+is-set     days_to_keep ||		# custom version in $config_file?
 declare -i days_to_keep=3		# ensure more than weekend-only data
 
 record_rsync_time() {
@@ -3351,12 +3377,12 @@ readonly status_dir=/run/$our_name
 
 # if make check_period_msecs smaller, we'll check each drive more frequently
 # (but also consume more CPU, because 1 fork per drive per check-period)
-have-var      check_period_msecs ||	# can set custom value in $config_file
+is-set        check_period_msecs ||	# can set custom value in $config_file
 declare -r -i check_period_msecs=200
 
-have-var      min_hung_msecs ||		# can set custom value in $config_file
+is-set        min_hung_msecs ||		# can set custom value in $config_file
 declare -r -i min_hung_msecs=2000
-have-var      min_slow_msecs ||		# can set custom value in $config_file
+is-set        min_slow_msecs ||		# can set custom value in $config_file
 declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
 # set_seconds___from_msecs $min_slow_msecs
 # readonly disk_read_timeout=$seconds
@@ -3919,20 +3945,11 @@ mkfs_backup_drive() {
 	cmd="$cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header "$cmd"
 	RunCmd  $cmd
+	archive_rsync_time_data
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
-
-	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
-	mkdir -p $rsync_time_dir
-	cd_ $rsync_time_dir
-	set -- *.txt
-	if [[ $# != 0 ]]
-	   then set_date_time -r .
-		dir=.${date_time%,*}
-		$IfRun mkdir -p $dir
-		$IfRun mv -v *.txt $PWD/$dir/
-	fi
+	fix_drive_dir_perms $drive_dir
 
 	echo -e "\nTo populate newly-created drive, run:\n
 	nohup $_our_name update-drive $drive_name	# creates new job"
@@ -4377,6 +4394,7 @@ run_debug_cmds() {
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	echo -e "\nSince different results, we'll regenerate cached data ..."
+	PATH=${old_cmd_%/*}:$PATH \
 	$old_cmd_ &> $tmp_o || abort old ; show_test_results $tmp_o
 					   show_test_results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
@@ -4878,6 +4896,8 @@ case $action in
 	for m in $ml; do set_hours    $m; printf "%3s -> %s\n" $m $hours; done
 	for m in $ml; do set_hours -1 $m; printf "%3s -> %s\n" $m $hours; done
 	exit
+
+	fix_drive_dir_perms /backup/A; exit
 
 	snapshot=/backup/X/2019-06-20,12
 	set_seconds   $snapshot; echo $snapshot_date_time; echo $seconds

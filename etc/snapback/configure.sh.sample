@@ -8,7 +8,7 @@
 ##################################################################
 ### Note: some default functions and variables in snapback can ###
 ### be over-ridden by defining them in here; to see which ones ###
-### you can over-ride, run: grep -A1 '^have-[cv]' snapback     ###
+### you can over-ride: egrep -A1 '^(have-cmd|is-set)' snapback ###
 ##################################################################
 ##################################################################
 
