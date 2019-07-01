@@ -331,7 +331,7 @@ set_lock_paths() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $# == [0-2] ]] ||
 	    abort_function "$*: must be 0-2 args (can use globs)"
-	[[ $1 == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
+	[[ ${1-} == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
 	local type_glob=${1:-*} name_glob=${2:-${drive_name:-*}}
 
 	set_glob "$type_glob" && type_glob=$glob
@@ -2626,7 +2626,7 @@ create_jobs() {
 	   ( copy   ) function=copy_snapshot  exe=$copy_snapshot_exe ;;
 	   ( prune  ) function=prune_drive    exe=$prune_drive_exe   ;;
 	   ( update ) function=update_drive   exe=$update_drive_exe  ;;
-	   (   *    ) abort "'$type' is not supported" ;;
+	   (   *    ) abort "action '$type' is not supported" ;;
 	esac
 
 	if [[ $are_recursing ]]
@@ -2645,8 +2645,9 @@ create_jobs() {
 "
 	$Trace
 	for name
-	    do	_set-drive_name $name && name=$drive_name # cleanup for 'ps'
-		if [[ ! $debug_opt && $drive_name != Z ]]
+	    do	# [[ $name == *[aA] ]] && set -x	  # uncomment to debug
+		_set-drive_name $name && name=$drive_name # cleanup for 'ps'
+		if [[  ! $debug_opt   && $name != Z ]]
 		   then trap '' HUP
 			# Want new process-group so can ps/kill independently.
 			setsid \
@@ -2654,6 +2655,7 @@ create_jobs() {
 		   else $exe $opts -r $name # run in foreground, for testing
 			echo
 		fi
+		set +x			# uncomment to just debug one drive
 	done
 }
 
