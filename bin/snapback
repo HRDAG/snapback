@@ -2247,6 +2247,7 @@ copy_snapshot() {
 	(( $# >= 2  )) || abort_function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*%$dst_drive_name}
+	src_snapshot=${src_snapshot%/.keep}
 	local drive_name=$drive_name drive_dir=${drive_dir-} # protect caller
 	copy_snapshot_args=		# holds result when $is_update
 
@@ -3221,7 +3222,7 @@ watch() {
 
 	# --------------------------------------------
 
-	local -i rows_used=6		# stats plus 1 blank line
+	local -i rows_used=7		# stats plus 1 blank line
 	(( $rows >= ($min_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
 	setup_snapshot_stats .rm
@@ -3233,17 +3234,17 @@ watch() {
 	echo "Days from most recent snapshot.partial:  $stats_newest_age"
 	setup_snapshot_stats /.keep	# doesn't set oldest/newest_age
 	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
+	setup_snapshot_stats ''
+	echo "  Number complete/successful snapshots:  $stats_number"
 	let rows-=$rows_used
 	}
 
 	# --------------------------------------------
 
-	local -i rows_used=7		# stats plus 1 blank line
+	local -i rows_used=6		# stats plus 1 blank line
 	(( $rows >= ($min_df_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
-	setup_snapshot_stats ''
 	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
-	echo "     Total number successful snapshots:  $stats_number"
 	setup_snapshot_stats '' hour
 	echo "  Total number  days  w/good snapshots:  $stats_number"
 	setup_snapshot_stats '' day
