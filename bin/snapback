@@ -261,7 +261,8 @@ function sudo-lockpid() {
 	# but they usuaully aren't, so "$IfRun lockpid" would only show release
 	[[ $debug_opt ]] && return 0
 
-	local  lock=${!#}
+	local lock=${!#}
+	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
 	[[ -w $lock || ( ! -e $lock && -w $lock_dir ) ]] &&
 	   { lockpid "$@"; return; }
 
@@ -291,7 +292,7 @@ rm_stale_locks() {
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
 		sudo-lockpid -o $lock_path &> /dev/null &&
-		sudo-lockpid -r $lock_path
+		sudo-lockpid -r $lock_path # we grabbed it, i.e. it was stale
 	done
 
 	return 0
@@ -561,6 +562,7 @@ set_signal_is_kill() {
 function set-lock_PID() {
 	local lock=$1
 
+	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
 	lock_PID=
 	[[ -s $lock ]] && set -- $(< $lock) && [[ $# == 1 ]] || return 1
 	lock_PID=$1
@@ -572,7 +574,7 @@ function set-lock_PID() {
 function is-active-lock() {
 	set_lock_paths "$@"
 
-	local lock
+	local lock lock_PID
 	for lock in $lock_paths
 	    do	set-lock_PID $lock && is_process_alive $lock_PID && return 0
 	done
@@ -604,6 +606,7 @@ signal_job() {
 	local signal=${1#-}; shift
 	if [[ $# == 1 && $1 == *.pid ]]
 	   then lock_path=$1		# global variable, caller can use it
+		[[ $lock_path == /* ]] || lock_path=$lock_dir/${lock_path##*/}
 	   else local job_type=$1 drive_name=${2:-$drive_name}
 		suspend_tracing
 		_set-drive_name $drive_name
@@ -2530,9 +2533,8 @@ update_drive() {
 		[[ ! -d $dst_snapshot.links ]] &&
 		$sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 #to prune
 		[[ ${date_time2is_keep[$date_time]-} ]] &&
-		    echo > $dst_snapshot.partial/.keep  &&
-						   [[ $verbose_opt ]] && echo \
-		    touch  $dst_snapshot.partial/.keep  >&2
+		    echo > $dst_snapshot.partial/.keep && [[ $verbose_opt ]] &&
+		echo touch $dst_snapshot.partial/.keep >&2
 		echo "$@"
 	done > $srcs_dst_file
 	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
@@ -4333,8 +4335,8 @@ chroot-backup() {
 	$IfRun sudo mount -o bind /dev/pts $chroot_dir/dev/pts
 	$IfRun sudo mount -t tmpfs tmpfs   $chroot_dir/dev/shm
 	$IfRun sudo mount -t tmpfs tmpfs   $chroot_dir/run
-	$IfRun sudo mount -t sysfs sys     $chroot_dir/sys
-	true; } ||
+	$IfRun sudo mount -t sysfs sys     $chroot_dir/sys		; true
+	} ||
 	$IfRun sudo mount -t devfs devfs   $chroot_dir/dev # Darwin/BSD
 
 	[[ $is_regression_test ]] || echo "Have to remount drive, slow ..."
@@ -4346,9 +4348,8 @@ chroot-backup() {
 	have-proc && {
 	for dir in proc dev/pts dev/shm dev run sys
 	    do	$IfRun sudo umount $chroot_dir/$dir
-	done
-	true; } ||
-	$IfRun sudo umount $chroot_dir/dev # Darwin/BSD
+	done								; true
+	} ||    $IfRun sudo umount $chroot_dir/dev # Darwin/BSD
 }
 
 # -----------------------------------------------------------------------------
