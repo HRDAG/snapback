@@ -266,7 +266,7 @@ function sudo-lockpid() {
 	[[ -w $lock || ( ! -e $lock && -w $lock_dir ) ]] &&
 	   { lockpid "$@"; return; }
 
-	[[ -v can_sudo_lockpid ]] ||
+	is-set can_sudo_lockpid ||
 	if sudo -n lockpid -h &> /dev/null
 	   then can_sudo_lockpid=$true
 	   else can_sudo_lockpid=$false
@@ -781,12 +781,12 @@ set_oldest_snapshot() {
 
 function set_admin_group() {
 
-	[[ -v admin_group ]] && { [[ $admin_group ]] ; return $?; }
+	is-set admin_group && { [[ $admin_group ]] ; return $?; }
 
 	suspend_tracing
 	local env_var env_var_values="${SUDO_USER-} ${USER-} ${LOGNAME-}"
 	for env_var in HOME MAIL
-	    do	[[ -v $env_var ]] || continue
+	    do	is-set $env_var || continue
 		local path=${!env_var}
 		env_var_values+=" ${path##*/}"
 	done
@@ -1013,10 +1013,10 @@ customize_config_variables() {
 		   continue
 
 		is_arg1_in_arg2 $var_name $custom_config_vars ||
-		[[ -v $var_name ]] ||
+		is-set $var_name ||
 		   abort "need to set '$var_name=' in $config_file"
 
-		[[ -v $var_name ]] &&
+		is-set $var_name &&
 		! [[ $(declare -p $var_name) =~ ^declare.-[aA]?i?r ]] ||
 		   continue		# readonly, can't customize
 
