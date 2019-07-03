@@ -1805,7 +1805,8 @@ set_excluded_hours() {
 
 	set -- $(
 	for hour
-	    do	[[ $hour =~ ^0+$ ]] && continue # pruning needs midnight backup
+	    do	[[ $hour == 0?   ]] && hour=${hour#0}
+		[[ $hour =~ ^0+$ ]] && continue # pruning needs midnight backup
 		[[ $hour == *-*  ]] || { echo $hour; continue; }
 		[[ $hour != *-*-* ]] || abort "bad $var_name range"
 		[[ $hour != 0-* ]] ||abort "$var_name range can't start with 0"
@@ -1826,11 +1827,15 @@ _is_time_to_run_backup() {
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
+	set -- $(date '+%k %M')
+	local current_hour=$1 current_minute=$2
+
+	(( $current_hour == 0 && $current_minute == 5 )) &&
+	   ( $our_path w > $log_dir/cron-w.txt ) &
+
 	# we're called more than hourly (to reset priorities, and to prune)
-	local current_minute=$(date '+%M')
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
 
-	local current_hour=$(date '+%k') hours
 	set_excluded_hours $excluded_backup_hours
 	is_arg1_in_arg2 $current_hour $excluded_hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
