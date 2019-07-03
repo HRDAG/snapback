@@ -69,7 +69,9 @@ for var in $config_vars; do eval "declare -A drv_name2$var"; done
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizable functions set-drive_name & source-drive-specific-config-file
-source $config_file || abort "$config_file broken"
+source $config_file || abort "source'd $config_file ended with non-0 status"
+
+readonly PS4		      # remove if some functions want to manipulate it
 
 is-set   coder ||			# custom version in $config_file?
 readonly coder=sweikart@gmail.com
@@ -2038,9 +2040,9 @@ run_rsync() {
 	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
 	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
-	until [[ -e  $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
-	$IfRun touch $partial_dst	# in case we crash; see next 'touch'
-	[[ -f $partial_dst ]] && rm $partial_dst # quick backup??
+	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
+	[[ -d $partial_dst ]] && $IfRun \
+	touch $partial_dst		# in case we crash before next 'touch'
 	} &
 
 	suspend_tracing
@@ -3031,6 +3033,7 @@ watch() {
 
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
+	[[ $watch_opt ]] || trap '' HUP
 	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 	SECONDS=$(date '+%s')		# for _set_age()
