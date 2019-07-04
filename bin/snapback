@@ -27,7 +27,8 @@ version=22			# has to match version= in configure.sh.sample
 # search for '####' in libsnap.sh to see environment and coding conventions
 source libsnap.sh || exit 1
 # We use these constants from libsnap.sh (and change $our_name)
-readonly tmp_dir our_path true false is_darwin
+readonly tmp_dir our_path true false is_darwin max_call_stack_args
+readonly warning_level2tput_args
 # We used these functions from libsnap.sh
 readonly -f is-set have-cmd need-cmds set-FS_type-from-path
 readonly -f set-inode_size-data_block_size-dir_block_size-from-path
@@ -2930,7 +2931,7 @@ readonly -f _setup-ages
 # ---------------------------------
 
 _set-colorized_new() {
-	local new=$1
+	local new=${1-}
 
 	local warning_string=
 	case $new in
@@ -3963,6 +3964,10 @@ mkfs-backup-drive() {
 	fi
 	local name=$drive_name drive_dir
 	_set-drive_dir
+
+	mkfs_cmd=${mkfs_cmd_opts%% *}
+	 FS_type=${mkfs_cmd#*.}
+	[[ $FS_type != $mkfs_cmd ]] || abort "ask $coder to fix FS_type logic"
 	local _mkfs_cmd_opts="$mkfs_cmd_opts "
 	_mkfs_cmd_opts+="$mkfs_opts "
 
