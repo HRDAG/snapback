@@ -719,17 +719,16 @@ set-lock_PGIDs() {
 	eval "set -- $lock_dir/$type-${names_glob:-*}.pid"
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+="$lock "; done
-	set -- $locks
-	[[ $# != 0 ]] || return 1
 
 	[[ $type == prune && ! ( $debug_opt || $show_all ) ]] &&
-	set -- $(echo $* | tr ' ' '\n' | fgrep -v /$type-Z.)
+	    locks=${locks/$type-Z.pid/}
 
-	set -- $(cat  $* 2>/dev/null)
-	[[ $# != 0 ]] || return 1
-
-	set -- $(echo " $*" | sed 's/ / -/g') # want all processes in group
-	lock_PGIDs=$*
+	for lock in $locks
+	    do	set -- $(< $lock)
+		[[ $# == 1 ]] || continue
+		lock_PGIDs+="-$1 "
+	done 2> /dev/null		# a lock might disappear: $(< ) fails
+	[[ $lock_PGIDs ]]
 }
 readonly -f set-lock_PGIDs
 
@@ -3065,6 +3064,24 @@ readonly -f setup-snapshot-stats
 
 # -----------------------------------------------------------------------------
 
+set-max_device_len-max_mount_len() {
+	local drive_dirs=${1:-$(list_drive_dirs)}
+
+	declare -g -i max_device_len=0 max_mount_len=0
+
+	df --block-size=G $drive_dirs |
+	while read device size used avail used mount junk
+	    do	local -i device_len=${#device} mount_len=${#mount}
+		[[ $mount == /* ]] || continue # skip header
+		(( $max_mount_len  < $mount_len  )) &&
+		    max_mount_len=$mount_len
+		(( $max_device_len < $device_len )) &&
+		    max_device_len=$device_len
+	done
+}
+
+# -------------------------------------------------------
+
 run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
@@ -3223,23 +3240,7 @@ watch() {
 	(( $cols >= 83 )) && ps_opt=-f
 	[[ $cron_opt ]] && {
 
-	# since the contents of $() are run in subshell, have to echo results
-	set -- $(
-	local -i max_device_len=0 max_mount_len=0
-	df --block-size=G $drive_dirs |
-	while read device size used avail used mount junk
-	    do	local -i device_len=${#device} mount_len=${#mount}
-		is_new_max=$false
-		[[ $mount == /* ]] &&	# skip header
-		(( $max_mount_len  < $mount_len  )) &&
-		    max_mount_len=$mount_len	is_new_max=$true
-		(( $max_device_len < $device_len )) &&		  # also header
-		    max_device_len=$device_len	is_new_max=$true
-		[[ $is_new_max ]] && echo $max_device_len $max_mount_len
-		exit
-	done
-	)
-	local -i max_device_len=$1 max_mount_len=$2
+	set-max_device_len-max_mount_len $drive_dirs
 
 	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
@@ -3281,13 +3282,14 @@ watch() {
 	# figure out how many rows are needed
 	#
 
-	local -i num_drives=$(set -- $drive_dirs; echo $#)
+	set -- $drive_dirs
+	local -i num_drives=$#
 
 	set-lock_PGIDs backup && {
 	bkp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
-			   grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
+			   sed -n '/[0-9]   rsync/s/   rsync/ rsync/p')
 	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
-	local -i num_bkp_rsyncs=0 ;	   bkp_rsync_cmds= ; }
+	local -i num_bkp_rsyncs=0 ;	 bkp_rsync_cmds= ; }
 
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
@@ -3305,13 +3307,14 @@ watch() {
 			#      -e 's/   lockp/ lockp/')	# -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
-	ps -u root -O pgid,command | egrep '\b(rsync|rm) ' |
-	   awk '{print $2}' > $rsync_or_rm_cmd_PGIDs_file
+	ps -u root -o pgid,command |
+	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
+	       $rsync_or_rm_cmd_PGIDs_file
 	cron_job_regex=' -C run-backups? ' # put into configure.sh ??
-	set -- $(COLUMNS=999 ps -u root -O pgid,command |
+	set -- $(COLUMNS=999 ps -u root -o pgid,command |
 			egrep "$cron_job_regex" |
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
-			awk '$0 !~ /setsid / {print $2}' | sort -u -n)
+			awk '$0 !~ /setsid / {print $1}' | sort -u -n)
 	cron_PGIDs=$*
 	rm $rsync_or_rm_cmd_PGIDs_file
 
@@ -3483,9 +3486,8 @@ watch() {
 	# for some reason, appending newlines does nothing?!
 	rsync_abbrev_msg="
 	  default opts=\"$rsync_backup_opts\" (\$rsync_backup_opts)
-	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)
-	"
-	rsync_abbrev_msg=$(echo "$rsync_abbrev_msg" | sed 's/^\t//')
+	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)"
+	rsync_abbrev_msg=${rsync_abbrev_msg//	/} # strip leading TAB
 
 	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
@@ -3498,7 +3500,8 @@ watch() {
 
 	# show process tree of master cron job(s)
 	[[ $cron_cmds ]] && {
-	stime=$(set -- $(ps h -o stime $cron_PGIDs | sort -u); echo $*)
+	set -- $(ps h -o stime $cron_PGIDs | sort -u)
+	stime=$*
 	regex=${cron_job_regex%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
