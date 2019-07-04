@@ -4422,7 +4422,7 @@ _run-debug-cmds() {
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	echo -e "\nSince different results, we'll regenerate cached data ..."
-	PATH=${old_cmd_%/*}:$PATH \
+	PATH=${old_cmd%/*}:$PATH \
 	$old_cmd_ &> $tmp_o || abort old ; _show-test-results $tmp_o
 					   _show-test-results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
