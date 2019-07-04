@@ -2578,24 +2578,25 @@ update_drive() {
 ##############################################################################-
 ##############################################################################-
 
-_set_command_line_drive_names_or_dirs() {
+_set_drive_names_or_dirs-from-user-args() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 
 	if [[ $# == 0 || $1 == all || $1 == '*' ]]
 	   then set -- $(list_drive_dirs $all_opt)
 	   else set -- ${*//,/ }
 	fi
-	command_line_drive_names_or_dirs=$*
+	drive_names_or_dirs=$*
 }
 
 # ---------------------------------
 
-set_command_line_drive_dirs() {
+set-drive_dirs-from-user-args() {
 	[[ ${1-} == -[aA] ]] && local all_opt=$1 || local all_opt= # no shift..
 
-	local command_line_drive_names_or_dirs drive_dirs=
-	_set_command_line_drive_names_or_dirs "$@" # .. (optional) -a is passed
-	for drive_dir in $command_line_drive_names_or_dirs
+	drive_dirs=
+	local drive_names_or_dirs drive_name drive_dir
+	_set_drive_names_or_dirs-from-user-args "$@" # (optional) -a is passed
+	for drive_dir in $drive_names_or_dirs
 	    do	_set-drive_name $drive_dir  &&
 		_set_drive_dir  $drive_name ||
 		    { [[ $all_opt == -A ]] || continue; }
@@ -2605,16 +2606,17 @@ set_command_line_drive_dirs() {
 		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
 		    drive_dirs+="$drive_dir "
 	done
-	command_line_drive_dirs=${drive_dirs% }
+	drive_dirs=${drive_dirs% }
 }
 
 # ---------------------------------
 
-set_command_line_drive_names() {
+set-drive_names-from-user-args() {
 
-	local command_line_drive_names_or_dirs drive_names=
-	_set_command_line_drive_names_or_dirs "$@"
-	for drive_name in $command_line_drive_names_or_dirs
+	drive_names=
+	local drive_names_or_dirs drive_name drive_dir
+	_set_drive_names_or_dirs-from-user-args "$@"
+	for drive_name in $drive_names_or_dirs
 	    do	_set-drive_name $drive_name &&
 		_set_drive_dir  $drive_name || continue
 		suspend-tracing
@@ -2623,7 +2625,7 @@ set_command_line_drive_names() {
 		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
 		    drive_names+="$drive_name "
 	done
-	command_line_drive_names=${drive_names% }
+	drive_names=${drive_names% }
 }
 
 # ---------------------------------
@@ -2650,8 +2652,8 @@ create_jobs() {
 	   then set-excluded_drive_dirs_regex
 		set -- $(list_drive_dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
-	   else set_command_line_drive_names "$@"
-		set -- $command_line_drive_names
+	   else set-drive_names-from-user-args "$@"
+		set -- $drive_names
 	fi
 	if [[ $# == 0 ]]
 	   then [[ $is_cron ]] && exit 0
@@ -3031,8 +3033,8 @@ watch() {
 	   then cleanup_after_updates &	# don't wait for it to finish, slow
 		local all_opts="$ps_opt $cron_opt"
 		if [[ $names ]]
-		   then set_command_line_drive_names $names
-			all_opts+=" -N ${command_line_drive_names// /,}"
+		   then set-drive_names-from-user-args $names
+			all_opts+=" -N ${drive_names// /,}"
 		fi
 		# >= 0.5 is best for watching wchan (-C w/sudo access)
 		[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
@@ -3713,8 +3715,7 @@ dir_sizes() {
 # -----------------------------------------------------------------------------
 
 filesystem_geometry() {
-	set_command_line_drive_dirs "$@"
-	drive_dirs=$command_line_drive_dirs
+	set-drive_dirs-from-user-args "$@"
 
 	run_df    $drive_dirs
 	run_lsblk $drive_dirs
@@ -4554,9 +4555,9 @@ case $action in
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo_action_abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort-with-action-Usage
-	set_command_line_drive_names "$@"
+	set-drive_names-from-user-args "$@"
 
-	for name in $command_line_drive_names
+	for name in $drive_names
 	    do	check_snapshot_hard_links $name
 	done
 	;;
@@ -4631,10 +4632,10 @@ case $action in
 
    # reset-priority [names]: reset job priorities on drives (defaults to all)
    ( r*p* ) undo_action_abbrev reset-priority
-	set_command_line_drive_names "$@"
+	set-drive_names-from-user-args "$@"
 
 	$Trace
-	for drive_name in $command_line_drive_names
+	for drive_name in $drive_names
 	    do	_set_drive_dir $drive_name
 		suspended_prune_as_drive_usage_response
 	done
