@@ -24,24 +24,24 @@ version=22			# has to match version= in configure.sh.sample
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
 ###############################################################################
 
-# libsnap.sh has these functions/variables:
-# $tmp_dir, $our_name, $our_path, $true, $false,
-# is-set, have-cmd, need-cmds, $is_darwin, set-FS_type-from-path,
-# set-inode_size-data_block_size-dir_block_size-from-path,
-# $FS_label, set-FS_label-from-FS-device, label-drive,
-# set-FS_device-from-FS-label, set-device_KB-from-block-device, $FS_device,
-# set-FS_device-from-path, set-mount_dir-from-FS-device,
-# set-mount_dir-from-FS-label,  set-FS_label-from-mount_dir,
-# is-arg_1-in-arg_2, print-call-stack, warn,
-# abort, abort-function, assert-not-option, echoE, echoEV, Trace, TraceV,
-# remember-tracing, suspend-tracing, restore-tracing,
-# print-or-egrep-Usage-then-exit, abort-with-action-Usage, log,
-# $file_for_logging, $log_level, $log_msg_prefix, header, set-absolute_path,
-# cd_ , have-proc, is-process-alive, set-popped_word-from-list,
-# set-division, confirm, run-function
-#
 # search for '####' in libsnap.sh to see environment and coding conventions
 source libsnap.sh || exit 1
+# We use these constants from libsnap.sh (and change $our_name)
+readonly tmp_dir our_path true false is_darwin
+# We used these functions from libsnap.sh
+readonly -f is-set have-cmd need-cmds set-FS_type-from-path
+readonly -f set-inode_size-data_block_size-dir_block_size-from-path
+readonly -f set-FS_label-from-FS-device label-drive
+readonly -f set-FS_device-from-FS-label set-device_KB-from-block-device
+readonly -f set-FS_device-from-path set-mount_dir-from-FS-device
+readonly -f set-mount_dir-from-FS-label  set-FS_label-from-mount_dir
+readonly -f is-arg_1-in-arg_2 print-call-stack warn
+readonly -f abort abort-function assert-not-option echoE echoEV Trace TraceV
+readonly -f remember-tracing suspend-tracing restore-tracing
+readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log
+readonly -f header set-absolute_path
+readonly -f cd_  have-proc is-process-alive set-popped_word-from-list
+readonly -f set-division confirm run-function
 
 
 for dir in /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
@@ -210,6 +210,7 @@ readonly hostname=${HOSTNAME%%.*}
 
 readonly log_dir=/var/log/$our_name
 
+# these are used by log(), besides $log_level
 file_for_logging=$log_dir/messages.log	     # set__drive_dir__* sets it
 log_msg_prefix=' ${action-} ${drive_name-}'  # this gets eval'ed each time
 
