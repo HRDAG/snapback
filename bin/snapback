@@ -51,7 +51,7 @@ readonly  config_file=$config_dir/configure.sh
 
 config_file_sample=$config_file.sample
 if [[ $our_path == */$our_name/bin/$our_name ]]
-   then git_home=$(dirname $(dirname $our_path))
+   then   git_home=${our_path%/bin/$our_name}
 	config_file_sample=$git_home$config_file_sample
 fi ;						readonly config_file_sample
 
@@ -64,8 +64,12 @@ readonly uncustomizable_config_vars="
 	    drive_dir_prefix old_crypt_name_prefixes drive_specific_config_file
 	    level2CPU_priority_cmd level2IO_priority_cmd
 	    drive_name_regex admin_drive_name_regex is_drive_name_capitalized"
-readonly config_vars=$(sed '/() *{/,/^}/d' $config_file_sample |
-		       sed -n -r 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' | uniq)
+config_vars=$(
+    # toss functions before looking for variable assignments
+    sed -n -r	-e '/(^[ 	]*function\b.*|\(\)) *\{.*\}/d'		\
+		-e '/(^[ 	]*function\b.*|\(\)) *\{/,/^[ 	]*\}/d'	\
+		-e 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' $config_file_sample | uniq
+)							; readonly config_vars
 for var in $config_vars; do eval "declare -A drv_name2$var"; done
 #
 # this grabs variables that control backup and pruning, and may also hold
@@ -187,7 +191,7 @@ set -u					# abort if access unset variable
 
 FUNCNEST=100				# catch coding errors
 
-head -n1 $config_file_sample | fgrep -q -x "# version=$version" ||
+fgrep -q -x "# version=$version" $config_file_sample ||
   $IfRun abort "$config_file_sample version= does not match $our_path"
 
 # $Trace
@@ -243,7 +247,7 @@ readonly -f set-readable_du_size
 assert-drive_dir-writable() {
 	local dir=${1:-$drive_dir}
 
-	[[ -f $dir ]] && dir=$(dirname $dir)
+	[[ -f $dir ]] && dir=${dir%/*}
 	$IfRun touch $dir/. ||
 	   abort "$dir mounted read-only??  Maybe corrupted, run fsck."
 }
@@ -382,7 +386,7 @@ lock-PID() {
 	is-arg_1-in-arg_2 $type $writer_types ||
 	   abort-function "'$type' is unknown lock type"
 	set-lock_path $type $name
-	local lock_file=$(basename $lock_path)
+	local lock_file=${lock_path##*/}
 
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
@@ -807,7 +811,7 @@ set-oldest_snapshot() {
 		set -- $FS/$snapshot_glob
 		[[ $# != 0 ]] || continue
 		restore-tracing
-		[[ $oldest && $(basename $oldest) < $(basename $1) ]] &&
+		[[ $oldest && ${oldest##*/} < ${1##*/} ]] &&
 		   continue
 		oldest=$1
 	done
@@ -1833,7 +1837,7 @@ readonly -f set-link_dest_opts
 # ------------------------------------------------------------------
 
 set-link_dest_opts-for-run-backup() {
-	local new_snapshot=$(basename $1)
+	local new_snapshot=${1##*/}
 
 	suspend-tracing
 	# want the .links snapshots too, so quickly recover from
@@ -1850,7 +1854,7 @@ readonly -f set-link_dest_opts-for-run-backup
 # ------------------------------------------------------------------
 
 set-link_dest_opts-for-copy-snapshot() {
-	local new_snapshot=$(basename $1)
+	local new_snapshot=${1##*/}
 
 	suspend-tracing
 	# want the .links snapshots too, so quickly recover from
@@ -1982,7 +1986,7 @@ is-set	      days_to_keep ||		# custom version in $config_file?
 declare -r -i days_to_keep=3		# ensure more than weekend-only data
 
 record-rsync-time() {
-	local snapshot=$(basename $1)
+	local snapshot=${1##*/}
 
 	local -i minutes=$(( ($SECONDS + 30) / 60 ))
 	set-hours-from-minutes $minutes
@@ -1992,9 +1996,9 @@ record-rsync-time() {
 	[[ ! $is_copy_snapshot ]] || return
 
 	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
-	$IfRun mkdir -p $(dirname $file)
+	$IfRun mkdir -p ${file%/*}
 	local link=$log_dir/$rsync_time_subdir/$drive_name
-	$IfRun mkdir -p $(dirname $link)
+	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
 	$IfRun ln -s ../../$drive_name/$rsync_time_subdir $link
 
@@ -2006,7 +2010,7 @@ record-rsync-time() {
 
 	local -i number_files_per_day=24/$backup_period
 	local -i number_files_to_keep=$number_files_per_day*$days_to_keep
-	set -- $(dirname $file)/$snapshot_glob.txt
+	set -- ${file%/*}/$snapshot_glob.txt
 	while (( $# > $number_files_to_keep ))
 	    do	$IfRun rm $1
 		shift
@@ -2114,10 +2118,10 @@ run-rsync() {
 	local dst_snapshot=${!#}
 	local src_dirs=${*%$dst_snapshot}
 
-	local date_time=$(basename $dst_snapshot)
+	local date_time=${dst_snapshot##*/}
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
 
-	assert-drive_dir-writable $(dirname $dst_snapshot)
+	assert-drive_dir-writable ${dst_snapshot%/*}
 
 	if [[ $dst_snapshot == *.partial ]]
 	   then local partial_dst=$dst_snapshot
@@ -2974,7 +2978,7 @@ _recalculate-stats-vars() {
 		fi
 		if [[ ! $suffix ]]	# working with complete snapshots?
 		   then _set-colorized_new $new # warn if newest not today
-			new=$_colorized_new
+			new=$colorized_new
 		fi
 		oldies+="$name=$old "
 		newies+="$name=$new "
@@ -3693,7 +3697,7 @@ add-extN-journal() {
 	set-FS_external_log $force_opt $FS_label $VG_name ||
 	warn "invalid set-FS_external_log, or $config_file says log unwanted"||
 	   { $IfRun tune2fs -j $FS_device; return $?; }
-	label=$(basename $FS_external_log)
+	label=${FS_external_log##*/}
 
 	$Trace
 
