@@ -1232,7 +1232,7 @@ function suspended_prune_as_drive_usage_response() {
 ##############################################################################-
 ##############################################################################-
 
-count_rsyncs_using_resource() {
+function count_rsyncs_using_resource() {
 	local regex=$*
 
 	[[ $drive_name == Z || $IfRun ]] && return 0
@@ -1241,11 +1241,12 @@ count_rsyncs_using_resource() {
 
 # -----------------------------------------------------------------------------
 
-update_snapshots_ls() {
+function update_snapshots_ls() {
 
 	[[ ! $debug_opt ]] &&
 	echo $snapshot_glob{,.links} | tr ' ' '\n' |
 	    sort > $drive_log_dir/snapshots.ls
+	return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -1396,6 +1397,8 @@ _rm_pruned_snapshots() {
 		suspend_tracing
 	done
 	restore_tracing
+
+	update_snapshots_ls
 
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
@@ -1831,6 +1834,7 @@ _is_time_to_run_backup() {
 	local current_hour=$1 current_minute=$2
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
+	   update_snapshots_ls &&
 	   ( $our_path w > $log_dir/cron-w.txt ) &
 
 	# we're called more than hourly (to reset priorities, and to prune)
@@ -3398,23 +3402,25 @@ declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
 # set_seconds___from_msecs $min_slow_msecs
 # readonly disk_read_timeout=$seconds
 
-declare -r -i msec_increment=10
-readonly       sec_increment=0.01
+declare -r -i   msec_increment=10
+set_division 3 $msec_increment 1000
+readonly         sec_increment=$division
 
 _monitor_drives() {
 
+	local response_dir=$status_dir/response-msecs
+
 	for dir
-	    do	_set-drive_name $dir || abort "bad $dir"
+	    do	 _set-drive_name $dir || abort "bad $dir"
+		name=$drive_name
 		[[ ${name2PID[$name]-} ]] && continue	   # hung drive?
-		( set -- $dir/*.not ) & name2PID[$name]=$! # not, test it
+		( set -- $dir/*.nul ) & name2PID[$name]=$! # not, test it
 		name2msecs[$name]=0	# we just started the test
 		for file in $status_dir/{hung,slow}/$name
 		    do	echo $false > $file
 		done
 		echo 0 > $response_dir/test-run/$name
 	done
-
-	local response_dir=$status_dir/response-msecs
 
 	local -i msecs=0
 	# for speed, the following loop nevever forks (except 'sleep' at end)
@@ -3471,7 +3477,7 @@ monitor_drives() {
 	done
 
 	SECONDS=0
-	local -i -A name2PID name2msecs
+	local -A -i name2PID name2msecs
 	while true			# monitor forever
 	    do	_monitor_drives ${dirs:-$(list_drive_dirs -a)} # new drive?
 	done
