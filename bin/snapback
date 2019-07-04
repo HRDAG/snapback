@@ -28,9 +28,9 @@ version=22			# has to match version= in configure.sh.sample
 # $tmp_dir, $our_name, $our_path, $true, $false,
 # is-set, have-cmd, need-cmds, $is_darwin, set-FS_type-from-path,
 # set-inode_size-data_block_size-dir_block_size-from-path,
-# $FS_label, set-FS_label-from-FS-device, label_drive,
-# set_FS_device___from_FS_label, set-device_KB-from-block-device, $FS_device,
-# set_FS_device___from_path, set_mount_dir___from_FS_device,
+# $FS_label, set-FS_label-from-FS-device, label-drive,
+# set-FS_device-from-FS-label, set-device_KB-from-block-device, $FS_device,
+# set-FS_device-from-path, set-mount_dir-from-FS-device,
 # set-mount_dir-from-FS-label,  set-FS_label-from-mount_dir,
 # is-arg_1-in-arg_2, print-call-stack, warn,
 # abort, abort-function, assert-not-option, echoE, echoEV, Trace, TraceV,
@@ -2383,7 +2383,7 @@ fastest-snapshots() {
 
 set-excluded_drive_dirs_regex() {
 
-	if [[ $debug_opt  &&  ${flakey_drive_names_regex-} ]]
+	if [[ $debug_opt && ${flakey_drive_names_regex-} ]]
 	   then excluded_drive_dirs_regex=$flakey_drive_names_regex
 	   else excluded_drive_dirs_regex=NoThInG
 	fi
@@ -2960,7 +2960,7 @@ run-lsblk() {
 
 	local dir devices=
 	for dir in $drive_dirs
-	    do	set_FS_device___from_path $dir &&
+	    do	set-FS_device-from-path $dir &&
 		devices+="$FS_device "
 	done
 
@@ -3552,10 +3552,10 @@ add-extN-journal() {
 	mount_dir=$drive_dir
 	set-FS_label-from-mount_dir $mount_dir ; }
 							[[ $FS_device ]] ||
-	set_FS_device___from_FS_label $FS_label
+	set-FS_device-from-FS-label $FS_label
 	[[ ${mount_dir-} ]] ||
-	   set-mount_dir-from-FS-label $FS_label ||
-	   set_mount_dir___from_FS_device $FS_device
+	   set-mount_dir-from-FS-label  $FS_label ||
+	   set-mount_dir-from-FS-device $FS_device
 	TraceV 1 force_opt FS_label FS_device VG_name mount_dir
 
 	sudo tune2fs -l $FS_device | grep -q '^Journal ' &&	  {
@@ -3743,7 +3743,7 @@ filesystem-geometry() {
 	for drive_dir in $drive_dirs
 	    do	set-FS_type-from-path $drive_dir
 		_set-drive_name $drive_dir
-		set_FS_device___from_path $drive_dir
+		set-FS_device-from-path $drive_dir
 		[[ -L $FS_device ]] &&
 		set-absolute_path $FS_device && FS_device=$absolute_path
 		[[ $FS_device == /dev/mapper/* ]] && dev= ||
@@ -4019,7 +4019,7 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 	[[ $name ]] && set-drive_name $name && name=$drive_name
 	[[ !  $device ]] &&
 	   set-FS_label-from-mount_dir $drive_dir_prefix$name &&
-	   set_FS_device___from_FS_label $FS_label && device=$FS_device
+	   set-FS_device-from-FS-label $FS_label && device=$FS_device
 	[[ -b $device ]] || abort "$device is not a block device"
 
 	if [[ ! $name ]]
@@ -4215,7 +4215,7 @@ _copy-extN-backup-drive() {
 
 	$IfRun tune2fs -U $(uuidgen) $dst_device
 
-	label_drive $dst_device $dst_drive_dir
+	label-drive $dst_device $dst_drive_dir
 
 	if sudo tune2fs -l $src_device | grep -q "^Journal dev" || # external?
 	   [[ $do_want_external_log ]]
@@ -4974,7 +4974,7 @@ case $action in
 	echoEV action digit2name[2]; exit
 
 	validate-config-variables
-	set__OS_release_file__OS_release
+	set-OS_release_file-OS_release
 	TraceV 0 OS_release_file OS_release; exit
 
 	log test 1

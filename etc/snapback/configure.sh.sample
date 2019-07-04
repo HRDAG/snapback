@@ -250,6 +250,9 @@ drv_name2pruning_span_scale_factor[Z]=1	  # regression test of pruning uses Z
 # End of variables that control prune-drives.
 # -----------------------------------------------------------------------------
 
+# Can optionally specify often-slow drive(s) to leave out of regression tests.
+flakey_drive_names_regex=
+
 # The commands compared by the regression-test action.
 readonly old_cmd=/usr/local/bin/$our_name # installed version
 readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
