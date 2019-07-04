@@ -751,6 +751,15 @@ list_drive_dirs() {
 	restore-tracing
 }
 
+# ----------------------
+
+set-drive_dirs() {
+
+	set -- $(list_drive_dirs "$@")
+	drive_dirs=$*
+	[[ $drive_dirs ]]
+}
+
 # ---------------------------------
 
 is_drive_mounted() {
@@ -4495,7 +4504,9 @@ regression_test() {
 
 	if [[ $failed_tests ]]
 	   then warn "ERROR: regressions in these tests: ${failed_tests% }"
-	   else	echo
+	   else	set-warning_string ok \
+		   "all the (specified) tests passed: $tests"
+		echo -e "\n$warning_string\n"
 	fi
 }
 
