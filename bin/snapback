@@ -3128,8 +3128,8 @@ watch() {
 
 	} # [[ $cron_opt ][
 
-	ps_() { ps $ps_opt    "$@" | trim_ps_cols; }
-	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
+	ps_() { ps $ps_opt    "$@" | trim-ps-cols; }
+	psc() { ps $ps_opt -C "$@" | trim-ps-cols; }
 	if [[ $ps_opt ]]
 	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
 		trim-ps-cols() { cut -c "10-21,25-37,40-43,46-"; }
