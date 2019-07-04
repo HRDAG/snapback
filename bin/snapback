@@ -59,7 +59,7 @@ fi ;						readonly config_file_sample
    abort "have to install $config_file_sample"
 
 # For each config var, create associative array for per-drive customization.
-# [customize_config_variables currently fails when try to customize an array.]
+# [customize-config-variables currently fails when try to customize an array.]
 readonly uncustomizable_config_vars="
 	     drive_dir_prefix old_crypt_name_prefixes drive_specific_config_file
 	     level2CPU_priority_cmd level2IO_priority_cmd
@@ -88,7 +88,7 @@ Usage: $our_name [options] action [options] [args]
       logging and policy (see files in $config_dir/); for the dashboard,
       run: $our_name watch
 
-  Current actions are (you can specify their acronym, see process_action):
+  Current actions are (you can specify their acronym, see process-action):
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
@@ -217,7 +217,7 @@ log_msg_prefix=' ${action-} ${drive_name-}'  # this gets eval'ed each time
 # Miscellaneous functions used by for making and pruning backup snapshots.
 ##############################################################################
 
-set_readable_du_size() {
+set-readable_du_size() {
 	local -i size=$1
 
 	local suffix=K
@@ -238,7 +238,7 @@ set_readable_du_size() {
 
 # -----------------------------------------------------------------------------
 
-assert_drive_dir_writable() {
+assert-drive_dir-writable() {
 	local dir=${1:-$drive_dir}
 
 	[[ -f $dir ]] && dir=$(dirname $dir)
@@ -288,9 +288,9 @@ function sudo-lockpid() {
 
 # --------------------------------------------
 
-rm_stale_locks() {
+rm-stale-locks() {
 
-	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
+	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
@@ -305,19 +305,19 @@ rm_stale_locks() {
 
 readonly writer_types="backup prune copy"
 
-set_lock_path() {
+set-lock_path() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local type=$1 name=${2:-$drive_name}
 
 	[[ $name ]] || abort-function "missing \$2 and \$drive_name null"
-	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
+	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	lock_path=$lock_dir/$type-$name.pid
 	$xtrace
 }
 
 # ---------------------------------
 
-function set_glob() {
+function set-glob() {
 
 	[[ $# == 1 ]] || return 1
 
@@ -331,15 +331,15 @@ function set_glob() {
 
 # ---------------------------------
 
-set_lock_paths() {
+set-lock_paths() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $# == [0-2] ]] ||
 	    abort-function "$*: must be 0-2 args (can use globs)"
 	[[ ${1-} == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
 	local type_glob=${1:-*} name_glob=${2:-${drive_name:-*}}
 
-	set_glob "$type_glob" && type_glob=$glob
-	set_glob "$name_glob" && name_glob=$glob
+	set-glob "$type_glob" && type_glob=$glob
+	set-glob "$name_glob" && name_glob=$glob
 
 	[[    $type_glob == a*  ]] && type_glob=*
 	if [[ $name_glob == all ]]
@@ -364,7 +364,7 @@ set_lock_paths() {
 
 xtrace=				  # in case comment-out first line of function
 
-lock_PID() {
+lock-PID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
@@ -373,7 +373,7 @@ lock_PID() {
 
 	is-arg_1-in-arg_2 $type $writer_types ||
 	   abort-function "'$type' is unknown lock type"
-	set_lock_path $type $name
+	set-lock_path $type $name
 	local lock_file=$(basename $lock_path)
 
 	[[ $lock_holder_action == holds* ]] ||
@@ -408,32 +408,33 @@ lock_PID() {
 # ------------------------------------------------------------------
 
 # When $is_multi_writer_drive == $true, all writer jobs run in parallel, with
-# their (relative) IO and CPU priorities controlled by
-# set_job_type2priority_level() .  [Locking and job creation are described in
+# their (relative) I/O and CPU priorities controlled by
+# set-job_type2priority_level() .  [Locking and job creation are described in
 # the next section.]
 
 # When $is_multi_writer_drive == $false, only one job can be writing to a
 # drive at once (any other jobs will be suspended); this section describes the
 # policy (and mechanism) to meet that requirement.  For each drive,
-# create_job_on_drives() creates a job for a type of writer, and lock()
+# create-jobs() creates a job for a type of writer, and lock()
 # creates a lock for each of those jobs ( see writer_types= ).  The
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
 # backup job is initiated).  When no backup job is running, and copy and prune
-# jobs both exist, suspended_prune_as_drive_usage_response decides
+# jobs both exist, suspended-prune-as-drive-usage-response decides
 # which one should be suspended.
 #
 # An hourly cron job calls action run-backups (with argument 'all'), which
-# calls create_job_on_drives() to create a run_backup() job for each drive;
-# each run_backup() job starts a prune_drive() job, and prune_drive() may
-# start an update_drive() job.  If the cron job is called more frequently
-# than hourly, the off-hour jobs just call reset_priority and prune_drive
+# calls create-jobs() to create a run-backup() job for each drive;
+# each run-backup() job starts a prune-drive() job, and prune-drive() may
+# start an update-drive() job.  If the cron job is called more frequently
+# than hourly, the off-hour jobs just call reset-priority and prune-drive
 # (for drives with too-high usage, suspend any copy and start a prune).
 #
 # A lock() call for a non-backup lock will get its requested lock immediately
-# (so the job will then appear on the dashboard), but "lock -w" won't return
-# until that drive's backup finishes.  Similarly, a call to continue_jobs()
-# for a non-backup job will be silently ignored if a backup is running (and
-# returns 'failed').
+# (so the job will then appear on the dashboard), but will release that lock
+# and return 'failed' if a backup is running (it'll wait for the backup to
+# finish if called by 'lock -w', e.g. it's a user-initiated action).
+# Similarly, a call to continue-jobs() for a non-backup job will be silently
+# ignored if a backup is running, and will return 'failed'.
 
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
@@ -453,7 +454,7 @@ function lock() {
 	suspend-tracing
 	local drive_name drive_dir	# don't mess up caller's values
 	 _set-drive_name $resource
-	 _set_drive_dir
+	 _set-drive_dir
 	restore-tracing drive_name
 
 	local prev_lock_path=${_lock_type2lock_path[$type]-}
@@ -481,14 +482,14 @@ function lock() {
 	[[ ! $is_cron ]] && : ${wait_opt:=--wait}
 
 	# be sure to grab primary lock first, so job appears on dashboard
-	lock_PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
-	local primary_lock_path=$lock_path # lock_PID sets lock_path
+	lock-PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
+	local primary_lock_path=$lock_path # lock-PID sets lock_path
 
 	! [[ $action == update* && $debug_opt ]] &&
-	# the 'if' logic is similar to the logic in _signal_job()
+	# the 'if' logic is similar to the logic in _signal-job()
 	if ! [[ $is_multi_writer_drive || $type == backup ]]
-	   then lock_PID $wait_opt backup "$extra_lock_msg" &&
-		lock_PID --release backup "$extra_lock_msg" ||
+	   then lock-PID $wait_opt backup "$extra_lock_msg" &&
+		lock-PID --release backup "$extra_lock_msg" ||
 		   { lockpid --release $primary_lock_path; $xtrace; return 1; }
 	fi
 
@@ -520,7 +521,7 @@ unlock() {
 # enumerating/showing/signaling/killing process groups
 ##############################################################################
 
-process_group_PIDs() {
+process-group-PIDs() {
 
 	local PGID
 	for PGID
@@ -534,11 +535,11 @@ process_group_PIDs() {
 
 # ----------------------------------------------------------------------------
 
-set_job_PGID() {
+set-job_PGID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local job_type=$1 lock_path
 
-	set_lock_path $job_type
+	set-lock_path $job_type
 	if [[ -s $lock_path ]]
 	   then set -- $(< $lock_path)
 		job_PGID=$1
@@ -550,7 +551,7 @@ set_job_PGID() {
 
 # ----------------------------------------------------------------------------
 
-set_signal_is_kill() {
+set-signal_is_kill() {
 	local signal=${1#-}
 
 	case ${signal^^} in
@@ -575,7 +576,7 @@ function set-lock_PID() {
 # ----------------------
 
 function is-active-lock() {
-	set_lock_paths "$@"
+	set-lock_paths "$@"
 
 	local lock lock_PID
 	for lock in $lock_paths
@@ -586,7 +587,7 @@ function is-active-lock() {
 
 # ----------------------
 
-have_job() { is-active-lock "$@"; }
+have-job() { is-active-lock "$@"; }
 
 # ----------------------
 
@@ -605,7 +606,7 @@ function sudo-kill() {
 
 # ----------------------
 
-signal_job() {
+signal-job() {
 	local signal=${1#-}; shift
 	if [[ $# == 1 && $1 == *.pid ]]
 	   then lock_path=$1		# global variable, caller can use it
@@ -613,7 +614,7 @@ signal_job() {
 	   else local job_type=$1 drive_name=${2:-$drive_name}
 		suspend-tracing
 		_set-drive_name $drive_name
-		set_lock_path $job_type
+		set-lock_path $job_type
 		restore-tracing
 	fi
 
@@ -625,7 +626,7 @@ signal_job() {
 	set-lock_PID $lock_path || return 1
 	sudo-kill -s ${signal^^} -$lock_PID || return 1
 
-	set_signal_is_kill $signal &&	# if terminated job, release its lock
+	set-signal_is_kill $signal &&	# if terminated job, release its lock
 	sudo-lockpid -o $lock_path &> /dev/null && # avoid race
 	sudo-lockpid -r $lock_path
 
@@ -636,45 +637,45 @@ signal_job() {
 
 # The locking & job-management policy is documented in front of function lock()
 
-function _signal_jobs() {
+function _signal-jobs() {
 	local signal=$1; shift
 
 	[[ $IfRun ]] && echo "${FUNCNAME[1]} $*" && return 0
 
 	local type
 	for type
-	    do	have_job $type || continue
+	    do	have-job $type || continue
 		if [[ $signal == *CONT ]]
 		   then # this logic is similar to the logic in lock()
 			! [[ $is_multi_writer_drive || $type == backup ]] &&
-			have_job backup &&
+			have-job backup &&
 			    return 1  # only 1 writer allowed, bkp has priority
-			set_job_PGID $type &&
-			set_priority $type $job_PGID
+			set-job_PGID $type &&
+			set-priority $type $job_PGID
 		fi
-		signal_job $signal $type
+		signal-job $signal $type
 	done
 	return 0
 }
 
 # these take multiple types, and work with the current $drive_name
-function  suspend_jobs() { _signal_jobs -STOP "$@"; }
-function continue_jobs() { _signal_jobs -CONT "$@"; }
+function  suspend-jobs() { _signal-jobs -STOP "$@"; }
+function continue-jobs() { _signal-jobs -CONT "$@"; }
 
 # -------------------------------------------------
 
-kill_job_on_drives() {
+kill-job-on-drives() {
 	local signal=-KILL
 	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
 	assert-not-option ${1-}
 
-	set_lock_paths "$@" || return 1
+	set-lock_paths "$@" || return 1
 
 	local path status=1		# assume nothing we're allowed to kill
 	for path in $lock_paths
-	    do	signal_job $signal $path && status=0
+	    do	signal-job $signal $path && status=0
 	done
 
 	return $status
@@ -682,12 +683,12 @@ kill_job_on_drives() {
 
 # -----------------------------------------------------------------------------
 
-set_lock_PGIDs() {
+set-lock_PGIDs() {
 	local type=$1
 
 	lock_PGIDs=
 
-	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
+	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	eval "set -- $lock_dir/$type-${names_glob:-*}.pid"
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+="$lock "; done
@@ -706,7 +707,7 @@ set_lock_PGIDs() {
 
 # -----------------------------------------------------------------------------
 
-ps_locks() {
+ps-locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 	local ps_opts=
@@ -715,10 +716,10 @@ ps_locks() {
 	   do ps_opts+="$1 "; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
-	set_lock_paths "$@"
+	set-lock_paths "$@"
 
-	[[ $do_rm ]] && rm_stale_locks
-	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
+	[[ $do_rm ]] && rm-stale-locks
+	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	local status=1			# assume all locks are missing/stale
 	for lock in $lock_paths
 	    do	header $lock
@@ -735,7 +736,7 @@ ps_locks() {
 # miscellaneous
 ##############################################################################
 
-list_drive_dirs() {
+list-drive-dirs() {
 	suspend-tracing
 	[[ ${1-} == -a ]] &&
 	   local list_all_drives=$true && shift ||
@@ -755,14 +756,14 @@ list_drive_dirs() {
 
 set-drive_dirs() {
 
-	set -- $(list_drive_dirs "$@")
+	set -- $(list-drive-dirs "$@")
 	drive_dirs=$*
 	[[ $drive_dirs ]]
 }
 
 # ---------------------------------
 
-is_drive_mounted() {
+is-drive-mounted() {
 	local drive_dir=$1
 
 	[[ $drive_dir ]] || return 1
@@ -771,10 +772,10 @@ is_drive_mounted() {
 
 # ----------------------------------------------------------------------------
 
-set_oldest_snapshot() {
+set-oldest_snapshot() {
 
 	local oldest= FS
-	for FS in $(list_drive_dirs)
+	for FS in $(list-drive-dirs)
 	    do	suspend-tracing
 		set -- $FS/$snapshot_glob
 		[[ $# != 0 ]] || continue
@@ -791,7 +792,7 @@ set_oldest_snapshot() {
 # Setup variables for working with a specific backup drive.
 ##############################################################################-
 
-function set_admin_group() {
+function set-admin_group() {
 
 	is-set admin_group && { [[ $admin_group ]] ; return $?; }
 
@@ -820,10 +821,10 @@ function set_admin_group() {
 
 # ----------------------
 
-fix_drive_dir_perms() {
+fix-drive_dir-perms() {
 	local drive_dir=${1:-$drive_dir}
 
-	set_admin_group &&
+	set-admin_group &&
 	chgrp $admin_group $drive_dir/. &&
 	# this will _not_ make non-empty snapshots deletable by group
 	chmod g+w	   $drive_dir/. # for 'u' regression test
@@ -831,12 +832,12 @@ fix_drive_dir_perms() {
 
 # ----------------------
 
-create__lock_dir__log_dirs() {
+create-lock_dir-log_dirs() {
 
 	local group=
 
 	[[ -d $log_dir && -d $lock_dir ]] || {
-	set_admin_group && group=$admin_group
+	set-admin_group && group=$admin_group
 	sudo mkdir -p --mode=1777 $lock_dir
 	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
 	sudo chgrp $group  $log_dir $lock_dir &&
@@ -847,8 +848,8 @@ create__lock_dir__log_dirs() {
 	[[ ${drive_log_dir-} ]] || return
 
 	if [[ ! -d $drive_log_dir ]]
-	   then set_admin_group && group=$admin_group && group=:$group
-		[[ ${drive_dir-} ]] && fix_drive_dir_perms
+	   then set-admin_group && group=$admin_group && group=:$group
+		[[ ${drive_dir-} ]] && fix-drive_dir-perms
 		sudo mkdir -p -m g+w,o-w $drive_log_dir
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
@@ -866,7 +867,7 @@ _last_fully_initialized_drive_name=
 
 # this is normally called by set-drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
-set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
+set-drive_log_dir-file_for_logging-admin_group-is_regression_test() {
 	local  drive_name=${1-}	     # called from set-drive_name, so $1 valid
 
 	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
@@ -883,9 +884,9 @@ set__drive_log_dir__file_for_logging__admin_group__is_regression_test() {
 	fi
 	TraceV 3 drive_log_dir
 	file_for_logging=$drive_log_dir/messages.log
-	[[ -d $drive_log_dir ]] || create__lock_dir__log_dirs
+	[[ -d $drive_log_dir ]] || create-lock_dir-log_dirs
 
-	customize_and_validate_configuration_variables $drive_name
+	customize-and-validate-configuration-variables $drive_name
 
 	return 0
 }
@@ -961,13 +962,13 @@ set-drive_name() {
 	_set-drive_name $name
 	TraceV 3 drive_name
 
-	set__drive_log_dir__file_for_logging__admin_group__is_regression_test \
+	set-drive_log_dir-file_for_logging-admin_group-is_regression_test \
 	   $drive_name
 }
 
 # ---------------------------------
 
-_set_drive_dir() {
+_set-drive_dir() {
 	local name=${1:-$drive_name}
 
 	drive_dir=$drive_dir_prefix$name
@@ -975,16 +976,16 @@ _set_drive_dir() {
 
 is_OK_if_drive_dir_unmounted=$false
 
-set_drive_dir() {
+set-drive_dir() {
 	local drive_name=$1		# result of set-drive_name, i.e. valid
 
 	[[ $drive_name != */* ]] ||
 	  abort "'/' in drive name not (yet)supported, add to drive_dir_prefix"
 
-	_set_drive_dir
+	_set-drive_dir
 
 	if [[ $is_regression_test && ! -d $drive_dir ]]
-	   then	set_admin_group
+	   then	set-admin_group
 		[[ $admin_group ]] && local group=:$admin_group || local group=
 		sudo mkdir $drive_dir &&
 		sudo chmod g+s,g+w $drive_dir &&
@@ -992,7 +993,7 @@ set_drive_dir() {
 		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
 	fi
 
-	if  is_drive_mounted  $drive_dir
+	if  is-drive-mounted  $drive_dir
 	   then have-cmd fix_snapshot_names &&
 		fix_snapshot_names $drive_dir # must call last
 		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null # optional
@@ -1007,9 +1008,9 @@ set_drive_dir() {
 
 # -----------------------------------------------------------------------------
 
-declare -A custom_config_var2default_value # set_drive_usage also uses this
+declare -A custom_config_var2default_value # set-drive_usage also uses this
 
-customize_config_variables() {
+customize-config-variables() {
 	local drive_name=${1-}
 
 	[[ $drive_name == Z ]] && is_regression_test=$true
@@ -1017,7 +1018,7 @@ customize_config_variables() {
 	remember-tracing		# since suspend-tracing maybe not run
 	local var_name
 	[[ ${custom_config_vars-} ]] || {
-	# set__drive_log_dir__file_for_logging__admin_group__is_regression_test
+	# set-drive_log_dir-file_for_logging-admin_group-is_regression_test
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
 	declare -g custom_config_var_assignments= # to localize with 'local'
 	for var_name in $custom_config_vars $config_vars
@@ -1065,7 +1066,7 @@ customize_config_variables() {
 
 # ------------------------------------------------------------------
 
-validate_config_variables() {
+validate-config-variables() {
 
 	declare -p $config_vars | grep -v '^declare -'
 	[[ ${PIPESTATUS[0]} == 0 ]] ||
@@ -1113,7 +1114,7 @@ validate_config_variables() {
 
 # ------------------------------------------------------------------
 
-customize_and_validate_configuration_variables() {
+customize-and-validate-configuration-variables() {
 	local name=${1-}
 
 	# avoid infinite loop
@@ -1124,9 +1125,9 @@ customize_and_validate_configuration_variables() {
 
 	source-drive-specific-config-file $name
 
-	customize_config_variables $name
+	customize-config-variables $name
 
-	validate_config_variables	# must do this last
+	validate-config-variables	# must do this last
 
 	restore-tracing
 }
@@ -1135,7 +1136,7 @@ customize_and_validate_configuration_variables() {
 # Manage priorities for backup and prune and update/merge.
 ##############################################################################
 
-is_drive_usage_too_high() {
+is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
 
 	suspend-tracing
@@ -1158,9 +1159,9 @@ is_drive_usage_too_high() {
 declare -A job_type2priority_level
 
 # this is mostly relevant when $is_multi_writer_drive
-set_job_type2priority_level() {
+set-job_type2priority_level() {
 
-	if is_drive_usage_too_high
+	if is-drive-usage-too-high
 	   then job_type2priority_level=(
 		    [prune]=higher
 		   [backup]=medium
@@ -1177,10 +1178,10 @@ set_job_type2priority_level() {
 # -----------------------
 
 # this sets the 'priority' variable _and_ changes the process priority
-function set_priority() {
+function set-priority() {
 	local job_type=$1 PGID=${2:-$$}
 
-	set_job_type2priority_level
+	set-job_type2priority_level
 	priority=${job_type2priority_level[$job_type]}
 
 	local CPU_priority_cmd=${level2CPU_priority_cmd[$priority]}
@@ -1202,12 +1203,12 @@ function set_priority() {
 
 # -----------------------------------------------------------------------------
 
-function set_drive_jobs_priorities {
+function reset-drive-jobs-priorities {
 
 	local type job_PGID priority status=1
 	for type in $writer_types
-	    do	set_job_PGID $type || continue
-		set_priority $type $job_PGID
+	    do	set-job_PGID $type || continue
+		set-priority $type $job_PGID
 		status=0
 	done
 	return $status
@@ -1215,22 +1216,22 @@ function set_drive_jobs_priorities {
 
 # ------------------------------------------
 
-function suspended_prune_as_drive_usage_response() {
+function suspended-prune-as-drive-usage-response() {
 	local drive_names=${*:-$drive_name}
 
 	local drive_name status=1
 	for drive_name in $drive_names
 	    do	_set-drive_name $drive_name
-		set_drive_jobs_priorities || continue
+		reset-drive-jobs-priorities || continue
 
-		have_job copy || { continue_jobs prune; continue; }
+		have-job copy || { continue-jobs prune; continue; }
 
-		if is_drive_usage_too_high
-		   then  suspend_jobs copy
-			continue_jobs prune # may do nothing if backup running
-		   else continue_jobs copy  # may do nothing if backup running
+		if is-drive-usage-too-high
+		   then  suspend-jobs copy
+			continue-jobs prune # may do nothing if backup running
+		   else continue-jobs copy  # may do nothing if backup running
 			[[ $is_multi_writer_drive ]] ||
-			   { suspend_jobs prune; status=0; }
+			   { suspend-jobs prune; status=0; }
 		fi
 	done
 	return $status
@@ -1242,7 +1243,7 @@ function suspended_prune_as_drive_usage_response() {
 ##############################################################################-
 ##############################################################################-
 
-function count_rsyncs_using_resource() {
+function count-rsyncs-using-resource() {
 	local regex=$*
 
 	[[ $drive_name == Z || $IfRun ]] && return 0
@@ -1251,7 +1252,7 @@ function count_rsyncs_using_resource() {
 
 # -----------------------------------------------------------------------------
 
-function update_snapshots_ls() {
+function update-snapshots-ls() {
 
 	[[ ! $debug_opt ]] &&
 	echo $snapshot_glob{,.links} | tr ' ' '\n' |
@@ -1261,14 +1262,14 @@ function update_snapshots_ls() {
 
 # -----------------------------------------------------------------------------
 
-_is_time_to_prune_drive() {
+_is-time-to-prune-drive() {
 	local dir=${1:-$drive_dir}
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
 	[[ $(date '+%H') == 00 ]] && return 0 # time for our daily prune?
 
-	is_drive_usage_too_high   && return 0 # desparately need a prune?
+	is-drive-usage-too-high   && return 0 # desparately need a prune?
 
 	set -- $dir/*.rm
 	[[ $# != 0 ]] && return 0	# have partially-deleted snapshots?
@@ -1285,24 +1286,24 @@ _is_time_to_prune_drive() {
 
 # ----------------------
 
-function _should_run_prune {
+function _should-run-prune {
 
 	[[ ! $is_update ]] || return 0	# for update, we just rmdir empty dirs
 
 	# the following logic is odd, it ensures real-user's request is honored
 
 	if [[ $is_cron ]]
-	   then suspended_prune_as_drive_usage_response && return 1
+	   then suspended-prune-as-drive-usage-response && return 1
 	   else # if user changed backup_period or prune-rate, need to rescan
-		kill_job_on_drives prune # kill old job, we'll be new job
+		kill-job-on-drives prune # kill old job, we'll be new job
 	fi
 
-	lock prune || { suspended_prune_as_drive_usage_response; return 1; }
+	lock prune || { suspended-prune-as-drive-usage-response; return 1; }
 
 	if [[ $is_cron ]]
-	   then _is_time_to_prune_drive || { unlock prune; return 1; }
+	   then _is-time-to-prune-drive || { unlock prune; return 1; }
 	   else # this could suspend ourself, which is OK ...
-		suspended_prune_as_drive_usage_response # real person, can wait
+		suspended-prune-as-drive-usage-response # real person, can wait
 	fi
 
 	return 0
@@ -1322,12 +1323,12 @@ function sudo-unless-dir-writable() {
 
 # ---------------------------------
 
-_rm_pruned_snapshots() {
+_rm-pruned-snapshots() {
 	local snapshots_file=$1
 
 	local snapshot
 
-	assert_drive_dir_writable $PWD
+	assert-drive_dir-writable $PWD
 
 	suspend-tracing
 	set -- $(< $snapshots_file)
@@ -1348,7 +1349,7 @@ _rm_pruned_snapshots() {
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
-	    do	count_rsyncs_using_resource  $snapshot || continue # in use?
+	    do	count-rsyncs-using-resource  $snapshot || continue # in use?
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
 		if [[ $is_update ]]
@@ -1364,7 +1365,7 @@ _rm_pruned_snapshots() {
 		return
 	fi
 
-	update_snapshots_ls
+	update-snapshots-ls
 
 	set -- $snapshot_glob*.rm
 	local snapshot_basenames=$*
@@ -1391,7 +1392,7 @@ _rm_pruned_snapshots() {
 	    ( xfs | btrfs )		# any FS that supports a zillion links
 		hard_link_dirs= ;;
 	esac
-	[[ ${hard_link_dirs-} ]] && ! is_drive_usage_too_high $drive_dir &&
+	[[ ${hard_link_dirs-} ]] && ! is-drive-usage-too-high $drive_dir &&
 	for snapshot
 	    do	local subdir
 		for subdir in $hard_link_dirs
@@ -1408,7 +1409,7 @@ _rm_pruned_snapshots() {
 	done
 	restore-tracing
 
-	update_snapshots_ls
+	update-snapshots-ls
 
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
@@ -1456,13 +1457,13 @@ _rm_pruned_snapshots() {
 readonly     snapshot_glob="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
 readonly max_snapshot_glob="9999-12-31,23"	       # max supported value
 readonly snapshot_day_glob=${snapshot_glob%,??}	       # Year-Mo-Da
-set_new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
+set-new_name() { new_name=$(echo $1 | sed -r 's/-/,/;s/^(..)(..)/20\1-\2-/'); }
 readonly     snapshot_regex=${snapshot_glob//\?/.}
 readonly snapshot_day_regex=${snapshot_regex%,??}
 
-set_date_time() { date_time=$(date '+%Y-%m-%d,%H' "$@"); }
-set_day      () {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
-set_seconds  () {
+set-date_time() { date_time=$(date '+%Y-%m-%d,%H' "$@"); }
+set-day-from-secs() {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
+set-seconds-from-snapshot() {
 	snapshot_date_time=$1
 
 	snapshot_date_time=${snapshot_date_time##*/}	# basename
@@ -1473,7 +1474,7 @@ set_seconds  () {
 
 # --------------------------------------------
 
-shorten_date() {
+shorten-date() {
 	case $1 in
 	    (  hour ) sed 's/,..$//' ;;	# strip time from snapshot's date-time
 	    (   day ) sed 's/-..$//' ;; # strip day from snapshot's date
@@ -1493,7 +1494,7 @@ declare -r -A type2date_suffix_glob=(
    "$snapshot_glob" ]] ||
 	abort "snapshot_glob has to end with type2date_suffix_glob[year]"
 
-set_prune_glob() {
+set-prune_glob() {
 	local type=$1 glob=$2
 
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
@@ -1530,7 +1531,7 @@ declare -r -A type2prune_type_globs=(
    [year]="  [13579]                 {2,6}              {4,8}"
 )
 
-function load__type2date_span {
+function set-type2date_span {
 
     type2date_span=(
 	 [hour]=$days_per_span_for_hour_prune
@@ -1558,7 +1559,7 @@ done
 unset _period
 readonly backup_period2minimal_snapshot_regex
 
-scale_date_span() {
+set-date_span-scaled() {
 
 	date_span=$( echo "$date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
@@ -1566,12 +1567,12 @@ scale_date_span() {
 
 # --------------------------------------------
 
-reverse_sorted_snapshot_basenames() {
+reverse-sorted-snapshot-basenames() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	echo $snapshot_glob*  |		# prune everything
 	   tr ' ' '\n' | sort -u -r |
-	   grep -v '\.rm$'		# _rm_pruned_snapshots handles *.rm
+	   grep -v '\.rm$'		# _rm-pruned-snapshots handles *.rm
 	$xtrace
 }
 
@@ -1579,15 +1580,15 @@ reverse_sorted_snapshot_basenames() {
 
 _oldest_snapshot=
 
-prune_type_to_file() {
+prune-type-to-file() {
 	local type=${1%s} file_of_snapshots_to_prune=$2; shift 2
-	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten_date $type)
+	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten-date $type)
 	local remaining_reverse_sorted_snapshot_dates=$*
 
 	local -A type2date_span
-	load__type2date_span	# run after call to customize_config_variables
+	set-type2date_span	# run after call to customize-config-variables
 	local date_span=${type2date_span[$type]}
-	scale_date_span
+	set-date_span-scaled
 	local prune_type_globs=${type2prune_type_globs[$type]}
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
 	[[ $type == hour ]] && _oldest_snapshot=$drive_dir/${!#},00
@@ -1610,13 +1611,13 @@ prune_type_to_file() {
 		fi
 
 		Trace 4 "\n  LOOP $type: $# dates left: ${1-} ${2-} ... ${!#}"
-		! _do_skip_newest_span_of_days $type || shift $date_span ||
+		! _do-skip-newest-span-of-days $type || shift $date_span ||
 		    shift $# # shift does nothing if try to shift more than $#
 		remaining_reverse_sorted_snapshot_dates=$*
 		local first_prune_date=${1-}
 		[[ $first_prune_date ]] || break
 
-		set_prune_glob $type "$prune_type_glob"
+		set-prune_glob $type "$prune_type_glob"
 		TraceV 5 date_suffix_glob first_prune_date \
 			  prune_type_glob prune_glob
 		eval "set -- $prune_glob"
@@ -1642,7 +1643,7 @@ prune_type_to_file() {
 
 # ----------------------
 
-_do_skip_newest_span_of_days() {
+_do-skip-newest-span-of-days() {
 	local type=$1
 
 	[[ $type != hour* ]] && return 0
@@ -1666,19 +1667,19 @@ _do_skip_newest_span_of_days() {
 # The locking & job-management policy is documented in front of function lock()
 
 # for the goals of this function, see prune-variable comments in configure.sh
-function prune_drive() {
+function prune-drive() {
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	assert-not-option ${1-}
 	local drive_name=$1 drive_dir
 
 	suspend-tracing
 	set-drive_name $drive_name
-	set_drive_dir  $drive_name || return 1
+	set-drive_dir  $drive_name || return 1
 	restore-tracing
 
-	_should_run_prune || return 1
+	_should-run-prune || return 1
 
-	set_priority prune
+	set-priority prune
 
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
@@ -1686,14 +1687,14 @@ function prune_drive() {
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	$Trace
-	set -- $(reverse_sorted_snapshot_basenames)
-	# prune_type_to_file returns dates remaining, to check for more pruning
-	set -- $(prune_type_to_file hour  $snapshots_to_prune_file $*)
-	set -- $(prune_type_to_file day   $snapshots_to_prune_file $*);#$Trace
-	set -- $(prune_type_to_file month $snapshots_to_prune_file $*);#set +x
-	set -- $(prune_type_to_file year  $snapshots_to_prune_file $*)
+	set -- $(reverse-sorted-snapshot-basenames)
+	# prune-type-to-file returns dates remaining, to check for more pruning
+	set -- $(prune-type-to-file hour  $snapshots_to_prune_file $*)
+	set -- $(prune-type-to-file day   $snapshots_to_prune_file $*);#$Trace
+	set -- $(prune-type-to-file month $snapshots_to_prune_file $*);#set +x
+	set -- $(prune-type-to-file year  $snapshots_to_prune_file $*)
 
-	_rm_pruned_snapshots $snapshots_to_prune_file # it deletes the file
+	_rm-pruned-snapshots $snapshots_to_prune_file # it deletes the file
 	rm -f $snapshots_to_prune_file
 
 	[[ $is_update ]] && return 0
@@ -1713,7 +1714,7 @@ function prune_drive() {
 # functions to setup --link-dest args to rsync
 # -----------------------------------------------------------------------------
 
-_have_full_snapshot() {
+_have-full-snapshot() {
 
 	set -- ${new_snapshot%/$snapshot_glob*}/$snapshot_glob
 	[[ $# != 0 ]]
@@ -1721,7 +1722,7 @@ _have_full_snapshot() {
 
 # ---------------------------------
 
-set_num_full_link_dests() {
+set-num_full_link_dests() {
 
 	# need at least 2 --link-dest args in case the sysadmnin borked one,
 	# and a few hours worth in case a file was deleted then recovered;
@@ -1734,7 +1735,7 @@ set_num_full_link_dests() {
 
 # ----------------------
 
-set_link_dest_opts() {
+set-link_dest_opts() {
 	local new_snapshot=$1; shift
 
 	while [[ ! -d ${1-} || ${1-} == $new_snapshot* ]]
@@ -1743,11 +1744,11 @@ set_link_dest_opts() {
 	done
 	[[ -d ${1-} ]] || return
 
-	set_num_full_link_dests
+	set-num_full_link_dests
 
 	suspend-tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
-	_have_full_snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
+	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
 	local snapshot
 	for snapshot in $*
 	    do	[[ -d  $snapshot ]] || continue
@@ -1768,7 +1769,7 @@ set_link_dest_opts() {
 
 # ------------------------------------------------------------------
 
-set_link_dest_opts___for_run_backup() {
+set-link_dest_opts-for-run-backup() {
 	local new_snapshot=$(basename $1)
 
 	suspend-tracing
@@ -1779,12 +1780,12 @@ set_link_dest_opts___for_run_backup() {
 		 tr ' ' '\n' | sort -r)
 	restore-tracing
 
-	set_link_dest_opts $new_snapshot $*
+	set-link_dest_opts $new_snapshot $*
 }
 
 # ------------------------------------------------------------------
 
-set_link_dest_opts___for_copy_snapshot() {
+set-link_dest_opts-for-copy-snapshot() {
 	local new_snapshot=$(basename $1)
 
 	suspend-tracing
@@ -1798,7 +1799,7 @@ set_link_dest_opts___for_copy_snapshot() {
 			echo $snapshot
 		 done)
 	restore-tracing
-	set_link_dest_opts $new_snapshot $* # newest to oldest
+	set-link_dest_opts $new_snapshot $* # newest to oldest
 
 	set -- $(echo $snapshot_glob{,.links,.partial} |
 		 tr ' ' '\n' |
@@ -1807,14 +1808,14 @@ set_link_dest_opts___for_copy_snapshot() {
 			echo $snapshot
 		 done)
 	restore-tracing
-	set_link_dest_opts $new_snapshot $* # oldest to newest
+	set-link_dest_opts $new_snapshot $* # oldest to newest
 }
 
 # -----------------------------------------------------------------------------
-# misc functions to support run_rsync
+# misc functions to support run-rsync
 # -----------------------------------------------------------------------------
 
-set_excluded_hours() {
+set-excluded_hours() {
 
 	set -- $(
 	for hour
@@ -1836,7 +1837,7 @@ set_excluded_hours() {
 
 # ---------------------------------
 
-_is_time_to_run_backup() {
+_is-time-to-run-backup() {
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
@@ -1844,13 +1845,13 @@ _is_time_to_run_backup() {
 	local current_hour=$1 current_minute=$2
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
-	   update_snapshots_ls &&
+	   update-snapshots-ls &&
 	   ( $our_path w > $log_dir/cron-w.txt ) &
 
 	# we're called more than hourly (to reset priorities, and to prune)
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
 
-	set_excluded_hours $excluded_backup_hours
+	set-excluded_hours $excluded_backup_hours
 	is-arg_1-in-arg_2 $current_hour $excluded_hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
 
@@ -1859,7 +1860,7 @@ _is_time_to_run_backup() {
 
 # -------------------------------------------------------
 
-set_hours() {
+set-hours-from-minutes() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  minutes=$2
 	   else local decimal_digits_opt=-2  minutes=$1
@@ -1870,11 +1871,11 @@ set_hours() {
 	hours=$division
 }
 
-set_hours 10; [[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
+set-hours-from-minutes 10; [[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
 
 # ----------------------
 
-set_seconds___from_msecs() {
+set-seconds-from-msecs() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  msecs=$2
 	   else local decimal_digits_opt=-2  msecs=$1
@@ -1889,14 +1890,14 @@ set_seconds___from_msecs() {
 
 readonly rsync_time_subdir=stats/rsync-minutes
 
-archive_rsync_time_data() {
+archive-rsync-time-data() {
 
 	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
 	mkdir -p $rsync_time_dir
 	cd $rsync_time_dir &&
 	set -- *.txt &&
 	if [[ $# != 0 ]]
-	   then set_date_time -r .
+	   then set-date_time -r .
 		dir=.${date_time%,*}
 		$IfRun mkdir -p $dir
 		$IfRun mv -v *.txt $PWD/$dir/
@@ -1909,11 +1910,11 @@ archive_rsync_time_data() {
 is-set     days_to_keep ||		# custom version in $config_file?
 declare -i days_to_keep=3		# ensure more than weekend-only data
 
-record_rsync_time() {
+record-rsync-time() {
 	local snapshot=$(basename $1)
 
 	local -i minutes=$(( ($SECONDS + 30) / 60 ))
-	set_hours $minutes
+	set-hours-from-minutes $minutes
 	rsync_hours=$hours
 
 	# $rsync_time_subdir/* used to set backup_period, so don't save copy
@@ -1943,7 +1944,7 @@ record_rsync_time() {
 
 # -------------------------------------------------------
 
-_links_error_msg() {
+_links-error-msg() {
 	local msg=$*
 
 	# since contents of $() are run in subshell, have to echo results
@@ -1972,7 +1973,7 @@ _links_error_msg() {
 
 # ---------------------------------
 
-_handle_rsync_results() {
+_handle-rsync-results() {
 	local new_snapshot=$1 status=$2 log=$3
 
 	if [[ -s $log ]]
@@ -1990,8 +1991,8 @@ _handle_rsync_results() {
 		[[ $new_snapshot != *.links ]] &&
 		set -- $snapshot_glob && [[ $# != 0 ]] &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
-		update_snapshots_ls
-		record_rsync_time $new_snapshot
+		update-snapshots-ls
+		record-rsync-time $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
 		$IfRun log \
@@ -2006,9 +2007,9 @@ _handle_rsync_results() {
 						tr '\n' '|' | sed 's/|/; /')
 			error_msg="...; ${err}rsync exit status=$status"
 		   else error_msg="$link_fail_count 'Too many links'"
-			error_msg=$(_links_error_msg "$error_msg")
+			error_msg=$(_links-error-msg "$error_msg")
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
-			record_rsync_time $new_snapshot
+			record-rsync-time $new_snapshot
 		fi
 		if is-arg_1-in-arg_2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
@@ -2029,7 +2030,7 @@ _handle_rsync_results() {
 
 # ----------------------
 
-run_rsync() {
+run-rsync() {
 	if [[ $1 == -c ]]
 	   then shift
 		local is_copy_snapshot=$true
@@ -2042,7 +2043,7 @@ run_rsync() {
 	local date_time=$(basename $dst_snapshot)
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
 
-	assert_drive_dir_writable $(dirname $dst_snapshot)
+	assert-drive_dir-writable $(dirname $dst_snapshot)
 
 	if [[ $dst_snapshot == *.partial ]]
 	   then local partial_dst=$dst_snapshot
@@ -2067,8 +2068,8 @@ run_rsync() {
 	suspend-tracing
 	local link_dest_opts=
 	if [[ ! $is_copy_snapshot ]]
-	   then set_link_dest_opts___for_run_backup    $dst_snapshot
-	   else set_link_dest_opts___for_copy_snapshot $dst_snapshot
+	   then set-link_dest_opts-for-run-backup    $dst_snapshot
+	   else set-link_dest_opts-for-copy-snapshot $dst_snapshot
 	fi
 	restore-tracing link_dest_opts
 
@@ -2094,7 +2095,7 @@ run_rsync() {
 	[[ ! $is_copy_snapshot ]] &&
 	$IfRun touch $partial_dst	# 'when we finished', not mdate of src
 
-	_handle_rsync_results $dst_snapshot $status $log
+	_handle-rsync-results $dst_snapshot $status $log
 
 	$IfRun sync --file-system $dst_snapshot* &> /dev/null # optional
 
@@ -2103,17 +2104,17 @@ run_rsync() {
 
 # -------------------------------------------------------
 
-run_backup_rsync() {
+run-backup-rsync() {
 	local date_time=$1
 
-	set_priority backup
+	set-priority backup
 
 	local new_snapshot=$drive_dir/$date_time
 
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	suspend-tracing
-	eval "run_rsync $dirs_to_backup $new_snapshot" # might need globbing
+	eval "run-rsync $dirs_to_backup $new_snapshot" # might need globbing
 	restore-tracing
 }
 
@@ -2121,21 +2122,21 @@ run_backup_rsync() {
 
 # The locking & job-management policy is documented in front of function lock()
 
-run_backup() {
+run-backup() {
 	local drive_name=$1 drive_dir
 
 	set-drive_name $drive_name
-	set_drive_dir  $drive_name || return 1
+	set-drive_dir  $drive_name || return 1
 
 	local date_time
-	set_date_time
+	set-date_time
 
-	if ! _is_time_to_run_backup
-	   then $IfRun create_jobs prune
+	if ! _is-time-to-run-backup
+	   then $IfRun create-jobs prune
 		return
 	fi
 	if [[ $is_multi_writer_drive ]]
-	   then $IfRun create_jobs prune
+	   then $IfRun create-jobs prune
 	fi
 
 	# grab backup lock before prune, so don't suspend prune if the sysadmin
@@ -2143,15 +2144,15 @@ run_backup() {
 	lock -w backup || return 1	# wait for lock, so don't skip backup
 
 	[[ ! $is_multi_writer_drive ]] &&
-	suspend_jobs copy prune
+	suspend-jobs copy prune
 
-	run_backup_rsync $date_time
+	run-backup-rsync $date_time
 	local status=$?
 
 	unlock backup
 
 	[[ ! $is_multi_writer_drive ]] &&
-	$IfRun create_jobs prune	# also manages copy job
+	$IfRun create-jobs prune	# also manages copy job
 
 	return $status
 }
@@ -2162,7 +2163,7 @@ run_backup() {
 ##############################################################################-
 ##############################################################################-
 
-assert_not_in_cron_jobs() {
+assert-not-in-cron-jobs() {
 
 	local name  drive_name
 	for name
@@ -2176,13 +2177,13 @@ assert_not_in_cron_jobs() {
 
 # -----------------------------------------------------------------------------
 
-bad_copy() {
+bad-copy() {
 	local msg=$*
 
 	[[ $is_quiet || $is_update || $debug_opt ]] ||
 	   abort "$msg; use -q to not abort"
 
-	[[ ! $debug_opt || $is_update ]] || echo "copy_snapshot: $msg"
+	[[ ! $debug_opt || $is_update ]] || echo "copy-snapshot: $msg"
 
 	return 1
 }
@@ -2191,7 +2192,7 @@ bad_copy() {
 
 declare -A drive_name2backup_type
 
-set_backup_type() {
+set-backup_type() {
 	local drive_name=$1	  # fastest if it's a drive_name not drive_dir
 
 	backup_type=${drive_name2backup_type[$drive_name]-}
@@ -2199,53 +2200,53 @@ set_backup_type() {
 
 	[[   ${custom_config_var_assignments-} ]] && eval \
 	local $custom_config_var_assignments # don't trash caller's values
-	set-drive_name $drive_name	# calls customize_config_variables
+	set-drive_name $drive_name	# calls customize-config-variables
 	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
 	drive_name2backup_type[$drive_name]=$backup_type # cache it
 }
 
 # ---------------------------------
 
-matches_dst_backup_type() {
+matches-dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dir=$1 drive_name
 
 	_set-drive_name $drive_dir
-	set_backup_type $drive_name
+	set-backup_type $drive_name
 	[[ $backup_type == $dst_backup_type ]]
 	$xtrace
 }
 
 # ----------------------
 
-is_src_snapshot_useful() {
+is-src_snapshot-useful() {
 	local src_snapshot=$1
 
-	[[ -d $src_snapshot ]] || bad_copy "no snapshot '$1'" || return 1
+	[[ -d $src_snapshot ]] || bad-copy "no snapshot '$1'" || return 1
 	local  src_basename=${src_snapshot##*/}
 	[[ $src_basename == $snapshot_glob ||
 	   $src_basename == $snapshot_glob.links ]] ||
-	   bad_copy "$src_snapshot is not a reliable snapshot" || return 1
+	   bad-copy "$src_snapshot is not a reliable snapshot" || return 1
 	[[ $src_basename =~ $dst_minimal_snapshot_regex(|\..*) ]] ||
-	   bad_copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
+	   bad-copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
 	   return 1
 
-	matches_dst_backup_type ${src_snapshot%/*} && return 0
+	matches-dst_backup_type ${src_snapshot%/*} && return 0
 
-       bad_copy "$src_snapshot & $dst_drive_name backup characteristics differ"
+       bad-copy "$src_snapshot & $dst_drive_name backup characteristics differ"
 }
 
 # ---------------------------------
 
-is_dst_snapshot_needed() {
+is-dst_snapshot-needed() {
 	local dst_snapshot=$1
 
 	set -- ${dst_snapshot%.*}*	# a version might exist
 	[[ $# == 0    ]] && return 0
 	[[ $# == 1    ]] ||
-	   bad_copy "'$*' exist, (mv then) delete worst one" || return 1
+	   bad-copy "'$*' exist, (mv then) delete worst one" || return 1
 	[[ $1 != *.rm ]] ||
-	   bad_copy "destination is waiting to be pruned" || return 1
+	   bad-copy "destination is waiting to be pruned" || return 1
 
 	local ext=${1##*.} junk_dir=${dst_snapshot%/*}/.junk
 	[[ ! -d $1 ]] &&
@@ -2262,7 +2263,7 @@ is_dst_snapshot_needed() {
 
 # ---------------------------------
 
-copy_snapshot() {
+copy-snapshot() {
 	[[ $1 == -s* ]] && { local src=${1#-s}   ; shift; } || local src=
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
@@ -2277,11 +2278,11 @@ copy_snapshot() {
 
 	$Trace
 	[[ ${dst_minimal_snapshot_regex-} ]] || { # don't repeat dst setup
-	set_drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
+	set-drive_dir $dst_drive_name || abort "$dst_drive_name not mounted"
 	dst_dir=$drive_dir
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
 	dst_minimal_snapshot_regex=$regex
-	set_backup_type $dst_drive_name
+	set-backup_type $dst_drive_name
 	dst_backup_type=$backup_type	   ; }
 
 	[[ $src_snapshot == /* && ! -L $src_snapshot ]] || {
@@ -2293,8 +2294,8 @@ copy_snapshot() {
 
 	local dst_snapshot=$dst_dir/${src_snapshot##*/}
 
-	is_dst_snapshot_needed $dst_snapshot || return 1
-	is_src_snapshot_useful $src_snapshot || return 1
+	is-dst_snapshot-needed $dst_snapshot || return 1
+	is-src_snapshot-useful $src_snapshot || return 1
 
 	TraceV 2 src_snapshot dst_snapshot
 
@@ -2304,24 +2305,24 @@ copy_snapshot() {
 	[[ $is_update ]] &&
 	    copy_snapshot_args="$src_snapshots $dst_snapshot" && return 0
 
-	copy_snapshot_rsync $src_snapshot $dst_snapshot
+	copy-snapshot-rsync $src_snapshot $dst_snapshot
 }
 
 # -------------------------------------------------------
 
 # The locking & job-management policy is documented in front of function lock()
 
-# The following is similar to the second half of run_backup_rsync;
-# it's called by copy_snapshot and update_drive, to do the real work.
-copy_snapshot_rsync() {
+# The following is similar to the second half of run-backup-rsync;
+# it's called by copy-snapshot and update-drive, to do the real work.
+copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	suspend_jobs prune # hourly cron will continue prune if drive space low
+	suspend-jobs prune # hourly cron will continue prune if drive space low
 
-	set_priority copy
+	set-priority copy
 
 	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
-	run_rsync -c  $src_snapshot/. $dst_snapshot
+	run-rsync -c  $src_snapshot/. $dst_snapshot
 	cd_ $OLDPWD
 }
 
@@ -2329,16 +2330,16 @@ copy_snapshot_rsync() {
 
 declare -A drive_name2do_suspend
 
-load__drive_name2do_suspend() {
+set-drive_name2do_suspend() {
 
 	[[   ${custom_config_var_assignments-} ]] && eval \
-	local $custom_config_var_assignments # for customize_config_variables
+	local $custom_config_var_assignments # for customize-config-variables
 
 	local drive drive_name
-	for drive in $(list_drive_dirs -a)
+	for drive in $(list-drive-dirs -a)
 	    do	_set-drive_name $drive
 		suspend-tracing
-		customize_config_variables $drive_name
+		customize-config-variables $drive_name
 		restore-tracing
 		if [[ $is_multi_writer_drive ]]
 		   then local do_suspend=0
@@ -2353,7 +2354,7 @@ load__drive_name2do_suspend() {
 # the "fastest" snapshot is on drive that's: 1. not suspendable; else 2. not
 # running a backup; else 3. not being pruned; else 4. hosting the smallest
 # number of rsync commands.
-fastest_snapshots() {
+fastest-snapshots() {
 
 	local drive_name drive_dir	       # don't change caller's values
 
@@ -2364,11 +2365,11 @@ fastest_snapshots() {
 
 		local -i writer_count=0
 		for writer in backup copy prune
-		    do	have_job $writer && writer_count+=1
+		    do	have-job $writer && writer_count+=1
 		done
 
-		_set_drive_dir
-		count_rsyncs_using_resource " $drive_dir/"
+		_set-drive_dir
+		count-rsyncs-using-resource " $drive_dir/"
 		local rsync_count=$?
 
 		local ss=$snapshot
@@ -2390,14 +2391,14 @@ set-excluded_drive_dirs_regex() {
 
 # --------------------------------------------
 
-sorted_useful_srcs() {
+sorted-useful-srcs() {
 	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
 	assert-not-option ${1-}
 	[[ $# == 1   ]] || abort "need to specify one drive name"
 
 	suspend-tracing
 	set-drive_name $1
-	set_drive_dir  $drive_name
+	set-drive_dir  $drive_name
 	restore-tracing
 
 	if [[ ${src_names_regex-} ]]
@@ -2408,18 +2409,18 @@ sorted_useful_srcs() {
 		fi
 	fi
 
-	set_backup_type $drive_name
+	set-backup_type $drive_name
 	set-excluded_drive_dirs_regex
 
 	dst_backup_type=$backup_type
 	local drive_dirs=$(
 		set -- $(
 		# -a so include drives excluded from backups
-		set -- $(list_drive_dirs -a | fgrep -v -x $drive_dir |
+		set -- $(list-drive-dirs -a | fgrep -v -x $drive_dir |
 				egrep -v "\b$excluded_drive_dirs_regex$" |
 				egrep "$drive_dir_prefix${src_names_regex-.}")
 		for drive_dir
-		    do	matches_dst_backup_type $drive_dir && echo $drive_dir
+		    do	matches-dst_backup_type $drive_dir && echo $drive_dir
 		done
 		)
 		echo $*
@@ -2455,7 +2456,7 @@ sorted_useful_srcs() {
 
 # -----------------------------------------------------------------------------
 
-remove_empty_partial_snapshots() {
+remove-empty-partial-snapshots() {
 	local drive_dir=$1
 
 	# 'sudo -n' because we're called by 'watch' and 'w'
@@ -2464,15 +2465,15 @@ remove_empty_partial_snapshots() {
 
 # ---------------------------------
 
-cleanup_after_updates() {
+cleanup-after-updates() {
 
 	local drive_dir drive_name	# protect caller's values
-	for drive_dir in $(list_drive_dirs -a)
+	for drive_dir in $(list-drive-dirs -a)
 	    do	_set-drive_name $drive_dir
-		set_lock_path copy	# update could be running
+		set-lock_path copy	# update could be running
 		(
 		sudo-lockpid -o $lock_path &> /dev/null &&	  {
-		$IfRun remove_empty_partial_snapshots $drive_dir
+		$IfRun remove-empty-partial-snapshots $drive_dir
 		sudo-lockpid -r $lock_path			; }
 		) &			# do them in parallel
 	done
@@ -2481,7 +2482,7 @@ cleanup_after_updates() {
 
 # --------------------------------------------
 
-wait_for_full_snapshots() {
+wait-for-full-snapshots() {
 	local min_full_snapshots=$1
 
 	while true
@@ -2498,18 +2499,18 @@ set-srcs_dst_file() {
 	srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
 }
 
-update_drive() {
-	set-drive_name ${!#}		# sorted_useful_srcs handles options
-	set_drive_dir $drive_name
+update-drive() {
+	set-drive_name ${!#}		# sorted-useful-srcs handles options
+	set-drive_dir $drive_name
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	IfRun= lock copy > /dev/null || exit 1	# can run for days
-	suspended_prune_as_drive_usage_response # we might get suspended
+	suspended-prune-as-drive-usage-response # we might get suspended
 
-	remove_empty_partial_snapshots $drive_dir
+	remove-empty-partial-snapshots $drive_dir
 
-	set_num_full_link_dests
-	wait_for_full_snapshots $num_full_link_dests
+	set-num_full_link_dests
+	wait-for-full-snapshots $num_full_link_dests
 
 	if [[ $debug_opt ]]
 	   then local sudo=sudo-unless-dir-writable
@@ -2520,7 +2521,7 @@ update_drive() {
 	local date_time prev_date_time=
 	local src_snapshot src_snapshots= is_keep
 	local -A date_time2is_keep
-	sorted_useful_srcs "$@" |	# this checks/sets drive_* globals
+	sorted-useful-srcs "$@" |	# this checks/sets drive_* globals
 	while read src_snapshot
 	    do	if [[ $src_snapshot == */.keep ]]
 		   then src_snapshot=${src_snapshot%/.keep}
@@ -2543,9 +2544,9 @@ update_drive() {
 		fi
 
 		[[ $src_snapshots ]] &&
-		copy_snapshot -u $src_snapshots $drive_name # loads a var
+		copy-snapshot -u $src_snapshots $drive_name # loads a var
 		 src_snapshots=$src_snapshot # prepare to process new date
-		set -- $copy_snapshot_args   # variable set by copy_snapshot
+		set -- $copy_snapshot_args   # variable set by copy-snapshot
 		[[ $# != 0 ]] || continue    # src might not have been needed
 
 		local    dst_snapshot=${!#}
@@ -2560,9 +2561,9 @@ update_drive() {
 	done > $srcs_dst_file
 	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
-	prune_drive -u $drive_name	# just prunes empty .partial dirs
+	prune-drive -u $drive_name	# just prunes empty .partial dirs
 
-	load__drive_name2do_suspend
+	set-drive_name2do_suspend
 	local args dst_snapshot=
 	while read args
 	    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
@@ -2571,12 +2572,12 @@ update_drive() {
 		[[ -d  $dst_snapshot ]] && continue # undeleted?
 		set -- $dst_snapshot*
 		[[ $# != 0 ]] || continue # was it pruned away?
-		set -- $(fastest_snapshots ${args%$dst_snapshot}) # pass srcs
-		[[ $# != 0 ]] && $IfRun copy_snapshot_rsync $1 $dst_snapshot
+		set -- $(fastest-snapshots ${args%$dst_snapshot}) # pass srcs
+		[[ $# != 0 ]] && $IfRun copy-snapshot-rsync $1 $dst_snapshot
 	done   <  $srcs_dst_file
 	$IfRun rm $srcs_dst_file
 
-	remove_empty_partial_snapshots $drive_dir
+	remove-empty-partial-snapshots $drive_dir
 
 	IfRun= unlock copy
 }
@@ -2587,11 +2588,11 @@ update_drive() {
 ##############################################################################-
 ##############################################################################-
 
-_set_drive_names_or_dirs-from-user-args() {
+_set-drive_names_or_dirs-from-user-args() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 
 	if [[ $# == 0 || $1 == all || $1 == '*' ]]
-	   then set -- $(list_drive_dirs $all_opt)
+	   then set -- $(list-drive-dirs $all_opt)
 	   else set -- ${*//,/ }
 	fi
 	drive_names_or_dirs=$*
@@ -2604,10 +2605,10 @@ set-drive_dirs-from-user-args() {
 
 	drive_dirs=
 	local drive_names_or_dirs drive_name drive_dir
-	_set_drive_names_or_dirs-from-user-args "$@" # (optional) -a is passed
+	_set-drive_names_or_dirs-from-user-args "$@" # (optional) -a is passed
 	for drive_dir in $drive_names_or_dirs
 	    do	_set-drive_name $drive_dir  &&
-		_set_drive_dir  $drive_name ||
+		_set-drive_dir  $drive_name ||
 		    { [[ $all_opt == -A ]] || continue; }
 		suspend-tracing
 		set -- $drive_dir/$snapshot_glob*
@@ -2624,10 +2625,10 @@ set-drive_names-from-user-args() {
 
 	drive_names=
 	local drive_names_or_dirs drive_name drive_dir
-	_set_drive_names_or_dirs-from-user-args "$@"
+	_set-drive_names_or_dirs-from-user-args "$@"
 	for drive_name in $drive_names_or_dirs
 	    do	_set-drive_name $drive_name &&
-		_set_drive_dir  $drive_name || continue
+		_set-drive_dir  $drive_name || continue
 		suspend-tracing
 		set -- $drive_dir/$snapshot_glob*
 		restore-tracing
@@ -2646,10 +2647,10 @@ set-drive_names-from-user-args() {
 # making 'kill'/'suspend' and 'ps' and 'watch' (dashboard) easy to manage.
 # We run backups simultaneously, so they all share the cached source files;
 # we run prunes  simultaneously, since a prune's I/O stays on its own drive;
-# we run copy's  simultaneously, cuz uses fastest_snapshots to find idle src.
+# we run copy's  simultaneously, cuz uses fastest-snapshots to find idle src.
 # See action update-drives for the weird dance we perform when passed options;
 # see action copy-snapshots for handling an arbitrary number of source args.
-create_jobs() {
+create-jobs() {
 	local type=$1; shift
 	local opts= are_recursing=$false
 	while [[ ${1-} == -[^r]* ]] ; do opts+="$1 "; shift; done
@@ -2659,7 +2660,7 @@ create_jobs() {
 	   then set -- ${drive_name-}
 	elif [[ $1 == all || $1 == '*' ]]
 	   then set-excluded_drive_dirs_regex
-		set -- $(list_drive_dirs |
+		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 	   else set-drive_names-from-user-args "$@"
 		set -- $drive_names
@@ -2674,10 +2675,10 @@ create_jobs() {
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
-	   ( backup ) function=run_backup     exe=$run_backup_exe    ;;
-	   ( copy   ) function=copy_snapshot  exe=$copy_snapshot_exe ;;
-	   ( prune  ) function=prune_drive    exe=$prune_drive_exe   ;;
-	   ( update ) function=update_drive   exe=$update_drive_exe  ;;
+	   ( backup ) function=run-backup     exe=$run_backup_exe    ;;
+	   ( copy   ) function=copy-snapshot  exe=$copy_snapshot_exe ;;
+	   ( prune  ) function=prune-drive    exe=$prune_drive_exe   ;;
+	   ( update ) function=update-drive   exe=$update_drive_exe  ;;
 	   (   *    ) abort "action '$type' is not supported" ;;
 	esac
 
@@ -2717,7 +2718,7 @@ create_jobs() {
 ##############################################################################-
 ##############################################################################-
 
-set_stats_format() {
+set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dirs=$*
 
@@ -2736,9 +2737,9 @@ set_stats_format() {
 
 # ---------------------------------
 
-set__rsync_hour_avgs__rsync_hour_maxs() {
+set-rsync_hour_avgs-rsync_hour_maxs() {
 
-	set_stats_format $all_drive_dirs
+	set-stats_format $all_drive_dirs
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
 	for dir in $all_drive_dirs
@@ -2750,10 +2751,10 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 		   then local sum=$(cat $* | tr '\n' '+')
 			local -i total=${sum%+}
 			local -i avg=$(( ($total+($#/2)) / $# ))
-			set_hours -1 $avg # only want 1 decimal point
+			set-hours-from-minutes -1 $avg # want 1 decimal point
 			hour_avg=$hours
 			set -- $(sort -n -r $*)
-			set_hours -1 $1
+			set-hours-from-minutes -1 $1
 			hour_max=$hours
 		   else hour_avg= hour_max=
 		fi
@@ -2768,9 +2769,9 @@ set__rsync_hour_avgs__rsync_hour_maxs() {
 
 # -----------------------------------------------------------------------------
 
-set_drive_usage() {
+set-drive_usage() {
 
-	customize_config_variables
+	customize-config-variables
 	local var_name=min_FS_usage_percent; local \
 	    default_min_FS_usage=${custom_config_var2default_value[$var_name]-}
 
@@ -2781,7 +2782,7 @@ set_drive_usage() {
 		[[ $default_min_FS_usage ]] &&
 		min_FS_usage_percent=${drv_name2min_FS_usage_percent[$drive_name]-$default_min_FS_usage}
 
-		is_drive_usage_too_high && local warn=$true || local warn=
+		is-drive-usage-too-high && local warn=$true || local warn=
 		local     type=${max_drive_usage_percent:0:1}
 		local  percent=${max_drive_usage_percent#?}
 		((  ${#percent} ==   1 )) && percent=0$percent
@@ -2801,25 +2802,25 @@ set_drive_usage() {
 
 # -----------------------------------------------------------------------------
 
-_set_age() {
+_set-age() {
 	local snapshot=$1
 
-	set_seconds $snapshot
+	set-seconds-from-snapshot $snapshot
 	local -i snap_secs=$seconds
 	age=$(( ($SECONDS - $snap_secs)/(24*60*60) ))
 }
 
 # ------------------
 
-_setup_ages() {
+_setup-ages() {
 
-	_set_age $1    ; oldest_age=$age
-	_set_age ${!#} ; newest_age=$age
+	_set-age $1    ; oldest_age=$age
+	_set-age ${!#} ; newest_age=$age
 }
 
 # ---------------------------------
 
-_recalculate_stats_vars() {
+_recalculate-stats-vars() {
 
 	local nums= oldies= newies=
 	for dir in $all_drive_dirs
@@ -2840,7 +2841,7 @@ _recalculate_stats_vars() {
 
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
-		   then _setup_ages $*
+		   then _setup-ages $*
 			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
 		fi
@@ -2875,7 +2876,7 @@ _recalculate_stats_vars() {
 readonly watch_cache_dir=$log_dir/stats/watch
 readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
 
-function _is_stats_cache_fresh {
+function _is-stats-cache-fresh {
 
 	if [[ $drive_dirs != "$(< $cached_drive_dirs_file)" ]]
 	   then rm -f $cached_drive_dirs_file $watch_cache_dir/*/*,*.txt
@@ -2892,7 +2893,7 @@ function _is_stats_cache_fresh {
 
 # ----------------------
 
-setup_snapshot_stats() {
+setup-snapshot-stats() {
 	local suffix=$1
 	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
 
@@ -2911,7 +2912,7 @@ setup_snapshot_stats() {
 	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
 	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_dirs=$all_drive_dirs
-	if _is_stats_cache_fresh
+	if _is-stats-cache-fresh
 	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
 		stats_oldest_age=$(< $oldest_age_cache_file)
@@ -2921,11 +2922,11 @@ setup_snapshot_stats() {
 		return
 	fi
 
-	_recalculate_stats_vars
+	_recalculate-stats-vars
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir  ]] || return # might not have write access to the cache
-	[[ -d $lock_dir ]] || create__lock_dir__log_dirs
+	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	local lockpid_args="--dir=$lock_dir $lock_name"
 	lockpid $lockpid_args > /dev/null || return
 
@@ -2941,8 +2942,8 @@ setup_snapshot_stats() {
 
 # -----------------------------------------------------------------------------
 
-run_df() {
-	local drive_dirs=${*:-$(list_drive_dirs -a)}
+run-df() {
+	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
@@ -2952,8 +2953,8 @@ run_df() {
 
 # --------------------------------------------
 
-run_lsblk() {
-	local drive_dirs=${*:-$(list_drive_dirs -a)}
+run-lsblk() {
+	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	have-cmd lsblk || return 1
 
@@ -2988,7 +2989,7 @@ trim() {
 
 # --------------------------------------------
 
-trim_backup() {
+trim-backup() {
 
 	trim |
 	sed -e 's@run-backup -r @run-backup @g' \
@@ -2999,7 +3000,7 @@ trim_backup() {
 
 # --------------------------------------------
 
-trim_prune() {
+trim-prune() {
 
 	trim |
 	sed -e 's@prune-drive -r @prune-drive @g'
@@ -3008,7 +3009,7 @@ trim_prune() {
 
 # --------------------------------------------
 
-trim_copy_update() {
+trim-copy-update() {
 
 	set -- $rsync_backup_opts	# standardize whitespace
 
@@ -3039,7 +3040,7 @@ watch() {
 	assert-not-option -o ${1-}
 
 	if [[ $action == watch ]]
-	   then cleanup_after_updates &	# don't wait for it to finish, slow
+	   then cleanup-after-updates &	# don't wait for it to finish, slow
 		local all_opts="$ps_opt $cron_opt"
 		if [[ $names ]]
 		   then set-drive_names-from-user-args $names
@@ -3055,10 +3056,10 @@ watch() {
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || trap '' HUP
-	[[ $watch_opt ]] || cleanup_after_updates # wait for it to finish
+	[[ $watch_opt ]] || cleanup-after-updates # wait for it to finish
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
-	SECONDS=$(date '+%s')		# for _set_age()
-	set -- $(list_drive_dirs -a)
+	SECONDS=$(date '+%s')		# for _set-age()
+	set -- $(list-drive-dirs -a)
 	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
 	$Trace
 	local all_drive_dirs=$* drive_dirs=
@@ -3066,7 +3067,7 @@ watch() {
 	   then local name_list=
 		for name in ${names//,/ }
 		    do	_set-drive_name $name
-			_set_drive_dir
+			_set-drive_dir
 			drive_dirs+="$drive_dir "
 			name_list=$name_list,$drive_name
 		done
@@ -3131,12 +3132,12 @@ watch() {
 	psc() { ps $ps_opt -C "$@" | trim_ps_cols; }
 	if [[ $ps_opt ]]
 	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
-		trim_ps_cols() { cut -c "10-21,25-37,40-43,46-"; }
+		trim-ps-cols() { cut -c "10-21,25-37,40-43,46-"; }
 		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
 		#    123456789012345678901234567890123456789012345678901234567
 		#             1         2         3         4         5
 		prune_sort_opts="-k7r,8 -k9"	rsync_sort_opts="-k11"
-	   else trim_ps_cols() { cut -c 1-13,16-20,22-; }
+	   else trim-ps-cols() { cut -c 1-13,16-20,22-; }
 		hdr="  PID TTY      STAT   TIME COMMAND"
 		#    123456789012345678901234567890123456789012345678901234567
 		#             1         2         3         4         5
@@ -3145,7 +3146,7 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	customize_and_validate_configuration_variables
+	customize-and-validate-configuration-variables
 
 	#
 	# figure out how many rows are needed
@@ -3153,19 +3154,19 @@ watch() {
 
 	local -i num_drives=$(set -- $drive_dirs; echo $#)
 
-	set_lock_PGIDs backup && {
+	set-lock_PGIDs backup && {
 	bkp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
 			   grep "[0-9]   rsync" | sed 's/   rsync/ rsync/')
 	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
 	local -i num_bkp_rsyncs=0 ;	   bkp_rsync_cmds= ; }
 
-	! set_lock_PGIDs prune && prune_cmds= ||
+	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
-			trim_prune)
+			trim-prune)
 
 	# both update-drive and copy-snapshot use the copy lock
-	! set_lock_PGIDs copy && copy_rsync_cmds= ||
+	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
 			 egrep -e "[0-9] .*$_our_name.* [cu]" \
 			       -e " [l]ockpid " \
@@ -3187,7 +3188,7 @@ watch() {
 
 	# only show un-asked cron jobs if no rsync details to show
 	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
-	set -- $(process_group_PIDs $cron_PGIDs)
+	set -- $(process-group-PIDs $cron_PGIDs)
 	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
 	#  option f for "forest"
@@ -3234,16 +3235,16 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	set__rsync_hour_avgs__rsync_hour_maxs
+	set-rsync_hour_avgs-rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
-	set_drive_usage
+	set-drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
-	setup_snapshot_stats .rm
+	setup-snapshot-stats .rm
 	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
-	setup_snapshot_stats .partial
+	setup-snapshot-stats .partial
 	echo "# .partial snaps pending update (+err):  $stats_number"
-	setup_snapshot_stats ''
+	setup-snapshot-stats ''
 	echo "  Age of newest good snapshot, in days:  $stats_newest_age"
 
 	# --------------------------------------------
@@ -3251,16 +3252,16 @@ watch() {
 	local -i rows_used=7		# stats plus 1 blank line
 	(( $rows >= ($min_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
-	setup_snapshot_stats .rm
+	setup-snapshot-stats .rm
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
-	setup_snapshot_stats .links
+	setup-snapshot-stats .links
 	echo " Number .links (failed 'ln') snapshots:  $stats_number"
 	echo "     Days since 'Too many links' error:  $stats_newest_age"
-	setup_snapshot_stats .partial
+	setup-snapshot-stats .partial
 	echo "Days from most recent snapshot.partial:  $stats_newest_age"
-	setup_snapshot_stats /.keep	# doesn't set oldest/newest_age
+	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
 	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
-	setup_snapshot_stats ''
+	setup-snapshot-stats ''
 	echo "  Number complete/successful snapshots:  $stats_number"
 	let rows-=$rows_used
 	}
@@ -3271,13 +3272,13 @@ watch() {
 	(( $rows >= ($min_df_rows + $rows_used) )) || [[ $show_all ]] && {
 	echo				# first row used
 	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
-	setup_snapshot_stats '' hour
+	setup-snapshot-stats '' hour
 	echo "  Total number  days  w/good snapshots:  $stats_number"
-	setup_snapshot_stats '' day
+	setup-snapshot-stats '' day
 	echo "  Total number months w/good snapshots:  $stats_number"
-	setup_snapshot_stats '' month
+	setup-snapshot-stats '' month
 	echo "  Total number years  w/good snapshots:  $stats_number"
-	setup_snapshot_stats '*'
+	setup-snapshot-stats '*'
 	echo "  Total snapshots (good, partial, .rm):  $stats_number"
 	let rows-=$rows_used
 	}
@@ -3285,15 +3286,15 @@ watch() {
 	# ------------------------------------------------------------------
 
 	if [[ $show_all ]]
-	   then filesystem_geometry $drive_dirs
+	   then filesystem-geometry $drive_dirs
 	   else	(( $rows >= $min_df_rows )) &&
-		run_df $drive_dirs &&
+		run-df $drive_dirs &&
 		let rows-=$num_drives+2
 
 		# --------------------------------------------
 
 		(( $rows >= $min_df_rows )) && [[ ! $copy_rsync_cmds ]] &&
-		run_lsblk $drive_dirs &&
+		run-lsblk $drive_dirs &&
 		let rows-=$num_drives+2
 	fi
 
@@ -3305,8 +3306,8 @@ watch() {
 	if [[ -s $tmp_1 && ( $rows -ge $ad_hoc_min_rows || $show_all ) ]]
 	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
 		echo
-		echo "$hdr" | trim_ps_cols
-		trim_prune < $tmp_1
+		echo "$hdr" | trim-ps-cols
+		trim-prune < $tmp_1
 		let rows-=$admin_PD
 	fi
 	rm $tmp_1
@@ -3333,7 +3334,7 @@ watch() {
 	}
 
 	if [[ $prune_cmds ]]
-	   then echo "$hdr" | trim_ps_cols
+	   then echo "$hdr" | trim-ps-cols
 		echo "$prune_cmds"
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
@@ -3344,8 +3345,8 @@ watch() {
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
 	header "copy (update-drive or copy-snapshots)"
 	echo
-	echo "$hdr" | trim_ps_cols
-	echo "$copy_rsync_cmds" | trim_copy_update # | sort $prune_sort_opts
+	echo "$hdr" | trim-ps-cols
+	echo "$copy_rsync_cmds" | trim-copy-update # | sort $prune_sort_opts
 	}
 
 	# ------------------------------------------------------------------
@@ -3360,8 +3361,8 @@ watch() {
 	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
-	echo "$hdr" | trim_ps_cols
-	echo "$bkp_rsync_cmds" | trim_backup | sort $rsync_sort_opts
+	echo "$hdr" | trim-ps-cols
+	echo "$bkp_rsync_cmds" | trim-backup | sort $rsync_sort_opts
 	} || echo -e "\nNo backups are running$names_msg."
 
 	# ------------------------------------------------------------------
@@ -3372,7 +3373,7 @@ watch() {
 	regex=${cron_job_regex%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
-	echo "$cron_cmds" | trim_backup
+	echo "$cron_cmds" | trim-backup
 	}
 
 	# ------------------------------------------------------------------
@@ -3380,7 +3381,7 @@ watch() {
 	[[ $bkp_rsync_cmds ]] && {
 	header "cron's run-backups' lead rsync processes (full details)"
 	echo
-	echo "$hdr" | trim_ps_cols
+	echo "$hdr" | trim-ps-cols
 	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g"
 	}
 
@@ -3389,7 +3390,7 @@ watch() {
 	[[ $copy_rsync_cmds ]] && {
 	header "copy (e.g. update) rsync processes (full details)"
 	echo
-	echo "$hdr" | trim_ps_cols
+	echo "$hdr" | trim-ps-cols
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
 	}
 }
@@ -3411,14 +3412,14 @@ is-set        min_hung_msecs ||		# can set custom value in $config_file
 declare -r -i min_hung_msecs=2000
 is-set        min_slow_msecs ||		# can set custom value in $config_file
 declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
-# set_seconds___from_msecs $min_slow_msecs
+# set-seconds-from-msecs $min_slow_msecs
 # readonly disk_read_timeout=$seconds
 
 declare -r -i   msec_increment=10
 set-division 3 $msec_increment 1000
 readonly         sec_increment=$division
 
-_monitor_drives() {
+_monitor-drives() {
 
 	local response_dir=$status_dir/response-msecs
 
@@ -3477,7 +3478,7 @@ _monitor_drives() {
 
 readonly drive_monitor_lock_path=$lock_dir/monitor.pid
 
-monitor_drives() {
+monitor-drives() {
 	local dirs=${*-}		# only for testing
 
 	lockpid -q $drive_monitor_lock_path || exit 0 # probably running
@@ -3491,37 +3492,37 @@ monitor_drives() {
 	SECONDS=0
 	local -A -i name2PID name2msecs
 	while true			# monitor forever
-	    do	_monitor_drives ${dirs:-$(list_drive_dirs -a)} # new drive?
+	    do	_monitor-drives ${dirs:-$(list-drive-dirs -a)} # new drive?
 	done
 }
 
 # -----------------------------------------------------------------------------
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
-unmount_drives() {
+unmount-drives() {
 	[[ $1 == -q  ]] && { shift; is_OK_if_drive_dir_unmounted=$true; }
 	assert-not-option ${1-}
-	[[ $* == all ]] && set -- $(list_drive_dirs)
+	[[ $* == all ]] && set -- $(list-drive-dirs)
 
 	$Trace
 	# do this early, since takes a while for processes to die
 	for name
-	    do	$IfRun kill_job_on_drives all $name
+	    do	$IfRun kill-job-on-drives all $name
 	done
 
 	[[ $debug_opt ]] && local output=/dev/stdout || local output=/dev/null
 	local name drive_name drive_dir status=0
 	for name
 	    do	set-drive_name $name
-		set_drive_dir $drive_name
-		is_drive_mounted $drive_dir || continue
+		set-drive_dir $drive_name
+		is-drive-mounted $drive_dir || continue
 		sudo umount -h &> /dev/null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		for (( i = 1; i <= 99; i++ )) # wait for kill to finish
 		    do	$umount_cmd && break
 			$IfRun sleep 0.1
 		done &> $output
-		is_drive_mounted $drive_dir || continue
+		is-drive-mounted $drive_dir || continue
 		$umount_cmd || status=$? # this time, show the error message
 	done
 	return $status
@@ -3530,7 +3531,7 @@ unmount_drives() {
 # -----------------------------------------------------------------------------
 
 # add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
-add_extN_journal() {
+add-extN-journal() {
 	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
 	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	[[ $# == [1-4] ]] ||
@@ -3547,7 +3548,7 @@ add_extN_journal() {
 	[[ ! $FS_label ]] && {
 	is_OK_if_drive_dir_unmounted=$true
 	set-drive_name $1
-	set_drive_dir $drive_name
+	set-drive_dir $drive_name
 	mount_dir=$drive_dir
 	set-FS_label-from-mount_dir $mount_dir ; }
 							[[ $FS_device ]] ||
@@ -3571,7 +3572,7 @@ add_extN_journal() {
 	RunCmd mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log
 
 	suspend-tracing
-	RunCmd -d unmount_drives -q ${mount_dir:-$FS_device}
+	RunCmd -d unmount-drives -q ${mount_dir:-$FS_device}
 	restore-tracing
 	mount | fgrep -w $FS_device && $IfRun abort "must: umount $FS_device"
 
@@ -3587,7 +3588,7 @@ add_extN_journal() {
 
 # -----------------------------------------------------------------------------
 
-set__total_dir_MB__avg_dir_KB() {
+set-total_dir_MB-avg_dir_KB() {
 	local file=${1%.bz2}.bz2
 
 	isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
@@ -3603,8 +3604,8 @@ set__total_dir_MB__avg_dir_KB() {
 # --------------------------------------------
 
 # dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
-dir_sizes() {
-	set__drive_log_dir__file_for_logging__admin_group__is_regression_test
+dir-sizes() {
+	set-drive_log_dir-file_for_logging-admin_group-is_regression_test
 	readonly sizes_dir=$drive_log_dir/dir-sizes
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
@@ -3618,7 +3619,7 @@ dir_sizes() {
 		[[ -f $1 ]] ||
 		   abort "no saved data files, you need to run: $our_name name"
 		for file
-		    do	set__total_dir_MB__avg_dir_KB $file || continue
+		    do	set-total_dir_MB-avg_dir_KB $file || continue
 			space="all dirs use $total_dir_MB MB/snapshot"
 			  avg="$avg_dir_KB KB/dir"
 			printf "%46s: %s\n" "$space ($avg)" ${file%%.*}
@@ -3643,7 +3644,7 @@ dir_sizes() {
 
 	[[ $file ]] || {
 
-	_set_drive_dir
+	_set-drive_dir
 	if [[ -d $drive_dir/latest ]]
 	   then excludes=   dirs_to_backup=$drive_dir/latest/.  where=
 	   else excludes="--exclude=$drive_dir_prefix*
@@ -3713,7 +3714,7 @@ dir_sizes() {
 	bzcat $file.bz2 | cut -f1 | uniq -c | sort -nr | head
 	echo -e "    ...\n"
 
-	set__total_dir_MB__avg_dir_KB $file.bz2
+	set-total_dir_MB-avg_dir_KB $file.bz2
 	echo "BUT...  The actual drive-space consumed by a directory is"
 	echo "the size of its directory block(s) plus the size of its inode:"
 	space="$total_dir_MB MB/snapshot"
@@ -3723,11 +3724,11 @@ dir_sizes() {
 
 # -----------------------------------------------------------------------------
 
-filesystem_geometry() {
+filesystem-geometry() {
 	set-drive_dirs-from-user-args "$@"
 
-	run_df    $drive_dirs
-	run_lsblk $drive_dirs
+	run-df    $drive_dirs
+	run-lsblk $drive_dirs
 	echo
 
 	local dash="------" dsh="---------------"
@@ -3798,8 +3799,8 @@ filesystem_geometry() {
 # If have existing backup drives that are no bigger, use copy-drive .
 
 # mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
-mkfs_backup_drive() {
-	set_date_time
+mkfs-backup-drive() {
+	set-date_time
 	line_1="if you're using a partition or LV that already has backups,"
 	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
 	line_3="e.g. 'now' looks like /$date_time/ ; don't run 'mkfs',"
@@ -3825,7 +3826,7 @@ mkfs_backup_drive() {
 	   else set-drive_name $device
 	fi
 	local name=$drive_name drive_dir
-	_set_drive_dir
+	_set-drive_dir
 	local _mkfs_cmd_opts="$mkfs_cmd_opts "
 	_mkfs_cmd_opts+="$mkfs_opts "
 
@@ -3973,11 +3974,11 @@ mkfs_backup_drive() {
 	cmd="$cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header "$cmd"
 	RunCmd  $cmd
-	archive_rsync_time_data
+	archive-rsync-time-data
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
-	fix_drive_dir_perms $drive_dir
+	fix-drive_dir-perms $drive_dir
 
 	echo -e "\nTo populate newly-created drive, run:\n
 	nohup $_our_name update-drive $drive_name	# creates new job"
@@ -3988,7 +3989,7 @@ mkfs_backup_drive() {
 
 # -----------------------------------------------------------------------------
 
-_assert_dst_big_enough() {
+_assert-dst-big-enough() {
 
 	local msg
 	if set-device_KB-from-block-device $src_device
@@ -4008,7 +4009,7 @@ _assert_dst_big_enough() {
 # --------------------------------------------
 
 # these 3 variables are global variables initialized elsewhere
-set__drive_name__FS_device__drive_dir__FS_label() {
+set-drive_name-FS_device-drive_dir-FS_label() {
 	local name=$1 device=${2-}
 
 	[[ $device$name ]] || abort "need 1 non-null argument"
@@ -4028,7 +4029,7 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 
 	FS_device=$device
 	_set-drive_name $name
-	_set_drive_dir
+	_set-drive_dir
 	set-FS_label-from-mount_dir $drive_dir
 
 	TraceV 1 device name drive_name FS_device drive_dir FS_label
@@ -4036,7 +4037,7 @@ set__drive_name__FS_device__drive_dir__FS_label() {
 
 # ---------------------------------
 
-copy_backup_drive() {
+copy-backup-drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
 	[[ $# != 0 ]] ||
@@ -4046,13 +4047,13 @@ copy_backup_drive() {
 	[[ -t 1 ]] || $IfRun abort "don't use 'nohup', we'll run 'nohup'"
 
 	$Trace
-	set__drive_name__FS_device__drive_dir__FS_label $src
+	set-drive_name-FS_device-drive_dir-FS_label $src
 	local src_name=$drive_name
 	local src_device=$FS_device
 	local src_drive_dir=$drive_dir
 	local src_FS_label=$FS_label
 
-	set__drive_name__FS_device__drive_dir__FS_label "$dst_name" $dst_device
+	set-drive_name-FS_device-drive_dir-FS_label "$dst_name" $dst_device
 	local dst_name=$drive_name
 	local dst_device=$FS_device
 	local dst_drive_dir=$drive_dir
@@ -4061,9 +4062,9 @@ copy_backup_drive() {
 	set-FS_type-from-path $src_device
 	if [[ $FS_type == xfs ]] || is-arg_1-in-arg_2 -D $action_opts # not dd?
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
-	   else _assert_dst_big_enough
+	   else _assert-dst-big-enough
 		# show the user a sample fstab record
-		IfRun=echo mkfs_backup_drive -f $dst_device $dst_name |&
+		IfRun=echo mkfs-backup-drive -f $dst_device $dst_name |&
 		  # search for the last two fields in the fstab record
 		  egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 	fi
@@ -4091,9 +4092,9 @@ copy_backup_drive() {
 
 # ------------------------------------------------------------------
 
-_prepare_for_dump_restore() {
+_prepare-for-dump-restore() {
 	if [[ ${1-} == -S ]]		# src doesn't need to be mounted?
-	   then is_drive_mounted $src_drive_dir || local src_name=
+	   then is-drive-mounted $src_drive_dir || local src_name=
 		local src_drive_dir=
 	fi
 
@@ -4104,14 +4105,14 @@ _prepare_for_dump_restore() {
 	[[ $src_FS_type == $FS_type ]] ||
 	   $IfRun abort "FS_type of $dst_device must be '$src_FS_type'"
 
-	assert_not_in_cron_jobs $src_name $dst_name
+	assert-not-in-cron-jobs $src_name $dst_name
 
 	local drive
 	for drive in $src_drive_dir $dst_drive_dir
-	    do	is_drive_mounted $drive || $IfRun abort "mount drive $drive"
+	    do	is-drive-mounted $drive || $IfRun abort "mount drive $drive"
 	done
 
-	kill_job_on_drives all {$src_name,$dst_name}
+	kill-job-on-drives all {$src_name,$dst_name}
 
 	if [[ ${drive_name_regex-} ]]
 	   then local where=drive_name_regex=
@@ -4122,7 +4123,7 @@ _prepare_for_dump_restore() {
 
 # ---------------------------------
 
-show_iostat() {
+show-iostat() {
 	local device=$1
 
 	$IfRun iostat -y -m -d $device | grep -v -e '^Linux' -e '^$'
@@ -4130,9 +4131,9 @@ show_iostat() {
 
 # ---------------------------------
 
-_dump_restore_xfs_backup_drives() {
+_dump-restore-xfs-backup-drives() {
 
-	_prepare_for_dump_restore
+	_prepare-for-dump-restore
 
 	$IfRun set -x
 
@@ -4144,11 +4145,11 @@ _dump_restore_xfs_backup_drives() {
 	fi
 
 	trap '' INT			# don't interrupt xfsdump or xfsrestore
-	show_iostat $dst_device
+	show-iostat $dst_device
 	time $IfRun    xfsdump -J -p 600       - $src_drive_dir |
 	     $IfRun xfsrestore -J $restore_opt - $dst_drive_dir
 	local status=$?
-	show_iostat $dst_device
+	show-iostat $dst_device
 
 	$IfRun xfs_freeze -u $src_drive_dir
 
@@ -4157,9 +4158,9 @@ _dump_restore_xfs_backup_drives() {
 
 # ---------------------------------
 
-_dump_restore_extN_backup_drives() {
+_dump-restore-extN-backup-drives() {
 
-	_prepare_for_dump_restore -S
+	_prepare-for-dump-restore -S
 
 	have-cmd dump || abort "need to install the 'dump' command"
 
@@ -4168,23 +4169,23 @@ _dump_restore_extN_backup_drives() {
 	# https://stackoverflow.com/questions/37488629/how-to-use-dump-and-restore-to-clone-a-linux-os-drive
 	cd_ $dst_drive_dir
 	trap '' INT			# don't interrupt dump or restore
-	show_iostat $dst_device
+	show-iostat $dst_device
 	time $IfRun   dump -a0f - $src_device |
 	     $IfRun restore -rf -
 	local status=$?
-	show_iostat $dst_device
+	show-iostat $dst_device
 
 	return $status
 }
 
 # --------------------------------------------
 
-_copy_extN_backup_drive() {
+_copy-extN-backup-drive() {
 
 	is-arg_1-in-arg_2 -f $action_opts ||
 	for drive_dir in $src_drive_dir $dst_drive_dir; do
-	if is_drive_mounted $drive_dir
-	   then set -- $(list_drive_dirs |
+	if is-drive-mounted $drive_dir
+	   then set -- $(list-drive-dirs |
 			 fgrep -v -w -e $src_drive_dir -e $dst_drive_dir)
 		[[ $# == 0 ]] &&
 		msg="
@@ -4203,7 +4204,7 @@ _copy_extN_backup_drive() {
 		abort "\n$msg re-run copy-drive with -f to Force unmount."
 	fi; done
 
-	unmount_drives -q $src_drive_dir $dst_drive_dir ||
+	unmount-drives -q $src_drive_dir $dst_drive_dir ||
 	   $IfRun abort "unmount the drive that failed to 'umount'"
 
 	# -------------------------------------------------------
@@ -4218,7 +4219,7 @@ _copy_extN_backup_drive() {
 
 	if sudo tune2fs -l $src_device | grep -q "^Journal dev" || # external?
 	   [[ $do_want_external_log ]]
-	   then add_extN_journal -M $dst_name $dst_device ||
+	   then add-extN-journal -M $dst_name $dst_device ||
 		   abort "need to fix journal on $src_device: $_our_name aej"
 	fi
 
@@ -4242,7 +4243,7 @@ _copy_extN_backup_drive() {
 # --------------------------------------------
 
 # finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
-finish_copy_backup_drive() {
+finish-copy-backup-drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
 	local cmd=$(echo "$Usage" |
@@ -4255,17 +4256,17 @@ finish_copy_backup_drive() {
 	local src_name=${src_drive_dir#$drive_dir_prefix}
 	local dst_name=${dst_drive_dir#$drive_dir_prefix}
 
-	customize_and_validate_configuration_variables $dst_name
+	customize-and-validate-configuration-variables $dst_name
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
 	set-FS_type-from-path $src_device
 	case $FS_type in
 	   ( ext?) if is-arg_1-in-arg_2 -D $action_opts
-		      then _dump_restore_extN_backup_drives
-		      else _copy_extN_backup_drive
+		      then _dump-restore-extN-backup-drives
+		      else _copy-extN-backup-drive
 		   fi ;;
-	   ( xfs ) _dump_restore_xfs_backup_drives  ;;
+	   ( xfs ) _dump-restore-xfs-backup-drives  ;;
 	   (  *  ) abort "write FS function call for $FUNCNAME, email $coder";;
 	esac ||
 	   abort "the copy seems to have failed with $?, check .out file"
@@ -4283,17 +4284,17 @@ finish_copy_backup_drive() {
 ##############################################################################-
 ##############################################################################-
 
-check_snapshot_hard_links() {
+check-snapshot-hard-links() {
 	local name=$1
 
 	[[ ${very_old_immutable_files-} ]] ||
 	   abort "setup very_old_immutable_files= in $config_file"
 
 	set-drive_name $name
-	set_drive_dir  $drive_name
+	set-drive_dir  $drive_name
 	cd_ $drive_dir
 
-	set_inum() {
+	set-inum() {
 		[[ -r $1 ]] || abort "run with sudo"
 		set -- $(ls -i -d $1 2>/dev/null)
 		inum=$1
@@ -4306,7 +4307,7 @@ check_snapshot_hard_links() {
 	for old_file in $very_old_immutable_files
 	    do	$IfRun sudo -n chattr +i $old_file &> /dev/null # optional
 		file=$1$old_file
-		set_inum $file ||
+		set-inum $file ||
 		  abort "$drive_name: $file missing from oldest snapshot $1"
 		file2inum[$old_file]=$inum
 	done
@@ -4316,7 +4317,7 @@ check_snapshot_hard_links() {
 	    do	found_good_link=$false
 		for old_file in $very_old_immutable_files
 		    do	old_inum=${file2inum[$old_file]}
-			set_inum $1$old_file
+			set-inum $1$old_file
 			[[ $old_inum == $inum ]] || continue
 			found_good_link=$true
 			break
@@ -4342,15 +4343,15 @@ chroot-backup() {
 
 	local drive_dir snapshots=
 	[[ $date_time == /* ]] && snapshots=$date_time ||
-	for drive_dir in $(list_drive_dirs -a)
+	for drive_dir in $(list-drive-dirs -a)
 	    do	local  snapshot=$drive_dir/$date_time
 		[[ -d $snapshot ]] && snapshots+="$snapshot "
 	done
 	[[ $snapshots ]] || abort "can't find snapshot matching $date_time"
 
 	set -- $snapshots
-	[[ $# == 1 ]] || { load__drive_name2do_suspend
-			   set -- $(fastest_snapshots $snapshots) ; }
+	[[ $# == 1 ]] || { set-drive_name2do_suspend
+			   set -- $(fastest-snapshots $snapshots) ; }
 	local chroot_dir=$1
 
 	$Trace
@@ -4379,7 +4380,7 @@ chroot-backup() {
 
 # -----------------------------------------------------------------------------
 
-show_test_header() {
+_show-test-header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	header "$* (first number is sorted md5sum, second is unsorted)"
 	$xtrace
@@ -4387,7 +4388,7 @@ show_test_header() {
 
 # ---------------------------------
 
-show_test_results() {
+_show-test-results() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local output_file=$1
 
@@ -4398,7 +4399,7 @@ show_test_results() {
 
 # --------------------------------------------
 
-run_debug_cmds() {
+_run-debug-cmds() {
 	local test=$1; shift
 	local args=$*
 
@@ -4415,15 +4416,15 @@ run_debug_cmds() {
 	fi
 
 	$Trace
-					   show_test_results $tmp_o
-	$tst_cmd_ &> $tmp_t || abort tst ; show_test_results $tmp_t
+					   _show-test-results $tmp_o
+	$tst_cmd_ &> $tmp_t || abort tst ; _show-test-results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	echo -e "\nSince different results, we'll regenerate cached data ..."
 	PATH=${old_cmd_%/*}:$PATH \
-	$old_cmd_ &> $tmp_o || abort old ; show_test_results $tmp_o
-					   show_test_results $tmp_t
+	$old_cmd_ &> $tmp_o || abort old ; _show-test-results $tmp_o
+					   _show-test-results $tmp_t
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
@@ -4439,7 +4440,7 @@ run_debug_cmds() {
 
 readonly regression_tests="b c z p u"
 
-regression_test() {
+regression-test() {
 	local tests=${*:-$regression_tests}
 	[[ $tests == [A-Z] ]] && tests=${regression_tests/${tests,}/}
 
@@ -4453,19 +4454,19 @@ regression_test() {
 	# --------------------------------------------
 
 	is-arg_1-in-arg_2 b $tests && {
-	show_test_header backup all
-	run_debug_cmds b run-backups all
+	_show-test-header backup all
+	_run-debug-cmds b run-backups all
 	}
 
 	# --------------------------------------------
 
 	is-arg_1-in-arg_2 c $tests && {
-	show_test_header copy to Z
+	_show-test-header copy to Z
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	src_snapshots=$1
 	[[ -d $2 ]] && src_snapshots+=" $2"
-	run_debug_cmds c copy-snapshot $src_snapshots Z
+	_run-debug-cmds c copy-snapshot $src_snapshots Z
 	}
 
 	# --------------------------------------------
@@ -4473,15 +4474,15 @@ regression_test() {
 	is-arg_1-in-arg_2 z $tests && {
 	set -- ${drive_dir_prefix}Z/$snapshot_glob
 	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
-	show_test_header prune Z
-	run_debug_cmds z prune-drive Z
+	_show-test-header prune Z
+	_run-debug-cmds z prune-drive Z
 	}
 
 	# --------------------------------------------
 
 	is-arg_1-in-arg_2 p $tests && {
-	show_test_header prune all
-	run_debug_cmds p prune-drives all
+	_show-test-header prune all
+	_run-debug-cmds p prune-drives all
 	}
 
 	# --------------------------------------------
@@ -4489,14 +4490,14 @@ regression_test() {
 	is-arg_1-in-arg_2 u $tests && {
 	local dst=${update_test_dst_drive-}
 	[[ $dst ]] || abort "$config_file needs update_test_dst_drive for 'u'"
-	show_test_header update $dst
+	_show-test-header update $dst
 
 	_set-drive_name $dst
-	have_job copy &&
+	have-job copy &&
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
 
-	run_debug_cmds u update-drives $dst
+	_run-debug-cmds u update-drives $dst
 
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
@@ -4521,24 +4522,24 @@ regression_test() {
 action=$1; shift
 _our_name="$our_name"
  our_name="$our_name $action"
-undo_action_abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
+undo-action-abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
 
 # ---------------------------------
 
-process_action() {
+process-action() {
 
 stack_frame_to_show=0		# show line-number inside the 'case' statement
 
 case $action in
   # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
-   ( l*s*dr*v* | ld | ls | df ) undo_action_abbrev list-drives
-	list_drive_dirs "$@"
+   ( l*s*dr*v* | ld | ls | df ) undo-action-abbrev list-drives
+	list-drive-dirs "$@"
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
-   ( r*b*k*p* | rb* ) undo_action_abbrev run-backups
+   ( r*b*k*p* | rb* ) undo-action-abbrev run-backups
 	[[ $# != 0 ]] || abort-with-action-Usage
-	[[ $1 == all ]] && rm_stale_locks
-	create_jobs backup "$@"
+	[[ $1 == all ]] && rm-stale-locks
+	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then wait			# want to stay in 'ps'; but ...
 #		$IfRun $our_path monitor-drives & # ... not for monitor
@@ -4546,34 +4547,34 @@ case $action in
 	fi
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
-   ( pr*n*dr*v* | pd* ) undo_action_abbrev prune-drives
+   ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $# != 0 ]] || abort-with-action-Usage
-	create_jobs prune "$@"
+	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
-   ( upd*dr*v* | u*d* ) undo_action_abbrev update-drives
+   ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
 	[[ $1 == -d  ]] && {  debug_copy=$1; shift; } ||  debug_copy=
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
 	assert-not-option -o ${1-}
 	[[ $# != 0   ]] || abort-with-action-Usage
-	create_jobs update ${src_names_regex_opt-} $recurse_opt $*
+	create-jobs update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
-   ( c*s*h*l* ) undo_action_abbrev check-snapshot-hard-links
+   ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort-with-action-Usage
 	set-drive_names-from-user-args "$@"
 
 	for name in $drive_names
-	    do	check_snapshot_hard_links $name
+	    do	check-snapshot-hard-links $name
 	done
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
-   ( c*p*s*s* | cs* | cp* ) undo_action_abbrev copy-snapshots # cpss
+   ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
 	[[ $1 == -d  ]] && {   debug_copy=$1; shift; } ||   debug_copy=
 	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
 	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
@@ -4584,20 +4585,20 @@ case $action in
 	drive_name=${!#}
 	src_snapshots=${*%$drive_name}
 
-	[[ $recurse_opt ]] && { create_jobs copy $src_snap_opt -r $*; exit; }
+	[[ $recurse_opt ]] && { create-jobs copy $src_snap_opt -r $*; exit; }
 
 	set-drive_name $drive_name
-	set_drive_dir  $drive_name
+	set-drive_dir  $drive_name
 
 	lock copy || exit 1
 	for snapshot in $src_snapshots
-	    do	create_jobs copy $quiet_opt -s$snapshot $drive_name
+	    do	create-jobs copy $quiet_opt -s$snapshot $drive_name
 	done
 	unlock copy
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-   ( snapshot*size | ss ) undo_action_abbrev snapshot-size
+   ( snapshot*size | ss ) undo-action-abbrev snapshot-size
 	[[ $# == 1 ]] || abort-with-action-Usage
 	dir=$1
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
@@ -4605,50 +4606,50 @@ case $action in
 	$Trace
 	KB=$(sudo find $dir -links 1 -printf '%k\n' |
 		awk '{ total += $1 } ; END { print total }')
-	set_readable_du_size $KB
+	set-readable_du_size $KB
 	du_size=$readable_du_size
 	echo "$dir contains >= $du_size of files in no other directories"
 	;;
 
    # w: show full details on all jobs and drives
    # watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
-   ( watch | wa* | wt* | w ) [[ $action != w ]] && undo_action_abbrev watch
+   ( watch | wa* | wt* | w ) [[ $action != w ]] && undo-action-abbrev watch
 	watch "$@"
 	;;
 
    # kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
-   ( kil* | k ) undo_action_abbrev kill
+   ( kil* | k ) undo-action-abbrev kill
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
 	[[ $# == 2 ]] || abort-with-action-Usage
 	$Trace
-	kill_job_on_drives ${signal-} "$@"
+	kill-job-on-drives ${signal-} "$@"
 	;;
    # continue	   job-type-glob  name-glob: as above, but -CONT signal
-   ( con* | c ) undo_action_abbrev continue
+   ( con* | c ) undo-action-abbrev continue
 	[[ $# == 2 ]] || abort-with-action-Usage
 	$Trace
-	kill_job_on_drives -c "$@"
+	kill-job-on-drives -c "$@"
 	;;
    # suspend	   job-type-glob  name-glob: as above, but -STOP signal
    # stop	   job-type-glob  name-glob: as above, but -STOP signal
-   ( sus* | st*p | s ) undo_action_abbrev suspend
+   ( sus* | st*p | s ) undo-action-abbrev suspend
 	[[ $# == 2 ]] || abort-with-action-Usage
 	$Trace
-	kill_job_on_drives -s "$@"
+	kill-job-on-drives -s "$@"
 	;;
    # ps [ps-opts] [type-glob [name-glob]]: show holders of lock(s)
    ( ps )
-	ps_locks "$@"
+	ps-locks "$@"
 	;;
 
    # reset-priority [names]: reset job priorities on drives (defaults to all)
-   ( r*p* ) undo_action_abbrev reset-priority
+   ( r*p* ) undo-action-abbrev reset-priority
 	set-drive_names-from-user-args "$@"
 
 	$Trace
 	for drive_name in $drive_names
-	    do	_set_drive_dir $drive_name
-		suspended_prune_as_drive_usage_response
+	    do	_set-drive_dir $drive_name
+		suspended-prune-as-drive-usage-response
 	done
 	;;
 
@@ -4657,39 +4658,39 @@ case $action in
    ###########################################################################
 
    # monitor-drives: start run-forever monitor of drive response time
-   ( mon* | m ) undo_action_abbrev monitor-drives
+   ( mon* | m ) undo-action-abbrev monitor-drives
 	[[ $1 == -r ]] || $IfRun exec sudo setsid $our_path $action -r ||
 	    abort "you need sudo perms"
 	shift
 
 	trap '' HUP
-	monitor_drives "$@"
+	monitor-drives "$@"
 	;;
 
-   ( add*extN*journal | aej ) undo_action_abbrev add-extN-journal
-     add_extN_journal "$@"
+   ( add*extN*journal | aej ) undo-action-abbrev add-extN-journal
+     add-extN-journal "$@"
 	;;
 
-   ( dir*sizes | ds ) undo_action_abbrev dir-sizes
-     dir_sizes "$@"
+   ( dir*sizes | ds ) undo-action-abbrev dir-sizes
+     dir-sizes "$@"
 	;;
 
    # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
-   ( filesystem*geometry | f*g ) undo_action_abbrev filesystem-geometry
-     filesystem_geometry "$@"
+   ( filesystem*geometry | f*g ) undo-action-abbrev filesystem-geometry
+     filesystem-geometry "$@"
 	;;
 
    # mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
-   ( mkfs | mf* ) undo_action_abbrev mkfs
-     mkfs_backup_drive "$@"
+   ( mkfs | mf* ) undo-action-abbrev mkfs
+     mkfs-backup-drive "$@"
 	;;
    # copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
-   ( c*p**dr*v* | cpd ) undo_action_abbrev copy-drive
-     copy_backup_drive "$@"
+   ( c*p**dr*v* | cpd ) undo-action-abbrev copy-drive
+     copy-backup-drive "$@"
 	;;
    # finish-copy-drive: only used internally
-   ( f*c*p*dr*v* | f*c*p*d* | fcd ) undo_action_abbrev finish-copy-drive
-     finish_copy_backup_drive "$@"
+   ( f*c*p*dr*v* | f*c*p*d* | fcd ) undo-action-abbrev finish-copy-drive
+     finish-copy-backup-drive "$@"
 	;;
 
    ###########################################################################
@@ -4697,7 +4698,7 @@ case $action in
    ###########################################################################
 
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
-   ( mk*[Zz] | mkz ) undo_action_abbrev mk-Z
+   ( mk*[Zz] | mkz ) undo-action-abbrev mk-Z
 	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
 	[[ $1 != -* ]] || abort "unknown option $1"
 
@@ -4712,7 +4713,7 @@ case $action in
 	    start_date=${1:-12/22/2099}	# tests hours with ...
 	        period=${2:-0..23}	# sequence of hours, else 'month'
 
-	set_drive_dir Z
+	set-drive_dir Z
 	cd_ $drive_dir
 	[[ $debug_opt ]] ||
 	rm -rf *
@@ -4729,7 +4730,7 @@ case $action in
 	local -i secs=start_secs secs_per_day=24*60*60
 	let end_secs-=3600		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
-	   do	set_day $secs
+	   do	set-day-from-secs $secs
 		secs+=secs_per_day
 		[[ $day == *01 || ! $is_months ]] || continue
 		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
@@ -4742,7 +4743,7 @@ case $action in
 
 	# setup partial snapshots mid-date, to test pruning
 	local -i mid_secs="start_secs+(end_secs-start_secs)/2"
-	set_day $mid_secs; mid_day=$day
+	set-day-from-secs $mid_secs; mid_day=$day
 	TraceV 7 start_date mid_day end_date
 	for hour in 00 02 04 08 09 12
 	    do	for ext in links partial
@@ -4751,7 +4752,7 @@ case $action in
 		done
 	done
 
-	set_day $start_secs
+	set-day-from-secs $start_secs
 	snapshot=$day,00
 	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
 	    do	bad_dir=$snapshot$subdir/deleteme
@@ -4772,17 +4773,17 @@ case $action in
 	;;
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
-   ( test*prune | tp ) undo_action_abbrev test-prune
+   ( test*prune | tp ) undo-action-abbrev test-prune
 	[[ $# == 0 ]] || abort-with-action-Usage
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
 
-	customize_and_validate_configuration_variables Z
+	customize-and-validate-configuration-variables Z
 
 	cmd_dirs="/usr/local/bin/ ~/git/$_our_name/bin/"
 	echo -e "\nComparing prune results using '$_our_name' in:
 	${cmd_dirs/ / vs }"
-	set_drive_dir Z
+	set-drive_dir Z
 
 	# see the comment at the top of the mk-Z option, above
 	local -A prune_type2mk_Z_args=(
@@ -4791,7 +4792,7 @@ case $action in
 	[year-month]="1/1/2010 month"
 	)
 
-	clone_stashed_mk_Z() {
+	clone-stashed-mk-Z() {
 		local type=$1 stash=.mk-Z.$1
 		suspend-tracing
 		rm -rf $snapshot_glob* la* && cp -al $stash/* . ||
@@ -4812,7 +4813,7 @@ case $action in
 			abort "couldn't populate $stash"; }
 		for dir in $cmd_dirs
 		    do	eval "dir=$dir"	# expand ~
-			$IfRun clone_stashed_mk_Z $type
+			$IfRun clone-stashed-mk-Z $type
 			$IfRun $dir$_our_name $our_opts prune-drive Z |&
 			   fgrep -v ' prune-drive Z: pruned '
 			[[ $dir == /usr/* ]] && cmd=old || cmd=new
@@ -4825,17 +4826,17 @@ case $action in
 		warn "regression, see: diff -u $*"
 	done
 
-	clone_stashed_mk_Z hour
+	clone-stashed-mk-Z hour
 	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
 	;;
 
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
-   ( r*t* ) undo_action_abbrev regression-test
+   ( r*t* ) undo-action-abbrev regression-test
 	# $Trace
-	regression_test "$@"
+	regression-test "$@"
 	;;
    # chroot-backup date,time [command]: chroot to snapshot on fastest drive
-   ( chr* | cb ) undo_action_abbrev chroot-backup
+   ( chr* | cb ) undo-action-abbrev chroot-backup
 	chroot-backup "$@"
 	;;
 
@@ -4845,17 +4846,17 @@ case $action in
 
    # WARNING: this should only be called by "snapcrypt close"
    # unmount names: for each name (can be 'all'), kill backup & unmount drive
-   ( u*mount | u ) undo_action_abbrev unmount # umount
+   ( u*mount | u ) undo-action-abbrev unmount # umount
 	[[ $# != 0 ]] || abort "pass drive names"
-     unmount_drives "$@"
+     unmount-drives "$@"
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today
-   ( has*new*snapshots | hsn ) undo_action_abbrev has-new-snapshots
+   ( has*new*snapshots | hsn ) undo-action-abbrev has-new-snapshots
 	drive=$1
 	[[ $drive == *Z ]] && exit 0	# for debugging
 
 	$Trace
-	is_drive_mounted $drive || exit 0
+	is-drive-mounted $drive || exit 0
 	suspend-tracing
 	set -- $drive/$snapshot_glob	# all the _successful_ snapshots
 	restore-tracing
@@ -4865,20 +4866,20 @@ case $action in
 	latest_date_time=$(basename $latest_snapshot)
 	latest_day=${latest_date_time%,??}
 	# let latest_day=latest_day-1		# uncomment to debug
-	set_date_time
+	set-date_time
 	day=${date_time%,??}
 	[[ $latest_day == $day ]] ||
 	    abort "$drive has no (successful) backups since $latest_day"
 	;;
    # for "snapcrypt close": find drive with max # snapshots since last mounted
-   ( max*drive | max*backup* | md | mb ) undo_action_abbrev max-drive
+   ( max*drive | max*backup* | md | mb ) undo-action-abbrev max-drive
 	if [[ $# == 1 ]]
 	   then  _set-drive_name $1 &&
-		 _set_drive_dir &&
+		 _set-drive_dir &&
 		echo $drive_dir && exit 0
 	fi
 
-	set -- ${*:-$(list_drive_dirs)}	# for debugging: | tac
+	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
 	local -i secs_per_day=24*60*60
@@ -4887,7 +4888,7 @@ case $action in
 	while [[ $# != 0 ]]
 	    do	new_drive=$1
 		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
-		    do	set_day $secs
+		    do	set-day-from-secs $secs
 
 			set -- $new_drive/$day,??*
 			[[ $# != 0 ]] || break
@@ -4904,7 +4905,7 @@ case $action in
    # for "snapcrypt": echo drive mountpoint
    ( drive )
 	 _set-drive_name $1 || abort "$1 is not a valid backup drive name"
-	 _set_drive_dir
+	 _set-drive_dir
 	echo $drive_dir
 	;;
 
@@ -4913,46 +4914,47 @@ case $action in
    # you can jump to the end of the file.			 #
    # -------------------------------------------------------------
 
-   ( run | r ) undo_action_abbrev run
+   ( run | r ) undo-action-abbrev run
 	run-function "$@"		# can pass: -v "varname(s)"
 	;;
-   ( test | t ) undo_action_abbrev test; $Trace
+   ( test | t ) undo-action-abbrev test; $Trace
 	for l in ${!warning_level2tput_args[*]}
 	    do set-warning_string $l $l; echo -n "$warning_string  "; done;echo
 	print-string-colors; exit
 
+	set-hours() { set-hours-from-minutes "$@"; }
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
-	for m in $ml; do set_hours    $m; printf "%3s -> %s\n" $m $hours; done
-	for m in $ml; do set_hours -1 $m; printf "%3s -> %s\n" $m $hours; done
+	for m in $ml; do set-hours    $m; printf "%3s -> %s\n" $m $hours; done
+	for m in $ml; do set-hours -1 $m; printf "%3s -> %s\n" $m $hours; done
 	exit
 
 	snapshot=/backup/X/2019-06-20,12
-	set_seconds   $snapshot; echo $snapshot_date_time; echo $seconds
-	date '+%s' -r $snapshot; exit
+	set-seconds-from-snapshot $snapshot
+	echo $snapshot_date_time; echo $seconds; date '+%s' -r $snapshot; exit
 
-	_set-drive_name $2; set_job_PGID $1; echo $? $job_PGID; exit
+	_set-drive_name $2; set-job_PGID $1; echo $? $job_PGID; exit
 
-	load__drive_name2do_suspend
+	set-drive_name2do_suspend
 	suspend-tracing
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	restore-tracing
-	fastest_snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
+	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
 
-	set_excluded_hours 23-3 0 1 5-7; echo $excluded_hours; exit
+	set-excluded_hours 23-3 0 1 5-7; echo $excluded_hours; exit
 
 	set-absolute_path /dev/mapper/backup_C; echo $absolute_path; exit
 
 	set -- $drive_dir_prefix${1^^}/$snapshot_glob*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
-	_have_full_snapshot
+	_have-full-snapshot
 	echo "status=$?"
 	exit
 
 	set-drive_name "$@"
-	set_drive_dir $drive_name
-	remove_empty_partial_snapshots $drive_dir
+	set-drive_dir $drive_name
+	remove-empty-partial-snapshots $drive_dir
 	exit
 
 	echo $$; lock prune G; echo $?; exit
@@ -4971,12 +4973,12 @@ case $action in
 	local -a digit2name=(zero one two three)
 	echoEV action digit2name[2]; exit
 
-	validate_config_variables
+	validate-config-variables
 	set__OS_release_file__OS_release
 	TraceV 0 OS_release_file OS_release; exit
 
 	log test 1
-	customize_and_validate_configuration_variables Z; echo $drive_name;
+	customize-and-validate-configuration-variables Z; echo $drive_name;
 	log test 2; exit
 
 	set_FS_block_size___from_path $1; echo $FS_block_size; exit
@@ -4993,7 +4995,7 @@ case $action in
 	done; exit
 
 	set-drive_name ${1:-a}
-	set_drive_dir $drive_name
+	set-drive_dir $drive_name
 	set-FS_label-from-mount_dir $drive_dir
 	echo $FS_label/ exit
 
@@ -5020,22 +5022,22 @@ case $action in
 	}
 	foo; exit
 
-	set_drive_dir ${1^}
+	set-drive_dir ${1^}
 	$Trace
-	is_drive_usage_too_high; echo $?; exit
+	is-drive-usage-too-high; echo $?; exit
 
-	set_oldest_snapshot; echo $oldest_snapshot; exit
+	set-oldest_snapshot; echo $oldest_snapshot; exit
 
 	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
-	    do	set_readable_du_size $size; echo "$readable_du_size from $size"
+	    do	set-readable_du_size $size; echo "$readable_du_size from $size"
 	done; exit
 
 	drive_dir=${drive_dir_prefix}F
 	cd $drive_dir
 	log=/tmp/root/F-190126-15.bz2
-	_links_error_msg "nnn 'Too many links'"; exit
+	_links-error-msg "nnn 'Too many links'"; exit
 
-	set_drive_dir ${1-''}
+	set-drive_dir ${1-''}
 	log "test with drive ${1-}"; exit
 	;;
 
@@ -5046,4 +5048,4 @@ esac
 
 }
 
-process_action "$@"
+process-action "$@"
