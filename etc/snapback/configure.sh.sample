@@ -56,25 +56,8 @@ readonly    XFS_mount_options="logbsize=256k"	 # for performance
 # Rotational hard disks need special handling. #
 # ----------------------------------------------
 
-# Optional function to allocate an external filesystem log/journal
-# on fast storage (SSD, or always-plugged-in flash memory stick),
-# for use with rotational hard disks.
-# Rewrite this function if you're not using LVM.
+# This is used by set-FS_external_log(), which you can replace.
 readonly FS_log_VG=			# should be fast & reliable
-set-FS_external_log() {
-	[[ ${1-} == -f ]] && { do_force=$true; shift; } || do_force=$false
-	local FS_label=$1 VG=${2:-$FS_log_VG}
-
-	[[ $do_want_external_log ||	# defined below
-	   $do_force                ]] || { FS_external_log= && return 1; }
-
-	       FS_external_log=/dev/$VG/${FS_label}_log
-	[[ -b $FS_external_log ]] && return 0
-
-	$IfRun lvcreate --size 128M --name $FS_external_log $VG ||
-	    FS_external_log=
-	[[ $FS_external_log ]]
-}
 
 # Used by set-FS_external_log: should it setup an external filesystem journal?
 	 do_want_external_log=$FS_log_VG # value for (RAID of) rotational disks

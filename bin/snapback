@@ -3695,6 +3695,29 @@ readonly -f unmount-drives
 
 # -----------------------------------------------------------------------------
 
+# Optional function to allocate an external filesystem log/journal
+# on fast storage (SSD, or always-plugged-in flash memory stick),
+# for use with rotational hard disks.
+# Rewrite this function if you're not using LVM.
+have-cmd set-FS_external_log &&
+function set-FS_external_log() {
+	[[ ${1-} == -f ]] && { do_force=$true; shift; } || do_force=$false
+	local FS_label=$1 VG=${2:-$FS_log_VG} # FS_log_VG in $config_file
+
+	[[ $VG ]] &&
+	[[ $do_want_external_log ||	# defined in $config_file
+	   $do_force                ]] || { FS_external_log= && return 1; }
+
+	       FS_external_log=/dev/$VG/${FS_label}_log
+	[[ -b $FS_external_log ]] && return 0
+
+	$IfRun lvcreate --size 128M --name $FS_external_log $VG ||
+	    FS_external_log=
+	[[ $FS_external_log ]]
+}
+
+# -----------------------------------------------------------------------------
+
 # add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
 function add-extN-journal() {
 	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
@@ -4089,8 +4112,7 @@ function mkfs-backup-drive() {
 		[[ $opts == *"-i size="* ]] || opts+="-i size=512 "
 		[[ $opts == *maxpct=*    ]] || opts+="-i maxpct=0 "
 		mount_opts="$XFS_mount_options"
-		have-cmd set-FS_external_log	       && # optional
-			 set-FS_external_log $FS_label &&
+		set-FS_external_log $FS_label &&
 		logdev="logdev=$FS_external_log" &&
 		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
 	elif [[ $cmd == mkfs.ext? ]]
@@ -4118,8 +4140,7 @@ function mkfs-backup-drive() {
 		[[ $opts != *extent* ]] && opts+="$ext4_extent_opt "
 		[[ $FS_type == ext4  ]] &&
 		mount_opts="$extN_mount_options"
-		have-cmd set-FS_external_log		&& # optional
-			 set-FS_external_log $FS_label	&&
+		set-FS_external_log  $FS_label &&
 		log_label=$(basename $FS_external_log)	&&
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
@@ -4144,7 +4165,7 @@ function mkfs-backup-drive() {
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 
 	[[ $mkfs_debug_opt ]] && IfRun=
-	cmd="$cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
+	cmd="$cmd ${opts# } $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header "$cmd"
 	RunCmd  $cmd
 	archive-rsync-time-data
