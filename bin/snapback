@@ -3229,8 +3229,11 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	set -f; set -- $(stty -a); set +f
-	local -i rows=${5%;} cols=${7%;}
+	if [[ $watch_opt ]]
+	   then set -f; set -- $(stty -a); set +f
+		local -i rows=${5%;} cols=${7%;}
+	   else local -i rows=9999   cols=9999
+	fi
 	export COLUMNS=$cols		# for 'ps'
 
 	#
