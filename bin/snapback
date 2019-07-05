@@ -2892,10 +2892,10 @@ set-drive_usage() {
 		local     type=${max_drive_usage_percent:0:1}
 		local  percent=${max_drive_usage_percent#?}
 		((  ${#percent} ==   1 )) && percent=0$percent
-		if [[ $percent  == 100 ]]
+		if [[ $percent  == 100 && $watch_opt ]]
 		   then set-warning_string error FULL
 			percent=$warning_string
-		elif [[ $warn ]]
+		elif [[ $warn && $watch_opt ]]
 		   then set-warning_string warning $percent%$type
 			percent=$warning_string
 		   else percent=$percent%$type
@@ -2976,7 +2976,7 @@ _recalculate-stats-vars() {
 			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
 		fi
-		if [[ ! $suffix ]]	# working with complete snapshots?
+		if [[ ! $suffix && $watch_opt ]] # checking complete snapshots?
 		   then _set-colorized_new $new # warn if newest not today
 			new=$colorized_new
 		fi
@@ -3033,7 +3033,7 @@ setup-snapshot-stats() {
 	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
 	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_dirs=$all_drive_dirs
-	if _is-stats-cache-fresh
+	if _is-stats-cache-fresh && [[ $watch_opt ]]
 	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
 		stats_oldest_age=$(< $oldest_age_cache_file)
@@ -3044,6 +3044,8 @@ setup-snapshot-stats() {
 	fi
 
 	_recalculate-stats-vars
+
+	[[ $watch_opt ]] || return	# don't cache non-colorized 'w' data
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir  ]] || return # might not have write access to the cache
