@@ -306,8 +306,6 @@ rm-stale-locks() {
 		sudo-lockpid -o $lock_path &> /dev/null &&
 		sudo-lockpid -r $lock_path # we grabbed it, i.e. it was stale
 	done
-
-	return 0
 }
 readonly -f rm-stale-locks
 
@@ -343,7 +341,7 @@ readonly -f set-glob
 
 # ---------------------------------
 
-set-lock_paths() {
+function set-lock_paths() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $# == [0-2] ]] ||
 	    abort-function "$*: must be 0-2 args (can use globs)"
@@ -377,7 +375,7 @@ readonly -f set-lock_paths
 
 xtrace=				  # in case comment-out first line of function
 
-lock-PID() {
+function lock-PID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
@@ -552,7 +550,7 @@ readonly -f process-group-PIDs
 
 # ----------------------------------------------------------------------------
 
-set-job_PGID() {
+function set-job_PGID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local job_type=$1 lock_path
 
@@ -569,7 +567,7 @@ readonly -f set-job_PGID
 
 # ----------------------------------------------------------------------------
 
-set-signal_is_kill() {
+function set-signal_is_kill() {
 	local signal=${1#-}
 
 	case ${signal^^} in
@@ -608,7 +606,7 @@ readonly -f is-active-lock
 
 # ----------------------
 
-have-job() { is-active-lock "$@"; }
+function have-job() { is-active-lock "$@"; }
 readonly -f have-job
 
 # ----------------------
@@ -629,7 +627,8 @@ readonly -f sudo-kill
 
 # ----------------------
 
-signal-job() {
+# return false if job exists but we didn't kill it, otherwise true
+function signal-job() {
 	local signal=${1#-}; shift
 	if [[ $# == 1 && $1 == *.pid ]]
 	   then lock_path=$1		# global variable, caller can use it
@@ -643,17 +642,17 @@ signal-job() {
 
 	[[ ! $debug_opt ]] &&
 	# use -o, because we don't really need to remove a stale lock
-	sudo-lockpid -o --not-hold $lock_path &> /dev/null && # stale?
-	sudo-lockpid    --release  $lock_path && return 1
+	sudo-lockpid -o --not-hold $lock_path &> /dev/null && # if stale ...
+	sudo-lockpid    --release  $lock_path && return 0     # nothing to kill
 
-	set-lock_PID $lock_path || return 1
-	sudo-kill -s ${signal^^} -$lock_PID || return 1
+	set-lock_PID $lock_path || return 0 # is there a valid job to signal?
+	sudo-kill -s ${signal^^} -$lock_PID || return 1 # did our kill work?
 
-	set-signal_is_kill $signal &&	# if terminated job, release its lock
-	sudo-lockpid -o $lock_path &> /dev/null && # avoid race
+	set-signal_is_kill $signal || return 0 # (wanted to) terminate job?
+
+	sudo-lockpid -o $lock_path &> /dev/null && # see if it really died
 	sudo-lockpid -r $lock_path
-
-	return 0
+	return $?			# is lock-holder still alive?
 }
 readonly -f signal-job
 
@@ -690,7 +689,7 @@ readonly -f suspend-jobs continue-jobs
 
 # -------------------------------------------------
 
-kill-job-on-drives() {
+function kill-job-on-drives() {
 	local signal=-KILL
 	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
@@ -699,9 +698,21 @@ kill-job-on-drives() {
 
 	set-lock_paths "$@" || return 1
 
+	set-signal_is_kill $signal
 	local path status=1		# assume nothing we're allowed to kill
 	for path in $lock_paths
-	    do	signal-job $signal $path && status=0
+	    do	if [[ $signal_is_kill ]]
+		   then # sometimes it takes multiple kills for update-drive
+			local did_loop=$false
+			until signal-job $signal $path
+			   do	echo -n .
+				sleep 0.1
+				did_loop=$true
+			done
+			[[ $did_loop ]] && echo
+			status=0
+		   else signal-job $signal $path && status=0
+		fi
 	done
 
 	return $status
@@ -710,7 +721,7 @@ readonly -f kill-job-on-drives
 
 # -----------------------------------------------------------------------------
 
-set-lock_PGIDs() {
+function set-lock_PGIDs() {
 	local type=$1
 
 	lock_PGIDs=
@@ -727,14 +738,14 @@ set-lock_PGIDs() {
 	    do	set -- $(< $lock)
 		[[ $# == 1 ]] || continue
 		lock_PGIDs+="-$1 "
-	done 2> /dev/null		# a lock might disappear: $(< ) fails
+	done 2> /dev/null	    # a lock might disappear, i.e. $(< ) fails
 	[[ $lock_PGIDs ]]
 }
 readonly -f set-lock_PGIDs
 
 # -----------------------------------------------------------------------------
 
-ps-locks() {
+function ps-locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 	local ps_opts=
@@ -783,8 +794,7 @@ readonly -f list-drive-dirs
 
 # ----------------------
 
-set-drive_dirs() {
-
+function set-drive_dirs() {
 	set -- $(list-drive-dirs "$@")
 	drive_dirs=$*
 	[[ $drive_dirs ]]
@@ -793,11 +803,12 @@ readonly -f set-drive_dirs
 
 # ---------------------------------
 
-is-drive-mounted() {
+function is-drive-mounted() {
 	local drive_dir=$1
 
 	[[ $drive_dir ]] || return 1
-	df | grep -q " $drive_dir$" || [[ $drive_dir == *[-/]Z ]]
+	[[ $drive_dir == *[-/]Z ]] && return 0 # Z is testing pseudo-drive
+	df | grep -q " $drive_dir$"
 }
 readonly -f is-drive-mounted
 
@@ -824,7 +835,7 @@ readonly -f set-oldest_snapshot
 # Setup variables for working with a specific backup drive.
 ##############################################################################-
 
-function set-admin_group() {
+function set-admin_group {
 
 	is-set admin_group && { [[ $admin_group ]] ; return $?; }
 
@@ -856,15 +867,16 @@ readonly -f set-admin_group
 
 # ----------------------
 
-fix-drive_dir-perms() {
+fix-new-drive_dir-perms() {
 	local drive_dir=${1:-$drive_dir}
 
+	mkdir $drive_dir/.junk		# for sysadmin
 	set-admin_group &&
-	chgrp $admin_group $drive_dir/. &&
+	chgrp $admin_group $drive_dir/{.,.??*} &&
 	# this will _not_ make non-empty snapshots deletable by group
-	chmod g+w	   $drive_dir/. # for 'u' regression test
+	chmod g+w	   $drive_dir/{.,.??*} # for 'u' regression test
 }
-readonly -f fix-drive_dir-perms
+readonly -f fix-new-drive_dir-perms
 
 # ----------------------
 
@@ -885,7 +897,7 @@ create-lock_dir-log_dirs() {
 
 	if [[ ! -d $drive_log_dir ]]
 	   then set-admin_group && group=$admin_group && group=:$group
-		[[ ${drive_dir-} ]] && fix-drive_dir-perms
+		[[ ${drive_dir-} && $UID == 0 ]] && fix-new-drive_dir-perms
 		sudo mkdir -p -m g+w,o-w $drive_log_dir
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
@@ -894,6 +906,7 @@ create-lock_dir-log_dirs() {
 	[[ -d $drive_log_dir ]] || abort "need sudo privs to setup new drive"
 }
 readonly -f create-lock_dir-log_dirs
+
 # -----------------------------------
 
 is_regression_test=$false
@@ -908,7 +921,7 @@ set-drive_log_dir-file_for_logging-admin_group-is_regression_test() {
 
 	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
 	   then _last_fully_initialized_drive_name=${drive_name:-$none}
-	   else return 0		# skip very-long, duplicative setup
+	   else return			# skip very-long, duplicative setup
 	fi
 
 	[[ $drive_name == Z || ( $debug_opt && $is_cron ) ]] &&
@@ -923,10 +936,9 @@ set-drive_log_dir-file_for_logging-admin_group-is_regression_test() {
 	[[ -d $drive_log_dir ]] || create-lock_dir-log_dirs
 
 	customize-and-validate-configuration-variables $drive_name
-
-	return 0
 }
 readonly -f set-drive_log_dir-file_for_logging-admin_group-is_regression_test
+
 # ---------------------------------
 
 have-cmd \
@@ -944,6 +956,7 @@ source-drive-specific-config-file() {
 	fi
 }
 readonly -f source-drive-specific-config-file
+
 # ---------------------------------
 
 readonly allowed_name_dir_chars='-_.a-zA-Z0-9'
@@ -1013,9 +1026,11 @@ _set-drive_dir() {
 }
 readonly -f _set-drive_dir
 
+# ----------------------
+
 is_OK_if_drive_dir_unmounted=$false
 
-set-drive_dir() {
+function set-drive_dir() {
 	local drive_name=$1		# result of set-drive_name, i.e. valid
 
 	[[ $drive_name != */* ]] ||
@@ -1035,10 +1050,9 @@ set-drive_dir() {
 	if  is-drive-mounted  $drive_dir
 	   then have-cmd fix_snapshot_names &&
 		fix_snapshot_names $drive_dir # must call last
-		sudo  -n  mkdir -p $drive_dir/.junk &> /dev/null # optional
 	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
 		    warn "no filesystem mounted on $drive_dir" ||
-		    : print-call-stack
+		    : print-call-stack	# uncomment to debug
 		return 1
 	fi
 
@@ -1181,7 +1195,7 @@ readonly -f customize-and-validate-configuration-variables
 # Manage priorities for backup and prune and update/merge.
 ##############################################################################
 
-is-drive-usage-too-high() {
+function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
 
 	suspend-tracing
@@ -1303,18 +1317,18 @@ readonly -f count-rsyncs-using-resource
 
 # -----------------------------------------------------------------------------
 
-function update-snapshots-ls() {
+function update-snapshots-ls {
 
 	[[ ! $debug_opt ]] &&
 	echo $snapshot_glob{,.links} | tr ' ' '\n' |
 	    sort > $drive_log_dir/snapshots.ls
-	return 0
+	return 0			# so can precede and follow by '&&'
 }
 readonly -f update-snapshots-ls
 
 # -----------------------------------------------------------------------------
 
-_is-time-to-prune-drive() {
+function _is-time-to-prune-drive() {
 	local dir=${1:-$drive_dir}
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
@@ -1366,12 +1380,13 @@ readonly -f _should-run-prune
 # -----------------------------------------------------------------------------
 
 function sudo-unless-dir-writable() {
+	[[ $1 == -n ]] && { local sudo_opt=$1; shift; } || local sudo_opt=
 	local path=${!#}
 
 	[[ $path == */* ]] && local dir=${path%/*} || local dir=.
 	if [[ -w $dir ]]
-	   then      "$@"
-	   else sudo "$@"
+	   then "$@"
+	   else sudo $sudo_opt "$@"
 	fi
 }
 readonly -f sudo-unless-dir-writable
@@ -1567,6 +1582,7 @@ set-prune_glob() {
 	prune_glob=$date_prefix_glob$glob$date_suffix_glob{,.*}
 }
 readonly -f set-prune_glob
+
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
 declare -r -A backup_period2minimal_snapshot_glob=(
@@ -1705,7 +1721,7 @@ readonly -f prune-type-to-file
 
 # ----------------------
 
-_do-skip-newest-span-of-days() {
+function _do-skip-newest-span-of-days() {
 	local type=$1
 
 	[[ $type != hour* ]] && return 0
@@ -1778,7 +1794,7 @@ readonly -f prune-drive
 # functions to setup --link-dest args to rsync
 # -----------------------------------------------------------------------------
 
-_have-full-snapshot() {
+function _have-full-snapshot {
 
 	set -- ${new_snapshot%/$snapshot_glob*}/$snapshot_glob
 	[[ $# != 0 ]]
@@ -1907,7 +1923,7 @@ readonly -f set-excluded_hours
 
 # ---------------------------------
 
-_is-time-to-run-backup() {
+function _is-time-to-run-backup {
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
@@ -2108,7 +2124,7 @@ readonly -f _handle-rsync-results
 
 # ----------------------
 
-run-rsync() {
+function run-rsync() {
 	if [[ $1 == -c ]]
 	   then shift
 		local is_copy_snapshot=$true
@@ -2183,7 +2199,7 @@ readonly -f run-rsync
 
 # -------------------------------------------------------
 
-run-backup-rsync() {
+function run-backup-rsync() {
 	local date_time=$1
 
 	set-priority backup
@@ -2194,7 +2210,7 @@ run-backup-rsync() {
 
 	suspend-tracing
 	eval "run-rsync $dirs_to_backup $new_snapshot" # might need globbing
-	restore-tracing
+	restore-tracing				       # this preserves $?
 }
 readonly -f run-backup-rsync
 
@@ -2202,7 +2218,7 @@ readonly -f run-backup-rsync
 
 # The locking & job-management policy is documented in front of function lock()
 
-run-backup() {
+function run-backup() {
 	local drive_name=$1 drive_dir
 
 	set-drive_name $drive_name
@@ -2253,13 +2269,12 @@ assert-not-in-cron-jobs() {
 		local regex=drive_name_regex
 		$IfRun abort "remove $drive_name from $regex= in $config_file"
 	done
-	return 0
 }
 readonly -f assert-not-in-cron-jobs
 
 # -----------------------------------------------------------------------------
 
-bad-copy() {
+function bad-copy() {
 	local msg=$*
 
 	[[ $is_quiet || $is_update || $debug_opt ]] ||
@@ -2291,7 +2306,7 @@ readonly -f set-backup_type
 
 # ---------------------------------
 
-matches-dst_backup_type() {
+function matches-dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dir=$1 drive_name
 
@@ -2304,7 +2319,7 @@ readonly -f matches-dst_backup_type
 
 # ----------------------
 
-is-src_snapshot-useful() {
+function is-src_snapshot-useful() {
 	local src_snapshot=$1
 
 	[[ -d $src_snapshot ]] || bad-copy "no snapshot '$1'" || return 1
@@ -2324,7 +2339,7 @@ readonly -f is-src_snapshot-useful
 
 # ---------------------------------
 
-is-dst_snapshot-needed() {
+function is-dst_snapshot-needed() {
 	local dst_snapshot=$1
 
 	set -- ${dst_snapshot%.*}*	# a version might exist
@@ -2350,7 +2365,7 @@ readonly -f is-dst_snapshot-needed
 
 # ---------------------------------
 
-copy-snapshot() {
+function copy-snapshot() {
 	[[ $1 == -s* ]] && { local src=${1#-s}   ; shift; } || local src=
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
@@ -2402,16 +2417,17 @@ readonly -f copy-snapshot
 
 # The following is similar to the second half of run-backup-rsync;
 # it's called by copy-snapshot and update-drive, to do the real work.
-copy-snapshot-rsync() {
+function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
 	suspend-jobs prune # hourly cron will continue prune if drive space low
 
 	set-priority copy
 
-	cd_ $(dirname $dst_snapshot) # can kill job with: fuser -k -M $dst_dir
-	run-rsync -c  $src_snapshot/. $dst_snapshot
+	cd_ ${dst_snapshot%/*}	     # can kill job with: fuser -k -M $dst_dir
+	run-rsync -c $src_snapshot/. $dst_snapshot; local status=$?
 	cd_ $OLDPWD
+	return $status
 }
 readonly -f copy-snapshot-rsync
 
@@ -2552,8 +2568,12 @@ readonly -f sorted-useful-srcs
 remove-empty-partial-snapshots() {
 	local drive_dir=$1
 
+	cd_ $drive_dir
+	set -- *.partial
+	[[ $# != 0 ]] &&
 	# 'sudo -n' because we're called by 'watch' and 'w'
-	sudo -n rmdir $drive_dir/*.partial &> /dev/null # optional
+	sudo-unless-dir-writable -n rmdir $* &> /dev/null # optional
+	cd_ $OLDPWD
 }
 readonly -f remove-empty-partial-snapshots
 
@@ -2608,12 +2628,14 @@ update-drive() {
 
 	remove-empty-partial-snapshots $drive_dir
 
+	# make sure that we're not using partially-created snapshots
+	# in rsync's --link-dest options
 	set-num_full_link_dests
 	wait-for-full-snapshots $num_full_link_dests
 
-	if [[ $debug_opt ]]
-	   then local sudo=sudo-unless-dir-writable
-	   else local sudo=
+	if [[ $UID == 0 ]]
+	   then local sudo=
+	   else local sudo=sudo-unless-dir-writable
 	fi
 
 	set-srcs_dst_file
@@ -2701,12 +2723,12 @@ readonly -f _set-drive_names_or_dirs-from-user-args
 
 # ---------------------------------
 
-set-drive_dirs-from-user-args() {
+function set-drive_dirs-from-user-args() {
 	[[ ${1-} == -[aA] ]] && local all_opt=$1 || local all_opt= # no shift..
-
-	drive_dirs=
 	local drive_names_or_dirs drive_name drive_dir
 	_set-drive_names_or_dirs-from-user-args "$@" # (optional) -a is passed
+
+	drive_dirs=
 	for drive_dir in $drive_names_or_dirs
 	    do	_set-drive_name $drive_dir  &&
 		_set-drive_dir  $drive_name ||
@@ -2718,16 +2740,17 @@ set-drive_dirs-from-user-args() {
 		    drive_dirs+="$drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
+	[[ $drive_dirs ]]
 }
 readonly -f set-drive_dirs-from-user-args
 
 # ---------------------------------
 
-set-drive_names-from-user-args() {
-
-	drive_names=
+function set-drive_names-from-user-args() {
 	local drive_names_or_dirs drive_name drive_dir
 	_set-drive_names_or_dirs-from-user-args "$@"
+
+	drive_names=
 	for drive_name in $drive_names_or_dirs
 	    do	_set-drive_name $drive_name &&
 		_set-drive_dir  $drive_name || continue
@@ -2738,6 +2761,7 @@ set-drive_names-from-user-args() {
 		    drive_names+="$drive_name "
 	done
 	drive_names=${drive_names% }
+	[[ $drive_names ]]
 }
 readonly -f set-drive_names-from-user-args
 
@@ -3084,7 +3108,7 @@ set-max_device_len-max_mount_len() {
 
 # -------------------------------------------------------
 
-run-df() {
+function run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	echo
@@ -3096,7 +3120,7 @@ readonly -f run-df
 
 # --------------------------------------------
 
-run-lsblk() {
+function run-lsblk() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	have-cmd lsblk || return 1
@@ -3117,7 +3141,7 @@ readonly -f run-lsblk
 
 # -----------------------------------------------------------------------------
 
-trim() {
+function trim {
 
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
 	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
@@ -3134,7 +3158,7 @@ readonly -f trim
 
 # --------------------------------------------
 
-trim-backup() {
+function trim-backup {
 
 	trim |
 	sed -e 's@run-backup -r @run-backup @g' \
@@ -3146,7 +3170,7 @@ readonly -f trim-backup
 
 # --------------------------------------------
 
-trim-prune() {
+function trim-prune {
 
 	trim |
 	sed -e 's@prune-drive -r @prune-drive @g'
@@ -3156,7 +3180,7 @@ readonly -f trim-prune
 
 # --------------------------------------------
 
-trim-copy-update() {
+function trim-copy-update {
 
 	set -- $rsync_backup_opts	# standardize whitespace
 
@@ -3639,7 +3663,7 @@ readonly -f monitor-drives
 # -----------------------------------------------------------------------------
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
-unmount-drives() {
+function unmount-drives() {
 	[[ $1 == -q  ]] && { shift; is_OK_if_drive_dir_unmounted=$true; }
 	assert-not-option ${1-}
 	[[ $* == all ]] && set -- $(list-drive-dirs)
@@ -3672,7 +3696,7 @@ readonly -f unmount-drives
 # -----------------------------------------------------------------------------
 
 # add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
-add-extN-journal() {
+function add-extN-journal() {
 	[[ ${1-} == -M ]] && { local  do_mount=  ; shift; } || local do_mount=t
 	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	[[ $# == [1-4] ]] ||
@@ -3944,7 +3968,7 @@ readonly -f filesystem-geometry
 # If have existing backup drives that are no bigger, use copy-drive .
 
 # mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
-mkfs-backup-drive() {
+function mkfs-backup-drive() {
 	set-date_time
 	line_1="if you're using a partition or LV that already has backups,"
 	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
@@ -4127,13 +4151,13 @@ mkfs-backup-drive() {
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
-	fix-drive_dir-perms $drive_dir
+	fix-new-drive_dir-perms $drive_dir
 
 	echo -e "\nTo populate newly-created drive, run:\n
 	nohup $_our_name update-drive $drive_name	# creates new job"
 
-	warn "DON'T FORGET to add \`$name' to drive_name_regex= in $config_file"
-	return 0
+       warn "DON'T FORGET to add \`$name' to drive_name_regex= in $config_file"
+       return 0
 }
 readonly -f mkfs-backup-drive
 
@@ -4286,7 +4310,7 @@ readonly -f show-iostat
 
 # ---------------------------------
 
-_dump-restore-xfs-backup-drives() {
+function _dump-restore-xfs-backup-drives {
 
 	_prepare-for-dump-restore
 
@@ -4314,7 +4338,7 @@ readonly -f _dump-restore-xfs-backup-drives
 
 # ---------------------------------
 
-_dump-restore-extN-backup-drives() {
+function _dump-restore-extN-backup-drives {
 
 	_prepare-for-dump-restore -S
 
@@ -4401,7 +4425,7 @@ readonly -f _copy-extN-backup-drive
 # --------------------------------------------
 
 # finish-copy-drive: copy, label & UUID, replace journal, fsck, mount, resize
-finish-copy-backup-drive() {
+function finish-copy-backup-drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
 	local cmd=$(echo "$Usage" |
@@ -4432,7 +4456,6 @@ finish-copy-backup-drive() {
 
 	local var=drive_name_regex
 	warn "DON'T FORGET: add $src_name & $dst_name to $var= in $config_file"
-
 	return 0
 }
 readonly -f finish-copy-backup-drive
@@ -4443,7 +4466,7 @@ readonly -f finish-copy-backup-drive
 ##############################################################################-
 ##############################################################################-
 
-check-snapshot-hard-links() {
+function check-snapshot-hard-links() {
 	local name=$1
 
 	[[ ${very_old_immutable_files-} ]] ||
@@ -4488,7 +4511,7 @@ check-snapshot-hard-links() {
 		$IfRun mkdir -p .rm
 		set -- $partials $*
 		warn "$drive_name: the following have broken hard-links: $*"
-		exit 1
+		return 1
 	done
 	echo "$drive_name: no broken hard-links!"
 }
@@ -4604,7 +4627,7 @@ readonly -f _run-debug-cmds
 
 readonly regression_tests="b c z p u"
 
-regression-test() {
+function regression-test() {
 	local tests=${*:-$regression_tests}
 	[[ $tests == [A-Z] ]] && tests=${regression_tests/${tests,}/}
 
@@ -4734,9 +4757,11 @@ case $action in
 	[[ $# != 0   ]] || abort-with-action-Usage
 	set-drive_names-from-user-args "$@"
 
+	status=0
 	for name in $drive_names
-	    do	check-snapshot-hard-links $name
+	    do	check-snapshot-hard-links $name || status=$?
 	done
+	exit $status
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
