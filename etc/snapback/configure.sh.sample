@@ -94,7 +94,7 @@ declare -i -r log_level=0	     # verbosity of logs in /var/log/snapback/
 
 # ---------------------------------------------------------
 
-# See set_job_type2priority_level to see the policy for deciding priority level
+# See set-job_type2priority_level to see the policy for deciding priority level
 # (policy is partially controlled by $min_FS_usage_percent).
 
 # PGIDs (PIDs of process-group leaders) will be appended to these commands;

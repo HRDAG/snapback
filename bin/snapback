@@ -326,15 +326,23 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
+# user can use ',' without '{}', and '-' without '[]'
 function set-glob() {
 
-	[[ $# == 1 ]] || return 1
+	shopt -s nocaseglob
 
-	set -f
-	[[ $1 == *,* && $1 !=  '{'* ]] && set --   '{'$1
-	[[ $1 == *,* && $1 != *'}'  ]] && set -- $1'}'
-	set +f
-	glob=$1
+	glob=
+	local arg
+	for arg
+	    do	set -f
+		[[ $arg == *,* && $arg !=  '{'* ]] && arg="{$arg"
+		[[ $arg == *,* && $arg != *'}'  ]] && arg="$arg}"
+		[[ $arg == *-* && $arg !=  '['* ]] && arg="[$arg"
+		[[ $arg == *-* && $arg != *']'  ]] && arg="$arg]"
+		set +f
+		glob+="$arg "
+	done
+	glob=${glob# }
 	[[ $glob == *[[*?,+@!]* ]]
 }
 readonly -f set-glob
@@ -2715,7 +2723,9 @@ _set-drive_names_or_dirs-from-user-args() {
 
 	if [[ $# == 0 || $1 == all || $1 == '*' ]]
 	   then set -- $(list-drive-dirs $all_opt)
-	   else set -- ${*//,/ }
+	elif set-glob "$@"
+	   then [[ $glob == *' '* ]] && glob="{${glob// /,}}"
+		eval "set -- $drive_dir_prefix$glob"
 	fi
 	drive_names_or_dirs=$*
 }
@@ -5126,7 +5136,12 @@ case $action in
    # -------------------------------------------------------------
 
    ( run | r ) undo-action-abbrev run
+	$Trace
 	run-function "$@"		# can pass: -v "varname(s)"
+	status=$?
+	[[ $1 == set-* ]] || return $status
+	var_name=${1#set-} ; var_name=${var_name%%-*}
+	echo ${!var_name}
 	;;
    ( test | t ) undo-action-abbrev test; $Trace
 	for l in ${!warning_level2tput_args[*]}
