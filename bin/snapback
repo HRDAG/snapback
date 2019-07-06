@@ -1864,7 +1864,7 @@ readonly -f set-link_dest_opts
 
 # ------------------------------------------------------------------
 
-set-link_dest_opts-for-run-backup() {
+set-link_dest_opts--for-run-backup() {
 	local new_snapshot=${1##*/}
 
 	suspend-tracing
@@ -1877,11 +1877,11 @@ set-link_dest_opts-for-run-backup() {
 
 	set-link_dest_opts $new_snapshot $*
 }
-readonly -f set-link_dest_opts-for-run-backup
+readonly -f set-link_dest_opts--for-run-backup
 
 # ------------------------------------------------------------------
 
-set-link_dest_opts-for-copy-snapshot() {
+set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}
 
 	suspend-tracing
@@ -1906,7 +1906,7 @@ set-link_dest_opts-for-copy-snapshot() {
 	restore-tracing
 	set-link_dest_opts $new_snapshot $* # oldest to newest
 }
-readonly -f set-link_dest_opts-for-copy-snapshot
+readonly -f set-link_dest_opts--for-copy-snapshot
 
 # -----------------------------------------------------------------------------
 # misc functions to support run-rsync
@@ -2174,8 +2174,8 @@ function run-rsync() {
 	suspend-tracing
 	local link_dest_opts=
 	if [[ ! $is_copy_snapshot ]]
-	   then set-link_dest_opts-for-run-backup    $dst_snapshot
-	   else set-link_dest_opts-for-copy-snapshot $dst_snapshot
+	   then set-link_dest_opts--for-run-backup    $dst_snapshot
+	   else set-link_dest_opts--for-copy-snapshot $dst_snapshot
 	fi
 	restore-tracing link_dest_opts
 
@@ -2614,7 +2614,7 @@ wait-for-full-snapshots() {
 
 	while true
 	   do	set -- $drive_dir/$snapshot_glob
-		(( $# >= $min_full_snapshots )) && return
+		(( $# > $min_full_snapshots )) && return # an extra one: safety
 		sleep 1h
 	done
 }
