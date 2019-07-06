@@ -978,21 +978,25 @@ readonly -f source-drive-specific-config-file
 
 # ---------------------------------
 
-readonly allowed_name_dir_chars='-_.a-zA-Z0-9'
+readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9'
 
 have-cmd \
 _set-drive_name ||		      # configure.sh can replace this function
 # ignore invalid names, fix the case of valid names
 _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
 
-	[[ $name == *[^$allowed_name_dir_chars]* ]] &&
+	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
+	   [[ $is_quiet ]] && return 1
 	   abort "drive_name $1 has disallowed chars (can ask $coder to allow)"
+	}
 
-	[[ $name =~ ^$admin_drive_name_regex$ ]] ||
-	    abort "'$name' is not a valid drive-name"
+	[[ $name =~ ^$admin_drive_name_regex$ ]] ||	  {
+	    [[ $is_quiet ]] && return 1
+	    abort "'$name' is not a valid drive-name"	; }
 
 	  if [[ $is_drive_name_upper_cased ]]
 	   then drive_name=${name^^}
@@ -1163,7 +1167,7 @@ validate-config-variables() {
 	[[ $excluded_backup_hours != *[^-\ \	0-9]* ]] ||
 	   abort "excluded_backup_hours must be list of (ranges of) numbers"
 
-	[[ $drive_dir_prefix == *[^$allowed_name_dir_chars/]* ]] &&
+	[[ $drive_dir_prefix == *[^$allowed_drive_name_dir_chars/]* ]] &&
 	   abort "drive_dir_prefix has disallowed chars (ask $coder to allow)"
 
 	set -- $config_file ${drive_specific_config_file-}
@@ -2730,30 +2734,22 @@ readonly -f update-drive
 ##############################################################################-
 ##############################################################################-
 
-_set-drive_names_or_dirs--from-user-args() {
+function set-drive_dirs--from-user-args() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 
-	if [[ $# == 0 || $1 == all || $1 == '*' ]]
-	   then set -- $(list-drive-dirs $all_opt)
-	elif set-glob "$@"
-	   then eval "set -- $drive_dir_prefix$glob"
+	unset drive_names		# we might not set this ...
+
+	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
+	   then set-drive_dirs $all_opt
+		return $?
 	fi
-	drive_names_or_dirs=$*
-}
-readonly -f _set-drive_names_or_dirs--from-user-args
 
-# ---------------------------------
-
-function set-drive_dirs--from-user-args() {
-	[[ ${1-} == -[aA] ]] && local all_opt=$1 || local all_opt= # no shift..
-	local drive_names_or_dirs drive_name drive_dir
-	_set-drive_names_or_dirs--from-user-args "$@" # (optional) -a is passed
+	set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
 
 	drive_dirs=
-	for drive_dir in $drive_names_or_dirs
-	    do	_set-drive_name $drive_dir  &&
-		_set-drive_dir  $drive_name ||
-		    { [[ $all_opt == -A ]] || continue; }
+	for drive_dir
+	    do	_set-drive_name -q $drive_dir  &&
+		_set-drive_dir     $drive_name || continue
 		suspend-tracing
 		set -- $drive_dir/$snapshot_glob*
 		restore-tracing
@@ -2768,18 +2764,13 @@ readonly -f set-drive_dirs--from-user-args
 # ---------------------------------
 
 function set-drive_names--from-user-args() {
-	local drive_names_or_dirs drive_name drive_dir
-	_set-drive_names_or_dirs--from-user-args "$@"
+	 set-drive_dirs--from-user-args "$@" || return $?
 
 	drive_names=
-	for drive_name in $drive_names_or_dirs
-	    do	_set-drive_name $drive_name &&
-		_set-drive_dir  $drive_name || continue
-		suspend-tracing
-		set -- $drive_dir/$snapshot_glob*
-		restore-tracing
-		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
-		    drive_names+="$drive_name "
+	local drive_dir drive_name
+	for drive_dir in $drive_dirs
+	    do	_set-drive_name $drive_dir
+		  drive_names+="$drive_name "
 	done
 	drive_names=${drive_names% }
 	[[ $drive_names ]]
