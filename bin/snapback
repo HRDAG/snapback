@@ -2863,6 +2863,8 @@ set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dirs=$*
 
+	is-set stats_format && { $xtrace; return; }
+
 	local -i format_width
 	local format=
 	local drive_dir drive_name
@@ -2880,6 +2882,7 @@ readonly -f set-stats_format
 # ---------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
+	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
 
 	set-stats_format $all_drive_dirs
 	local hour_avgs= hour_maxs=
@@ -2907,13 +2910,17 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
 	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
+	rsync_hour_avgs=${rsync_hour_avgs% }
+	rsync_hour_maxs=${rsync_hour_maxs% }
 }
 readonly -f set-rsync_hour_avgs-rsync_hour_maxs
 
 # -----------------------------------------------------------------------------
 
 set-drive_usage() {
+	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
 
+	set-stats_format $all_drive_dirs
 	customize-config-variables
 	local var_name=min_FS_usage_percent; local \
 	    default_min_FS_usage=${custom_config_var2default_value[$var_name]-}
@@ -2990,6 +2997,7 @@ readonly -f _set-colorized_new
 
 _recalculate-stats-vars() {
 
+	set-stats_format $all_drive_dirs
 	local nums= oldies= newies=
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
@@ -3104,7 +3112,7 @@ readonly -f setup-snapshot-stats
 # -----------------------------------------------------------------------------
 
 set-max_device_len-max_mount_len() {
-	local drive_dirs=${1:-$(list_drive_dirs)}
+	local drive_dirs=${1:-$(list-drive-dirs)}
 
 	declare -g -i max_device_len=0 max_mount_len=0
 
@@ -5138,13 +5146,27 @@ case $action in
    # you can jump to the end of the file.			 #
    # -------------------------------------------------------------
 
+   # run [-v var-names] func-name: run func-name, echo contents of var-names
    ( run | r ) undo-action-abbrev run
 	$Trace
-	run-function "$@"		# can pass: -v "var-name(s)" of vars to be echo'ed
+	run-function -p "$@" # can pass: -v "var-name(s)" of vars to be echo'ed
 	echo status=$?
+	set +x
 	[[ $1 == set-* ]] || exit
-	var_name=${1#set-} ; var_name=${var_name%%-*}
-	echo $var_name=${!var_name}
+
+	echo
+	var_names=${1#set-} ; var_names=${var_names%%--from-*}
+	var_names=${var_names//-/ }
+	declare -i max_name_width=0
+	for var_name in $var_names
+	    do	(( max_name_width <= ${#var_name} )) || continue
+		   max_name_width=${#var_name}
+	done
+	for var_name in $var_names
+	    do	var_value=${!var_name}
+		[[ $var_value == *' '* ]] && var_value="'$var_value'"
+		printf "%${max_name_width}s=%s\n" $var_name "$var_value"
+	done
 	;;
    ( test | t ) undo-action-abbrev test; $Trace
 	for l in ${!warning_level2tput_args[*]}
