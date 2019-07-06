@@ -64,7 +64,8 @@ fi ;						readonly config_file_sample
 readonly uncustomizable_config_vars="
 	    drive_dir_prefix old_crypt_name_prefixes drive_specific_config_file
 	    level2CPU_priority_cmd level2IO_priority_cmd
-	    drive_name_regex admin_drive_name_regex is_drive_name_capitalized"
+	    is_drive_name_capitalized drive_name_regex admin_drive_name_regex
+	    is_drive_name_upper_cased"
 config_vars=$(
     # toss functions before looking for variable assignments
     sed -n -r	-e '/(^[ 	]*function\b.*|\(\)) *\{.*\}/d'		\
@@ -76,6 +77,9 @@ for var in $config_vars; do eval "declare -A drv_name2$var"; done
 # this grabs variables that control backup and pruning, and may also hold
 # customizable functions *set-drive_name & source-drive-specific-config-file
 source $config_file || abort "source'd $config_file ended with non-0 status"
+
+[[ $is_drive_name_capitalized || $is_drive_name_upper_cased ]] &&
+    shopt -s nocaseglob			# we mostly glob drive names or dirs
 
 readonly PS4		      # remove if some functions want to manipulate it
 
@@ -124,6 +128,7 @@ Usage: $our_name [options] action [options] [args]
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
     regression-test [tests]: check functionality, see $tmp_dir/?? for results
     chroot-backup date,time [command]: chroot to snapshot on fastest drive
+    run [-v var-names] func-name: run func-name, echo contents of var-names
 
   NOTE: to see what an action would do, use -d option to simulate the action.
 
@@ -182,7 +187,7 @@ readonly tmp_5=$tmp_dir/$our_name-5-$$
 need-cmds lockpid			# from libsnap repo
 
 shopt -s checkhash			# sometimes move commands for testing
-shopt -s extglob			# just in case we need them
+shopt -s extglob			# useful for args to set-glob
 shopt -s nullglob			# so don't need to test for no matches
 shopt -s globasciiranges		# so weird locales don't mess us up
 
@@ -326,10 +331,8 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
-# user can use ',' without '{}', and '-' without '[]'
+# turn comma-separated lists and/or ranges into a single glob
 function set-glob() {
-
-	shopt -s nocaseglob
 
 	glob=
 	local arg
@@ -340,10 +343,11 @@ function set-glob() {
 		[[ $arg == *-* && $arg !=  '['* ]] && arg="[$arg"
 		[[ $arg == *-* && $arg != *']'  ]] && arg="$arg]"
 		set +f
-		glob+="$arg "
+		glob+="$arg,"		# append ','. we'll wrap in {}
 	done
-	glob=${glob# }
-	[[ $glob == *[[*?,+@!]* ]]
+	glob=${glob#,}
+	(( $# > 1 )) && glob="{$glob}"
+	[[ $glob == *[[{*?,+@!]* ]]
 }
 readonly -f set-glob
 
@@ -2724,8 +2728,7 @@ _set-drive_names_or_dirs-from-user-args() {
 	if [[ $# == 0 || $1 == all || $1 == '*' ]]
 	   then set -- $(list-drive-dirs $all_opt)
 	elif set-glob "$@"
-	   then [[ $glob == *' '* ]] && glob="{${glob// /,}}"
-		eval "set -- $drive_dir_prefix$glob"
+	   then eval "set -- $drive_dir_prefix$glob"
 	fi
 	drive_names_or_dirs=$*
 }
@@ -5137,11 +5140,11 @@ case $action in
 
    ( run | r ) undo-action-abbrev run
 	$Trace
-	run-function "$@"		# can pass: -v "varname(s)"
-	status=$?
-	[[ $1 == set-* ]] || return $status
+	run-function "$@"		# can pass: -v "var-name(s)" of vars to be echo'ed
+	echo status=$?
+	[[ $1 == set-* ]] || exit
 	var_name=${1#set-} ; var_name=${var_name%%-*}
-	echo ${!var_name}
+	echo $var_name=${!var_name}
 	;;
    ( test | t ) undo-action-abbrev test; $Trace
 	for l in ${!warning_level2tput_args[*]}
@@ -5157,8 +5160,6 @@ case $action in
 	snapshot=/backup/X/2019-06-20,12
 	set-seconds-from-snapshot $snapshot
 	echo $snapshot_date_time; echo $seconds; date '+%s' -r $snapshot; exit
-
-	_set-drive_name $2; set-job_PGID $1; echo $? $job_PGID; exit
 
 	set-drive_name2do_suspend
 	suspend-tracing
