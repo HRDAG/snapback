@@ -345,7 +345,7 @@ function set-glob() {
 		set +f
 		glob+="$arg,"		# append ','. we'll wrap in {}
 	done
-	glob=${glob#,}
+	glob=${glob%,}
 	(( $# > 1 )) && glob="{$glob}"
 	[[ $glob == *[[{*?,+@!]* ]]
 }
