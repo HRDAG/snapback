@@ -797,7 +797,7 @@ readonly -f ps-locks
 ##############################################################################
 
 list-drive-dirs() {
-	suspend-tracing
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -a ]] &&
 	   local list_all_drives=$true && shift ||
 	   local list_all_drives=$false
@@ -809,7 +809,7 @@ list-drive-dirs() {
 	[[ ${1-} == -A ]] && regex=/ || regex="^$drive_dir_prefix$regex$"
 	df --output=target --no-sync -x devtmpfs -x tmpfs |
 	   egrep "$regex" | sort -u
-	restore-tracing
+	$xtrace
 }
 readonly -f list-drive-dirs
 
@@ -1445,7 +1445,8 @@ _rm-pruned-snapshots() {
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	for snapshot
-	    do	count-rsyncs-using-resource  $snapshot || continue # in use?
+	    do	[[ $is_update && $debug_opt ]] ||		   # speedup
+		count-rsyncs-using-resource  $snapshot || continue # in use?
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
 		if [[ $is_update ]]
