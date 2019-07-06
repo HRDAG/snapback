@@ -79,7 +79,9 @@ config_vars=$(
 		-e '/(^[ 	]*function\b.*|\(\)) *\{/,/^[ 	]*\}/d'	\
 		-e 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' $config_file_sample | uniq
 )							; readonly config_vars
-for var in $config_vars; do eval "declare -A drv_name2$var"; done
+_customizable_arrays=
+for var in $config_vars; do _customizable_arrays+="drv_name2$var "; done
+eval "declare -A $_customizable_arrays"
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizable functions *set-drive_name & source-drive-specific-config-file
@@ -1563,7 +1565,7 @@ set-seconds--from-snapshot() {
 
 	snapshot_date_time=${snapshot_date_time##*/}	# basename
 	snapshot_date_time=${snapshot_date_time%%.*}	# toss .* suffix
-	snapshot_date_time=${snapshot_date_time/,/ }:00	# ,hours -> hours:00
+	snapshot_date_time=${snapshot_date_time/,/ }:00	# ,hours -> " hours:00"
 	seconds=$(date '+%s' -d "$snapshot_date_time")
 }
 readonly -f set-date_time set-day--from-secs set-seconds--from-snapshot
@@ -2604,9 +2606,10 @@ readonly -f remove-empty-partial-snapshots
 # ---------------------------------
 
 cleanup-after-updates() {
+	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	local drive_dir drive_name	# protect caller's values
-	for drive_dir in $(list-drive-dirs -a)
+	for drive_dir in $drive_dirs
 	    do	_set-drive_name $drive_dir
 		set-lock_path copy	# update could be running
 		(
@@ -2892,13 +2895,19 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 		local  dir=$log_dir/$name/$rsync_time_subdir
 		set -- $dir/$snapshot_glob.txt
 		if [[ $# != 0 ]]
-		   then local sum=$(cat $* | tr '\n' '+')
+		   then local -i mins max_mins=0
+			local file sum=
+			for file
+			    do	mins=$(< $file)
+				sum+="$mins+"
+				(( max_mins < mins )) &&
+				   max_mins=$mins
+			done
 			local -i total=${sum%+}
 			local -i avg=$(( ($total+($#/2)) / $# ))
 			set-hours--from-minutes -1 $avg # want 1 decimal point
 			hour_avg=$hours
-			set -- $(sort -n -r $*)
-			set-hours--from-minutes -1 $1
+			set-hours--from-minutes -1 $max_mins
 			hour_max=$hours
 		   else hour_avg= hour_max=
 		fi
@@ -3003,13 +3012,19 @@ _recalculate-stats-vars() {
 		local name=$drive_name
 		cd $dir || abort "cd $dir"
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
-		ending_RE=${ending//\?/.}
 		suspend-tracing
 		set -- $snapshot_glob$suffix
 		restore-tracing
-		[[ $# != 0 ]] &&
-		set -- $(echo $* | tr ' ' '\n' |
-			   sed "s/$ending_RE$//" | uniq)
+		[[ $# != 0 ]] && {
+		local snapshot snap prev_snap= snaps=
+		for snapshot
+		    do	snap=${snapshot%$ending$suffix}
+			[[ $prev_snap != $snap ]] && snaps+="$snap "
+			    prev_snap=$snap
+			suspend-tracing
+		done
+		set -- $snaps
+		}
 		restore-tracing
 
 		nums+="$name=$# "
@@ -3111,7 +3126,7 @@ readonly -f setup-snapshot-stats
 # -----------------------------------------------------------------------------
 
 set-max_device_len-max_mount_len() {
-	local drive_dirs=${1:-$(list-drive-dirs)}
+	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	declare -g -i max_device_len=0 max_mount_len=0
 
@@ -3245,16 +3260,15 @@ watch() {
 		abort "exec failed"
 	fi
 
+	set -- $(list-drive-dirs -a)
+	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
+	local all_drive_dirs=$* drive_dirs=
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || trap '' HUP
-	[[ $watch_opt ]] || cleanup-after-updates # wait for it to finish
+	[[ $watch_opt ]] || cleanup-after-updates $all_drive_dirs # wait for it
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 	SECONDS=$(date '+%s')		# for _set-age()
-	set -- $(list-drive-dirs -a)
-	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
-	$Trace
-	local all_drive_dirs=$* drive_dirs=
 	if [[ $names ]]
 	   then local name_list=
 		for name in ${names//,/ }
@@ -3275,6 +3289,7 @@ watch() {
 
 	# ------------------------------------------------------------------
 
+	$Trace
 	if [[ $watch_opt ]]
 	   then set -f; set -- $(stty -a); set +f
 		local -i rows=${5%;} cols=${7%;}
