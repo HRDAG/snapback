@@ -3296,7 +3296,7 @@ watch() {
 		local -i rows=${5%;} cols=${7%;}
 	   else local -i rows=9999   cols=9999
 	fi
-	export COLUMNS=$cols		# for 'ps'
+	export COLUMNS=9999		# for 'ps'
 
 	#
 	# figure out how many columns are needed for cron (if needed
@@ -3351,32 +3351,32 @@ watch() {
 	local -i num_drives=$#
 
 	set-lock_PGIDs backup && {
-	bkp_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
+	bkp_rsync_cmds=$(ps_ -H ww $lock_PGIDs |
 			   sed -n '/[0-9]   rsync/s/   rsync/ rsync/p')
 	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
 	local -i num_bkp_rsyncs=0 ;	 bkp_rsync_cmds= ; }
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(COLUMNS=999 ps_ w -H h $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ w -H h $lock_PGIDs 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
 			trim-prune)
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
-	copy_rsync_cmds=$(COLUMNS=999 ps_ -H ww $lock_PGIDs |
-			 egrep -e "[0-9] .*$_our_name.* [cu]" \
-			       -e " [l]ockpid " \
-			       -e " [s]leep "	\
-			       -e "[0-9]     rsync" |
-			   sed -e 's/   rsync/ rsync/')
-			#      -e 's/   lockp/ lockp/')	# -> harder to notice
+	copy_rsync_cmds=$(ps_ -H ww $lock_PGIDs |
+			   egrep -e "[0-9] .*$_our_name.* [cu]" \
+				 -e " [l]ockpid " \
+				 -e " [s]leep "	\
+				 -e "[0-9]     rsync" |
+			     sed -e 's/   rsync/ rsync/')
+			   #     -e 's/   lockp/ lockp/') # -> harder to notice
 	#
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -o pgid,command |
 	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
 	       $rsync_or_rm_cmd_PGIDs_file
 	cron_job_regex=' -C run-backups? ' # put into configure.sh ??
-	set -- $(COLUMNS=999 ps -u root -o pgid,command |
+	set -- $(ps -u root -o pgid,command |
 			egrep "$cron_job_regex" |
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
 			awk '$0 !~ /setsid / {print $1}' | sort -u -n)
