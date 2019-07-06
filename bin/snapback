@@ -155,8 +155,8 @@ Usage: $our_name [options] action [options] [args]
 	-T level: control whether Trace & TraceV functions run echoE & echoEV
 "
 
-is_cron=$false   cron_opt=
-IfRun= Trace=    debug_opt= trace_opt=  our_rsync_opts=
+is_cron=$false cron_opt=
+IfRun= Trace= TraceAll= debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
 while getopts "C cnvqr: dtT: hk"  arg
     do	our_opts+="-$arg ${OPTARG-} "
@@ -170,7 +170,8 @@ while getopts "C cnvqr: dtT: hk"  arg
 	   ( r ) our_rsync_opts+="$OPTARG "	;;
 
 	   ( d ) IfRun="echo -e" debug_opt=-d ;; # put $IfRun b4 'active' cmds
-	   ( t ) Trace="set -x"  trace_opt=-t ;;
+	   ( t ) [[ $Trace ]] && TraceAll=$Trace
+		 Trace="set -x"  trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
 
 	   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
@@ -209,7 +210,7 @@ FUNCNEST=100				# catch coding errors
 fgrep -q -x "# version=$version" $config_file_sample ||
   $IfRun abort "$config_file_sample version= does not match $our_path"
 
-# $Trace
+$TraceAll
 
 ##############################################################################
 # Miscellaneous variables used by for making and pruning backup snapshots.
@@ -888,16 +889,16 @@ readonly -f set-admin_group
 
 # ----------------------
 
-fix-new-drive_dir-perms() {
+fix-drive_dir-perms() {
 	local drive_dir=${1:-$drive_dir}
 
-	mkdir $drive_dir/.junk		# for sysadmin
+	mkdir -p $drive_dir/.junk	# for sysadmin
 	set-admin_group &&
 	chgrp $admin_group $drive_dir/{.,.??*} &&
 	# this will _not_ make non-empty snapshots deletable by group
 	chmod g+w	   $drive_dir/{.,.??*} # for 'u' regression test
 }
-readonly -f fix-new-drive_dir-perms
+readonly -f fix-drive_dir-perms
 
 # ----------------------
 
@@ -918,7 +919,7 @@ create-lock_dir-log_dirs() {
 
 	if [[ ! -d $drive_log_dir ]]
 	   then set-admin_group && group=$admin_group && group=:$group
-		[[ ${drive_dir-} && $UID == 0 ]] && fix-new-drive_dir-perms
+		[[ ${drive_dir-} && $UID == 0 ]] && fix-drive_dir-perms
 		sudo mkdir -p -m g+w,o-w $drive_log_dir
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
@@ -3453,9 +3454,9 @@ watch() {
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
 	setup-snapshot-stats .links
 	echo " Number .links (failed 'ln') snapshots:  $stats_number"
-	echo "     Days since 'Too many links' error:  $stats_newest_age"
+	echo "Days since newest 'Too many links' err:  $stats_newest_age"
 	setup-snapshot-stats .partial
-	echo "Days from most recent snapshot.partial:  $stats_newest_age"
+	echo "    Days since newest snapshot.partial:  $stats_newest_age"
 	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
 	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
 	setup-snapshot-stats ''
@@ -4210,7 +4211,7 @@ function mkfs-backup-drive() {
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
-	fix-new-drive_dir-perms $drive_dir
+	fix-drive_dir-perms $drive_dir
 
 	echo -e "\nTo populate newly-created drive, run:\n
 	nohup $_our_name update-drive $drive_name	# creates new job"
