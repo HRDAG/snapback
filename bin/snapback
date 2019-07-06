@@ -24,8 +24,15 @@ version=22			# has to match version= in configure.sh.sample
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
 ###############################################################################
 
-# search for '####' in libsnap.sh to see environment and coding conventions
-source libsnap.sh || exit 1
+readonly libsnap_project=git@github.com:HRDAG/libsnap
+#
+# search for '####' in libsnap.sh to see coding-conventions and environment
+source libsnap.sh ||
+if which libsnap.sh > /dev/null
+   then abort "libsnap.sh needs to end with 'true'"
+   else echo "install libsnap.sh from $libsnap_project" >&2; exit 1
+fi
+#
 # We use these constants from libsnap.sh (and change $our_name)
 readonly tmp_dir our_path true false is_darwin max_call_stack_args
 readonly warning_level2tput_args
@@ -45,7 +52,7 @@ readonly -f cd_  have-proc is-process-alive set-popped_word--from-list
 readonly -f set-division confirm run-function
 
 
-for dir in /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
+for dir in ~/etc /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
 readonly   config_dir=$dir/$our_name
 readonly exclude_file=$config_dir/exclude.txt
 readonly  config_file=$config_dir/configure.sh
@@ -184,14 +191,14 @@ readonly tmp_3=$tmp_dir/$our_name-3-$$
 readonly tmp_4=$tmp_dir/$our_name-4-$$
 readonly tmp_5=$tmp_dir/$our_name-5-$$
 
-need-cmds lockpid			# from libsnap repo
+have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
 
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
 shopt -s nullglob			# so don't need to test for no matches
 shopt -s globasciiranges		# so weird locales don't mess us up
 
-umask 02			  # log and lock dirs are setgid sudo/whatever
+umask 02				# log and lock dirs are setgid sudo/etc
 
 set -u					# abort if access unset variable
 
@@ -982,9 +989,10 @@ _set-drive_name() {
 	name=${name%/$snapshot_glob*}
 
 	[[ $name == *[^$allowed_name_dir_chars]* ]] &&
-	   abort "drive_name has disallowed chars (can ask $coder to allow)"
+	   abort "drive_name $1 has disallowed chars (can ask $coder to allow)"
 
-	[[ $name =~ ^$admin_drive_name_regex$ ]] || { $xtrace; return 1; }
+	[[ $name =~ ^$admin_drive_name_regex$ ]] ||
+	    abort "'$name' is not a valid drive-name"
 
 	  if [[ $is_drive_name_upper_cased ]]
 	   then drive_name=${name^^}
@@ -4035,10 +4043,12 @@ function mkfs-backup-drive() {
 	[[ -b $device ]] || $IfRun abort "$device not a block device"
 
 	if [[ $name ]]
-	   then set-drive_name $name
-	   else set-drive_name $device
+	   then _set-drive_name $name
+	   else _set-drive_name $device
 	fi
 	local name=$drive_name drive_dir
+	[[ ${name,,} != all ]] ||
+	    abort_function "name '$name' is a reserved word"
 	_set-drive_dir
 
 	mkfs_cmd=${mkfs_cmd_opts%% *}
@@ -5148,13 +5158,14 @@ case $action in
 
    # run [-v var-names] func-name: run func-name, echo contents of var-names
    ( run | r ) undo-action-abbrev run
+	local cmd=$1
 	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" of vars to be echo'ed
 	echo status=$?
 	set +x
 	[[ $1 == set-* ]] || exit
 
-	echo
+	header "variables set by $cmd"
 	var_names=${1#set-} ; var_names=${var_names%%--from-*}
 	var_names=${var_names//-/ }
 	declare -i max_name_width=0
