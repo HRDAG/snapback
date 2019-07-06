@@ -30,18 +30,18 @@ source libsnap.sh || exit 1
 readonly tmp_dir our_path true false is_darwin max_call_stack_args
 readonly warning_level2tput_args
 # We used these functions from libsnap.sh
-readonly -f is-set have-cmd need-cmds set-FS_type-from-path
-readonly -f set-inode_size-data_block_size-dir_block_size-from-path
-readonly -f set-FS_label-from-FS-device label-drive
-readonly -f set-FS_device-from-FS-label set-device_KB-from-block-device
-readonly -f set-FS_device-from-path set-mount_dir-from-FS-device
-readonly -f set-mount_dir-from-FS-label  set-FS_label-from-mount_dir
+readonly -f is-set have-cmd need-cmds set-FS_type--from-path
+readonly -f set-inode_size-data_block_size-dir_block_size--from-path
+readonly -f set-FS_label--from-FS-device label-drive
+readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
+readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
+readonly -f set-mount_dir--from-FS-label  set-FS_label--from-mount_dir
 readonly -f is-arg_1-in-arg_2 print-call-stack warn
 readonly -f abort abort-function assert-not-option echoE echoEV Trace TraceV
 readonly -f remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log
 readonly -f header set-absolute_path
-readonly -f cd_  have-proc is-process-alive set-popped_word-from-list
+readonly -f cd_  have-proc is-process-alive set-popped_word--from-list
 readonly -f set-division confirm run-function
 
 
@@ -221,7 +221,7 @@ readonly hostname=${HOSTNAME%%.*}
 readonly log_dir=/var/log/$our_name
 
 # these are used by log(), besides $log_level
-file_for_logging=$log_dir/messages.log	     # set__drive_dir__* sets it
+file_for_logging=$log_dir/messages.log	     # set-drive_log_dir-* sets it
 log_msg_prefix=' ${action-} ${drive_name-}'  # this gets eval'ed each time
 
 ##############################################################################
@@ -1008,11 +1008,11 @@ set-drive_name() {
 
 	if [[ ! $name =~ ^$admin_drive_name_regex$ ]]
 	   then if [[ $name == /dev/* ]]
-		   then set-FS_label-from-FS-device $name
-			set-mount_dir-from-FS-label $FS_label
+		   then set-FS_label--from-FS-device $name
+			set-mount_dir--from-FS-label $FS_label
 			drive_dir=$mount_dir
 		elif [[ $name != /* ]]
-		   then set-mount_dir-from-FS-label $name
+		   then set-mount_dir--from-FS-label $name
 			drive_dir=$mount_dir
 		   else drive_dir=$name
 		fi
@@ -1469,7 +1469,7 @@ _rm-pruned-snapshots() {
 	$Trace
 	# just prune subdirs containing files with massive # of hard-links;
 	# except too-high drive usage is more critical than "Too many files".
-	set-FS_type-from-path $PWD
+	set-FS_type--from-path $PWD
 	case ${FS_type,,} in
 	    ( xfs | btrfs )		# any FS that supports a zillion links
 		hard_link_dirs= ;;
@@ -1545,8 +1545,8 @@ readonly     snapshot_regex=${snapshot_glob//\?/.}
 readonly snapshot_day_regex=${snapshot_regex%,??}
 
 set-date_time() { date_time=$(date '+%Y-%m-%d,%H' "$@"); }
-set-day-from-secs() {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
-set-seconds-from-snapshot() {
+set-day--from-secs() {       day=$(date '+%Y-%m-%d' -d "@$1" ); }
+set-seconds--from-snapshot() {
 	snapshot_date_time=$1
 
 	snapshot_date_time=${snapshot_date_time##*/}	# basename
@@ -1554,7 +1554,7 @@ set-seconds-from-snapshot() {
 	snapshot_date_time=${snapshot_date_time/,/ }:00	# ,hours -> hours:00
 	seconds=$(date '+%s' -d "$snapshot_date_time")
 }
-readonly -f set-date_time set-day-from-secs set-seconds-from-snapshot
+readonly -f set-date_time set-day--from-secs set-seconds--from-snapshot
 
 # --------------------------------------------
 
@@ -1685,7 +1685,7 @@ prune-type-to-file() {
 	Trace 5 "\n==> $type prune <=="
 	local -i period=$backup_period
 	local prune_glob
-	while set-popped_word-from-list prune_type_globs
+	while set-popped_word--from-list prune_type_globs
 	    do	local prune_type_glob=$popped_word
 		set -- $remaining_reverse_sorted_snapshot_dates
 
@@ -1959,7 +1959,7 @@ readonly -f _is-time-to-run-backup
 
 # -------------------------------------------------------
 
-set-hours-from-minutes() {
+set-hours--from-minutes() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  minutes=$2
 	   else local decimal_digits_opt=-2  minutes=$1
@@ -1969,14 +1969,14 @@ set-hours-from-minutes() {
 	set-division $decimal_digits_opt $minutes 60
 	hours=$division
 }
-readonly -f set-hours-from-minutes
+readonly -f set-hours--from-minutes
 
-set-hours-from-minutes 10
+set-hours--from-minutes 10
 [[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
 
 # ----------------------
 
-set-seconds-from-msecs() {
+set-seconds--from-msecs() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  msecs=$2
 	   else local decimal_digits_opt=-2  msecs=$1
@@ -1986,7 +1986,7 @@ set-seconds-from-msecs() {
 	set-division $decimal_digits_opt $msecs 1000
 	seconds=$division
 }
-readonly -f set-seconds-from-msecs
+readonly -f set-seconds--from-msecs
 
 # ---------------------------------
 
@@ -2017,7 +2017,7 @@ record-rsync-time() {
 	local snapshot=${1##*/}
 
 	local -i minutes=$(( ($SECONDS + 30) / 60 ))
-	set-hours-from-minutes $minutes
+	set-hours--from-minutes $minutes
 	rsync_hours=$hours
 
 	# $rsync_time_subdir/* used to set backup_period, so don't save copy
@@ -2722,7 +2722,7 @@ readonly -f update-drive
 ##############################################################################-
 ##############################################################################-
 
-_set-drive_names_or_dirs-from-user-args() {
+_set-drive_names_or_dirs--from-user-args() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 
 	if [[ $# == 0 || $1 == all || $1 == '*' ]]
@@ -2732,14 +2732,14 @@ _set-drive_names_or_dirs-from-user-args() {
 	fi
 	drive_names_or_dirs=$*
 }
-readonly -f _set-drive_names_or_dirs-from-user-args
+readonly -f _set-drive_names_or_dirs--from-user-args
 
 # ---------------------------------
 
-function set-drive_dirs-from-user-args() {
+function set-drive_dirs--from-user-args() {
 	[[ ${1-} == -[aA] ]] && local all_opt=$1 || local all_opt= # no shift..
 	local drive_names_or_dirs drive_name drive_dir
-	_set-drive_names_or_dirs-from-user-args "$@" # (optional) -a is passed
+	_set-drive_names_or_dirs--from-user-args "$@" # (optional) -a is passed
 
 	drive_dirs=
 	for drive_dir in $drive_names_or_dirs
@@ -2755,13 +2755,13 @@ function set-drive_dirs-from-user-args() {
 	drive_dirs=${drive_dirs% }
 	[[ $drive_dirs ]]
 }
-readonly -f set-drive_dirs-from-user-args
+readonly -f set-drive_dirs--from-user-args
 
 # ---------------------------------
 
-function set-drive_names-from-user-args() {
+function set-drive_names--from-user-args() {
 	local drive_names_or_dirs drive_name drive_dir
-	_set-drive_names_or_dirs-from-user-args "$@"
+	_set-drive_names_or_dirs--from-user-args "$@"
 
 	drive_names=
 	for drive_name in $drive_names_or_dirs
@@ -2776,7 +2776,7 @@ function set-drive_names-from-user-args() {
 	drive_names=${drive_names% }
 	[[ $drive_names ]]
 }
-readonly -f set-drive_names-from-user-args
+readonly -f set-drive_names--from-user-args
 
 # ---------------------------------
 
@@ -2802,7 +2802,7 @@ create-jobs() {
 	   then set-excluded_drive_dirs_regex
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
-	   else set-drive_names-from-user-args "$@"
+	   else set-drive_names--from-user-args "$@"
 		set -- $drive_names
 	fi
 	if [[ $# == 0 ]]
@@ -2893,10 +2893,10 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 		   then local sum=$(cat $* | tr '\n' '+')
 			local -i total=${sum%+}
 			local -i avg=$(( ($total+($#/2)) / $# ))
-			set-hours-from-minutes -1 $avg # want 1 decimal point
+			set-hours--from-minutes -1 $avg # want 1 decimal point
 			hour_avg=$hours
 			set -- $(sort -n -r $*)
-			set-hours-from-minutes -1 $1
+			set-hours--from-minutes -1 $1
 			hour_max=$hours
 		   else hour_avg= hour_max=
 		fi
@@ -2949,7 +2949,7 @@ readonly -f set-drive_usage
 _set-age() {
 	local snapshot=$1
 
-	set-seconds-from-snapshot $snapshot
+	set-seconds--from-snapshot $snapshot
 	local -i snap_secs=$seconds
 	age=$(( ($SECONDS - $snap_secs)/(24*60*60) ))
 }
@@ -3140,7 +3140,7 @@ function run-lsblk() {
 
 	local dir devices=
 	for dir in $drive_dirs
-	    do	set-FS_device-from-path $dir &&
+	    do	set-FS_device--from-path $dir &&
 		devices+="$FS_device "
 	done
 
@@ -3228,7 +3228,7 @@ watch() {
 	   then cleanup-after-updates &	# don't wait for it to finish, slow
 		local all_opts="$ps_opt $cron_opt"
 		if [[ $names ]]
-		   then set-drive_names-from-user-args $names
+		   then set-drive_names--from-user-args $names
 			all_opts+=" -N ${drive_names// /,}"
 		fi
 		# >= 0.5 is best for watching wchan (-C w/sudo access)
@@ -3587,7 +3587,7 @@ is-set        min_hung_msecs ||		# can set custom value in $config_file
 declare -r -i min_hung_msecs=2000
 is-set        min_slow_msecs ||		# can set custom value in $config_file
 declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
-# set-seconds-from-msecs $min_slow_msecs
+# set-seconds--from-msecs $min_slow_msecs
 # readonly disk_read_timeout=$seconds
 
 declare -r -i   msec_increment=10
@@ -3751,12 +3751,12 @@ function add-extN-journal() {
 	set-drive_name $1
 	set-drive_dir $drive_name
 	mount_dir=$drive_dir
-	set-FS_label-from-mount_dir $mount_dir ; }
+	set-FS_label--from-mount_dir $mount_dir ; }
 							[[ $FS_device ]] ||
-	set-FS_device-from-FS-label $FS_label
+	set-FS_device--from-FS-label $FS_label
 	[[ ${mount_dir-} ]] ||
-	   set-mount_dir-from-FS-label  $FS_label ||
-	   set-mount_dir-from-FS-device $FS_device
+	   set-mount_dir--from-FS-label  $FS_label ||
+	   set-mount_dir--from-FS-device $FS_device
 	TraceV 1 force_opt FS_label FS_device VG_name mount_dir
 
 	sudo tune2fs -l $FS_device | grep -q '^Journal ' &&	  {
@@ -3860,8 +3860,8 @@ dir-sizes() {
 	fi
 
 	dir=${dirs_to_backup%% *}
-	set-FS_type-from-path $dir
-	set-inode_size-data_block_size-dir_block_size-from-path $dir
+	set-FS_type--from-path $dir
+	set-inode_size-data_block_size-dir_block_size--from-path $dir
 	type=$FS_type dirblock=$dir_block_size inode=$inode_size
 	file=$type-dirblock=$dirblock-inode=$inode-$drive_name$where.$suffix
 	TraceV 1 dirs_to_backup file
@@ -3929,7 +3929,7 @@ readonly -f dir-sizes
 # -----------------------------------------------------------------------------
 
 filesystem-geometry() {
-	set-drive_dirs-from-user-args "$@"
+	set-drive_dirs--from-user-args "$@"
 
 	run-df    $drive_dirs
 	run-lsblk $drive_dirs
@@ -3945,9 +3945,9 @@ filesystem-geometry() {
 	format=${format/\%25s/%-15s  %8s}
 	local drive_name drive_dir	# protect caller's values
 	for drive_dir in $drive_dirs
-	    do	set-FS_type-from-path $drive_dir
+	    do	set-FS_type--from-path $drive_dir
 		_set-drive_name $drive_dir
-		set-FS_device-from-path $drive_dir
+		set-FS_device--from-path $drive_dir
 		[[ -L $FS_device ]] &&
 		set-absolute_path $FS_device && FS_device=$absolute_path
 		[[ $FS_device == /dev/mapper/* ]] && dev= ||
@@ -4039,7 +4039,7 @@ function mkfs-backup-drive() {
 	local _mkfs_cmd_opts="$mkfs_cmd_opts "
 	_mkfs_cmd_opts+="$mkfs_opts "
 
-	set-FS_label-from-mount_dir $drive_dir
+	set-FS_label--from-mount_dir $drive_dir
 
 	# Since most files are shared between many snapshots, most of our
 	# inodes are directories; so directory size determines space usage, so
@@ -4200,9 +4200,9 @@ readonly -f mkfs-backup-drive
 _assert-dst-big-enough() {
 
 	local msg
-	if set-device_KB-from-block-device $src_device
+	if set-device_KB--from-block-device $src_device
 	   then declare -i src_KB=$device_KB
-		set-device_KB-from-block-device $dst_device
+		set-device_KB--from-block-device $dst_device
 		local -i KB_missing=$(( src_KB - device_KB ))
 		(( KB_missing > 0 )) || return 1
 		local -i MB=KB_missing/1024
@@ -4227,19 +4227,19 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 
 	[[ $name ]] && set-drive_name $name && name=$drive_name
 	[[ !  $device ]] &&
-	   set-FS_label-from-mount_dir $drive_dir_prefix$name &&
-	   set-FS_device-from-FS-label $FS_label && device=$FS_device
+	   set-FS_label--from-mount_dir $drive_dir_prefix$name &&
+	   set-FS_device--from-FS-label $FS_label && device=$FS_device
 	[[ -b $device ]] || abort "$device is not a block device"
 
 	if [[ ! $name ]]
-	   then set-FS_label-from-FS-device $device
+	   then set-FS_label--from-FS-device $device
 		name=$FS_label
 	fi
 
 	FS_device=$device
 	_set-drive_name $name
 	_set-drive_dir
-	set-FS_label-from-mount_dir $drive_dir
+	set-FS_label--from-mount_dir $drive_dir
 
 	TraceV 1 device name drive_name FS_device drive_dir FS_label
 }
@@ -4269,7 +4269,7 @@ copy-backup-drive() {
 	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
-	set-FS_type-from-path $src_device
+	set-FS_type--from-path $src_device
 	if [[ $FS_type == xfs ]] || is-arg_1-in-arg_2 -D $action_opts # not dd?
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
 	   else _assert-dst-big-enough
@@ -4310,9 +4310,9 @@ _prepare-for-dump-restore() {
 	fi
 
 	local FS_type src_FS_type
-	set-FS_type-from-path $src_device
+	set-FS_type--from-path $src_device
 	src_FS_type=$FS_type
-	set-FS_type-from-path $dst_device
+	set-FS_type--from-path $dst_device
 	[[ $src_FS_type == $FS_type ]] ||
 	   $IfRun abort "FS_type of $dst_device must be '$src_FS_type'"
 
@@ -4476,7 +4476,7 @@ function finish-copy-backup-drive() {
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
-	set-FS_type-from-path $src_device
+	set-FS_type--from-path $src_device
 	case $FS_type in
 	   ( ext?) if is-arg_1-in-arg_2 -D $action_opts
 		      then _dump-restore-extN-backup-drives
@@ -4789,7 +4789,7 @@ case $action in
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort-with-action-Usage
-	set-drive_names-from-user-args "$@"
+	set-drive_names--from-user-args "$@"
 
 	status=0
 	for name in $drive_names
@@ -4868,7 +4868,7 @@ case $action in
 
    # reset-priority [names]: reset job priorities on drives (defaults to all)
    ( r*p* ) undo-action-abbrev reset-priority
-	set-drive_names-from-user-args "$@"
+	set-drive_names--from-user-args "$@"
 
 	$Trace
 	for drive_name in $drive_names
@@ -4954,7 +4954,7 @@ case $action in
 	local -i secs=start_secs secs_per_day=24*60*60
 	let end_secs-=3600		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
-	   do	set-day-from-secs $secs
+	   do	set-day--from-secs $secs
 		secs+=secs_per_day
 		[[ $day == *01 || ! $is_months ]] || continue
 		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
@@ -4967,7 +4967,7 @@ case $action in
 
 	# setup partial snapshots mid-date, to test pruning
 	local -i mid_secs="start_secs+(end_secs-start_secs)/2"
-	set-day-from-secs $mid_secs; mid_day=$day
+	set-day--from-secs $mid_secs; mid_day=$day
 	TraceV 7 start_date mid_day end_date
 	for hour in 00 02 04 08 09 12
 	    do	for ext in links partial
@@ -4976,7 +4976,7 @@ case $action in
 		done
 	done
 
-	set-day-from-secs $start_secs
+	set-day--from-secs $start_secs
 	snapshot=$day,00
 	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
 	    do	bad_dir=$snapshot$subdir/deleteme
@@ -5112,7 +5112,7 @@ case $action in
 	while [[ $# != 0 ]]
 	    do	new_drive=$1
 		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
-		    do	set-day-from-secs $secs
+		    do	set-day--from-secs $secs
 
 			set -- $new_drive/$day,??*
 			[[ $# != 0 ]] || break
@@ -5151,15 +5151,11 @@ case $action in
 	    do set-warning_string $l $l; echo -n "$warning_string  "; done;echo
 	print-string-colors; exit
 
-	set-hours() { set-hours-from-minutes "$@"; }
+	set-hours() { set-hours--from-minutes "$@"; }
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
 	for m in $ml; do set-hours    $m; printf "%3s -> %s\n" $m $hours; done
 	for m in $ml; do set-hours -1 $m; printf "%3s -> %s\n" $m $hours; done
 	exit
-
-	snapshot=/backup/X/2019-06-20,12
-	set-seconds-from-snapshot $snapshot
-	echo $snapshot_date_time; echo $seconds; date '+%s' -r $snapshot; exit
 
 	set-drive_name2do_suspend
 	suspend-tracing
@@ -5168,23 +5164,12 @@ case $action in
 	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
 
-	set-excluded_hours 23-3 0 1 5-7; echo $excluded_hours; exit
-
-	set-absolute_path /dev/mapper/backup_C; echo $absolute_path; exit
-
 	set -- $drive_dir_prefix${1^^}/$snapshot_glob*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
 	_have-full-snapshot
 	echo "status=$?"
 	exit
-
-	set-drive_name "$@"
-	set-drive_dir $drive_name
-	remove-empty-partial-snapshots $drive_dir
-	exit
-
-	echo $$; lock prune G; echo $?; exit
 
 	lock backup x
 	lock backup x || abort badness 1
@@ -5200,34 +5185,16 @@ case $action in
 	local -a digit2name=(zero one two three)
 	echoEV action digit2name[2]; exit
 
-	validate-config-variables
-	set-OS_release_file-OS_release
-	TraceV 0 OS_release_file OS_release; exit
-
-	log test 1
-	customize-and-validate-configuration-variables Z; echo $drive_name;
-	log test 2; exit
-
-	set_FS_block_size___from_path $1; echo $FS_block_size; exit
-
 	for dev in $(df | cut -d' ' -f1)
 	    do	[[ -b $dev ]] || continue
-		set-FS_label-from-FS-device $dev
+		set-FS_label--from-FS-device $dev
 		echo "$dev -> $FS_label"
 	done; exit
 
 	for path in ${drive_dir_prefix}A ${drive_dir_prefix}A/latest /dev/sdb5
-	    do	set-FS_type-from-path $path
+	    do	set-FS_type--from-path $path
 		echo "$path -> $FS_type"
 	done; exit
-
-	set-drive_name ${1:-a}
-	set-drive_dir $drive_name
-	set-FS_label-from-mount_dir $drive_dir
-	echo $FS_label/ exit
-
-	print-call-stack 1
-	abort test
 
 	set-drive_name ${1:-a}
 	TraceV 0 drive_name file_for_logging log_msg_prefix
@@ -5249,12 +5216,6 @@ case $action in
 	}
 	foo; exit
 
-	set-drive_dir ${1^}
-	$Trace
-	is-drive-usage-too-high; echo $?; exit
-
-	set-oldest_snapshot; echo $oldest_snapshot; exit
-
 	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
 	    do	set-readable_du_size $size; echo "$readable_du_size from $size"
 	done; exit
@@ -5263,9 +5224,6 @@ case $action in
 	cd $drive_dir
 	log=/tmp/root/F-190126-15.bz2
 	_links-error-msg "nnn 'Too many links'"; exit
-
-	set-drive_dir ${1-''}
-	log "test with drive ${1-}"; exit
 	;;
 
    ( * )
