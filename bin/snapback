@@ -3293,6 +3293,8 @@ watch() {
 	TraceV 1 names drive_dirs names_glob ps_opt cron_opt show_all
 
 	# ------------------------------------------------------------------
+	# dynamically determine 'ps' fields based on screen column width
+	# ------------------------------------------------------------------
 
 	$Trace
 	if [[ $watch_opt ]]
@@ -3306,6 +3308,8 @@ watch() {
 	fi
 	export COLUMNS=9999		# for 'ps'
 
+	# --------------------------------------------------------------------
+
 	# min fits in 80-column screen; grep's expect ends with cputime,command
 	  ps_min_keywords=pid,pgid,%mem,stat,cputime,command
 	ps_min_header="  PID  PGID %MEM STAT     TIME COMMAND"
@@ -3318,45 +3322,10 @@ watch() {
 	   else ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
 	fi
 
-	#
-	# figure out how many columns are needed for cron (if needed)
-	#
-
-	[[ $cron_opt ]] && {
-
-	set-max_drive_name_len $drive_dirs
-	max_name_len=$max_drive_name_len
-
-	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
-	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
-	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
-	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
-	local -i max_ps_wchan_width=${#widest_wchan_value}+1
-	local -i wchan_width=10		# min useful
-	local -i overhead=26		# pid,pgid,%mem,%cpu,state,command
-	# " |       \_ rsync $opts -R $dirs /2019-07-07,00.partial/" ...
-	local -i max_rsync=56		# deepest child, no drive name
-
-	if (( cols > overhead + max_rsync + max_name_len ))
-	   then ps_wchan_width=$((cols - overhead - max_rsync - max_name_len))
-		(( ps_wchan_width>$max_ps_wchan_width )) &&
-		   ps_wchan_width=$max_ps_wchan_width
-		ps_keywords=$ps_max_keywords
-	   else ps_keywords=$ps_min_keywords
-	fi
-
-	} # [[ $cron_opt ][
-
-	# ---------------------------------
-
-	customize-and-validate-configuration-variables
-
-	#
-	# figure out how many rows are needed
-	#
-
 	# trailing '=' in "$ps_keywords=" means "don't print header"
 	ps_() { ps ${is_linux+-H} -o $ps_keywords= "$@"; }
+
+	# ---------------------------------
 
 	set -- $drive_dirs
 	local -i num_drives=$#
@@ -3394,8 +3363,32 @@ watch() {
 	cron_PGIDs=$*
 	rm $rsync_or_rm_cmd_PGIDs_file
 
+	# --------------------------------------------------------
+
 	# only show un-asked cron jobs if no rsync details to show
 	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
+
+	set-max_drive_name_len $drive_dirs
+	max_name_len=$max_drive_name_len
+
+	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
+	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
+	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
+	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
+	local -i max_ps_wchan_width=${#widest_wchan_value}+1
+	local -i wchan_width=10		# min useful
+	local -i overhead=26		# pid,pgid,%mem,%cpu,state,command
+	# " |       \_ rsync $opts -R $dirs /2019-07-07,00.partial/" ...
+	local -i max_rsync=56		# deepest child, no drive name
+
+	if (( cols > overhead + max_rsync + max_name_len ))
+	   then ps_wchan_width=$((cols - overhead - max_rsync - max_name_len))
+		(( ps_wchan_width>$max_ps_wchan_width )) &&
+		   ps_wchan_width=$max_ps_wchan_width
+		ps_keywords=$ps_max_keywords
+	   else ps_keywords=$ps_min_keywords
+	fi
+
 	set -- $(process-group-PIDs $cron_PGIDs)
 	[[ $is_wide ]] && wchan=wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
@@ -3407,7 +3400,10 @@ watch() {
 	(( cols > 131 )) || ps_keywords=${ps_keywords/,start,/,}
 	#  option f for "forest"
 	cron_cmds=$($sudo ps ${is_linux+f} -o $ps_keywords $*)
+
 	} || cron_cmds=
+
+	# ---------------------------------------------------------
 
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
