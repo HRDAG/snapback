@@ -3146,7 +3146,7 @@ set-max_drive_name_len() {
 
 # -------------------------------------------------------
 
-declare -r -i min_full_columns=94
+declare -i min_full_columns=94
 
 function run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
@@ -3302,6 +3302,8 @@ watch() {
 		local -i rows=${5%;} cols=${7%;}
 	   else local -i rows=9999   cols=9999
 	fi
+	set-max_drive_name_len $drive_dirs
+	min_full_columns+=max_drive_name_len-1
 	if (( $cols >= $min_full_columns )) || [[ $ps_opt == -f ]]
 	   then is_wide=$true
 	   else is_wide=$false
@@ -3322,8 +3324,14 @@ watch() {
 	   else ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
 	fi
 
+	case $OSTYPE in
+	    ( linux* ) ps_H_opt=-H  ps_f_opt=f  ;;
+	    ( *bsd*  ) ps_H_opt=-d  ps_f_opt=-d ;; # works on FreeBSD, at least
+	    (   *    ) ps_H_opt=    ps_f_opt=   ;;
+	esac
+
 	# trailing '=' in "$ps_keywords=" means "don't print header"
-	ps_() { ps ${is_linux+-H} -o $ps_keywords= "$@"; }
+	ps_() { ps $ps_H_opt -o $ps_keywords= "$@"; }
 
 	# ---------------------------------
 
@@ -3368,9 +3376,6 @@ watch() {
 	# only show un-asked cron jobs if no rsync details to show
 	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
 
-	set-max_drive_name_len $drive_dirs
-	max_name_len=$max_drive_name_len
-
 	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
@@ -3381,6 +3386,7 @@ watch() {
 	# " |       \_ rsync $opts -R $dirs /2019-07-07,00.partial/" ...
 	local -i max_rsync=56		# deepest child, no drive name
 
+	local -i max_name_len=max_drive_name_len
 	if (( cols > overhead + max_rsync + max_name_len ))
 	   then ps_wchan_width=$((cols - overhead - max_rsync - max_name_len))
 		(( ps_wchan_width>$max_ps_wchan_width )) &&
@@ -3394,12 +3400,13 @@ watch() {
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
 	[[ $wchan     ]] && ps_keywords=${ps_keywords/,stat,/,$wchan,stat,}
 			    ps_keywords=${ps_keywords/,%mem,sta/,%mem,%cpu,sta}
-	# takes cols > 109 to get full wchan width
+	# takes cols > 109 to get full wchan width with $max_name_len == 1
+	cols-=max_name_len-1
 	(( cols > 112 )) || ps_keywords=${ps_keywords/,stat,/,state,}
 	(( cols > 121 )) || ps_keywords=${ps_keywords/,cputime,/,}
 	(( cols > 131 )) || ps_keywords=${ps_keywords/,start,/,}
 	#  option f for "forest"
-	cron_cmds=$($sudo ps ${is_linux+f} -o $ps_keywords $*)
+	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $*)
 
 	} || cron_cmds=
 
