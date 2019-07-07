@@ -81,7 +81,7 @@ config_vars=$(
 )							; readonly config_vars
 _customizable_arrays=
 for var in $config_vars; do _customizable_arrays+="drv_name2$var "; done
-eval "declare -A $_customizable_arrays"
+declare -A $_customizable_arrays
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizable functions *set-drive_name & source-drive-specific-config-file
@@ -341,6 +341,13 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
+function does-glob-need-eval() {
+
+	[[ $* == *['{(']* ]]
+}
+
+# ---------------------------------
+
 # turn comma-separated lists and/or ranges into a single glob
 function set-glob() {
 
@@ -348,16 +355,18 @@ function set-glob() {
 	local arg
 	for arg
 	    do	set -f
-		[[ $arg == *,* && $arg !=  '{'* ]] && arg="{$arg"
-		[[ $arg == *,* && $arg != *'}'  ]] && arg="$arg}"
-		[[ $arg == *-* && $arg !=  '['* ]] && arg="[$arg"
-		[[ $arg == *-* && $arg != *']'  ]] && arg="$arg]"
+		[[ $arg == *,*  && $arg !=  '{'* ]] && arg="{$arg"
+		[[ $arg == *,*  && $arg != *'}'  ]] && arg="$arg}"
+		[[ $arg == *..* && $arg !=  '{'* ]] && arg="{$arg"
+		[[ $arg == *..* && $arg != *'}'  ]] && arg="$arg}"
+		[[ $arg == *-*  && $arg !=  '['* ]] && arg="[$arg"
+		[[ $arg == *-*  && $arg != *']'  ]] && arg="$arg]"
 		set +f
 		glob+="$arg,"		# append ','. we'll wrap in {}
 	done
 	glob=${glob%,}
 	(( $# > 1 )) && glob="{$glob}"
-	[[ $glob == *[[{*?,+@!]* ]]
+	[[ $glob == *['[{*?,+@!']* ]]
 }
 readonly -f set-glob
 
@@ -386,7 +395,11 @@ function set-lock_paths() {
 	   then name_glob=${name_glob^} # only capitalize a single name
 	fi
 
-	eval "set -- $lock_dir/$type_glob*-$name_glob.pid"
+	local lock_path_glob=$lock_dir/$type_glob*-$name_glob.pid
+	if does-glob-need-eval "$lock_path_glob"
+	   then  eval   "set -- $lock_path_glob"
+	   else          set -- $lock_path_glob
+	fi
 	lock_paths=$*
 	$xtrace
 	[[ $lock_paths ]]
@@ -744,12 +757,17 @@ readonly -f kill-job-on-drives
 # -----------------------------------------------------------------------------
 
 function set-lock_PGIDs() {
-	local type=$1
+	local type=$1 names_glob=${names_glob:-*}
 
 	lock_PGIDs=
 
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
-	eval "set -- $lock_dir/$type-${names_glob:-*}.pid"
+	local  lock_path_glob=$lock_dir/$type-$names_glob.pid
+	if does-glob-need-eval "$lock_path_glob"
+	   then  eval   "set -- $lock_path_glob"
+	   else          set -- $lock_path_glob
+	fi
+
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+="$lock "; done
 
@@ -1116,7 +1134,8 @@ customize-config-variables() {
 
 		local default_value=${!var_name}
 		custom_config_var2default_value[$var_name]=$default_value
-		custom_config_var_assignments+="$var_name='$default_value' "
+		default_value=${default_value%% *} # excluded_backup_hours
+		custom_config_var_assignments+="$var_name=$default_value "
 
 		suspend-tracing
 	done
@@ -2324,7 +2343,7 @@ set-backup_type() {
 	backup_type=${drive_name2backup_type[$drive_name]-}
 	[[ $backup_type ]] && return	# was it in the cache?
 
-	[[   ${custom_config_var_assignments-} ]] && eval \
+	[[   ${custom_config_var_assignments-} ]] &&
 	local $custom_config_var_assignments # don't trash caller's values
 	set-drive_name $drive_name	# calls customize-config-variables
 	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
@@ -2465,7 +2484,7 @@ declare -A drive_name2do_suspend
 
 set-drive_name2do_suspend() {
 
-	[[   ${custom_config_var_assignments-} ]] && eval \
+	[[   ${custom_config_var_assignments-} ]] &&
 	local $custom_config_var_assignments # for customize-config-variables
 
 	local drive drive_name
@@ -2582,9 +2601,9 @@ sorted-useful-srcs() {
 
 	for dir in $drive_dirs
 	    do	suspend-tracing
-		eval "echo $dir/$min_snapshot_glob{,.links}"   # useful ones
-		eval "echo $dir/$snapshot_glob{,.links}/.keep" # never pruned
-		      echo $dir/$max_snapshot_glob # token to terminate loop
+		echo $dir/$min_snapshot_glob{,.links}   # useful ones
+		echo $dir/$snapshot_glob{,.links}/.keep # ones never pruned
+		echo $dir/$max_snapshot_glob # token to terminate loop
 		restore-tracing
 	done | tr ' ' '\n' |
 	sort --field-separator=/ $sort_key_args # > /dev/null; abort "test"
@@ -2749,7 +2768,11 @@ function set-drive_dirs--from-user-args() {
 		return $?
 	fi
 
-	set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
+	set-glob "$@" &&
+	if does-glob-need-eval "$glob"
+	   then eval "set -- $drive_dir_prefix$glob"
+	   else       set -- $drive_dir_prefix$glob
+	fi
 
 	drive_dirs=
 	for drive_dir
