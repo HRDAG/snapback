@@ -3383,6 +3383,7 @@ watch() {
 	local -i max_ps_wchan_width=${#widest_wchan_value}+1
 	local -i wchan_width=10		# min useful
 	local -i overhead=26		# pid,pgid,%mem,%cpu,state,command
+	[[ ! $is_darwin ]] && let overhead-=6 # have forest, don't need pgid?
 	# " |       \_ rsync $opts -R $dirs /2019-07-07,00.partial/" ...
 	local -i max_rsync=56		# deepest child, no drive name
 
@@ -3394,17 +3395,21 @@ watch() {
 		ps_keywords=$ps_max_keywords
 	   else ps_keywords=$ps_min_keywords
 	fi
+	[[ ! $is_darwin ]] && ps_keywords=${ps_keywords/,pgid,/,}
 
 	set -- $(process-group-PIDs $cron_PGIDs)
 	[[ $is_wide ]] && wchan=wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
 	[[ $wchan     ]] && ps_keywords=${ps_keywords/,stat,/,$wchan,stat,}
 			    ps_keywords=${ps_keywords/,%mem,sta/,%mem,%cpu,sta}
-	# takes cols > 109 to get full wchan width with $max_name_len == 1
-	cols-=max_name_len-1
-	(( cols > 112 )) || ps_keywords=${ps_keywords/,stat,/,state,}
-	(( cols > 121 )) || ps_keywords=${ps_keywords/,cputime,/,}
-	(( cols > 131 )) || ps_keywords=${ps_keywords/,start,/,}
+	# takes cols >= 105 to get full wchan width with $max_name_len == 1
+	let cols-=105
+	let cols-=max_drive_name_len-1	# adapt to wide drive_names
+	(( cols >=  3 )) || ps_keywords=${ps_keywords/,stat,/,state,}
+	(( cols >= 12 )) || ps_keywords=${ps_keywords/,cputime,/,}
+	(( cols >= 21 )) || ps_keywords=${ps_keywords/,start,/,}
+	(( cols >= 27 )) && ps_keywords=${ps_keywords/pid,/pid,pgid,}
+			   ps_keywords=${ps_keywords/,pgid,pgid,/,pgid,/}
 	#  option f for "forest"
 	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $*)
 
