@@ -2906,8 +2906,8 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 			for file
 			    do	mins=$(< $file)
 				sum+="$mins+"
-				(( max_mins < mins )) &&
-				   max_mins=$mins
+				(( max_mins<mins )) &&
+				   max_mins=mins
 			done
 			local -i total=${sum%+}
 			local -i avg=$(( ($total+($#/2)) / $# ))
@@ -3131,30 +3131,29 @@ readonly -f setup-snapshot-stats
 
 # -----------------------------------------------------------------------------
 
-set-max_device_len-max_mount_len() {
+set-max_drive_name_len() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
-	declare -g -i max_device_len=0 max_mount_len=0
+	declare -g -i max_drive_name_len=0
 
-	df --block-size=G $drive_dirs |
-	while read device size used avail used mount junk
-	    do	local -i device_len=${#device} mount_len=${#mount}
-		[[ $mount == /* ]] || continue # skip header
-		(( $max_mount_len  < $mount_len  )) &&
-		    max_mount_len=$mount_len
-		(( $max_device_len < $device_len )) &&
-		    max_device_len=$device_len
+	local drive_dir drive_name
+	for drive_dir in $drive_dirs
+	    do	_set-drive_name $drive_dir
+		(( max_drive_name_len<${#drive_name} )) &&
+		   max_drive_name_len=${#drive_name}
 	done
 }
 
 # -------------------------------------------------------
+
+declare -r -i min_full_columns=94
 
 function run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
-	(( ${cols:-999} >= 86 )) || df_fields=${df_fields/,size/}
+	(( ${cols:-99} >= $min_full_columns )) || df_fields=${df_fields/,size/}
 	df --block-size=G --output=$df_fields $drive_dirs
 }
 readonly -f run-df
@@ -3301,50 +3300,54 @@ watch() {
 		local -i rows=${5%;} cols=${7%;}
 	   else local -i rows=9999   cols=9999
 	fi
+	if (( $cols >= $min_full_columns )) || [[ $ps_opt == -f ]]
+	   then is_wide=$true
+	   else is_wide=$false
+	fi
 	export COLUMNS=9999		# for 'ps'
 
+	# min fits in 80-column screen; grep's expect ends with cputime,command
+	  ps_min_keywords=pid,pgid,%mem,stat,cputime,command
+	ps_min_header="  PID  PGID %MEM STAT     TIME COMMAND"
 	#
-	# figure out how many columns are needed for cron (if needed
+	  ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,cputime,command
+	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT     TIME COMMAND"
+
+	if [[ $is_wide ]]
+	   then ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
+	   else ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
+	fi
+
+	#
+	# figure out how many columns are needed for cron (if needed)
 	#
 
-	(( $cols >= 83 )) && ps_opt=-f
 	[[ $cron_opt ]] && {
 
-	set-max_device_len-max_mount_len $drive_dirs
+	set-max_drive_name_len $drive_dirs
+	max_name_len=$max_drive_name_len
 
 	# widest -f -C line is child rsync: 79 cols + wchan + drive mountpoint
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
 	local -i max_ps_wchan_width=${#widest_wchan_value}+1
-	local -i ps_wchan_width=10	 # min useful
-	local -i ps_overhead=79
+	local -i wchan_width=10		# min useful
+	local -i overhead=26		# pid,pgid,%mem,%cpu,state,command
+	# " |       \_ rsync $opts -R $dirs /2019-07-07,00.partial/" ...
+	local -i max_rsync=56		# deepest child, no drive name
 
-	if (( $cols >= $ps_overhead + $ps_wchan_width + $max_mount_len ))
-	   then ps_wchan_width=cols-ps_overhead-max_mount_len  ps_opt=-f
-		(( ps_wchan_width > max_ps_wchan_width )) &&
-		   ps_wchan_width=max_ps_wchan_width
+	if (( cols > overhead + max_rsync + max_name_len ))
+	   then ps_wchan_width=$((cols - overhead - max_rsync - max_name_len))
+		(( ps_wchan_width>$max_ps_wchan_width )) &&
+		   ps_wchan_width=$max_ps_wchan_width
+		ps_keywords=$ps_max_keywords
+	   else ps_keywords=$ps_min_keywords
 	fi
 
 	} # [[ $cron_opt ][
 
-	ps_() { ps $ps_opt    "$@" | trim-ps-cols; }
-	psc() { ps $ps_opt -C "$@" | trim-ps-cols; }
-	if [[ $ps_opt ]]
-	   then # don't need uid, always root (if have a TTY, it's a sysadmin)
-		trim-ps-cols() { cut -c "10-21,25-37,40-43,46-"; }
-		hdr="UID        PID  PPID  C STIME TTY      STAT   TIME CMD"
-		#    123456789012345678901234567890123456789012345678901234567
-		#             1         2         3         4         5
-		prune_sort_opts="-k7r,8 -k9"	rsync_sort_opts="-k11"
-	   else trim-ps-cols() { cut -c 1-13,16-20,22-; }
-		hdr="  PID TTY      STAT   TIME COMMAND"
-		#    123456789012345678901234567890123456789012345678901234567
-		#             1         2         3         4         5
-		prune_sort_opts="-k5r,6 -k7"	rsync_sort_opts="-k8"
-	fi
-
-	# ------------------------------------------------------------------
+	# ---------------------------------
 
 	customize-and-validate-configuration-variables
 
@@ -3352,23 +3355,26 @@ watch() {
 	# figure out how many rows are needed
 	#
 
+	# trailing '=' in "$ps_keywords=" means "don't print header"
+	ps_() { ps ${is_linux+-H} -o $ps_keywords= "$@"; }
+
 	set -- $drive_dirs
 	local -i num_drives=$#
 
 	set-lock_PGIDs backup && {
-	bkp_rsync_cmds=$(ps_ -H ww $lock_PGIDs |
+	bkp_rsync_cmds=$(ps_ $lock_PGIDs |
 			   sed -n '/[0-9]   rsync/s/   rsync/ rsync/p')
 	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
 	local -i num_bkp_rsyncs=0 ;	 bkp_rsync_cmds= ; }
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ w -H h $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ $lock_PGIDs 2>/dev/null  |
 			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
 			trim-prune)
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
-	copy_rsync_cmds=$(ps_ -H ww $lock_PGIDs |
+	copy_rsync_cmds=$(ps_ $lock_PGIDs |
 			   egrep -e "[0-9] .*$_our_name.* [cu]" \
 				 -e " [l]ockpid " \
 				 -e " [s]leep "	\
@@ -3391,10 +3397,16 @@ watch() {
 	# only show un-asked cron jobs if no rsync details to show
 	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
 	set -- $(process-group-PIDs $cron_PGIDs)
-	[[ $ps_opt ]] && wchan=,wchan:$ps_wchan_width || wchan=
+	[[ $is_wide ]] && wchan=wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
+	[[ $wchan     ]] && ps_keywords=${ps_keywords/,stat,/,$wchan,stat,}
+			    ps_keywords=${ps_keywords/,%mem,sta/,%mem,%cpu,sta}
+	# takes cols > 109 to get full wchan width
+	(( cols > 112 )) || ps_keywords=${ps_keywords/,stat,/,state,}
+	(( cols > 121 )) || ps_keywords=${ps_keywords/,cputime,/,}
+	(( cols > 131 )) || ps_keywords=${ps_keywords/,start,/,}
 	#  option f for "forest"
-	cron_cmds=$($sudo ps www f -o pid,stat$wchan,bsdtime,command $*)
+	cron_cmds=$($sudo ps ${is_linux+f} -o $ps_keywords $*)
 	} || cron_cmds=
 
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
@@ -3502,20 +3514,6 @@ watch() {
 
 	# ------------------------------------------------------------------
 
-	psc rm w | fgrep ' pts/' | sort $prune_sort_opts > $tmp_1
-	local -i admin_PD=$(wc -l < $tmp_1)+3 # 3 is the overhead
-	local -i ad_hoc_min_rows=$min_rows+$admin_PD
-	if [[ -s $tmp_1 && ( $rows -ge $ad_hoc_min_rows || $show_all ) ]]
-	   then header "ad-hoc pruning by sysadmin (i.e. TTY != '?')"
-		echo
-		echo "$hdr" | trim-ps-cols
-		trim-prune < $tmp_1
-		let rows-=$admin_PD
-	fi
-	rm $tmp_1
-
-	# ------------------------------------------------------------------
-
 	# if prune in cron section, don't usually also show it in prune section
 	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_1
 	[[ ! $show_all ]] &&
@@ -3536,7 +3534,7 @@ watch() {
 	}
 
 	if [[ $prune_cmds ]]
-	   then echo "$hdr" | trim-ps-cols
+	   then echo "$ps_header"
 		echo "$prune_cmds"
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
@@ -3547,30 +3545,31 @@ watch() {
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
 	header "copy (update-drive or copy-snapshots)"
 	echo
-	echo "$hdr" | trim-ps-cols
-	echo "$copy_rsync_cmds" | trim-copy-update # | sort $prune_sort_opts
+	echo "$ps_header"
+	echo "$copy_rsync_cmds" | trim-copy-update
 	}
 
 	# ------------------------------------------------------------------
 
 	# for some reason, appending newlines does nothing?!
+	[[ $is_wide ]] && var_name=" (\$rsync_backup_opts)" || var_name=
 	rsync_abbrev_msg="
-	  default opts=\"$rsync_backup_opts\" (\$rsync_backup_opts)
+	  default opts=\"$rsync_backup_opts\"$var_name
 	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)"
 	rsync_abbrev_msg=${rsync_abbrev_msg//	/} # strip leading TAB
 
 	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
-	echo "$hdr" | trim-ps-cols
-	echo "$bkp_rsync_cmds" | trim-backup | sort $rsync_sort_opts
+	echo "$ps_header"
+	echo "$bkp_rsync_cmds" | trim-backup # | sort $rsync_sort_opts
 	} || echo -e "\nNo backups are running$names_msg."
 
 	# ------------------------------------------------------------------
 
 	# show process tree of master cron job(s)
 	[[ $cron_cmds ]] && {
-	set -- $(ps h -o stime $cron_PGIDs | sort -u)
+	set -- $(ps -o stime= $cron_PGIDs | sort -u)
 	stime=$*
 	regex=${cron_job_regex%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
@@ -3583,7 +3582,7 @@ watch() {
 	[[ $bkp_rsync_cmds ]] && {
 	header "cron's run-backups' lead rsync processes (full details)"
 	echo
-	echo "$hdr" | trim-ps-cols
+	echo "$ps_header"
 	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g"
 	}
 
@@ -3592,7 +3591,7 @@ watch() {
 	[[ $copy_rsync_cmds ]] && {
 	header "copy (e.g. update) rsync processes (full details)"
 	echo
-	echo "$hdr" | trim-ps-cols
+	echo "$ps_header"
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
 	}
 }
