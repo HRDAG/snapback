@@ -341,13 +341,6 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
-function does-glob-need-eval() {
-
-	[[ $* == *['{(']* ]]
-}
-
-# ---------------------------------
-
 # turn comma-separated lists and/or ranges into a single glob
 function set-glob() {
 
@@ -395,11 +388,7 @@ function set-lock_paths() {
 	   then name_glob=${name_glob^} # only capitalize a single name
 	fi
 
-	local lock_path_glob=$lock_dir/$type_glob*-$name_glob.pid
-	if does-glob-need-eval "$lock_path_glob"
-	   then  eval   "set -- $lock_path_glob"
-	   else          set -- $lock_path_glob
-	fi
+	eval "set -- $lock_dir/$type_glob*-$name_glob.pid"
 	lock_paths=$*
 	$xtrace
 	[[ $lock_paths ]]
@@ -762,11 +751,7 @@ function set-lock_PGIDs() {
 	lock_PGIDs=
 
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
-	local  lock_path_glob=$lock_dir/$type-$names_glob.pid
-	if does-glob-need-eval "$lock_path_glob"
-	   then  eval   "set -- $lock_path_glob"
-	   else          set -- $lock_path_glob
-	fi
+	eval "set -- $lock_dir/$type-$names_glob.pid"
 
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+="$lock "; done
@@ -2768,11 +2753,7 @@ function set-drive_dirs--from-user-args() {
 		return $?
 	fi
 
-	set-glob "$@" &&
-	if does-glob-need-eval "$glob"
-	   then eval "set -- $drive_dir_prefix$glob"
-	   else       set -- $drive_dir_prefix$glob
-	fi
+	set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
 
 	drive_dirs=
 	for drive_dir
