@@ -3343,7 +3343,8 @@ watch() {
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $lock_PGIDs |
-			   egrep -e " (update|copy)-" \
+			   # first -e ensures we don't see forked snapback also
+			   egrep -e "[0-9] .*$_our_name.* [cu]"  \
 				 -e " [l]ockpid " -e " [s]leep " \
 				 -e "[0-9]     rsync") # middle rsync: most CPU
 
