@@ -3431,7 +3431,7 @@ is-set		 min_ps_wchan_width ||
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	local -i min_rows=$((  8 + 4 + PD + CS + RB )); [[ $cron_cmds ]] &&
-		 min_rows+=$(( 4 + 5*num_bkp_rsyncs + PD ))
+		 min_rows+=$(( 4 + 5*num_bkp_rsyncs )) # 5=$our_name+rsync+bzip
 	local -i min_df_rows=$(( min_rows + 2 + num_drives ))
 	(( $Trace_level > 0 )) && let rows-=3 # for the next TraceV
 	TraceV 1 rows min_rows min_df_rows
