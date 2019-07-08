@@ -978,7 +978,7 @@ source-drive-specific-config-file() {
 	if [[ -s $_config_file ]]
 	   then drive_specific_config_file=$_config_file; source $_config_file
 	   else drive_specific_config_file=		; true
-	fi
+	fi || abort_function "'source $_config_file' returned non-0"
 }
 readonly -f source-drive-specific-config-file
 
@@ -2906,8 +2906,8 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 			for file
 			    do	mins=$(< $file)
 				sum+="$mins+"
-				(( max_mins<mins )) &&
-				   max_mins=mins
+				(( max_mins < mins )) &&
+				   max_mins=$mins
 			done
 			local -i total=${sum%+}
 			local -i avg=$(( ($total+($#/2)) / $# ))
@@ -3388,7 +3388,7 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	local -i max_name_len=max_drive_name_len
 	if ((cols > min_ps_wchan_width + overhead + max_rsync + max_name_len))
 	   then ps_wchan_width=$((cols - overhead - max_rsync - max_name_len))
-		(( ps_wchan_width>$max_ps_wchan_width )) &&
+		(( ps_wchan_width > max_ps_wchan_width )) &&
 		   ps_wchan_width=$max_ps_wchan_width
 	   else ps_wchan_width=
 	fi
@@ -3529,8 +3529,6 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	   then echo -e "No pruning is being done$names_msg."
 	fi
 
-	} # [[ ! $cron_cmds || $show_all ]] &&
-
 	# ------------------------------------------------------------------
 
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
@@ -3539,6 +3537,8 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | trim-copy-update
 	}
+
+	} # [[ ! $cron_cmds || $show_all ]] &&
 
 	# ------------------------------------------------------------------
 
