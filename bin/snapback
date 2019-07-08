@@ -3348,12 +3348,12 @@ watch() {
 				 -e " [l]ockpid " -e " [s]leep " \
 				 -e "[0-9]     rsync") # middle rsync: most CPU
 
-	set-lock_PGIDs backup && {
+	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
 	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9]   rsync") # middle rsync
-	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
-	local -i num_bkp_rsyncs=0 ;	 bkp_rsync_cmds= ; }
 
 	# --------------------------------------------------------
+
+	[[ $cron_opt && $prune_cmds$bkp_rsync_cmds$copy_rsync_cmds ]] && {
 
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -o pgid,command |
@@ -3363,12 +3363,12 @@ watch() {
 	set -- $(ps -u root -o pgid,command |
 			egrep "$cron_job_regex" |
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
-			awk '$0 !~ /setsid / {print $1}' | sort -u -n)
+			awk '$0 !~ /setsid / {print $1}' |
+			sort -u -n -r)	# the newest PIDs are shown first
 	cron_PGIDs=$*
 	rm -f $rsync_or_rm_cmd_PGIDs_file
 
-	# only show un-asked cron jobs if no rsync details to show
-	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
+	[[ $cron_PGIDs != 0 ]] && {
 
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
@@ -3408,6 +3408,7 @@ is-set		 min_ps_wchan_width ||
 			    ps_keywords=${ps_keywords/,pgid,pgid,/,pgid,/}
 	#  option f for "forest"
 	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $*)
+	} || cron_cmds=
 
 	} || cron_cmds=
 
@@ -3419,7 +3420,7 @@ is-set		 min_ps_wchan_width ||
 	(( PD > 0 )) && PD=$((PD*2 + 4)) # add in 'rm' plus section-overhead
 	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
-	local -i RB=$num_bkp_rsyncs
+	local -i RB=$(echo  "$bkp_rsync_cmds" | wc -l); num_bkp_rsyncs=$RB
 	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
 	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
 	TraceV 1 PD CS RB && let rows-=3
@@ -3518,6 +3519,8 @@ is-set		 min_ps_wchan_width ||
 
 	# ------------------------------------------------------------------
 
+	[[ ! $cron_cmds || $show_all ]] && {
+
 	[[ $prune_cmds || $show_all ]] && header "prune-drive" && echo
 	if [[ $prune_cmds ]]
 	   then echo "$ps_header"
@@ -3525,6 +3528,8 @@ is-set		 min_ps_wchan_width ||
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
 	fi
+
+	} # [[ ! $cron_cmds || $show_all ]] &&
 
 	# ------------------------------------------------------------------
 
@@ -3544,12 +3549,16 @@ is-set		 min_ps_wchan_width ||
 	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)"
 	rsync_abbrev_msg=${rsync_abbrev_msg//	/} # strip leading TAB
 
+	[[ ! $cron_cmds || $show_all ]] && {
+
 	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
 	echo "$bkp_rsync_cmds" | trim-backup # | sort $rsync_sort_opts
 	} || echo -e "\nNo backups are running$names_msg."
+
+	} # [[ ! $cron_cmds || $show_all ]] &&
 
 	# ------------------------------------------------------------------
 
