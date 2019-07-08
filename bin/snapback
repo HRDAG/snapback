@@ -92,7 +92,7 @@ source $config_file || abort "source'd $config_file ended with non-0 status"
 
 readonly PS4		      # remove if some functions want to manipulate it
 
-is-set   coder ||			# custom version in $config_file?
+is-set   coder ||			# can set custom value in $config_file
 readonly coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
@@ -967,7 +967,7 @@ readonly -f set-drive_log_dir-file_for_logging-admin_group-is_regression_test
 # ---------------------------------
 
 have-cmd \
-source-drive-specific-config-file ||  # configure.sh can replace this function
+source-drive-specific-config-file ||# can define custom version in $config_file
 source-drive-specific-config-file() {
 	[[ $# == 0 ]] && return
 	local _name=$1  _main_config_file=${2:-${config_file-}}
@@ -987,7 +987,7 @@ readonly -f source-drive-specific-config-file
 readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9'
 
 have-cmd \
-_set-drive_name ||		      # configure.sh can replace this function
+_set-drive_name ||	   # can define custom version in $config_file
 # ignore invalid names, fix the case of valid names
 _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -1018,7 +1018,7 @@ readonly -f _set-drive_name
 # ----------------------
 
 have-cmd \
-set-drive_name ||		      # configure.sh can replace this function
+set-drive_name ||		   # can define custom version in $config_file
 # pass: directory (that holds snapshots), filesystem label, or valid name
 set-drive_name() {
 	[[ $# == 1 && $1 ]] || abort "set-drive_name takes a single argument"
@@ -1627,7 +1627,7 @@ declare -r -A backup_period2minimal_snapshot_glob=(
 )
 #
 # the [hour] chunks are the complement of the previous map's values
-is-set        type2prune_type_globs ||	# custom version in $config_file?
+is-set        type2prune_type_globs ||	# can set custom value in $config_file
 declare -r -A type2prune_type_globs=(
 # the ones these globs skip: hour=00, day=01, month=01, year=00
 # period after prune: 2                4                 ~8          ~12   all
@@ -2030,7 +2030,7 @@ readonly -f archive-rsync-time-data
 
 # ----------------------
 
-is-set	      days_to_keep ||		# custom version in $config_file?
+is-set	      days_to_keep ||		# can set custom value in $config_file
 declare -r -i days_to_keep=3		# ensure more than weekend-only data
 
 record-rsync-time() {
@@ -3373,9 +3373,9 @@ watch() {
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
-is-set		 max_ps_wchan_width ||
+is-set		 max_ps_wchan_width ||	# can set custom value in $config_file
 	local -i max_ps_wchan_width=${#widest_wchan_value}+1
-is-set		 min_ps_wchan_width ||
+is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	local -i min_ps_wchan_width=10	# min useful
 	#
 	ps_keywords=${ps_min_keywords/,%mem,stat,*time,/,%mem,%cpu,state,}
@@ -3734,7 +3734,7 @@ readonly -f unmount-drives
 # on fast storage (SSD, or always-plugged-in flash memory stick),
 # for use with rotational hard disks.
 # Rewrite this function if you're not using LVM.
-have-cmd set-FS_external_log &&
+have-cmd set-FS_external_log ||	   # can define custom version in $config_file
 function set-FS_external_log() {
 	[[ ${1-} == -f ]] && { do_force=$true; shift; } || do_force=$false
 	local FS_label=$1 VG=${2:-$FS_log_VG} # FS_log_VG in $config_file
