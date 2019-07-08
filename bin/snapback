@@ -3380,6 +3380,7 @@ watch() {
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
+is-set		 max_ps_wchan_width ||
 	local -i max_ps_wchan_width=${#widest_wchan_value}+1
 	local -i wchan_width=10		# min useful
 	local -i overhead=26		# pid,pgid,%mem,%cpu,state,command
@@ -3402,9 +3403,8 @@ watch() {
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
 	[[ $wchan     ]] && ps_keywords=${ps_keywords/,stat,/,$wchan,stat,}
 			    ps_keywords=${ps_keywords/,%mem,sta/,%mem,%cpu,sta}
-	# takes cols >= 105 to get full wchan width with $max_name_len == 1
-	let cols-=105
-	let cols-=max_drive_name_len-1	# adapt to wide drive_names
+	# deduct the width of the ps record with minimum fields but max wchan
+	let cols-=overhead+max_ps_wchan_width+max_rsync+max_drive_name_len
 	(( cols >=  3 )) || ps_keywords=${ps_keywords/,stat,/,state,}
 	(( cols >= 12 )) || ps_keywords=${ps_keywords/,cputime,/,}
 	(( cols >= 21 )) || ps_keywords=${ps_keywords/,start,/,}
