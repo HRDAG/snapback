@@ -3336,27 +3336,24 @@ watch() {
 	set -- $drive_dirs
 	local -i num_drives=$#
 
-	set-lock_PGIDs backup && {
-	bkp_rsync_cmds=$(ps_ $lock_PGIDs |
-			   sed -n '/[0-9]   rsync/s/   rsync/ rsync/p')
-	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
-	local -i num_bkp_rsyncs=0 ;	 bkp_rsync_cmds= ; }
-
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $lock_PGIDs 2>/dev/null  |
-			fgrep -e ' rm ' -e ' prune-' -e ' pd ' -e ' lockpid ' |
-			trim-prune)
+		      fgrep -e ' prune' -e ' lockpid ' -e ' sleep ' -e ' rm ')
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $lock_PGIDs |
-			   egrep -e "[0-9] .*$_our_name.* [cu]" \
-				 -e " [l]ockpid " \
-				 -e " [s]leep "	\
-				 -e "[0-9]     rsync" |
-			     sed -e 's/   rsync/ rsync/')
-			   #     -e 's/   lockp/ lockp/') # -> harder to notice
-	#
+			   egrep -e " (update|copy)-" \
+				 -e " [l]ockpid " -e " [s]leep " \
+				 -e "[0-9]     rsync") # middle rsync: most CPU
+
+	set-lock_PGIDs backup && {
+	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9]   rsync") # middle rsync
+	local -i num_bkp_rsyncs=$(echo "$bkp_rsync_cmds" | wc -l) ; } || {
+	local -i num_bkp_rsyncs=0 ;	 bkp_rsync_cmds= ; }
+
+	# --------------------------------------------------------
+
 	rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -o pgid,command |
 	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
@@ -3367,9 +3364,7 @@ watch() {
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
 			awk '$0 !~ /setsid / {print $1}' | sort -u -n)
 	cron_PGIDs=$*
-	rm $rsync_or_rm_cmd_PGIDs_file
-
-	# --------------------------------------------------------
+	rm -f $rsync_or_rm_cmd_PGIDs_file
 
 	# only show un-asked cron jobs if no rsync details to show
 	[[ ($cron_opt || ! $bkp_rsync_cmds$copy_rsync_cmds) && $# != 0 ]] && {
@@ -3522,28 +3517,11 @@ is-set		 min_ps_wchan_width ||
 
 	# ------------------------------------------------------------------
 
-	# if prune in cron section, don't usually also show it in prune section
-	echo "$cron_cmds" | sed -n 's/.*prune-drive/prune-drive/p' > $tmp_1
-	[[ ! $show_all ]] &&
-	   prune_cmds=$(echo "$prune_cmds" | fgrep -v -f $tmp_1) &&
-	   let rows+=$(wc -l < $tmp_1)
-	rm $tmp_1
-
-	# FIXME: want to show snapback cmd if child is lockpid not rm
-	let snapback_cmd_count="($PD-4)/2" # 4 is section overhead
-	(( $rows < ( $min_rows + $snapback_cmd_count ) )) &&
-	   fgrep_opt="-e prune-drive" && # just want 'rm' commands
-		let rows+=$snapback_cmd_count || fgrep_opt=
-	prune_cmds=$(echo "$prune_cmds" |fgrep -v -w -e xargs -e tr $fgrep_opt)
-
-	[[ $prune_cmds || $show_all ]] && {
-	header "prune-drive ($_our_name parent may be hidden to save rows)"
-	echo
-	}
-
+	header "prune-drive"
 	if [[ $prune_cmds ]]
-	   then echo "$ps_header"
-		echo "$prune_cmds"
+	   then echo
+		echo "$ps_header"
+		echo "$prune_cmds" | trim-prune
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
 	fi
@@ -4019,7 +3997,7 @@ filesystem-geometry() {
 		printf "$format" $drive_dir $FS_type \
 		    "$sector" "$inode" "$block" "$dir_block" "$sunit" "$swidth"
 	done
-	rm $tmp_1
+	rm -f $tmp_1
 }
 readonly -f filesystem-geometry
 
