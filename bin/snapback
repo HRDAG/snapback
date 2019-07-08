@@ -3146,7 +3146,7 @@ set-max_drive_name_len() {
 
 # -------------------------------------------------------
 
-declare -i min_full_columns=94
+declare -i min_full_columns=94		# watch will re-write this
 
 function run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
@@ -3312,10 +3312,14 @@ watch() {
 
 	# min fits in 80-column screen; grep's expect ends with cputime,command
 	  ps_min_keywords=pid,pgid,%mem,stat,cputime,command # cron_opt uses
-	ps_min_header="  PID  PGID %MEM STAT     TIME COMMAND"
+	[[ ! $is_darwin ]] &&		# Darwin has wider cputime
+	  ps_min_keywords=${ps_min_keywords/,cputime,/,cputime:9,}
+	ps_min_header="  PID  PGID %MEM STAT      TIME COMMAND"
 	#
 	  ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,cputime,command
-	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT     TIME COMMAND"
+	[[ ! $is_darwin ]] &&		# Darwin has wider cputime
+	  ps_max_keywords=${ps_max_keywords/,cputime,/,cputime:9,}
+	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
 
 	if [[ $is_wide ]]
 	   then ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
@@ -3328,8 +3332,8 @@ watch() {
 	    (   *    ) ps_H_opt=    ps_f_opt=   ;;
 	esac
 
-	# trailing '=' in "$ps_keywords=" means "don't print header"
-	ps_() { ps $ps_H_opt -o $ps_keywords= "$@"; }
+	# all field-names followed by '=' means "don't print header"
+	ps_() { ps $ps_H_opt -o ${ps_keywords//,/=,}= "$@"; }
 
 	# ---------------------------------
 
@@ -3368,7 +3372,7 @@ watch() {
 	cron_PGIDs=$*
 	rm -f $rsync_or_rm_cmd_PGIDs_file
 
-	[[ $cron_PGIDs != 0 ]] && {
+	[[ $cron_PGIDs ]] && {
 
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
@@ -3379,15 +3383,17 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	local -i min_ps_wchan_width=10	# min useful
 	#
 	ps_keywords=${ps_min_keywords/,%mem,stat,*time,/,%mem,%cpu,state,}
-	local -i overhead=26		# pid,pgid,%mem,%cpu,state,command
-	[[ ! $is_darwin ]] && let overhead-=6 # have forest, don't need pgid?
-	[[ ! $is_darwin ]] && ps_keywords=${ps_keywords/,pgid,/,}
-	# " |       \_ rsync $opts -R $dirs /2019-07-07,00.partial/" ...
-	local -i max_rsync=56		# deepest child, no drive name
+	ps_header="  PID  PGID %MEM %CPU S COMMAND"
+	overhead=${ps_header%COMMAND}
+	local -i overhead=${#overhead}+1   # +1: watch needs blank last column
+	[[ $ps_f_opt ]] && let overhead-=6 # have forest, don't need pgid?
+	[[ $ps_f_opt ]] && ps_keywords=${ps_keywords/,pgid,/,} # ditto
+	rsync_ps_out=" |       \_ rsync .opts -R .dirs /2019-07-07,00.partial/"
+	local -i max_rsync=${#rsync_ps_out}+max_drive_name_len # deepest child
+	[[ $ps_f_opt ]] || let max_rsync-=12
 
-	local -i max_name_len=max_drive_name_len
-	if ((cols > min_ps_wchan_width + overhead + max_rsync + max_name_len))
-	   then ps_wchan_width=$((cols - overhead - max_rsync - max_name_len))
+	if ((cols > min_ps_wchan_width + overhead + max_rsync))
+	   then ps_wchan_width=$((cols - overhead - max_rsync))
 		(( ps_wchan_width > max_ps_wchan_width )) &&
 		   ps_wchan_width=$max_ps_wchan_width
 	   else ps_wchan_width=
