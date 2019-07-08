@@ -3517,10 +3517,9 @@ is-set		 min_ps_wchan_width ||
 
 	# ------------------------------------------------------------------
 
-	header "prune-drive"
+	[[ $prune_cmds || $show_all ]] && header "prune-drive" && echo
 	if [[ $prune_cmds ]]
-	   then echo
-		echo "$ps_header"
+	   then echo "$ps_header"
 		echo "$prune_cmds" | trim-prune
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
