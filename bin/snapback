@@ -258,7 +258,7 @@ set-readable_du_size() {
 }
 readonly -f set-readable_du_size
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 assert-drive_dir-writable() {
 	local dir=${1:-$drive_dir}
@@ -324,7 +324,7 @@ rm-stale-locks() {
 }
 readonly -f rm-stale-locks
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 readonly writer_types="backup prune copy"
 
@@ -743,7 +743,7 @@ function kill-job-on-drives() {
 }
 readonly -f kill-job-on-drives
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function set-lock_PGIDs() {
 	local type=$1 names_glob=${names_glob:-*}
@@ -768,7 +768,7 @@ function set-lock_PGIDs() {
 }
 readonly -f set-lock_PGIDs
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function ps-locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -1090,7 +1090,7 @@ function set-drive_dir() {
 }
 readonly -f set-drive_dir
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 declare -A custom_config_var2default_value # set-drive_usage also uses this
 
@@ -1294,7 +1294,7 @@ function set-priority() {
 }
 readonly -f set-priority
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function reset-drive-jobs-priorities {
 
@@ -1346,7 +1346,7 @@ function count-rsyncs-using-resource() {
 }
 readonly -f count-rsyncs-using-resource
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function update-snapshots-ls {
 
@@ -1357,7 +1357,7 @@ function update-snapshots-ls {
 }
 readonly -f update-snapshots-ls
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function _is-time-to-prune-drive() {
 	local dir=${1:-$drive_dir}
@@ -1408,7 +1408,7 @@ function _should-run-prune {
 }
 readonly -f _should-run-prune
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function sudo-unless-dir-writable() {
 	[[ $1 == -n ]] && { local sudo_opt=$1; shift; } || local sudo_opt=
@@ -1822,9 +1822,9 @@ readonly -f prune-drive
 ##############################################################################-
 ##############################################################################-
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # functions to setup --link-dest args to rsync
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function _have-full-snapshot {
 
@@ -1928,9 +1928,9 @@ set-link_dest_opts--for-copy-snapshot() {
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # misc functions to support run-rsync
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 set-excluded_hours() {
 
@@ -2304,7 +2304,7 @@ assert-not-in-cron-jobs() {
 }
 readonly -f assert-not-in-cron-jobs
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function bad-copy() {
 	local msg=$*
@@ -2463,7 +2463,7 @@ function copy-snapshot-rsync() {
 }
 readonly -f copy-snapshot-rsync
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 declare -A drive_name2do_suspend
 
@@ -2595,7 +2595,7 @@ sorted-useful-srcs() {
 }
 readonly -f sorted-useful-srcs
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 remove-empty-partial-snapshots() {
 	local drive_dir=$1
@@ -2929,7 +2929,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 }
 readonly -f set-rsync_hour_avgs-rsync_hour_maxs
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 set-drive_usage() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
@@ -2965,7 +2965,7 @@ set-drive_usage() {
 }
 readonly -f set-drive_usage
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 _set-age() {
 	local snapshot=$1
@@ -3129,7 +3129,7 @@ setup-snapshot-stats() {
 }
 readonly -f setup-snapshot-stats
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 set-max_drive_name_len() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
@@ -3179,7 +3179,7 @@ function run-lsblk() {
 }
 readonly -f run-lsblk
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 function trim-ps {
 
@@ -3716,7 +3716,7 @@ monitor-drives() {
 }
 readonly -f monitor-drives
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
 function unmount-drives() {
@@ -3738,7 +3738,7 @@ function unmount-drives() {
 		is-drive-mounted $drive_dir || continue
 		sudo umount -h &> /dev/null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
-		for (( i = 1; i <= 99; i++ )) # wait for kill to finish
+		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
 			$IfRun sleep 0.1
 		done &> $output
@@ -3749,7 +3749,7 @@ function unmount-drives() {
 }
 readonly -f unmount-drives
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # Optional function to allocate an external filesystem log/journal
 # on fast storage (SSD, or always-plugged-in flash memory stick),
@@ -3772,7 +3772,7 @@ function set-FS_external_log() {
 	[[ $FS_external_log ]]
 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
 function add-extN-journal() {
@@ -3831,7 +3831,7 @@ function add-extN-journal() {
 }
 readonly -f add-extN-journal
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 set-total_dir_MB-avg_dir_KB() {
 	local file=${1%.bz2}.bz2
@@ -3969,7 +3969,7 @@ dir-sizes() {
 }
 readonly -f dir-sizes
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 filesystem-geometry() {
 	set-drive_dirs--from-user-args "$@"
@@ -4031,7 +4031,7 @@ filesystem-geometry() {
 }
 readonly -f filesystem-geometry
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # Here's how to setup a brand new drive to be an encrypted drive
 
@@ -4240,7 +4240,7 @@ function mkfs-backup-drive() {
 }
 readonly -f mkfs-backup-drive
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 _assert-dst-big-enough() {
 
@@ -4596,9 +4596,9 @@ function check-snapshot-hard-links() {
 }
 readonly -f check-snapshot-hard-links
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # regression tests for "old" (installed) vs "tst" (workspace) snapback
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 chroot-backup() {
 	local date_time=$1; shift; local command=${*-}
@@ -4641,7 +4641,7 @@ chroot-backup() {
 }
 readonly -f chroot-backup
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 _show-test-header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
