@@ -110,8 +110,8 @@ Usage: $our_name [options] action [options] [args]
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
-    update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
-    copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
+    update-drives  [-s src-names-regex] dst-names: copy missing snapshots
+    copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
 
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show full details on all jobs and drives
@@ -4821,7 +4821,6 @@ case $action in
 	;;
    # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
-	[[ $1 == -d  ]] && {  debug_copy=$1; shift; } ||  debug_copy=
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
@@ -4844,7 +4843,6 @@ case $action in
 	;;
    # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
-	[[ $1 == -d  ]] && {   debug_copy=$1; shift; } ||   debug_copy=
 	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
 	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
 	[[ $1 == -r  ]] && {  recurse_opt=$1; shift; } ||  recurse_opt=
@@ -4854,7 +4852,8 @@ case $action in
 	drive_name=${!#}
 	src_snapshots=${*%$drive_name}
 
-	[[ $recurse_opt ]] && { create-jobs copy $src_snap_opt -r $*; exit; }
+	[[ $recurse_opt ]] &&
+	    { create-jobs copy $src_snap_opt $quiet_opt -r $*; exit; }
 
 	set-drive_name $drive_name
 	set-drive_dir  $drive_name
