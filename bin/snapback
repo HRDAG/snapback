@@ -431,7 +431,9 @@ function lock-PID() {
 	[[ $lockpid_output =~ [Pp]rocess.([0-9]+).holds ]]
 	local lock_holder_PID=${BASH_REMATCH[1]-}
 	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
-	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
+	   then [[ ! $is_cron     ||     ${date_time-} == *-00,00   || # daily
+		   ( $log_level -ge 1 && ${date_time-} ==    *,00 ) || # hourly
+		     $log_level -ge 2 ]]			       # always
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
@@ -2714,7 +2716,7 @@ update-drive() {
 	done > $srcs_dst_file
 	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
-	prune-drive -u $drive_name	# just prunes empty .partial dirs
+	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
 
 	set-drive_name2do_suspend
 	local args dst_snapshot=
