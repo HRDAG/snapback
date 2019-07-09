@@ -3329,8 +3329,10 @@ watch() {
 		max_ps_width+=1	# 'watch' executable requires blank last column
 	}
 	max_rsync_ps_out="    rsync X/.snap/. /2019-03-30,00.links.partial/"
+	[[ $ps_H_opt ]] || {
+	    [[ max_rsync_ps_out =~ rsync.* ]] &&
+	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip leading SPACEs
 	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
-	[[ $ps_H_opt ]] || let max_ps_width-=4 # 4 == forest's leading SPACEs
 	min_full_columns=$max_ps_width
 
 	if (( $cols >= $min_full_columns )) || [[ $ps_opt == -f ]]
@@ -3355,16 +3357,26 @@ watch() {
 	prune_cmds=$(ps_ $lock_PGIDs 2>/dev/null  |
 		      fgrep -e ' prune' -e ' lockpid ' -e ' sleep ' -e ' rm ')
 
+	# if -H, use spacing to find middle rsync (the one with the most CPU)
+	[[ $ps_H_opt ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
+	cmds-with-one-rsync() { echo "$@" |
+		awk '  /rsync/ { if (second) {print; second=0} else second=1 }
+		     ! /rsync/ { print }' ; } # use when don't have -H
+
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
-			   egrep -e "[0-9] .*$_our_name.* [cu]"  \
-				 -e " [l]ockpid " -e " [s]leep " \
-				 -e "[0-9]     rsync") # middle rsync: most CPU
+			   grep -e "[0-9] .*$_our_name.* [cu]"  \
+				-e " [l]ockpid " -e " [s]leep " \
+				-e "[0-9] $rsync_ps")
+	[[ $ps_H_opt ]] ||
+	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
 
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9]     rsync") # mid-rsync
+	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9] $rsync_ps")
+	[[ $ps_H_opt ]] ||
+	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
 
 	# --------------------------------------------------------
 
@@ -3398,8 +3410,10 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	[[ $ps_f_opt ]] && ps_header=${ps_header/  PGID/} # have forest?
 	[[ $ps_f_opt ]] && ps_keywords=${ps_keywords/,pgid,/,}
 	rsync_ps_out=" |       \_ rsync .opts -R .dirs /2019-07-07,00.partial/"
+	[[ $ps_f_opt ]] || {
+	    [[ max_rsync_ps_out =~ rsync.* ]] &&
+	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip forest stuff
 	set-max_ps_width "$ps_header" "$rsync_ps_out"
-	[[ $ps_f_opt ]] || let max_ps_width+-=12 # have forest ascii-art?
 
 	if (( cols > min_ps_wchan_width + max_ps_width ))
 	   then ps_wchan_width=$(( cols - max_ps_width ))
@@ -5200,7 +5214,10 @@ case $action in
 		   max_name_width=${#var_name}
 	done
 	for var_name in $var_names
-	    do	var_value=${!var_name}
+	    do	if is-set $var_name
+		   then var_value=${!var_name}
+		   else var_value='<unset>'
+		fi
 		[[ $var_value == *' '* ]] && var_value="'$var_value'"
 		printf "%${max_name_width}s=%s\n" $var_name "$var_value"
 	done
