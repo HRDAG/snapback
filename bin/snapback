@@ -397,6 +397,16 @@ readonly -f set-lock_paths
 
 # ---------------------------------
 
+function do-log-common-events() {
+
+	[[ ! $is_cron     ||     ${date_time-} == *-00,00   || # log daily
+	   ( $log_level -ge 1 && ${date_time-} ==    *,00 ) || # log hourly
+	     $log_level -ge 2 ]]			       # log always
+}
+readonly -f do-log-common-events
+
+# ---------------------------------
+
 xtrace=				  # in case comment-out first line of function
 
 function lock-PID() {
@@ -431,9 +441,7 @@ function lock-PID() {
 	[[ $lockpid_output =~ [Pp]rocess.([0-9]+).holds ]]
 	local lock_holder_PID=${BASH_REMATCH[1]-}
 	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
-	   then [[ ! $is_cron     ||     ${date_time-} == *-00,00   || # daily
-		   ( $log_level -ge 1 && ${date_time-} ==    *,00 ) || # hourly
-		     $log_level -ge 2 ]]			       # always
+	   then do-log-common-events &&
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
@@ -1545,10 +1553,9 @@ _rm-pruned-snapshots() {
 		done
 		suspend-tracing
 	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
+	$IfRun log "pruned exclude-globs from _all_ snapshots"
 	}
 	restore-tracing
-
-	$IfRun log "pruned exclude-globs from _all_ snapshots"
 
 	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
 }
