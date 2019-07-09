@@ -1687,8 +1687,6 @@ readonly -f reverse-sorted-snapshot-basenames
 
 # --------------------------------------------
 
-_oldest_snapshot=
-
 prune-type-to-file() {
 	local type=${1%s} file_of_snapshots_to_prune=$2; shift 2
 	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten-date $type)
@@ -2586,9 +2584,9 @@ sorted-useful-srcs() {
 
 	for dir in $drive_dirs
 	    do	suspend-tracing
-		echo $dir/$min_snapshot_glob{,.links}   # useful ones
-		echo $dir/$snapshot_glob{,.links}/.keep # ones never pruned
-		echo $dir/$max_snapshot_glob # token to terminate loop
+		eval "echo $dir/$min_snapshot_glob{,.links}"   # useful ones
+		eval "echo $dir/$snapshot_glob{,.links}/.keep" # never pruned
+		      echo $dir/$max_snapshot_glob # token to terminate loop
 		restore-tracing
 	done | tr ' ' '\n' |
 	sort --field-separator=/ $sort_key_args # > /dev/null; abort "test"
@@ -2634,7 +2632,9 @@ wait-for-full-snapshots() {
 	local min_full_snapshots=$1
 
 	while true
-	   do	set -- $drive_dir/$snapshot_glob
+	   do	suspend-tracing
+		set -- $drive_dir/$snapshot_glob
+		restore-tracing
 		(( $# > $min_full_snapshots )) && return # an extra one: safety
 		sleep 1h
 	done
@@ -4833,7 +4833,7 @@ case $action in
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
-   # update-drives [-d] [-s src-names-regex] dst-names: copy missing snapshots
+   # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
@@ -4855,7 +4855,7 @@ case $action in
 	done
 	exit $status
 	;;
-   # copy-snapshots [-d] [-q] snapshots name: copy to 'name' mounted drive
+   # copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
 	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
 	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
