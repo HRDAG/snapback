@@ -4818,8 +4818,6 @@ undo-action-abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
 
 process-action() {
 
-stack_frame_to_show=0		# show line-number inside the 'case' statement
-
 case $action in
   # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
    ( l*s*dr*v* | ld | ls | df ) undo-action-abbrev list-drives
