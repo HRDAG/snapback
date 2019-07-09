@@ -414,22 +414,22 @@ function lock-PID() {
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
-	local our_PID=$BASHPID status_file=$tmp_3
-	set -- lockpid --pid=$our_PID --dir=$lock_dir $lock_opts $lock_file
-	local lock_cmd=$*
-	local lockpid_output=$($IfRun $lock_cmd 2>&1; echo $? > $status_file)
-	local status=$(< $status_file)
-	rm $status_file
+	local output_file=$tmp_3
+	set --  lockpid --dir=$lock_dir $lock_opts $lock_file
+	local   lock_cmd=$*
+	$IfRun $lock_cmd &> $output_file ; local status=$?
+	lockpid_output=$(<  $output_file)
+	rm $output_file
 
 	if [[ $status == 0 ]]
 	   then [[ $is_regression_test && $lockpid_output ]] &&
-		echo "$lockpid_output" | sed "s@$our_PID@<a_PID>@"
+		    echo "$lockpid_output"
 		$xtrace
 		return 0
 	fi
 
-	local lock_holder_PID=$(echo "$lockpid_output" |
-				sed -r 's@.*rocess ([0-9]+) holds.*@\1@')
+	[[ $lockpid_output =~ [Pp]rocess.([0-9]+).holds ]]
+	local lock_holder_PID=${BASH_REMATCH[1]-}
 	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
 	   then [[ ! $is_cron || $(date '+%H') == 00 || $log_level -gt 0 ]] &&
 		log  "process $lock_holder_PID $lock_holder_action"
@@ -4225,6 +4225,7 @@ function mkfs-backup-drive() {
 	cmd="$cmd ${opts# } $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header "$cmd"
 	RunCmd  $cmd
+	set-drive_log_dir-file_for_logging-admin_group-is_regression_test $name
 	archive-rsync-time-data
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
