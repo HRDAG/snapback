@@ -3364,7 +3364,7 @@ watch() {
 				 -e "[0-9]     rsync") # middle rsync: most CPU
 
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9]   rsync") # middle rsync
+	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9]     rsync") # mid-rsync
 
 	# --------------------------------------------------------
 
@@ -3394,7 +3394,6 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	local -i min_ps_wchan_width=10	# min useful
 
 	ps_keywords=${ps_min_keywords/,%mem,stat,*time*,/,%mem,%cpu,state,}
-echo $ps_min_keywords $ps_keywords
 	ps_header="  PID  PGID %MEM %CPU S COMMAND"
 	[[ $ps_f_opt ]] && ps_header=${ps_header/  PGID/} # have forest?
 	[[ $ps_f_opt ]] && ps_keywords=${ps_keywords/,pgid,/,}
