@@ -1698,7 +1698,6 @@ prune-type-to-file() {
 	set-date_span-scaled
 	local prune_type_globs=${type2prune_type_globs[$type]}
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
-	[[ $type == hour ]] && _oldest_snapshot=$drive_dir/${!#},00
 
 	Trace 5 "\n==> $type prune <=="
 	local -i period=$backup_period
@@ -1733,16 +1732,15 @@ prune-type-to-file() {
 		# skip over the snapshot prune-matches that aren't old enough
 		set -- $(echo $* | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
-		   do	[[ $1 == $drive_dir/[^1-9]* ]] && shift && continue
-			local day_hour=${1##*/}
-			local date=${day_hour%$date_suffix_glob*}
+		   do	[[ $1 == [^1-9]* ]] && shift && continue # skip junk
+			local date=${1%$date_suffix_glob*}
 			[[   $date > $first_prune_date ]] || break
 			shift
 		done
 		[[ -d ${1-} ]] || continue
 		# delete all the old-enough prune matches
 		Trace 5 "\nDeleting ~$# snapshots: $1 ${2-} ${3-} ... ${!#}"
-		echo ${*%$_oldest_snapshot*} # don't delete oldest snapshot
+		echo ${*%$oldest_snapshot*} # don't delete oldest snapshot
 	done >> $file_of_snapshots_to_prune
 
 	echo $remaining_reverse_sorted_snapshot_dates
@@ -1797,6 +1795,7 @@ function prune-drive() {
 
 	$Trace
 	set -- $(reverse-sorted-snapshot-basenames)
+	local oldest_snapshot=${!#},00
 	# prune-type-to-file returns dates remaining, to check for more pruning
 	set -- $(prune-type-to-file hour  $snapshots_to_prune_file $*)
 	set -- $(prune-type-to-file day   $snapshots_to_prune_file $*);#$Trace
