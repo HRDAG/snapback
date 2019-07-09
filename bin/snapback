@@ -5192,7 +5192,7 @@ case $action in
 	[[ $1 == set-* ]] || exit
 
 	header "variables set by $cmd"
-	var_names=${1#set-} ; var_names=${var_names%%--from-*}
+	var_names=${1#set-} ; var_names=${var_names%%--*}
 	var_names=${var_names//-/ }
 	declare -i max_name_width=0
 	for var_name in $var_names
