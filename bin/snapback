@@ -994,6 +994,7 @@ _set-drive_name ||	   # can define custom version in $config_file
 _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
+	assert-not-option $1
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
 
@@ -1060,9 +1061,9 @@ readonly -f _set-drive_dir
 
 # ----------------------
 
-is_OK_if_drive_dir_unmounted=$false
-
 function set-drive_dir() {
+	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
+	assert-not-option $1
 	local drive_name=$1		# result of set-drive_name, i.e. valid
 
 	[[ $drive_name != */* ]] ||
@@ -1079,16 +1080,17 @@ function set-drive_dir() {
 		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
 	fi
 
-	if  is-drive-mounted  $drive_dir
+	if is-drive-mounted $drive_dir
 	   then have-cmd fix_snapshot_names &&
-		fix_snapshot_names $drive_dir # must call last
-	   else [[ $is_OK_if_drive_dir_unmounted ]] ||
-		    warn "no filesystem mounted on $drive_dir" ||
-		    : print-call-stack	# uncomment to debug
-		return 1
+		   fix_snapshot_names $drive_dir # must call last
+		return 0
 	fi
 
-	return 0
+	if [[ ! $is_quiet ]]
+	   then warn "no filesystem mounted on $drive_dir"
+		# print-call-stack	# uncomment to debug
+	fi
+	return 1
 }
 readonly -f set-drive_dir
 
@@ -3734,7 +3736,7 @@ readonly -f monitor-drives
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
 function unmount-drives() {
-	[[ $1 == -q  ]] && { shift; is_OK_if_drive_dir_unmounted=$true; }
+	[[ $1 == -q  ]] && { local quiet_opt=$1; shift; } || local quiet_opt=
 	assert-not-option ${1-}
 	[[ $* == all ]] && set -- $(list-drive-dirs)
 
@@ -3748,7 +3750,7 @@ function unmount-drives() {
 	local name drive_name drive_dir status=0
 	for name
 	    do	set-drive_name $name
-		set-drive_dir $drive_name
+		set-drive_dir $quiet_opt $drive_name
 		is-drive-mounted $drive_dir || continue
 		sudo umount -h &> /dev/null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
@@ -3804,8 +3806,7 @@ function add-extN-journal() {
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
 	[[ ! $FS_label ]] && {
-	is_OK_if_drive_dir_unmounted=$true
-	set-drive_name $1
+	set-drive_name -q $1
 	set-drive_dir $drive_name
 	mount_dir=$drive_dir
 	set-FS_label--from-mount_dir $mount_dir ; }
