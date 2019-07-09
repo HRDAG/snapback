@@ -978,7 +978,7 @@ source-drive-specific-config-file() {
 	if [[ -s $_config_file ]]
 	   then drive_specific_config_file=$_config_file; source $_config_file
 	   else drive_specific_config_file=		; true
-	fi || abort_function "'source $_config_file' returned non-0"
+	fi || abort-function "'source $_config_file' returned non-0"
 }
 readonly -f source-drive-specific-config-file
 
@@ -4074,7 +4074,7 @@ function mkfs-backup-drive() {
 	fi
 	local name=$drive_name drive_dir
 	[[ ${name,,} != all ]] ||
-	    abort_function "name '$name' is a reserved word"
+	    abort-function "name '$name' is a reserved word"
 	_set-drive_dir
 
 	mkfs_cmd=${mkfs_cmd_opts%% *}
