@@ -1436,6 +1436,39 @@ readonly -f sudo-unless-dir-writable
 
 # ---------------------------------
 
+_prune-exclude-globs-from-all-snapshots() {
+
+	local pruned_TS=$drive_dir/$pruned_timestamp
+	[[ $drive_name == Z ||		# regression test?
+	   ( ! $debug_opt &&		# ... too slow for real drive
+	     # very slow: only run if exclude.txt changed since our last run
+	     ( ! -e $pruned_TS ||
+		    $pruned_TS -ot $exclude_file ) ) ]] || return
+
+	remember-tracing
+
+	# prune exclude-globs from _all_ snapshots, very slow
+	local exclude_glob file
+	for snapshot in $drive_dir/$snapshot_glob*
+	    do	[[ $snapshot == *.rm ]] && continue
+		grep '^ */' $exclude_file | fgrep -v '**' |
+		while read exclude_glob
+		    do	set -- $snapshot$exclude_glob
+			for file	# can have SPACEs, need to quote it
+			   do	[[ -e "$file" ]] && echo "$file"
+			done
+		done
+		suspend-tracing
+	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
+
+	$IfRun log "pruned exclude-globs from _all_ snapshots"
+
+	restore-tracing
+}
+readonly -f _prune-exclude-globs-from-all-snapshots
+
+# ---------------------------------
+
 _rm-pruned-snapshots() {
 	local snapshots_file=$1
 
@@ -1533,29 +1566,7 @@ _rm-pruned-snapshots() {
 		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
 	fi
 
-	local pruned_TS=$drive_dir/$pruned_timestamp
-	[[ $drive_name == Z ||		# regression test?
-	   ( ! $debug_opt &&		# ... too slow for real drive
-	     # very slow: only run if exclude.txt changed since our last run
-	     ( ! -e $pruned_TS ||
-		    $pruned_TS -ot $exclude_file ) ) ]] &&
-	{
-	# prune exclude-globs from _all_ snapshots, very slow
-	local exclude_glob file
-	for snapshot in $drive_dir/$snapshot_glob*
-	    do	[[ $snapshot == *.rm ]] && continue
-		grep '^ */' $exclude_file | fgrep -v '**' |
-		while read exclude_glob
-		    do	set -- $snapshot$exclude_glob
-			for file	# can have SPACEs, need to quote it
-			   do	[[ -e "$file" ]] && echo "$file"
-			done
-		done
-		suspend-tracing
-	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
-	$IfRun log "pruned exclude-globs from _all_ snapshots"
-	}
-	restore-tracing
+	_prune-exclude-globs-from-all-snapshots
 
 	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
 }
@@ -2472,61 +2483,65 @@ function copy-snapshot-rsync() {
 readonly -f copy-snapshot-rsync
 
 # ----------------------------------------------------------------------------
+# functions needed for update-drive (wrapper around copy-snapshot)
+# ----------------------------------------------------------------------------
 
-declare -A drive_name2do_suspend
+remove-empty-partial-snapshots() {
+	local drive_dir=$1
 
-set-drive_name2do_suspend() {
-
-	[[   ${custom_config_var_assignments-} ]] &&
-	local $custom_config_var_assignments # for customize-config-variables
-
-	local drive drive_name
-	for drive in $(list-drive-dirs -a)
-	    do	_set-drive_name $drive
-		suspend-tracing
-		customize-config-variables $drive_name
-		restore-tracing
-		if [[ $is_multi_writer_drive ]]
-		   then local do_suspend=0
-		   else local do_suspend=1
-		fi
-		drive_name2do_suspend[$drive_name]=$do_suspend
-	done
+	cd_ $drive_dir
+	set -- *.partial
+	[[ $# != 0 ]] &&
+	# 'sudo -n' because we're called by 'watch' and 'w'
+	sudo-unless-dir-writable -n rmdir $* &> /dev/null # optional
+	cd_ $OLDPWD
 }
-readonly -f set-drive_name2do_suspend
+readonly -f remove-empty-partial-snapshots
 
 # ---------------------------------
 
-# the "fastest" snapshot is on drive that's: 1. not suspendable; else 2. not
-# running a backup; else 3. not being pruned; else 4. hosting the smallest
-# number of rsync commands.
-fastest-snapshots() {
+cleanup-after-updates() {
+	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
-	local drive_name drive_dir	       # don't change caller's values
-
-	local snapshot
-	for snapshot
-	    do	_set-drive_name $snapshot
-		local do_suspend=${drive_name2do_suspend[$drive_name]}
-
-		local -i writer_count=0
-		for writer in backup copy prune
-		    do	have-job $writer && writer_count+=1
-		done
-
-		_set-drive_dir
-		count-rsyncs-using-resource " $drive_dir/"
-		local rsync_count=$?
-
-		local ss=$snapshot
-		echo "$do_suspend|$writer_count|$rsync_count|$ss"
-	done | sort -t\| -n |		# numeric sort
-	# cat; return			# uncomment to debug with action 'test'
-	cut -d\| -f4
+	local drive_dir drive_name	# protect caller's values
+	for drive_dir in $drive_dirs
+	    do	_set-drive_name $drive_dir
+		set-lock_path copy	# update could be running
+		(
+		sudo-lockpid -o $lock_path &> /dev/null &&	  {
+		$IfRun remove-empty-partial-snapshots $drive_dir
+		sudo-lockpid -r $lock_path			; }
+		) &			# do them in parallel
+	done
+	wait				# 'w' wants us to have finished
 }
-readonly -f fastest-snapshots
+readonly -f cleanup-after-updates
 
-# --------------------------------------------
+# ----------------------------------------------------------------------------
+
+wait-for-full-snapshots() {
+	local min_full_snapshots=$1
+
+	while true
+	   do	suspend-tracing
+		set -- $drive_dir/$snapshot_glob
+		restore-tracing
+		(( $# > $min_full_snapshots )) && return # an extra one: safety
+		sleep 1h
+	done
+}
+readonly -f wait-for-full-snapshots
+
+# ----------------------------------------------------------------------------
+
+set-srcs_dst_file() {
+
+	# this is not deleted, so can be inspected
+	srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
+}
+readonly -f set-srcs_dst_file
+
+# ----------------------------------------------------------------------------
 
 set-excluded_drive_dirs_regex() {
 
@@ -2537,7 +2552,7 @@ set-excluded_drive_dirs_regex() {
 }
 readonly -f set-excluded_drive_dirs_regex
 
-# --------------------------------------------
+# ----------------------------------------------------------------------------
 
 sorted-useful-srcs() {
 	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
@@ -2605,87 +2620,17 @@ readonly -f sorted-useful-srcs
 
 # ----------------------------------------------------------------------------
 
-remove-empty-partial-snapshots() {
-	local drive_dir=$1
-
-	cd_ $drive_dir
-	set -- *.partial
-	[[ $# != 0 ]] &&
-	# 'sudo -n' because we're called by 'watch' and 'w'
-	sudo-unless-dir-writable -n rmdir $* &> /dev/null # optional
-	cd_ $OLDPWD
-}
-readonly -f remove-empty-partial-snapshots
-
-# ---------------------------------
-
-cleanup-after-updates() {
-	local drive_dirs=${*:-$(list-drive-dirs -a)}
-
-	local drive_dir drive_name	# protect caller's values
-	for drive_dir in $drive_dirs
-	    do	_set-drive_name $drive_dir
-		set-lock_path copy	# update could be running
-		(
-		sudo-lockpid -o $lock_path &> /dev/null &&	  {
-		$IfRun remove-empty-partial-snapshots $drive_dir
-		sudo-lockpid -r $lock_path			; }
-		) &			# do them in parallel
-	done
-	wait				# 'w' wants us to have finished
-}
-readonly -f cleanup-after-updates
-
-# --------------------------------------------
-
-wait-for-full-snapshots() {
-	local min_full_snapshots=$1
-
-	while true
-	   do	suspend-tracing
-		set -- $drive_dir/$snapshot_glob
-		restore-tracing
-		(( $# > $min_full_snapshots )) && return # an extra one: safety
-		sleep 1h
-	done
-}
-readonly -f wait-for-full-snapshots
-
-# ---------------------------------
-
-set-srcs_dst_file() {
-
-	srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
-}
-readonly -f set-srcs_dst_file
-
-# ----------------------
-
-update-drive() {
-	set-drive_name ${!#}		# sorted-useful-srcs handles options
-	set-drive_dir $drive_name
-
-	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock copy > /dev/null || exit 1	# can run for days
-	suspended-prune-as-drive-usage-response # we might get suspended
-
-	remove-empty-partial-snapshots $drive_dir
-
-	# make sure that we're not using partially-created snapshots
-	# in rsync's --link-dest options
-	set-num_full_link_dests
-	wait-for-full-snapshots $num_full_link_dests
+create-empty-missing-snapshots-then-write-copy-args() {
 
 	if [[ $UID == 0 ]]
 	   then local sudo=
 	   else local sudo=sudo-unless-dir-writable
 	fi
 
-	set-srcs_dst_file
 	local date_time prev_date_time=
 	local src_snapshot src_snapshots= is_keep
 	local -A date_time2is_keep
-	sorted-useful-srcs "$@" |	# this checks/sets drive_* globals
+
 	while read src_snapshot
 	    do	if [[ $src_snapshot == */.keep ]]
 		   then src_snapshot=${src_snapshot%/.keep}
@@ -2722,10 +2667,69 @@ update-drive() {
 		    echo > $dst_snapshot.partial/.keep && [[ $verbose_opt ]] &&
 		echo touch $dst_snapshot.partial/.keep >&2
 		echo "$@"
-	done > $srcs_dst_file
-	[[  -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
+	done
+}
+readonly -f create-empty-missing-snapshots-then-write-copy-args
 
-	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
+# ----------------------------------------------------------------------------
+
+declare -A drive_name2do_suspend
+
+set-drive_name2do_suspend() {
+
+	[[   ${custom_config_var_assignments-} ]] &&
+	local $custom_config_var_assignments # for customize-config-variables
+
+	local drive drive_name
+	for drive in $(list-drive-dirs -a)
+	    do	_set-drive_name $drive
+		suspend-tracing
+		customize-config-variables $drive_name
+		restore-tracing
+		if [[ $is_multi_writer_drive ]]
+		   then local do_suspend=0
+		   else local do_suspend=1
+		fi
+		drive_name2do_suspend[$drive_name]=$do_suspend
+	done
+}
+readonly -f set-drive_name2do_suspend
+
+# -------------------------------------------------------
+
+# the "fastest" snapshot is on drive that's: 1. not suspendable; else 2. not
+# running a backup; else 3. not being pruned; else 4. hosting the smallest
+# number of rsync commands.
+fastest-snapshots() {
+
+	local drive_name drive_dir	       # don't change caller's values
+
+	local snapshot
+	for snapshot
+	    do	_set-drive_name $snapshot
+		local do_suspend=${drive_name2do_suspend[$drive_name]}
+
+		local -i writer_count=0
+		for writer in backup copy prune
+		    do	have-job $writer && writer_count+=1
+		done
+
+		_set-drive_dir
+		count-rsyncs-using-resource " $drive_dir/"
+		local rsync_count=$?
+
+		local ss=$snapshot
+		echo "$do_suspend|$writer_count|$rsync_count|$ss"
+	done | sort -t\| -n |		# numeric sort
+	# cat; return			# uncomment to debug with action 'test'
+	cut -d\| -f4
+}
+readonly -f fastest-snapshots
+
+# -------------------------------------------------------
+
+fill-in-unpruned-empty-missing-snapshots() {
+	local copy_args_file=$1
 
 	set-drive_name2do_suspend
 	local args dst_snapshot=
@@ -2738,8 +2742,37 @@ update-drive() {
 		[[ $# != 0 ]] || continue # was it pruned away?
 		set -- $(fastest-snapshots ${args%$dst_snapshot}) # pass srcs
 		[[ $# != 0 ]] && $IfRun copy-snapshot-rsync $1 $dst_snapshot
-	done   <  $srcs_dst_file
-	$IfRun rm $srcs_dst_file
+	done   <  $copy_args_file
+	$IfRun rm $copy_args_file
+}
+readonly -f fill-in-unpruned-empty-missing-snapshots
+
+# ----------------------------------------------------------------------------
+
+update-drive() {
+	set-drive_name ${!#}		# sorted-useful-srcs handles options
+	set-drive_dir $drive_name
+
+	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
+	IfRun= lock copy > /dev/null || exit 1	# can run for days
+	suspended-prune-as-drive-usage-response # we might get suspended
+
+	remove-empty-partial-snapshots $drive_dir
+
+	# make sure that we're not using partially-created snapshots
+	# in rsync's --link-dest options
+	set-num_full_link_dests
+	wait-for-full-snapshots $num_full_link_dests
+
+	set-srcs_dst_file
+
+	sorted-useful-srcs "$@" |	# this checks/sets drive_* globals
+	create-empty-missing-snapshots-then-write-copy-args > $srcs_dst_file
+	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
+
+	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
+
+	fill-in-unpruned-empty-missing-snapshots $srcs_dst_file
 
 	remove-empty-partial-snapshots $drive_dir
 
@@ -2798,6 +2831,22 @@ readonly -f set-drive_names--from-user-args
 
 # ---------------------------------
 
+_set-function-exe() {
+	local type=$1
+
+	# *_exe variables include options to snapback (e.g. -d and -t)
+	case $type in
+	   ( backup ) function=run-backup     exe=$run_backup_exe    ;;
+	   ( copy   ) function=copy-snapshot  exe=$copy_snapshot_exe ;;
+	   ( prune  ) function=prune-drive    exe=$prune_drive_exe   ;;
+	   ( update ) function=update-drive   exe=$update_drive_exe  ;;
+	   (   *    ) abort "action '$type' is not supported" ;;
+	esac
+}
+readonly -f _set-function-exe
+
+# ---------------------------------
+
 # The locking & job-management policy is documented in front of function lock()
 
 # Create a unique job on each specified drive (default $drive_name).
@@ -2831,14 +2880,7 @@ create-jobs() {
 	[[ ! $debug_opt ]] &&
 	set -- $(echo $* | tr ' ' '\n' | tac) # 'ps' shows newest process first
 
-	# *_exe variables include options to snapback (e.g. -d and -t)
-	case $type in
-	   ( backup ) function=run-backup     exe=$run_backup_exe    ;;
-	   ( copy   ) function=copy-snapshot  exe=$copy_snapshot_exe ;;
-	   ( prune  ) function=prune-drive    exe=$prune_drive_exe   ;;
-	   ( update ) function=update-drive   exe=$update_drive_exe  ;;
-	   (   *    ) abort "action '$type' is not supported" ;;
-	esac
+	_set-function-exe $type
 
 	if [[ $are_recursing ]]
 	   then $Trace
@@ -4342,7 +4384,7 @@ function mkfs-backup-drive() {
 	set -- $_mkfs_cmd_opts
 	[[ $# != 0 ]] || abort "need to set mkfs_cmd_opts= in $config_file"
 	local cmd=$1; shift; local opts="$* "  log_opt=
-	  if [[ $cmd == mkfs.xfs ]]
+	if [[ $cmd == mkfs.xfs ]]
 	   then FS_type=xfs
 		have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
