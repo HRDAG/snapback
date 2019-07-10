@@ -4326,7 +4326,8 @@ function mkfs-backup-drive() {
 	# blocks result in the same amount of directory space usage (and 4 KB
 	# results in 20% more), since most directories need 0 drive blocks
 	# (because their contents fit in the inode); so 2 KB blocks are
-	# optimal for XFS, since they'll result in better performance.
+	# optimal for XFS, since they'll result in better performance ...
+	# unfortunately, 2 KB blocks are no longer supported in Ubuntu 18.04.
 
 	# To determine your actual average directory size, e.g. for ext4:
 	#    # choose a filesystem type with mkfs_cmd_opts= in configure.sh
@@ -4389,7 +4390,7 @@ function mkfs-backup-drive() {
 		have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
-		# using isize=1024 resulted in 40% more directory drive space.
+		# using isize=1024 resulted in 10% more directory drive space.
 		# For servers with bigger dirs, experiment with different
 		# mkfs opts (on your fastest drive) and the dir-sizes action.
 		#
@@ -4621,6 +4622,8 @@ readonly -f show-iostat
 
 function _dump-restore-xfs-backup-drives {
 
+	abort "dump-restore is VERY slow, better to use action update-drive"
+
 	_prepare-for-dump-restore
 
 	$IfRun set -x
@@ -4649,6 +4652,8 @@ readonly -f _dump-restore-xfs-backup-drives
 
 function _dump-restore-extN-backup-drives {
 
+	abort "dump-restore is VERY slow, better to use action update-drive"
+
 	_prepare-for-dump-restore -S
 
 	have-cmd dump || abort "need to install the 'dump' command"
@@ -4670,6 +4675,16 @@ readonly -f _dump-restore-extN-backup-drives
 
 # --------------------------------------------
 
+readonly all_drives_go_offline_msg='
+	There are no other backup partitions mounted besides the ones used to
+        copy $src_drive_dir to $dst_drive_dir ; if you let me unmount these
+	partition(s), no new backups will be made for many hours (or days).
+
+	You might instead run "$_our_name mkfs" on the new drive, leave the old
+	drive mounted, and run action update-drive.
+
+	To instead unmount both drives and do a fast "dd"'
+
 _copy-extN-backup-drive() {
 
 	is-arg_1-in-arg_2 -f $action_opts ||
@@ -4677,20 +4692,10 @@ _copy-extN-backup-drive() {
 	if is-drive-mounted $drive_dir
 	   then set -- $(list-drive-dirs |
 			 fgrep -v -w -e $src_drive_dir -e $dst_drive_dir)
-		[[ $# == 0 ]] &&
-		msg="
-	There are no other backup partitions mounted besides the ones used to
-        copy $src_drive_dir to $dst_drive_dir ; if you let me unmount these
-	partition(s), no new backups will be made for many hours (or days).
-
-	You might instead run '$_our_name mkfs' on the new drive, leave the old
-	drive mounted, and run:
-
-		cd $src_drive_dir
-		nohup rsync -aSHX * $dst_drive_dir/ &
-
-	To instead unmount both drives and do a fast 'dd'," ||	msg="
-	$src_drive_dir is mounted;"
+		if [[ $# == 0 ]]
+		   then eval "msg=\"$all_drives_go_offline_msg\","
+		   else msg="\n\t$src_drive_dir is mounted;"
+		fi
 		abort "\n$msg re-run copy-drive with -f to Force unmount."
 	fi; done
 
