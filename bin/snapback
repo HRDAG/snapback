@@ -2505,7 +2505,9 @@ function copy-snapshot-rsync() {
 readonly -f copy-snapshot-rsync
 
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # functions needed for update-drive (wrapper around copy-snapshot)
+# ----------------------------------------------------------------------------
 # ----------------------------------------------------------------------------
 
 remove-empty-partial-snapshots() {
@@ -2937,7 +2939,7 @@ readonly -f create-jobs
 
 ##############################################################################-
 ##############################################################################-
-# 'watch' action.
+# Functions used by 'watch' action.
 ##############################################################################-
 ##############################################################################-
 
@@ -3314,9 +3316,9 @@ function trim-copy-update-ps {
 }
 readonly -f trim-copy-update-ps
 
-# ------------------------------------------------------------------
-# the functions that are called consecutively by watch()
-# ------------------------------------------------------------------
+# -----------------------------------------------------------
+# the following functions are called consecutively by watch()
+# -----------------------------------------------------------
 
 exec-watch-snapback-w() {
 
@@ -3385,7 +3387,7 @@ readonly -f set-max_ps_width
 # ----------------------
 
 # dynamically determine 'ps' fields based on screen column width
-setup-ps-variables-functions() {
+setup-ps-variables-and-function() {
 
 	cputime=cputime				 # global
 	[[ ! $is_darwin ]] && cputime=$cputime:9 # Darwin's is wider
@@ -3423,7 +3425,7 @@ setup-ps-variables-functions() {
 	# all field-names followed by '=' means "don't print header"
 	ps_() { ps $ps_H_opt -o ${ps_keywords//,/=,}= "$@"; }
 }
-readonly -f setup-ps-variables-functions
+readonly -f setup-ps-variables-and-function
 
 # --------------------------------------------
 
@@ -3592,7 +3594,7 @@ readonly -f set-min_rows-min_rows_with_df-rows_left
 
 # --------------------------------------------
 
-show-sudo-config-warning() {
+show-sudo-config-warning-if-it-fits() {
 
 	local -i min_for_rare=$(( min_rows_with_df + 6 + 7 + 6 ))
 	[[ ! -s /etc/sudoers.d/$_our_name &&
@@ -3608,7 +3610,7 @@ show-sudo-config-warning() {
 	echo
 	let rows_left-=6		# only adjust for optional sections
 }
-readonly -f show-sudo-config-warning
+readonly -f show-sudo-config-warning-if-it-fits
 
 # --------------------------------------------
 
@@ -3631,7 +3633,7 @@ readonly -f show-stats-section-1
 
 # --------------------------------------------
 
-show-stats-section-2() {
+show-stats-section-2-if-it-fits() {
 
 	local -i rows_used=7		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows + $rows_used) )) || return
@@ -3651,11 +3653,11 @@ show-stats-section-2() {
 
 	let rows_left-=$rows_used
 }
-readonly -f show-stats-section-2
+readonly -f show-stats-section-2-if-it-fits
 
 # --------------------------------------------
 
-show-stats-section-3() {
+show-stats-section-3-if-it-fits() {
 
 	local -i rows_used=6		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
@@ -3673,11 +3675,11 @@ show-stats-section-3() {
 
 	let rows_left-=$rows_used
 }
-readonly -f show-stats-section-3
+readonly -f show-stats-section-3-if-it-fits
 
 # --------------------------------------------
 
-show-df-lsblk() {
+show-df-and-lsblk-if-they-fit() {
 	local drive_dirs=$*
 
 	if [[ $show_all ]]
@@ -3694,7 +3696,7 @@ show-df-lsblk() {
 		let rows_left-=$num_drives+2
 	fi
 }
-readonly -f show-df-lsblk
+readonly -f show-df-and-lsblk-if-they-fit
 
 # --------------------------------------------
 
@@ -3825,7 +3827,7 @@ watch() {
 
 	set-rows-columns-COLUMNS
 
-	setup-ps-variables-functions
+	setup-ps-variables-and-function
 
 	set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds $drive_dirs
 
@@ -3839,13 +3841,13 @@ watch() {
 	# now we're ready to start showing stuff to the user
 	# ------------------------------------------------------------------
 
-	show-sudo-config-warning
+	show-sudo-config-warning-if-it-fits
 
 	show-stats-section-1
-	show-stats-section-2
-	show-stats-section-3
+	show-stats-section-2-if-it-fits
+	show-stats-section-3-if-it-fits
 
-	show-df-lsblk $drive_dirs
+	show-df-and-lsblk-if-they-fit $drive_dirs
 
 	[[ ! $cron_cmds || $show_all ]] &&
 	show-prune-cmds
