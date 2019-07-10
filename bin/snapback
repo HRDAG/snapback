@@ -384,7 +384,7 @@ function set-lock_paths() {
 		name_glob=$drive_name
 	elif [[ ${is_drive_name_upper_cased-} ]]
 	   then name_glob=${name_glob^^}
-	elif [[ ${is_drive_name_capitalized-} && $name_glob != *[[,]* ]]
+	elif [[ ${is_drive_name_capitalized-} && $name_glob != *[\[,]* ]]
 	   then name_glob=${name_glob^} # only capitalize a single name
 	fi
 
@@ -3251,76 +3251,86 @@ function trim-copy-update-ps {
 readonly -f trim-copy-update-ps
 
 # ------------------------------------------------------------------
+# the functions that are called consecutively by watch()
+# ------------------------------------------------------------------
 
-watch() {
-	local watch_opt= cron_opt= ps_opt= names=
-	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
-	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
-	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
-	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
-	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
-	assert-not-option -o ${1-}
+exec-watch-snapback-w() {
 
-	if [[ $action == watch ]]
-	   then cleanup-after-updates &	# don't wait for it to finish, slow
-		local all_opts="$ps_opt $cron_opt"
-		if [[ $names ]]
-		   then set-drive_names--from-user-args $names
-			all_opts+=" -N ${drive_names// /,}"
-		fi
-		# >= 0.5 is best for watching wchan (-C w/sudo access)
-		[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
-		exec \
-		watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
-		abort "exec failed"
-	fi
-
-	set -- $(list-drive-dirs -a)
-	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
-	local all_drive_dirs=$* drive_dirs=
-	local do_tput=$true show_all=$false
-	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
-	[[ $watch_opt ]] || trap '' HUP
-	[[ $watch_opt ]] || cleanup-after-updates $all_drive_dirs # wait for it
-	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
-	SECONDS=$(date '+%s')		# for _set-age()
+	cleanup-after-updates &	      # don't wait for it to finish, it's slow
+	local all_opts="$ps_opt $cron_opt"
 	if [[ $names ]]
-	   then local name_list=
-		for name in ${names//,/ }
+	   then set-drive_names--from-user-args $names
+		all_opts+=" -N ${drive_names// /,}"
+	fi
+	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
+	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
+	exec watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
+	abort_function "exec failed"
+}
+readonly -f exec-watch-snapback-w
+
+# --------------------------------------------
+
+set-drive_dirs-names_msg-names_glob() {
+	local names=$*
+
+	local name_list=
+	if [[ $names ]]
+	   then for name in ${names//,/ }
 		    do	_set-drive_name $name
 			_set-drive_dir
 			drive_dirs+="$drive_dir "
 			name_list=$name_list,$drive_name
 		done
-		names=${name_list#,}
+		name_list=${name_list#,}
 	   else drive_dirs=$all_drive_dirs
 	fi
-	[[ $names ]] && names_glob="{$names}" &&
-	    names_msg=" for $names " || names_msg=
+	if [[ $name_list ]]
+	   then names_glob="{$name_list}"  names_msg=" for $name_list "
+	   else names_glob=		   names_msg=
+	fi
+}
+readonly -f set-drive_dirs-names_msg-names_glob
 
-	TraceV 1 names drive_dirs names_glob ps_opt cron_opt show_all
+# --------------------------------------------
 
-	# ------------------------------------------------------------------
-	# dynamically determine 'ps' fields based on screen column width
-	# ------------------------------------------------------------------
+set-rows-columns-COLUMNS() {
 
-	$Trace
 	if [[ $watch_opt ]]
 	   then set -f; set -- $(stty -a); set +f
-		local -i rows=${5%;} columns=${7%;}
-	   else local -i rows=9999   columns=9999
+		declare -g -i rows=${5%;} columns=${7%;}
+	   else declare -g -i rows=9999   columns=9999
 	fi
 	export COLUMNS=9999	     # for 'ps' (we shorten the COMMAND value)
+}
+readonly -f set-rows-columns-COLUMNS
 
-	# --------------------------------------------------------------------
+# --------------------------------------------
 
-	[[ $is_darwin ]] && cputime=time || cputime=time:9 # Darwin's is wider
+set-max_ps_width() {
+	local ps_header=$1 rsync_ps_out=$2
+
+	ps_header=${ps_header%COMMAND}
+	set-max_drive_name_len $drive_dirs
+	declare -g -i \
+	max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
+	max_ps_width+=1	       # 'watch' executable requires blank last column
+}
+readonly -f set-max_ps_width
+
+# ----------------------
+
+# dynamically determine 'ps' fields based on screen column width
+setup-ps-variables-functions() {
+
+	cputime=cputime				 # global
+	[[ ! $is_darwin ]] && cputime=$cputime:9 # Darwin's is wider
 
 	# min fits in 80-column screen; grep's expect ends with cputime,command
-	  ps_min_keywords=pid,pgid,%mem,stat,$cputime,command # cron_opt uses
+	ps_min_keywords=pid,pgid,%mem,stat,$cputime,command # cron_opt uses
 	ps_min_header="  PID  PGID %MEM STAT      TIME COMMAND"
 	#
-	  ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,$cputime,command
+	ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,$cputime,command
 	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
 
 	case $OSTYPE in
@@ -3329,25 +3339,16 @@ watch() {
 	    (   *    ) ps_H_opt=    ps_f_opt=   ;;
 	esac; readonly ps_H_opt     ps_f_opt
 
-	set-max_ps_width() {
-		local ps_header=$1 rsync_ps_out=$2
-
-		ps_header=${ps_header%COMMAND}
-		set-max_drive_name_len $drive_dirs
-		declare -g -i \
-		max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
-		max_ps_width+=1	# 'watch' executable requires blank last column
-	}
 	max_rsync_ps_out="    rsync X/.snap/. /2019-03-30,00.links.partial/"
 	[[ $ps_H_opt ]] || {
 	    [[ max_rsync_ps_out =~ rsync.* ]] &&
 	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip leading SPACEs
 	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
-	min_full_columns=$max_ps_width
+	local min_full_columns=$max_ps_width
 
 	if (( $columns >= $min_full_columns )) || [[ $ps_opt == -f ]]
-	   then is_wide=$true
-	   else is_wide=$false
+	   then readonly is_wide=$true
+	   else readonly is_wide=$false
 	fi
 
 	if [[ $is_wide ]]
@@ -3357,11 +3358,14 @@ watch() {
 
 	# all field-names followed by '=' means "don't print header"
 	ps_() { ps $ps_H_opt -o ${ps_keywords//,/=,}= "$@"; }
+}
+readonly -f setup-ps-variables-functions
 
-	# ---------------------------------
+# --------------------------------------------
 
-	set -- $drive_dirs
-	local -i num_drives=$#
+set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
+
+	declare -g -i num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $lock_PGIDs 2>/dev/null  |
@@ -3387,12 +3391,14 @@ watch() {
 	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9] $rsync_ps")
 	[[ $ps_H_opt ]] ||
 	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
+}
+readonly -f set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds
 
-	# --------------------------------------------------------
+# --------------------------------------------
 
-	[[ $cron_opt && $prune_cmds$bkp_rsync_cmds$copy_rsync_cmds ]] && {
+function _set-cron_PGIDs() {
 
-	rsync_or_rm_cmd_PGIDs_file=$tmp_1
+	local rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -u root -o pgid,command |
 	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
 	       $rsync_or_rm_cmd_PGIDs_file
@@ -3402,66 +3408,103 @@ watch() {
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
 			awk '$0 !~ /setsid / {print $1}' |
 			sort -u -n -r)	# the newest PIDs are shown first
-	cron_PGIDs=$*
 	rm -f $rsync_or_rm_cmd_PGIDs_file
+	cron_PGIDs=$*
+	[[ $cron_PGIDs ]]
+}
+readonly -f _set-cron_PGIDs
 
-	[[ $cron_PGIDs ]] && {
+# ---------------------------------
 
+_set-sudo-wchan-max_ps_wchan_width-ps_keywords() {
+	local ps_min_keywords=$*
+
+	local \
 	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
 	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
-is-set		 max_ps_wchan_width ||	# can set custom value in $config_file
-	local -i max_ps_wchan_width=${#widest_wchan_value}+1
-is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
-	local -i min_ps_wchan_width=10	# min useful
+is-set		      max_ps_wchan_width || # custom value in $config_file?
+	declare -g -i max_ps_wchan_width=${#widest_wchan_value}+1
+is-set		      min_ps_wchan_width || # custom value in $config_file?
+	declare -g -i min_ps_wchan_width=10 # min useful value
 
 	ps_keywords=${ps_min_keywords/,%mem,stat,*time*,/,%mem,%cpu,state,}
-	ps_header="  PID  PGID %MEM %CPU S COMMAND"
+	local ps_header="  PID  PGID %MEM %CPU S COMMAND"
 	[[ $ps_f_opt ]] && ps_header=${ps_header/  PGID/} # have forest?
-	[[ $ps_f_opt ]] && ps_keywords=${ps_keywords/,pgid,/,}
+	[[ $ps_f_opt ]] && ps_keywords=${ps_keywords/,pgid,/,}	; local \
 	rsync_ps_out=" |       \_ rsync .opts -R .dirs /2019-07-07,00.partial/"
 	[[ $ps_f_opt ]] || {
-	    [[ max_rsync_ps_out =~ rsync.* ]] &&
+	    [[ max_rsync_ps_out =~ rsync.* ]] &&		  local \
 	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip forest stuff
 	set-max_ps_width "$ps_header" "$rsync_ps_out"
 
 	if (( columns > min_ps_wchan_width + max_ps_width ))
-	   then ps_wchan_width=$(( columns - max_ps_width ))
-		(( ps_wchan_width > max_ps_wchan_width )) &&
-		   ps_wchan_width=$max_ps_wchan_width
-	   else ps_wchan_width=
+	   then local ps_wchan_width=$(( columns - max_ps_width ))
+		   (( ps_wchan_width > max_ps_wchan_width )) &&
+		      ps_wchan_width=$max_ps_wchan_width
+	   else local ps_wchan_width=
 	fi
 
 	[[ $ps_wchan_width ]] && wchan=wchan:$ps_wchan_width || wchan=
 	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
 	[[ $wchan ]] && ps_keywords=${ps_keywords/,stat/,$wchan,stat}
+}
+readonly -f _set-sudo-wchan-max_ps_wchan_width-ps_keywords
+
+# ---------------------------------
+
+_set-ps_keywords--from-columns() {
+	local columns=$1
 
 	# deduct the width of the ps record with max wchan
-	let columns-=max_ps_wchan_width+max_ps_width
+	let columns-=max_ps_wchan_width+max_ps_width # treating as columns_left
 	# if we still have columns left, can add more fields
 	(( columns >  3 )) && ps_keywords=${ps_keywords/,state,/,stat,}
 	(( columns > 13 )) && ps_keywords=${ps_keywords/,comm/,$cputime,comm}
 	(( columns > 22 )) && ps_keywords=${ps_keywords/pid,/pid,start,}
 	(( columns > 28 )) && ps_keywords=${ps_keywords/pid,/pid,pgid,}
-			   ps_keywords=${ps_keywords/,pgid,pgid,/,pgid,/}
+			      ps_keywords=${ps_keywords/,pgid,pgid,/,pgid,/}
+}
+readonly -f _set-ps_keywords--from-columns
 
-	set -- $(process-group-PIDs $cron_PGIDs)
+# ---------------------------------
+
+_set-cron_cmds--from-PGIDs() {
+	local PGIDs=$*
+
+	set -- $(process-group-PIDs $PGIDs)
 	#  option f for "forest"; run trim-backup-ps now, for next adjustment
 	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $* | trim-backup-ps)
 	[[ $ps_f_opt ]] ||
 	# since no forest ascii-art to visually separate jobs, use blank lines
 	cron_cmds=$(echo "$cron_cmds" |
 		    awk '$1 == $2 {if (old) print ""; else old=1} {print}')
-	} || cron_cmds=
+}
+readonly -f _set-cron_cmds--from-PGIDs
 
-	} || cron_cmds=
+# ---------------------------------
 
-	# ---------------------------------------------------------
+function set-cron_cmds() {
 
-	local -i rows_left=$rows
+	_set-cron_PGIDs || return 1
+
+	_set-sudo-wchan-max_ps_wchan_width-ps_keywords $ps_min_keywords
+
+	_set-ps_keywords--from-columns $columns
+
+	_set-cron_cmds--from-PGIDs $cron_PGIDs
+
+	return 0
+}
+readonly -f set-cron_cmds
+
+# --------------------------------------------
+
+set-min_rows-min_rows_with_df-rows_left() {
 
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
+	#  run-backup (RB) includes 'rsync' only
 	local -i PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
 	(( PD > 0 )) && PD=$((PD*2 + 4)) # add in 'rm' plus section-overhead
 	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
@@ -3470,34 +3513,43 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
 	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
 	TraceV 1 PD CS RB && let rows_left-=3
-	# min overhead: 1 watch line, 1 blank line, 6 lines of stats,
+
+	# min overhead: 1 watch line, 1 blank line, 6 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
-	local -i min_rows=$(( 8 + 4 + PD + CS + RB )); [[ $cron_cmds ]] &&
-		 min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5=$our_name+rsyncs+bzip
-	local -i min_rows_with_df=$((min_rows + 2 + num_drives))
-	TraceV 1 rows min_rows min_rows_with_df rows_left && let rows_left-=4
+	declare -g -i \
+	min_rows=$(( 8 + 4 + PD + CS + RB )); [[ $cron_cmds ]] &&
+	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
+	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
+	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
+	TraceV 1 rows_left
+}
+readonly -f set-min_rows-min_rows_with_df-rows_left
 
+# --------------------------------------------
 
-	# ------------------------------------------------------------------
-	# now we're ready to start showing stuff to the user
-	# ------------------------------------------------------------------
+show-sudo-config-warning() {
 
 	local -i min_for_rare=$(( min_rows_with_df + 6 + 7 + 6 ))
 	[[ ! -s /etc/sudoers.d/$_our_name &&
-	   $rows_left -gt $min_for_rare       ]] && {
-		header -E "to not fill the log with frequent 'sudo ps'"
-		echo
-		option_1="install etc/sudoers.d/$our_name"
-		option_2="put its contents into /etc/sudoers"
-		echo -e "$option_1, or $option_2"
+	   $rows_left -gt $min_for_rare       ]] || return
 
-		header "statistics"
-		echo
-		let rows_left-=6	# only adjust for optional sections
-	}
+	header -E "to not fill the log with frequent 'sudo ps'"
+	echo
+	option_1="install etc/sudoers.d/$our_name"
+	option_2="put its contents into /etc/sudoers"
+	echo -e "$option_1, or $option_2"
 
-	# ------------------------------------------------------------------
+	header "statistics"
+	echo
+	let rows_left-=6		# only adjust for optional sections
+}
+readonly -f show-sudo-config-warning
+
+# --------------------------------------------
+
+# this section is mandatory
+show-stats-section-1() {
 
 	set-rsync_hour_avgs-rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
@@ -3510,11 +3562,16 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	echo "# .partial snaps pending update (+err):  $stats_number"
 	setup-snapshot-stats ''
 	echo "  Age of newest good snapshot, in days:  $stats_newest_age"
+}
+readonly -f show-stats-section-1
 
-	# --------------------------------------------
+# --------------------------------------------
+
+show-stats-section-2() {
 
 	local -i rows_used=7		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows + $rows_used) )) && {
+	(( $rows_left >= ($min_rows + $rows_used) )) || return
+
 	echo				# first row used
 	setup-snapshot-stats .rm
 	echo "  Age of newest pending prune, in days:  $stats_newest_age"
@@ -3527,13 +3584,18 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
 	setup-snapshot-stats ''
 	echo "  Number complete/successful snapshots:  $stats_number"
-	let rows_left-=$rows_used
-	}
 
-	# --------------------------------------------
+	let rows_left-=$rows_used
+}
+readonly -f show-stats-section-2
+
+# --------------------------------------------
+
+show-stats-section-3() {
 
 	local -i rows_used=6		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) && {
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
+
 	echo				# first row used
 	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
 	setup-snapshot-stats '' hour
@@ -3544,10 +3606,15 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	echo "  Total number years  w/good snapshots:  $stats_number"
 	setup-snapshot-stats '*'
 	echo "  Total snapshots (good, partial, .rm):  $stats_number"
-	let rows_left-=$rows_used
-	}
 
-	# ------------------------------------------------------------------
+	let rows_left-=$rows_used
+}
+readonly -f show-stats-section-3
+
+# --------------------------------------------
+
+show-df-lsblk() {
+	local drive_dirs=$*
 
 	if [[ $show_all ]]
 	   then filesystem-geometry $drive_dirs
@@ -3562,10 +3629,12 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 		run-lsblk $drive_dirs &&
 		let rows_left-=$num_drives+2
 	fi
+}
+readonly -f show-df-lsblk
 
-	# ------------------------------------------------------------------
+# --------------------------------------------
 
-	[[ ! $cron_cmds || $show_all ]] && {
+show-prune-cmds() {
 
 	[[ $prune_cmds || $show_all ]] && header "prune-drive" && echo
 	if [[ $prune_cmds ]]
@@ -3574,28 +3643,43 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
 	fi
+}
+readonly -f show-prune-cmds
 
-	# ------------------------------------------------------------------
+# --------------------------------------------
 
-	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] && {
+show-copy-cmds() {
+
+	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] || return
+
 	header "copy (update-drive or copy-snapshots)"
 	echo
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | trim-copy-update-ps
-	}
+}
+readonly -f show-copy-cmds
 
-	} # [[ ! $cron_cmds || $show_all ]] &&
+# --------------------------------------------
 
-	# ------------------------------------------------------------------
+set-rsync_abbrev_msg() {
 
 	# for some reason, appending newlines does nothing?!
-	[[ $is_wide ]] && var_name=" (\$rsync_backup_opts)" || var_name=
+	if [[ $is_wide ]]
+	   then local var_name=" (\$rsync_backup_opts)"
+	   else local var_name=
+	fi
+
 	rsync_abbrev_msg="
 	  default opts=\"$rsync_backup_opts\"$var_name
-	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)"
+	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)" ; readonly \
 	rsync_abbrev_msg=${rsync_abbrev_msg//	/} # strip leading TAB
+}
+readonly -f set-rsync_abbrev_msg
 
-	[[ ! $cron_cmds || $show_all ]] && {
+
+# --------------------------------------------
+
+show-backup-cmds() {
 
 	header "cron's run-backups' lead rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
@@ -3604,37 +3688,116 @@ is-set		 min_ps_wchan_width ||	# can set custom value in $config_file
 	echo "$bkp_rsync_cmds" | trim-backup-ps # | sort $rsync_sort_opts
 	} || echo -e "\nNo backups are running$names_msg."
 
-	} # [[ ! $cron_cmds || $show_all ]] &&
+}
+readonly -f show-backup-cmds
 
-	# ------------------------------------------------------------------
+# --------------------------------------------
 
-	# show process tree of master cron job(s)
-	[[ $cron_cmds ]] && {
+# show process tree of master cron job(s)
+show-cron-jobs() {
+
+	[[ $cron_cmds ]] || return
+
 	set -- $(ps -o stime= $cron_PGIDs | sort -u)
-	stime=$*
-	regex=${cron_job_regex%%s*}
+	local stime=$*
+	local regex=${cron_job_regex%%s*}
 	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows_left < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
 	echo "$cron_cmds"	   # we used trim-backup-ps when we created it
-	}
+}
 
-	# ------------------------------------------------------------------
+# --------------------------------------------
 
-	[[ $bkp_rsync_cmds ]] && {
+show-backup-cmds-with-full-details() {
+
+	[[ $bkp_rsync_cmds ]] || return
+
 	header "cron's run-backups' lead rsync processes (full details)"
 	echo
 	echo "$ps_header"
 	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g"
-	}
+}
+readonly -f show-backup-cmds-with-full-details
 
-	# ------------------------------------------------------------------
+# --------------------------------------------
 
-	[[ $copy_rsync_cmds ]] && {
+show-copy-cmds-with-full-details() {
+
+	[[ $copy_rsync_cmds ]] || return
+
 	header "copy (e.g. update) rsync processes (full details)"
 	echo
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
-	}
+}
+
+# ------------------------------------------------------------------
+
+watch() {
+	local watch_opt= cron_opt= ps_opt= names=
+	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
+	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
+	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
+	assert-not-option -o ${1-}
+
+	[[ $action == watch ]] && exec-watch-snapback-w
+
+	set -- $(list-drive-dirs -a)
+	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
+	local all_drive_dirs=$* drive_dirs=
+
+	local do_tput=$true show_all=$false
+	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
+	[[ $watch_opt ]] || trap '' HUP
+	[[ $watch_opt ]] || cleanup-after-updates $all_drive_dirs # wait for it
+	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
+
+	SECONDS=$(date '+%s')		# for _set-age()
+
+	set-drive_dirs-names_msg-names_glob $names # names_glob: set-lock_PGIDs
+	TraceV 1 drive_dirs names_glob ps_opt cron_opt show_all
+
+	set-rows-columns-COLUMNS
+
+	setup-ps-variables-functions
+
+	set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds $drive_dirs
+
+	[[ $cron_opt && $prune_cmds$bkp_rsync_cmds$copy_rsync_cmds ]] &&
+	    set-cron_cmds || cron_cmds=
+
+	local -i rows_left=$rows
+	set-min_rows-min_rows_with_df-rows_left
+
+	# ------------------------------------------------------------------
+	# now we're ready to start showing stuff to the user
+	# ------------------------------------------------------------------
+
+	show-sudo-config-warning
+
+	show-stats-section-1
+	show-stats-section-2
+	show-stats-section-3
+
+	show-df-lsblk $drive_dirs
+
+	[[ ! $cron_cmds || $show_all ]] &&
+	show-prune-cmds
+
+	[[ ! $cron_cmds || $show_all ]] &&
+	show-copy-cmds
+
+	set-rsync_abbrev_msg
+
+	[[ ! $cron_cmds || $show_all ]] &&
+	show-backup-cmds
+
+	show-cron-jobs
+
+	show-backup-cmds-with-full-details
+	show-copy-cmds-with-full-details
 }
 readonly -f watch
 
