@@ -1835,11 +1835,11 @@ function prune-drive() {
 }
 readonly -f prune-drive
 
-##############################################################################-
-##############################################################################-
-# Functions and variables used to create new backup snapshots.
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
+# Functions and variables used to create new backup snapshots
+##############################################################################
+##############################################################################
 
 # ----------------------------------------------------------------------------
 # functions to setup --link-dest args to rsync
@@ -1996,7 +1996,9 @@ function _is-time-to-run-backup {
 }
 readonly -f _is-time-to-run-backup
 
-# -------------------------------------------------------
+# -----------------------------------------------------
+# the following functions support _handle-rsync-results
+# -----------------------------------------------------
 
 set-hours--from-minutes() {
 	if [[ $1 == -* ]]
@@ -2085,7 +2087,7 @@ record-rsync-time() {
 }
 readonly -f record-rsync-time
 
-# -------------------------------------------------------
+# -------------------------------------------
 
 _links-error-msg() {
 	local msg=$*
@@ -2173,26 +2175,14 @@ _handle-rsync-results() {
 }
 readonly -f _handle-rsync-results
 
-# ----------------------
+# -------------------------------------------------------
 
-function run-rsync() {
-	if [[ $1 == -c ]]
-	   then shift
-		local is_copy_snapshot=$true
-	   else local is_copy_snapshot=$false
-	fi
-	assert-not-option ${1-}
-	local dst_snapshot=${!#}
-	local src_dirs=${*%$dst_snapshot}
-
-	local date_time=${dst_snapshot##*/}
-	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
-
-	assert-drive_dir-writable ${dst_snapshot%/*}
+set-partial_dst() {
+	local  dst_snapshot=$1
 
 	if [[ $dst_snapshot == *.partial ]]
-	   then local partial_dst=$dst_snapshot
-	   else local partial_dst=$dst_snapshot.partial
+	   then partial_dst=$dst_snapshot
+	   else partial_dst=$dst_snapshot.partial
 		# if we (partially) created this snapshot earlier, reuse it
 		local suffix
 		for   suffix in '' '.links'
@@ -2201,22 +2191,12 @@ function run-rsync() {
 			   $IfRun mv $useful_dst $partial_dst && break
 		done
 	fi
+}
+readonly -f set-partial_dst
 
-	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
-	{		     # ensure $dst_snapshot has current time
-	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
-	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
-	[[ -d $partial_dst ]] && $IfRun \
-	touch $partial_dst		# in case we crash before next 'touch'
-	} &
+# -------------------------------------------------------
 
-	suspend-tracing
-	local link_dest_opts=
-	if [[ ! $is_copy_snapshot ]]
-	   then set-link_dest_opts--for-run-backup    $dst_snapshot
-	   else set-link_dest_opts--for-copy-snapshot $dst_snapshot
-	fi
-	restore-tracing link_dest_opts
+function _run-rsync-cmd() {
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
@@ -2236,6 +2216,48 @@ function run-rsync() {
 	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
 
 	shopt -s nullglob
+
+	return $status
+}
+readonly -f _run-rsync-cmd
+
+# -------------------------------------------------------
+
+function run-rsync() {
+	if [[ $1 == -c ]]
+	   then shift
+		local is_copy_snapshot=$true
+	   else local is_copy_snapshot=$false
+	fi
+	assert-not-option ${1-}
+	local dst_snapshot=${!#}
+	local src_dirs=${*%$dst_snapshot}
+
+	local date_time=${dst_snapshot##*/}
+	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
+
+	assert-drive_dir-writable ${dst_snapshot%/*}
+
+	set-partial_dst $dst_snapshot
+
+	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
+	{		     # ensure $dst_snapshot has current time
+	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
+	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
+	[[ -d $partial_dst ]] && $IfRun \
+	touch $partial_dst		# in case we crash before next 'touch'
+	} &
+
+	suspend-tracing
+	local link_dest_opts=
+	if [[ ! $is_copy_snapshot ]]
+	   then set-link_dest_opts--for-run-backup    $dst_snapshot
+	   else set-link_dest_opts--for-copy-snapshot $dst_snapshot
+	fi
+	restore-tracing link_dest_opts
+
+	_run-rsync-cmd
+	local status=$?
 
 	[[ ! $is_copy_snapshot ]] &&
 	$IfRun touch $partial_dst	# 'when we finished', not mdate of src
