@@ -4286,8 +4286,8 @@ readonly -f filesystem-geometry
 
 # ----------------------------------------------------------------------------
 
-# Here's how to setup a brand new drive to be an encrypted drive
-
+# Here's how to setup a brand new drive to be an encrypted drive:
+#
 # If brand new drive, find its device name with: ls -lt /dev/sd?
 # Save the device name and drive name: device=/dev/sdX  drive=Y
 # Verify it's a new drive (which has partition table): fdisk -l $device
@@ -4372,22 +4372,21 @@ function mkfs-backup-drive() {
 	# an SSD or flash memory stick (unless you're using ext* and you have
 	# lots of files with indirect blocks).
 
-	# this block of code is only relevant to ext*
-	[[ $_mkfs_cmd_opts != mkfs.[^e]* ]] && {
-	local block_size=1024		# optimal, see above long comment
-	set -- $_mkfs_cmd_opts
-	while [[ $# != 0 ]]
-	   do	[[ $1 == -b       ]] && block_size=${2-}
-		[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
-		shift
-	done
-	local valid_block_sizes="1024 2048 4096"
-	is-arg_1-in-arg_2 $block_size $valid_block_sizes ||
-	   abort "ext* block size must be one of: $valid_block_sizes"
-	local blocks_per_inode=1
-	let    bytes_per_inode=$blocks_per_inode*$block_size
-	TraceV 3 block_size bytes_per_inode
-	}
+	if [[ $FS_type == ext? ]]
+	   then local -i block_size=1024 # optimal, see above long comment
+		set -- $_mkfs_cmd_opts
+		while [[ $# != 0 ]]
+		   do	[[ $1 == -b       ]] && block_size=${2-}
+			[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
+			shift
+		done
+		local valid_block_sizes="1024 2048 4096"
+		is-arg_1-in-arg_2 $block_size $valid_block_sizes ||
+		   abort "ext* block size must be one of: $valid_block_sizes"
+		local -i blocks_per_inode=1
+		local -i bytes_per_inode=$blocks_per_inode*$block_size
+		TraceV 3 block_size bytes_per_inode
+	fi
 
 	# There's no need to store small-files or file's extended-attributes
 	# in inodes: The extra blocks used for small-files or out-of-inode
@@ -4409,9 +4408,8 @@ function mkfs-backup-drive() {
 	set -- $_mkfs_cmd_opts
 	[[ $# != 0 ]] || abort "need to set mkfs_cmd_opts= in $config_file"
 	local cmd=$1; shift; local opts="$* "  log_opt=
-	if [[ $cmd == mkfs.xfs ]]
-	   then FS_type=xfs
-		have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
+	if [[ $FS_type == xfs ]]
+	   then have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
 		# The above comment predicts isize=256; but CRCs need size=512,
 		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
 		# using isize=1024 resulted in 10% more directory drive space.
@@ -4427,22 +4425,7 @@ function mkfs-backup-drive() {
 		set-FS_external_log $FS_label &&
 		logdev="logdev=$FS_external_log" &&
 		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
-	elif [[ $cmd == mkfs.ext? ]]
-	   then FS_type=${cmd#*.}
-	elif [[ $cmd == mke2fs ]]
-	   then FS_type=$(echo $opts | sed -r 's/.*\W-t\W*(\w+)\b.*/\1/')
-		[[ $FS_type ]] || FS_type=ext4
-	elif [[ $cmd != mk* ]]
-	   then abort "the value of 'mkfs_cmd_opts' should start with 'mk'"
-	   else abort "don't support '$cmd $opts', email $coder"
-	fi
-	#
-	if ! [[ $FS_type == ext? && $debug_opt && $UID == 0 ]]
-	   then local mkfs_debug_opt=
-	   else local mkfs_debug_opt=-n
-		warn "running mkfs.$FS_type in debug mode ..."
-	fi
-	if [[ $FS_type == ext? ]]
+	elif [[ $FS_type == ext? ]]
 	   then opts+="-v "
 		[[ $opts != *-T* ]] && {
 		[[ $opts != *-b* ]]	&& opts+="-b $block_size "
@@ -4457,17 +4440,26 @@ function mkfs-backup-drive() {
 		$IfRun mke2fs -v -b $block_size -O journal_dev \
 			 -L $log_label $FS_external_log &&
 		log_opt="-J device=$FS_external_log"
+	   else abort "don't support FS_type=$FS_type. email $coder"
 	fi
 
-	df -m | grep " $drive_dir$" &&
-	  $IfRun abort "there's already a filesystem mounted on $drive_dir"
+	local is_new_dev=$true
+	df -m | grep " $drive_dir$" && {	is_new_dev=$false
+	  $IfRun abort "there's already a filesystem mounted on $drive_dir"; }
 	[[ $FS_type == xfs && $opts == *' -N '* ]] || {
 	[[ -d $drive_dir ]] &&
 	  $IfRun abort "directory $drive_dir/ exists: is name '$name' in use?"
-	df -m | grep "^$device[ 	]" &&
+	df -m | grep "^$device[ 	]" && { is_new_dev=$false
 	  $IfRun abort "that device is mounted; to *DESTROY* its contents,
-			first run: umount $device"
+			first run: umount $device"			   ; }
 	}
+
+
+	if ! [[ $FS_type == ext? && $debug_opt && $UID == 0 && $is_new_dev ]]
+	   then local mkfs_debug_opt=
+	   else local mkfs_debug_opt=-n
+		warn "running mkfs.$FS_type in debug mode ..."
+	fi
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
@@ -4486,6 +4478,8 @@ function mkfs-backup-drive() {
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
 	fix-drive_dir-perms $drive_dir
+
+	[[ ! $debug_opt ]] || return 1
 
 	echo -e "\nTo populate newly-created drive, run:\n
 	nohup $_our_name update-drive $drive_name	# creates new job"
