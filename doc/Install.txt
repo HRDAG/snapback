@@ -62,11 +62,11 @@ To get up and running quickly, here's the minimal edits to
 On GNU/Linux, run "sudo snapback mkfs ..."  to build a filesystem on each
 drive (which will *DESTROY* any existing data on the specified partion).
 
-On Darwin (Mac OS-X), use an APFS filesystem labeled backup-<name>, and set
-backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
+On Darwin (macOS aka Mac OS-X), use an APFS filesystem labeled backup-<name>,
+and set backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
 
 
-C. A Warning and a Note
+C. What filesystem type(s) should I use?  Can I use an encrypted drive?
 
 WARNING: if you heavily use an application which generates lots of hard-linked
 files (like HRDAG's 'snap' aka 'snapshot'; or Red Hat's 'yum' package
@@ -76,18 +76,46 @@ filesystem-type that has too-small limits on the maximum number of hard-links
 per inode (when mounting NTFS via 'fuseblk', the max links is 8K; for ext4,
 the max is 65K).  In this case, you'll ideally use a filesystem like XFS (or
 Btrfs, if you're adventuresome) that uses a 32-bit word to hold the inode's
-link reference-count.  Similarly, APFS on Darwin (Mac OS-X) uses a 32-bit
-link-count (*never* use HFS: every "hard link" creates a hidden copy of the
-file?!).
+link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
+32-bit link-count (*never* use HFS: every "hard link" creates a hidden copy of
+the file?!).
 
-NOTE: the following is heavily oriented towards a GNU/Linux system like
-Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
+Here's how to setup a brand new drive to be an encrypted drive (this process
+will eventually be automated in HRDAG's 'snapscrypt' utility).  Find its
+device name with:
+    ls -lt /dev/sd?
+Save the device name and drive name:
+    device=/dev/sdX drive=Y
+Verify it's a new drive (which should have partition table):
+    fdisk -l $device
+See if someone is using it:
+    fuser -v $device
+Create an encryption keypair (if you haven't already):
+    cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
+	(be SURE you type "YES" not "yes")
+Make sure encryption succeeded:
+    fdisk -l $device	# shouldn't see any partitions
+Then run:
+    snapcrypt open $device $drive	# the mount will fail
+
+[Instead of encrypting the whole drive, you could just encrypt a single
+partition, and create a slightly different kind of rule ...]  Then create a
+new rule in /etc/snapcrypt/drives.rules .  If you have existing ext4 backup
+drives that are no bigger, use 'snapback copy-drive' to initialize the new
+drive; otherwise, use 'snapback mkfs' to create a filesystem, and 'snapback
+update-drive' to copy snapshots from your other backup drives.
+
+NOTE: the rest of this document is heavily oriented towards a GNU/Linux system
+like Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
 'copy-drive' actions (see below) support XFS filesystems, because HRDAG uses
 'snap' aka 'snapshot', so we experience "Too many links" errors with our 3
 years of backup snapshots on an ext4 filesystem.]
 
 
 D. Re-using existing backup drives and partitions
+
+Unless you have drive partitions with one or more existing backup snaphots,
+you can skip this whole section.
 
 If you have drive partitions with one or more existing snaphots, it's best to
 use "cp -al" to copy all the snapshots onto one partition (ideally, the
@@ -125,9 +153,7 @@ to see if it can be shrunk enough to fit on a smaller partition.  If so, run:
     nohup sudo resize2fs -M -p $device & sleep 0.1; tail -f nohup.out
 
 When it finishes (it could take hours), again use "resize2fs -P" to see if
-it's shrunk enough to fit in any of your smaller partitions (if you're using
-e.g. XFS or some other modern filesystem, there's probably a similar way to
-perform the above operations).
+it's shrunk enough to fit in any of your smaller partitions.
 
 Before you copy the master partition to your other partitions, you may want to
 think seriously about first encrypting the other partitions.  See HRDAG's

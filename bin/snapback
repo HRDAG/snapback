@@ -36,13 +36,14 @@ fi
 # We use these constants from libsnap.sh (and change $our_name)
 readonly tmp_dir our_path true false is_darwin max_call_stack_args
 readonly warning_level2tput_args
-# We used these functions from libsnap.sh
+# We used these functions from libsnap.sh .
+# FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
+# set-FS_label--from-mount_dir, $config_file can replace them.
 readonly -f is-set have-cmd need-cmds set-FS_type--from-path
 readonly -f set-inode_size-data_block_size-dir_block_size--from-path
 readonly -f set-FS_label--from-FS-device label-drive
 readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
 readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
-readonly -f set-mount_dir--from-FS-label  set-FS_label--from-mount_dir
 readonly -f is-arg_1-in-arg_2 print-call-stack warn
 readonly -f abort abort-function assert-not-option echoE echoEV Trace TraceV
 readonly -f remember-tracing suspend-tracing restore-tracing
@@ -425,7 +426,7 @@ function lock-PID() {
 	    lock_holder_action="is $lock_holder_action"
 
 	local output_file=$tmp_3
-	set --  lockpid --dir=$lock_dir $lock_opts $lock_file
+	set -f; set --  lockpid --dir=$lock_dir $lock_opts $lock_file; set +f
 	local   lock_cmd=$*
 	$IfRun $lock_cmd &> $output_file ; local status=$?
 	lockpid_output=$(<  $output_file)
@@ -843,7 +844,11 @@ function is-drive-mounted() {
 
 	[[ $drive_dir ]] || return 1
 	[[ $drive_dir == *[-/]Z ]] && return 0 # Z is testing pseudo-drive
-	df | grep -q " $drive_dir$"
+	suspend-tracing
+	set -- $drive_dir/$snapshot_glob*
+	restore-tracing
+	[[ $# != 0 ||
+	   $(df --output=target --no-sync $drive_dir) == *$drive_dir ]]
 }
 readonly -f is-drive-mounted
 
@@ -1002,9 +1007,11 @@ _set-drive_name ||	   # can define custom version in $config_file
 _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
-	assert-not-option $1
+	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
+	assert-not-option -o $1
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
+	[[ $clean ]] && drive_name=$name && return 0
 
 	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
 	   [[ $is_quiet ]] && return 1
@@ -1034,6 +1041,8 @@ set-drive_name ||		   # can define custom version in $config_file
 set-drive_name() {
 	[[ $# == 1 && $1 ]] || abort "set-drive_name takes a single argument"
 	local name=$1
+
+	_set-drive_name -c $name && name=$drive_name
 
 	if [[ ! $name =~ ^$admin_drive_name_regex$ ]]
 	   then if [[ $name == /dev/* ]]
@@ -1189,6 +1198,7 @@ validate-config-variables() {
 	[[ $drive_dir_prefix == *[^$allowed_drive_name_dir_chars/]* ]] &&
 	   abort "drive_dir_prefix has disallowed chars (ask $coder to allow)"
 
+	# these config file(s) will be mentioned in the following error msg
 	set -- $config_file ${drive_specific_config_file-}
 
 	echo " $dirs_to_backup " | grep ' [^/]' &&
@@ -1242,7 +1252,7 @@ function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
 
 	suspend-tracing
-	set -- $(df --output=pcent,ipcent $drive_dir | tail -n1)
+	set -- $(df --output=pcent,ipcent --no-sync $drive_dir | tail -n1)
 	[[ $# != 0 ]] || abort "$drive_dir is not mounted"
 	local -i block_percent=${1%\%} inode_percent=${2%\%}
 	# caller can declare max_drive_usage_percent to use it
@@ -2813,24 +2823,20 @@ readonly -f update-drive
 function set-drive_dirs--from-user-args() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 
-	unset drive_names		# we might not set this ...
-
 	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
 	   then set-drive_dirs $all_opt
 		return $?
 	fi
 
-	set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
+	[[ $1 != /* ]] && set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
 
 	drive_dirs=
 	for drive_dir
 	    do	_set-drive_name -q $drive_dir  &&
 		_set-drive_dir     $drive_name || continue
-		suspend-tracing
-		set -- $drive_dir/$snapshot_glob*
-		restore-tracing
-		[[ $# != 0 ]] || [[ $(df $drive_dir) == *$drive_dir* ]] &&
-		    drive_dirs+="$drive_dir "
+		[[ $drive_name != Z || $is_regression_test ]] || continue
+		is-drive-mounted   $drive_dir  &&
+		      drive_dirs+="$drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
 	[[ $drive_dirs ]]
@@ -2893,8 +2899,11 @@ create-jobs() {
 	   then set-excluded_drive_dirs_regex
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
-	   else set-drive_names--from-user-args "$@"
-		set -- $drive_names
+	   else if set-drive_names--from-user-args "$@"
+		   then set -- $drive_names
+		elif [[ $* != Z ]]
+		   then abort "no valid drive names specified: $*"
+		fi
 	fi
 	if [[ $# == 0 ]]
 	   then [[ $is_cron ]] && exit 0
@@ -3230,7 +3239,7 @@ function run-df() {
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	(( ${cols:-99} >= $min_full_columns )) || df_fields=${df_fields/,size/}
-	df --block-size=G --output=$df_fields $drive_dirs
+	df --block-size=G --output=$df_fields --no-sync $drive_dirs
 }
 readonly -f run-df
 
@@ -3298,7 +3307,7 @@ readonly -f trim-prune-ps
 
 function trim-copy-update-ps {
 
-	set -- $rsync_backup_opts	# standardize whitespace
+	set -f; set -- $rsync_backup_opts; set +f # standardize whitespace
 
 	local cpss="$_our_name c"
 	trim-ps |
@@ -3747,7 +3756,7 @@ readonly -f set-rsync_abbrev_msg
 
 show-backup-cmds() {
 
-	header "cron's run-backups' lead rsync processes (abbreviated)"
+	header "run-backup's most-CPU-intensive rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
@@ -3778,7 +3787,7 @@ show-backup-cmds-with-full-details() {
 
 	[[ $bkp_rsync_cmds ]] || return
 
-	header "cron's run-backups' lead rsync processes (full details)"
+	header "run-backup's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
 	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g"
@@ -4184,16 +4193,15 @@ dir-sizes() {
 	file=${file%.bz2}
 	header $file
 
-	set -- $(bzcat $file.bz2 | wc -l)
-	local -i dir_count=$1
+	local -i dir_count=$(bzcat $file.bz2 | wc -l)
 	local -i median_line=$dir_count/2
-	set -- $(bzcat $file.bz2 | sed -n ${median_line}p)
 	printf "\n%7s directories.\n" $dir_count
 	bzcat $file.bz2 |
 	awk '    { KB += $1; count += 1 }
 	     END { printf "Average directory size is %.1f KB\n",
 				KB/count }'
 
+	set -- $(bzcat $file.bz2 | sed -n ${median_line}p)
 	echo -e " Median directory size is ${1%K} KB ...\n"
 	$Trace
 	(( $dir_count > 100 )) && {
@@ -4286,18 +4294,7 @@ readonly -f filesystem-geometry
 
 # ----------------------------------------------------------------------------
 
-# Here's how to setup a brand new drive to be an encrypted drive:
-#
-# If brand new drive, find its device name with: ls -lt /dev/sd?
-# Save the device name and drive name: device=/dev/sdX  drive=Y
-# Verify it's a new drive (which has partition table): fdisk -l $device
-# See if someone is using it: fuser -v $device
-# cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
-#   (be SURE you type "YES" not "yes")
-# Make sure encryption succeeded: fdisk -l $device # want no partitions
-# Then run: snapcrypt open $device $drive (mount will fail).
-# Then create new rule in /etc/snapcrypt/drives.rules .
-# If have existing backup drives that are no bigger, use copy-drive .
+# For encrypting a drive/partition, see section C. in doc/Install.txt .
 
 # mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
 function mkfs-backup-drive() {
@@ -4309,13 +4306,13 @@ function mkfs-backup-drive() {
 	line_5="(which is not needed if the partition is auto-mounted)."
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
-	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts == mkfs.xfs* ]] || {
+	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts != mkfs.ext? ]] || {
 	   echo "If this is your first or smallest drive, use the -f option;"
 	   echo "otherwise, use the very-fast 'copy-drive' action instead."
 	   abort-with-action-Usage
 	} >&2
-	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')
-	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')
+	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')	; set -f
+	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')	; set +f
 	[[ $# == [12] ]] || abort-with-action-Usage
 	local device=$1 name=${2-}
 	TraceV 3 mkfs_opts device name
@@ -4331,7 +4328,9 @@ function mkfs-backup-drive() {
 	    abort-function "name '$name' is a reserved word"
 	_set-drive_dir
 
-	mkfs_cmd=${mkfs_cmd_opts%% *}
+	set -f; set -- $mkfs_cmd_opts; set +f
+	[[ $# != 0 ]] || abort "$config_file needs a non-empty mkfs_cmd_opts="
+	mkfs_cmd=$1
 	 FS_type=${mkfs_cmd#*.}
 	[[ $FS_type != $mkfs_cmd ]] || abort "ask $coder to fix FS_type logic"
 	local _mkfs_cmd_opts="$mkfs_cmd_opts "
@@ -4374,7 +4373,7 @@ function mkfs-backup-drive() {
 
 	if [[ $FS_type == ext? ]]
 	   then local -i block_size=1024 # optimal, see above long comment
-		set -- $_mkfs_cmd_opts
+		set -f; set -- $_mkfs_cmd_opts; set +f
 		while [[ $# != 0 ]]
 		   do	[[ $1 == -b       ]] && block_size=${2-}
 			[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
@@ -4405,8 +4404,7 @@ function mkfs-backup-drive() {
 	   else local ext4_extent_opt=
 	fi
 
-	set -- $_mkfs_cmd_opts
-	[[ $# != 0 ]] || abort "need to set mkfs_cmd_opts= in $config_file"
+	set -f; set -- $_mkfs_cmd_opts; set +f
 	local cmd=$1; shift; local opts="$* "  log_opt=
 	if [[ $FS_type == xfs ]]
 	   then have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
@@ -4443,22 +4441,20 @@ function mkfs-backup-drive() {
 	   else abort "don't support FS_type=$FS_type. email $coder"
 	fi
 
-	local is_new_dev=$true
-	df -m | grep " $drive_dir$" && {	is_new_dev=$false
-	  $IfRun abort "there's already a filesystem mounted on $drive_dir"; }
+	df -m $drive_dir 2> /dev/null &&
+	  $IfRun abort "there's already a filesystem mounted on $drive_dir"
 	[[ $FS_type == xfs && $opts == *' -N '* ]] || {
 	[[ -d $drive_dir ]] &&
-	  $IfRun abort "directory $drive_dir/ exists: is name '$name' in use?"
-	df -m | grep "^$device[ 	]" && { is_new_dev=$false
+	  $IfRun abort "if name '$name' not in use: sudo rmdir $drive_dir"
+	local is_new_dev=$true
+	df -m $device 2> /dev/null && { is_new_dev=$false
 	  $IfRun abort "that device is mounted; to *DESTROY* its contents,
-			first run: umount $device"			   ; }
+			first run: sudo umount $device"			   ; }
 	}
 
-
-	if ! [[ $FS_type == ext? && $debug_opt && $UID == 0 && $is_new_dev ]]
-	   then local mkfs_debug_opt=
-	   else local mkfs_debug_opt=-n
-		warn "running mkfs.$FS_type in debug mode ..."
+	if [[ $FS_type == ext? && $debug_opt && $UID == 0 && $is_new_dev ]]
+	   then local mkfs_debug_opt=-n; warn "running $cmd in debug mode ..."
+	   else local mkfs_debug_opt=
 	fi
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
@@ -4573,9 +4569,9 @@ copy-backup-drive() {
 		  egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 	fi
 
-	set --	$our_path $our_opts finish-$action $action_opts \
-		$src_device $src_drive_dir \
-		$dst_device $dst_drive_dir
+	set -f; set --	$our_path $our_opts finish-$action $action_opts \
+			$src_device $src_drive_dir \
+			$dst_device $dst_drive_dir	; set +f
 	local cmd=$*
 
 	if [[ $debug_opt ]]
@@ -5437,13 +5433,13 @@ case $action in
    ( run | r ) undo-action-abbrev run
 	local cmd=$1
 	$Trace
-	run-function -p "$@" # can pass: -v "var-name(s)" of vars to be echo'ed
+	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo status=$?
 	set +x
-	[[ $1 == set-* ]] || exit
+	[[ $cmd == set-* ]] || exit
 
 	header "variables set by $cmd"
-	var_names=${1#set-} ; var_names=${var_names%%--*}
+	var_names=${cmd#set-} ; var_names=${var_names%%--*}
 	var_names=${var_names//-/ }
 	declare -i max_name_width=0
 	for var_name in $var_names
