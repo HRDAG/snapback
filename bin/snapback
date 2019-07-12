@@ -46,9 +46,9 @@ readonly -f set-inode_size-data_block_size-dir_block_size--from-path
 readonly -f set-FS_label--from-FS-device label-drive
 readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
 readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
-readonly -f is-arg1-in-arg2 print-call-stack warn
-readonly -f abort abort-function assert-not-option echoE echoEV Trace TraceV
-readonly -f remember-tracing suspend-tracing restore-tracing
+readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
+readonly -f assert-not-option set-var_value--from-var_name echoE echoEV
+readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log
 readonly -f header set-absolute_path cd_
 readonly -f have-proc is-process-alive set-popped_word--from-list
@@ -978,7 +978,7 @@ _last_fully_initialized_drive_name=
 
 # this is normally called by set-drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
-set-drive_log_dir-file_for_logging-admin_group-is_regression_test() {
+set-drive_log_dir-file_for_logging-is_regression_test() {
 	local  drive_name=${1-}	     # called from set-drive_name, so $1 valid
 
 	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
@@ -999,7 +999,7 @@ set-drive_log_dir-file_for_logging-admin_group-is_regression_test() {
 
 	customize-and-validate-configuration-variables $drive_name
 }
-readonly -f set-drive_log_dir-file_for_logging-admin_group-is_regression_test
+readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 
 # ---------------------------------
 
@@ -1085,8 +1085,7 @@ set-drive_name() {
 	_set-drive_name $name
 	TraceV 3 drive_name
 
-	set-drive_log_dir-file_for_logging-admin_group-is_regression_test \
-	   $drive_name
+	set-drive_log_dir-file_for_logging-is_regression_test $drive_name
 }
 readonly -f set-drive_name
 
@@ -1146,7 +1145,7 @@ customize-config-variables() {
 	remember-tracing		# since suspend-tracing maybe not run
 	local var_name
 	[[ ${custom_config_vars-} ]] || {
-	# set-drive_log_dir-file_for_logging-admin_group-is_regression_test
+	# set-drive_log_dir-file_for_logging-is_regression_test
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
 	declare -g custom_config_var_assignments= # to localize with 'local'
 	for var_name in $custom_config_vars $config_vars
@@ -2008,12 +2007,11 @@ readonly -f set-excluded_hours
 # ---------------------------------
 
 function _is-time-to-run-backup {
-	local date_time=$1
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
-	set -- ${date_time//[-$snapshot_date_time_separator]/ }
-	local -i current_hour=$3 current_minute=$4
+	set -- $(date '+%k %M')
+	local -i current_hour=$1 current_minute=$2
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
@@ -2024,6 +2022,7 @@ function _is-time-to-run-backup {
 
 	set-excluded_hours $excluded_backup_hours
 	is-arg1-in-arg2 $current_hour $excluded_hours && return 1
+
 	(( $current_hour % $backup_period == 0 )) && return 0
 
 	return 1
@@ -2334,7 +2333,7 @@ function run-backup() {
 	local date_time
 	set-date_time
 
-	if ! _is-time-to-run-backup $date_time
+	if ! _is-time-to-run-backup	# must call within 1 minute of startup
 	   then $IfRun create-jobs prune
 		return
 	fi
@@ -3294,8 +3293,7 @@ function trim-ps {
 
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
 	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
-	    -e "s@ --pid=[0-9]* --dir=$lock_dir @ @"	\
-	    -e "s@ --pid=[0-9]* @ @"	\
+	    -e "s@ --dir=$lock_dir @ @"	\
 	    -e "s@ --quiet @ @"		\
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
@@ -3824,7 +3822,7 @@ show-copy-cmds-with-full-details() {
 
 	[[ $copy_rsync_cmds ]] || return
 
-	header "copy (e.g. update) rsync processes (full details)"
+	header "copy/update most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
@@ -3870,9 +3868,9 @@ watch() {
 	local -i rows_left=$rows
 	set-min_rows-min_rows_with_df-rows_left
 
-	# ------------------------------------------------------------------
+	# --------------------------------------------------
 	# now we're ready to start showing stuff to the user
-	# ------------------------------------------------------------------
+	# --------------------------------------------------
 
 	show-sudo-config-warning-if-it-fits
 
@@ -3884,7 +3882,6 @@ watch() {
 
 	[[ ! $cron_cmds || $show_all ]] &&
 	show-prune-cmds
-
 	[[ ! $cron_cmds || $show_all ]] &&
 	show-copy-cmds
 
@@ -4137,7 +4134,7 @@ readonly -f set-total_dir_MB-avg_dir_KB
 
 # dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
 dir-sizes() {
-	set-drive_log_dir-file_for_logging-admin_group-is_regression_test
+	set-drive_log_dir-file_for_logging-is_regression_test
 	readonly sizes_dir=$drive_log_dir/dir-sizes
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
@@ -4257,13 +4254,14 @@ readonly -f dir-sizes
 # ----------------------------------------------------------------------------
 
 filesystem-geometry() {
+	local drive_dirs
 	set-drive_dirs--from-user-args "$@"
 
 	run-df    $drive_dirs
 	run-lsblk $drive_dirs
 	echo
 
-	local dash="------" dsh="---------------"
+	local dash="------" dsh="---------------" # alternate header
 	local dash="======" dsh="==============="
 	local    format="%-15s   %-8s%8s %8s %8s %8s %8s %8s\n"
 	local f=$format strp="stripe " wdth="width  "
@@ -4271,10 +4269,10 @@ filesystem-geometry() {
       printf "$f" Mount	FS-type	sector	inode	block	block  "unit  "	"$wdth"
       printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
-	local drive_name drive_dir	# protect caller's values
+	local drive_dir			# protect caller's value
+# [[ $is_cron ]] && echoEV  drive_dirs
 	for drive_dir in $drive_dirs
 	    do	set-FS_type--from-path $drive_dir
-		_set-drive_name $drive_dir
 		set-FS_device--from-path $drive_dir
 		[[ -L $FS_device ]] &&
 		set-absolute_path $FS_device && FS_device=$absolute_path
@@ -4304,8 +4302,8 @@ filesystem-geometry() {
 		       swidth="$swidth blks"
 			;;
 		    (  *   )
-			printf "%-15s   %s is unknown FS type\n" \
-				$drive_name $FS_type
+			printf "%-15s   %s is unknown FS type, email $coder\n"\
+				$drive_dir $FS_type
 			continue
 			;;
 		esac
@@ -4492,7 +4490,7 @@ function mkfs-backup-drive() {
 	cmd="$cmd ${opts# } $log_opt $mkfs_debug_opt -L $FS_label $device"
 	header "$cmd"
 	RunCmd  $cmd
-	set-drive_log_dir-file_for_logging-admin_group-is_regression_test $name
+	set-drive_log_dir-file_for_logging-is_regression_test $name
 	archive-rsync-time-data
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
@@ -5471,11 +5469,7 @@ case $action in
 		   max_name_width=${#var_name}
 	done
 	for var_name in $var_names
-	    do	if is-set $var_name
-		   then var_value=${!var_name}
-		   else var_value='<unset>'
-		fi
-		[[ $var_value == *' '* ]] && var_value="'$var_value'"
+	    do	set-var_value--from-var_name $var_name
 		printf "%${max_name_width}s=%s\n" $var_name "$var_value"
 	done
 	;;
