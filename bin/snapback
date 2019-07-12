@@ -158,7 +158,7 @@ Usage: $our_name [options] action [options] [args]
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
     regression-test [tests]: check functionality, see $tmp_dir/?? for results
     chroot-backup date,time [command]: chroot to snapshot on fastest drive
-    run [-v var-names] func-name: run func-name, echo contents of var-names
+    run [-v var-names] func-name [args]: run func-name, echo var-names values
 
   NOTE: to see what an action would do, use -d option to simulate the action.
 
@@ -1274,9 +1274,9 @@ function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
 
 	suspend-tracing
-	set -- $(df --output=pcent,ipcent --no-sync $drive_dir | tail -n1)
-	[[ $# != 0 ]] || abort "$drive_dir is not mounted"
-	local -i block_percent=${1%\%} inode_percent=${2%\%}
+	local -i pcent ipcent
+	setup-df-data-from-fields $drive_dir pcent ipcent
+	local block_percent=$pcent  inode_percent=$ipcent
 	# caller can declare max_drive_usage_percent to use it
 	if (( $block_percent > $inode_percent ))
 	   then max_drive_usage_percent=b$block_percent
@@ -3362,7 +3362,7 @@ exec-watch-snapback-w() {
 	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
 	[[ ${SSH_TTY-} ]] && n=0.5 || n=0.5
 	exec watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
-	abort_function "exec failed"
+	abort-function "exec failed"
 }
 readonly -f exec-watch-snapback-w
 
