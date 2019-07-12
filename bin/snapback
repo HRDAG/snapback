@@ -1985,11 +1985,12 @@ readonly -f set-excluded_hours
 # ---------------------------------
 
 function _is-time-to-run-backup {
+	local date_time=$1
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
-	set -- $(date '+%k %M')
-	local current_hour=$1 current_minute=$2
+	set -- ${date_time//[-$snapshot_date_time_separator]/ }
+	local -i current_hour=$3 current_minute=$4
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
@@ -2310,7 +2311,7 @@ function run-backup() {
 	local date_time
 	set-date_time
 
-	if ! _is-time-to-run-backup
+	if ! _is-time-to-run-backup $date_time
 	   then $IfRun create-jobs prune
 		return
 	fi
@@ -4339,27 +4340,27 @@ function mkfs-backup-drive() {
 	set-FS_label--from-mount_dir $drive_dir
 
 	# Since most files are shared between many snapshots, most of our
-	# inodes are directories; so directory size determines space usage, so
-	# we should choose a block size that will result in the smallest space
+	# inodes are directories; so directory-size determines space-usage, so
+	# we should choose a block-size that will result in the smallest space
 	# usage by directories (unless we only backup files that change often,
 	# and they're large enough that ext* needs to use indirect blocks).
 	# On my Ubuntu laptop, 1 KB blocks result in roughly half the
-	# directory drive space used by 2 KB blocks, so the default block size
-	# is 1KB.  On HRDAG's Ubuntu server using XFS, 1 KB blocks and 2 KB
-	# blocks result in the same amount of directory space usage (and 4 KB
-	# results in 20% more), since most directories need 0 drive blocks
+	# directory drive space used by 2 KB blocks, so the default ext? block
+	# size is 1KB.  On HRDAG's Ubuntu server using XFS, 1 KB blocks and 2
+	# KB blocks result in the same amount of directory space usage (and 4
+	# KB results in 20% more), since most directories need 0 drive blocks
 	# (because their contents fit in the inode); so 2 KB blocks are
 	# optimal for XFS, since they'll result in better performance ...
 	# unfortunately, 2 KB blocks are no longer supported in Ubuntu 18.04.
 
 	# To determine your actual average directory size, e.g. for ext4:
 	#    # choose a filesystem type with mkfs_cmd_opts= in configure.sh
-	#    snapback mkfs -b 1024 <drive-name>	# first time, use smallest -b
+	#    snapback mkfs -f -b 1024 <drive-name> # 1st time, use smallest -b
 	#    # configure dirs_to_backup= and excludes
 	#    snapback run-backup <drive-name>
 	#    snapback dir-sizes  <drive-name>
 	#
-	#    snapback mkfs -b 2048 <drive-name> # overwrite older FS
+	#    snapback mkfs -f -b 2048 <drive-name> # overwrite older FS
 	#    ...
 	# If the FS stores small dirs in the inode, you might mess with isize.
 
