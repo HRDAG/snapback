@@ -24,6 +24,8 @@ version=22			# has to match version= in configure.sh.sample
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
 ###############################################################################
 
+set -u					# abort if access unset variable
+
 readonly libsnap_project=git@github.com:HRDAG/libsnap
 #
 # search for '####' in libsnap.sh to see coding-conventions and environment
@@ -44,19 +46,40 @@ readonly -f set-inode_size-data_block_size-dir_block_size--from-path
 readonly -f set-FS_label--from-FS-device label-drive
 readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
 readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
-readonly -f is-arg_1-in-arg_2 print-call-stack warn
+readonly -f is-arg1-in-arg2 print-call-stack warn
 readonly -f abort abort-function assert-not-option echoE echoEV Trace TraceV
 readonly -f remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log
-readonly -f header set-absolute_path
-readonly -f cd_  have-proc is-process-alive set-popped_word--from-list
+readonly -f header set-absolute_path cd_
+readonly -f have-proc is-process-alive set-popped_word--from-list
 readonly -f set-division confirm run-function
 
+is-set \
+coder ||				# can set custom value in $config_file
+coder=sweikart@gmail.com
 
-for dir in ~/etc /usr/local/etc /etc; do [[ -d $dir/$our_name ]] && break; done
-readonly   config_dir=$dir/$our_name
+if   is-arg1-in-arg2 -E $* # regression-test wants alternative config_dir?
+   then _args=" $*"
+	config_dir=${_args/* -E /}
+	config_dir=${config_dir%% *}
+elif is-arg1-in-arg2 -e $* # regression-test wants config_file inside snapshot?
+   then _root=$our_path
+	if [[  $_root =~ .*/([0-9]{4}-[^/]+|latest)/ ]]
+	   then _root=${BASH_REMATCH[0]}
+		_root=${_root%/}
+	   else abort "can only use -e with -d (command inside a snapshot)"
+	fi
+   else _root=
+fi
+#
+[[ ! ${config_dir-} ]] &&
+for dir in ~/etc /usr/local/etc /etc
+    do	[[ -d $_root$dir/$our_name ]] && break
+done
+readonly   config_dir=${config_dir:-$_root$dir/$our_name}
 readonly exclude_file=$config_dir/exclude.txt
 readonly  config_file=$config_dir/configure.sh
+unset _args _root
 
 config_file_sample=$config_file.sample
 if [[ $our_path == */$our_name/bin/$our_name ]]
@@ -92,9 +115,6 @@ source $config_file || abort "source'd $config_file ended with non-0 status"
     shopt -s nocaseglob			# we mostly glob drive names or dirs
 
 readonly PS4		      # remove if some functions want to manipulate it
-
-is-set   coder ||			# can set custom value in $config_file
-readonly coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
    abort "install/edit $exclude_file, see included .sample"
@@ -149,8 +169,10 @@ Usage: $our_name [options] action [options] [args]
 	-n: pass -n (--dry-run ) to rsync
 	-v: pass -v (--verbose ) to rsync (and maybe other commands)
 	-q: pass -q (--quiet   ) to rsync (and maybe other commands)
-	-r rsync-opt: pass rsync-opt to rsync
+	-r rsync-opt: pass rsync-opt to rsync (can appear multiple times)
 
+	-E dir: use dir for config, instead of {~,/usr/local,}/etc/$our_name/
+	-e: use *etc/snapback in same snapshot used by: regression-test -d date
 	-d: Debug shell script (don't run commands, just show them): simulation
 	-t: Trace shell script (show commands as they execute)
 	-T level: control whether Trace & TraceV functions run echoE & echoEV
@@ -159,7 +181,7 @@ Usage: $our_name [options] action [options] [args]
 is_cron=$false cron_opt=
 IfRun= Trace= TraceAll= debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
-while getopts "C cnvqr: dtT: hk"  arg
+while getopts "C cnvqr: E:edtT: hk"  arg
     do	our_opts+="-$arg ${OPTARG-} "
 	case $arg in
 	   ( C ) is_cron=$true	cron_opt=-C ;;
@@ -170,6 +192,8 @@ while getopts "C cnvqr: dtT: hk"  arg
 	   ( q ) our_rsync_opts+="--quiet "	;; # cancels --verbose
 	   ( r ) our_rsync_opts+="$OPTARG "	;;
 
+	   ( E ) ;;				 # handled at top of file
+	   ( e ) ;;				 # handled at top of file
 	   ( d ) IfRun="echo -e" debug_opt=-d ;; # put $IfRun b4 'active' cmds
 	   ( t ) [[ $Trace ]] && TraceAll=$Trace
 		 Trace="set -x"  trace_opt=-t ;;
@@ -203,8 +227,6 @@ shopt -s nullglob			# so don't need to test for no matches
 shopt -s globasciiranges		# so weird locales don't mess us up
 
 umask 02				# log and lock dirs are setgid sudo/etc
-
-set -u					# abort if access unset variable
 
 FUNCNEST=100				# catch coding errors
 
@@ -417,7 +439,7 @@ function lock-PID() {
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
 	local type=$1 lock_holder_action=$2
 
-	is-arg_1-in-arg_2 $type $writer_types ||
+	is-arg1-in-arg2 $type $writer_types ||
 	   abort-function "'$type' is unknown lock type"
 	set-lock_path $type $name
 	local lock_file=${lock_path##*/}
@@ -895,7 +917,7 @@ function set-admin_group {
 
 	local group
 	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / macOS
-	    do	is-arg_1-in-arg_2 $group $users_groups && break
+	    do	is-arg1-in-arg2 $group $users_groups && break
 	done
 	[[ $group == NoNe ]] && admin_group= || admin_group=$group
 
@@ -1011,6 +1033,7 @@ _set-drive_name() {
 	assert-not-option -o $1
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
+	name=${name%/latest*}
 	[[ $clean ]] && drive_name=$name && return 0
 
 	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
@@ -1127,10 +1150,10 @@ customize-config-variables() {
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
 	declare -g custom_config_var_assignments= # to localize with 'local'
 	for var_name in $custom_config_vars $config_vars
-	    do	is-arg_1-in-arg_2 $var_name $uncustomizable_config_vars &&
+	    do	is-arg1-in-arg2 $var_name $uncustomizable_config_vars &&
 		   continue
 
-		is-arg_1-in-arg_2 $var_name $custom_config_vars ||
+		is-arg1-in-arg2 $var_name $custom_config_vars ||
 		is-set $var_name ||
 		   abort "need to set '$var_name=' in $config_file"
 
@@ -1158,10 +1181,10 @@ customize-config-variables() {
 		[[ $drv_names ]] || continue
 		suspend-tracing
 
-		is-arg_1-in-arg_2 $var_name $uncustomizable_config_vars &&
+		is-arg1-in-arg2 $var_name $uncustomizable_config_vars &&
 		   abort "$config_file can't have custom '$var_name'"
 
-		is-arg_1-in-arg_2 $drive_name $drv_names || {
+		is-arg1-in-arg2 $drive_name $drv_names || {
 		eval "$var_name=\${custom_config_var2default_value[$var_name]}"
 		continue; }
 
@@ -1204,13 +1227,13 @@ validate-config-variables() {
 	echo " $dirs_to_backup " | grep ' [^/]' &&
 	   abort "dirs_to_backup contains a non-absolute path in $*"
 
-	is-arg_1-in-arg_2 $backup_period $valid_backup_periods ||
+	is-arg1-in-arg2 $backup_period $valid_backup_periods ||
 	   abort "invalid 'backup_period=$backup_period' in $*"
 
 	[[ -s $exclude_file ]] ||
 	   abort "'exclude_file=$exclude_file' is empty file (from $*)"
 
-	is-arg_1-in-arg_2 0 $successful_rsync_exit_statuses ||
+	is-arg1-in-arg2 0 $successful_rsync_exit_statuses ||
 	   abort "'successful_rsync_exit_statuses=$successful_rsync_exit_statuses' must contain 0 in $*"
 
 	for var_name in drive_name_regex admin_drive_name_regex
@@ -1230,7 +1253,7 @@ customize-and-validate-configuration-variables() {
 
 	# avoid infinite loop
 	set -- ${FUNCNAME[*]} ; shift
-	is-arg_1-in-arg_2 $FUNCNAME $* && return
+	is-arg1-in-arg2 $FUNCNAME $* && return
 
 	suspend-tracing
 
@@ -1587,7 +1610,7 @@ readonly -f _rm-pruned-snapshots
 # --------------------------------------------------------------------
 
 # snapshot basename format is Year-Mo-Da,Hr, all implemented in this section;
-#    to implement snapshot_date_time_separator, search for: ,00 ,?? ,$ ,/
+#    to implement snapshot_date_time_separator, search for: ,0 ,? ,$ ,/ ,* etc
 
 readonly     snapshot_glob="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
 readonly max_snapshot_glob="9999-12-31,23"	       # max supported value
@@ -2000,7 +2023,7 @@ function _is-time-to-run-backup {
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
 
 	set-excluded_hours $excluded_backup_hours
-	is-arg_1-in-arg_2 $current_hour $excluded_hours && return 1
+	is-arg1-in-arg2 $current_hour $excluded_hours && return 1
 	(( $current_hour % $backup_period == 0 )) && return 0
 
 	return 1
@@ -2143,7 +2166,7 @@ _handle-rsync-results() {
 
 	local error_msg=
 
-	if is-arg_1-in-arg_2 $status "$successful_rsync_exit_statuses"
+	if is-arg1-in-arg2 $status "$successful_rsync_exit_statuses"
 	   then $IfRun mv $new_snapshot.partial $new_snapshot &&
 		[[ $new_snapshot != *.links ]] &&
 		set -- $snapshot_glob && [[ $# != 0 ]] &&
@@ -2168,7 +2191,7 @@ _handle-rsync-results() {
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
 			record-rsync-time $new_snapshot
 		fi
-		if is-arg_1-in-arg_2 $status "$no_log_rsync_exit_statuses" ||
+		if is-arg1-in-arg2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
 		   then rm -f $log
 			error_msg="$error_msg; Partial snapshot still useful"
@@ -4381,7 +4404,7 @@ function mkfs-backup-drive() {
 			shift
 		done
 		local valid_block_sizes="1024 2048 4096"
-		is-arg_1-in-arg_2 $block_size $valid_block_sizes ||
+		is-arg1-in-arg2 $block_size $valid_block_sizes ||
 		   abort "ext* block size must be one of: $valid_block_sizes"
 		local -i blocks_per_inode=1
 		local -i bytes_per_inode=$blocks_per_inode*$block_size
@@ -4561,7 +4584,7 @@ copy-backup-drive() {
 	local dst_FS_label=$FS_label
 
 	set-FS_type--from-path $src_device
-	if [[ $FS_type == xfs ]] || is-arg_1-in-arg_2 -D $action_opts # not dd?
+	if [[ $FS_type == xfs ]] || is-arg1-in-arg2 -D $action_opts # not dd?
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
 	   else _assert-dst-big-enough
 		# show the user a sample fstab record
@@ -4702,7 +4725,7 @@ readonly all_drives_go_offline_msg='
 
 _copy-extN-backup-drive() {
 
-	is-arg_1-in-arg_2 -f $action_opts ||
+	is-arg1-in-arg2 -f $action_opts ||
 	for drive_dir in $src_drive_dir $dst_drive_dir; do
 	if is-drive-mounted $drive_dir
 	   then set -- $(list-drive-dirs |
@@ -4736,10 +4759,10 @@ _copy-extN-backup-drive() {
 	local mount_options=$common_mount_options,$extN_mount_options
 	mount_options=${mount_options%,}
 
-	is-arg_1-in-arg_2 -M $action_opts || # don't want to re-Mount src?
+	is-arg1-in-arg2 -M $action_opts || # don't want to re-Mount src?
 	RunCmd mount -v -t $FS_type -o$mount_options $src_device $src_drive_dir
 
-	is-arg_1-in-arg_2 -F $action_opts || # don't want Fsck?
+	is-arg1-in-arg2 -F $action_opts || # don't want Fsck?
 	time RunCmd -m "better check $src_device ?!" \
 	e2fsck -f -p -t -t $dst_device
 
@@ -4773,7 +4796,7 @@ function finish-copy-backup-drive() {
 
 	set-FS_type--from-path $src_device
 	case $FS_type in
-	   ( ext?) if is-arg_1-in-arg_2 -D $action_opts
+	   ( ext?) if is-arg1-in-arg2 -D $action_opts
 		      then _dump-restore-extN-backup-drives
 		      else _copy-extN-backup-drive
 		   fi ;;
@@ -4969,14 +4992,14 @@ function regression-test() {
 
 	# --------------------------------------------
 
-	is-arg_1-in-arg_2 b $tests && {
+	is-arg1-in-arg2 b $tests && {
 	_show-test-header backup all
 	_run-debug-cmds b run-backups all
 	}
 
 	# --------------------------------------------
 
-	is-arg_1-in-arg_2 c $tests && {
+	is-arg1-in-arg2 c $tests && {
 	_show-test-header copy to Z
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
@@ -4987,7 +5010,7 @@ function regression-test() {
 
 	# --------------------------------------------
 
-	is-arg_1-in-arg_2 z $tests && {
+	is-arg1-in-arg2 z $tests && {
 	set -- ${drive_dir_prefix}Z/$snapshot_glob
 	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
 	_show-test-header prune Z
@@ -4996,14 +5019,14 @@ function regression-test() {
 
 	# --------------------------------------------
 
-	is-arg_1-in-arg_2 p $tests && {
+	is-arg1-in-arg2 p $tests && {
 	_show-test-header prune all
 	_run-debug-cmds p prune-drives all
 	}
 
 	# --------------------------------------------
 
-	is-arg_1-in-arg_2 u $tests && {
+	is-arg1-in-arg2 u $tests && {
 	local dst=${update_test_dst_drive-}
 	[[ $dst ]] || abort "$config_file needs update_test_dst_drive for 'u'"
 	_show-test-header update $dst
@@ -5456,6 +5479,8 @@ case $action in
 		printf "%${max_name_width}s=%s\n" $var_name "$var_value"
 	done
 	;;
+   ( true )				# used to test for needed options
+	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
 	for l in ${!warning_level2tput_args[*]}
 	    do set-warning_string $l $l; echo -n "$warning_string  "; done;echo
