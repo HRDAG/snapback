@@ -2617,7 +2617,7 @@ readonly -f set-excluded_drive_dirs_regex
 
 _set-src_names_regex() {
 
-	[[ ${src_names_regex-} ]] || { src_names_regex= ; return ; }
+	[[ ${src_names_regex-} ]] || { src_names_regex=. ; return ; }
 
 	if [[ $is_drive_name_upper_cased ]]
 	   then src_names_regex=${src_names_regex^^}
@@ -2629,7 +2629,7 @@ readonly -f _set-src_names_regex
 
 # --------------------------------
 
-_set-drive_dirs--for-update-srcs() {
+_set-drive_dirs--for-useful-srcs() {
 
 	set-excluded_drive_dirs_regex
 	_set-src_names_regex
@@ -2637,26 +2637,25 @@ _set-drive_dirs--for-update-srcs() {
 	set-backup_type $drive_name
 	dst_backup_type=$backup_type
 
-	drive_dirs=$(
-		set -- $(
-		# -a so include drives excluded from backups
-		set -- $(list-drive-dirs -a | fgrep -v -x $drive_dir |
-				egrep -v "\b$excluded_drive_dirs_regex$" |
-				egrep "$drive_dir_prefix${src_names_regex-.}")
-		for drive_dir
-		    do	matches-dst_backup_type $drive_dir && echo $drive_dir
-		done
-		)
-		echo $*
-	)
+	drive_dirs=
+	# -a so include drives excluded from backups
+	set -- $(list-drive-dirs -a | fgrep -v -x $drive_dir |
+			egrep -v "\b$excluded_drive_dirs_regex$" |
+			egrep "$drive_dir_prefix$src_names_regex")
+	for drive_dir
+	    do	matches-dst_backup_type $drive_dir && drive_dirs+="$drive_dir "
+	done
+	drive_dirs=${drive_dirs% }
+	[[ $drive_dirs ]]
 }
-readonly -f _set-drive_dirs--for-update-srcs
+readonly -f _set-drive_dirs--for-useful-srcs
 
 # --------------------------------
 
 _useful-srcs() {
 
-	_set-drive_dirs--for-update-srcs
+	_set-drive_dirs--for-useful-srcs ||
+	   abort "couldn't find any drives to copy to $drive_name"
 
 	local period=$backup_period
 	local min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
