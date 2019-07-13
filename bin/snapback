@@ -1903,6 +1903,7 @@ readonly -f set-num_full_link_dests
 
 set-link_dest_opts() {
 	local new_snapshot=$1; shift
+	# $* is now snapshots for --link-dest, ones closet to $new_snapshot 1st
 
 	while [[ ! -d ${1-} || ${1-} == $new_snapshot* ]]
 	   do	[[ $# != 0 ]] || return	# we might not have any snapshots
@@ -1912,7 +1913,7 @@ set-link_dest_opts() {
 
 	set-num_full_link_dests
 
-	suspend-tracing
+	remember-tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
 	local snapshot
@@ -1928,7 +1929,8 @@ set-link_dest_opts() {
 		    ( *     ) (( ++goody_snapshots > $num_full_link_dests )) &&
 				 break ;;
 		esac
-		link_dest_opts="$link_dest_opts --link-dest=$PWD/$snapshot"
+		link_dest_opts+="--link-dest=$PWD/$snapshot "
+		suspend-tracing
 	done
 	restore-tracing link_dest_opts
 }
@@ -1936,47 +1938,54 @@ readonly -f set-link_dest_opts
 
 # ------------------------------------------------------------------
 
-set-link_dest_opts--for-run-backup() {
-	local new_snapshot=${1##*/}
+set-useful_snapshots() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local sort_opt=${1-}
 
-	suspend-tracing
 	# want the .links snapshots too, so quickly recover from
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
 	set -- $(echo $snapshot_glob{,.links,.partial} |
-		 tr ' ' '\n' | sort -r)
-	restore-tracing
+		   tr ' ' '\n' | sort $sort_opt)
+	useful_snapshots=$*
+	$xtrace
+}
+readonly -f set-useful_snapshots
 
-	set-link_dest_opts $new_snapshot $*
+# --------------------------------------------
+
+set-link_dest_opts--for-run-backup() {
+	local new_snapshot=${1##*/}   useful_snapshots
+
+	set-useful_snapshots -r
+	set-link_dest_opts $new_snapshot $useful_snapshots
 }
 readonly -f set-link_dest_opts--for-run-backup
 
-# ------------------------------------------------------------------
+# --------------------------------------------------------
 
 set-link_dest_opts--for-copy-snapshot() {
-	local new_snapshot=${1##*/}
+	local new_snapshot=${1##*/}   useful_snapshots
 
+	set-useful_snapshots -r
 	suspend-tracing
-	# want the .links snapshots too, so quickly recover from
-	#    'Too many links' by just copying the file
-	# want a .partial to get the latest stuff, but won't "count" it
-	set -- $(echo $snapshot_glob{,.links,.partial} |
-		 tr ' ' '\n' | sort -r |
-		 while  read  snapshot
-		    do	[[   $snapshot < $new_snapshot ]] || continue
-			echo $snapshot
-		 done)
+	local older_snapshots=
+	for snapshot in $useful_snapshots
+	   do	[[ $snapshot < $new_snapshot ]] || continue
+		older_snapshots+="$snapshot "
+	done
 	restore-tracing
-	set-link_dest_opts $new_snapshot $* # newest to oldest
+	set-link_dest_opts $new_snapshot $older_snapshots # newest to oldest
 
-	set -- $(echo $snapshot_glob{,.links,.partial} |
-		 tr ' ' '\n' |
-		 while  read  snapshot
-		    do	[[   $snapshot > $new_snapshot ]] || continue
-			echo $snapshot
-		 done)
+	set-useful_snapshots
+	suspend-tracing
+	local newer_snapshots=
+	for snapshot in $useful_snapshots
+	   do	[[ $snapshot > $new_snapshot ]] || continue
+	       newer_snapshots+="$snapshot "
+	done
 	restore-tracing
-	set-link_dest_opts $new_snapshot $* # oldest to newest
+	set-link_dest_opts $new_snapshot $newer_snapshots # oldest to newest
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
 
@@ -2833,7 +2842,7 @@ fill-in-unpruned-empty-missing-snapshots() {
 		set -- $dst_snapshot*
 		[[ $# != 0 ]] || continue # was it pruned away?
 		set -- $(fastest-snapshots ${args%$dst_snapshot}) # pass srcs
-		[[ $# != 0 ]] && $IfRun copy-snapshot-rsync $1 $dst_snapshot
+		[[ $# != 0 ]] && copy-snapshot-rsync $1 $dst_snapshot
 	done   <  $copy_args_file
 	$IfRun rm $copy_args_file
 }
@@ -5075,7 +5084,7 @@ _run-debug-cmds() {
 	set +x
 	set-warning_string error DIFFERENT results
 	echo "-- $warning_string, compare with: diff -u $tmp_o $tmp_t | less"
-	[[ $test == u ]] &&
+	[[ $test != u ]] || cmp -s $tmp_o.args $tmp_t.args ||
 	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
 
 	failed_tests+="$test "
