@@ -50,9 +50,10 @@ readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
 readonly -f assert-not-option set-var_value--from-var_name echoE echoEV
 readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log
-readonly -f header set-absolute_path cd_
-readonly -f have-proc is-process-alive set-popped_word--from-list
-readonly -f set-division confirm run-function
+readonly -f header set-absolute_path cd_ setup-df-data-from-fields
+readonly -f have-proc is-process-alive set-reversed_words
+readonly -f set-popped_word--from-list set-division set-warning_string
+readonly -f confirm run-function set-backup_suffix
 
 is-set \
 coder ||				# can set custom value in $config_file
@@ -2967,8 +2968,8 @@ create-jobs() {
 		abort-function "$type: pass a (non-excluded) drive name"
 	fi
 
-	[[ ! $debug_opt ]] &&
-	set -- $(echo $* | tr ' ' '\n' | tac) # 'ps' shows newest process first
+	[[ ! $debug_opt ]] && set-reversed_words $* &&
+	   set -- $reversed_words	# 'ps' shows newest process first
 
 	_set-function-exe $type
 
@@ -5466,9 +5467,9 @@ case $action in
 			[[ $dir == /usr/* ]] && cmd=old || cmd=new
 			ls > $stash.$cmd.ls
 		done
-		set -- $(echo $stash.*.ls | tac)
-		diff -q $* && mv $stash.new.ls $stash.pruned.ls &&
-			      rm $stash.old.ls &&
+		set-reversed_words $stash.*.ls; set -- $reversed_words
+		diff -q $*  &&  mv $stash.new.ls $stash.pruned.ls &&
+				rm $stash.old.ls &&
 		   echo -e "\nSame results, see $stash*" && continue
 		warn "regression, see: diff -u $*"
 	done
