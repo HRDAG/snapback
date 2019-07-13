@@ -2642,8 +2642,10 @@ _set-drive_dirs--for-useful-srcs() {
 	set -- $(list-drive-dirs -a | fgrep -v -x $drive_dir |
 			egrep -v "\b$excluded_drive_dirs_regex$" |
 			egrep "$drive_dir_prefix$src_names_regex")
-	for drive_dir
-	    do	matches-dst_backup_type $drive_dir && drive_dirs+="$drive_dir "
+	local src_drive_dir
+	for src_drive_dir
+	    do	matches-dst_backup_type $src_drive_dir &&
+		   drive_dirs+="$src_drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
 	[[ $drive_dirs ]]
@@ -2661,6 +2663,7 @@ _useful-srcs() {
 	local min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
 	[[ $min_snapshot_glob ]] ||
 	    abort "backup_period2minimal_snapshot_glob is broken"
+
 	TraceV 1 drive_dirs min_snapshot_glob sort_key_args
 
 	local dir
@@ -2678,12 +2681,10 @@ readonly -f _useful-srcs
 
 _set-sort_key_args() {
 
-	set -f
-	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
-		 tr / ' ')
-	set +f
-
+	local path=root$drive_dir_prefix$drive_name_regex/snap
+	set -f; set -- ${path//\// }; set +f
 	let snapshot_key=$#  drive_name_key=$#-1
+
 	sort_key_args="--key=$snapshot_key --key=$drive_name_key"
 }
 readonly -f _set-sort_key_args
@@ -5071,7 +5072,8 @@ _run-debug-cmds() {
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
 	set +x
-	echo "-- DIFFERENT results, compare with: diff -u $tmp_o $tmp_t | less"
+	set-warning_string error DIFFERENT results
+	echo "-- $warning_string, compare with: diff -u $tmp_o $tmp_t | less"
 	[[ $test == u ]] &&
 	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
 
@@ -5464,7 +5466,7 @@ case $action in
 			[[ $dir == /usr/* ]] && cmd=old || cmd=new
 			ls > $stash.$cmd.ls
 		done
-		set -- $(echo $stash.*.ls | sort -r)
+		set -- $(echo $stash.*.ls | tac)
 		diff -q $* && mv $stash.new.ls $stash.pruned.ls &&
 			      rm $stash.old.ls &&
 		   echo -e "\nSame results, see $stash*" && continue
