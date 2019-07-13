@@ -2559,7 +2559,7 @@ readonly -f copy-snapshot-rsync
 # ----------------------------------------------------------------------------
 # ----------------------------------------------------------------------------
 
-remove-empty-partial-snapshots() {
+rmdir-empty-partial-snapshots() {
 	local drive_dir=$1
 
 	cd_ $drive_dir
@@ -2569,7 +2569,7 @@ remove-empty-partial-snapshots() {
 	sudo-unless-dir-writable -n rmdir $* &> /dev/null # optional
 	cd_ $OLDPWD
 }
-readonly -f remove-empty-partial-snapshots
+readonly -f rmdir-empty-partial-snapshots
 
 # ---------------------------------
 
@@ -2582,7 +2582,7 @@ cleanup-after-updates() {
 		set-lock_path copy	# update could be running
 		(
 		sudo-lockpid -o $lock_path &> /dev/null &&	  {
-		$IfRun remove-empty-partial-snapshots $drive_dir
+		$IfRun rmdir-empty-partial-snapshots $drive_dir
 		sudo-lockpid -r $lock_path			; }
 		) &			# do them in parallel
 	done
@@ -2727,7 +2727,7 @@ readonly -f sorted-useful-srcs
 
 # ----------------------------------------------------------------------------
 
-create-empty-missing-snapshots-then-write-copy-args() {
+mkdir-missing-snapshots-then-print-copy-args() {
 
 	if [[ $UID == 0 ]]
 	   then local sudo=
@@ -2776,7 +2776,7 @@ create-empty-missing-snapshots-then-write-copy-args() {
 		echo "$@"
 	done
 }
-readonly -f create-empty-missing-snapshots-then-write-copy-args
+readonly -f mkdir-missing-snapshots-then-print-copy-args
 
 # ----------------------------------------------------------------------------
 
@@ -2864,7 +2864,7 @@ update-drive() {
 	IfRun= lock copy > /dev/null || exit 1	# can run for days
 	reset-priority				# this might suspended us
 
-	remove-empty-partial-snapshots $drive_dir
+	rmdir-empty-partial-snapshots $drive_dir
 
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
@@ -2874,14 +2874,14 @@ update-drive() {
 	set-srcs_dst_file
 
 	sorted-useful-srcs "$@" |	# this checks/sets drive_* globals
-	create-empty-missing-snapshots-then-write-copy-args > $srcs_dst_file
+	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
 	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
 	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
 
 	fill-in-unpruned-empty-missing-snapshots $srcs_dst_file
 
-	remove-empty-partial-snapshots $drive_dir
+	rmdir-empty-partial-snapshots $drive_dir
 
 	IfRun= unlock copy
 }
@@ -3832,7 +3832,7 @@ show-backup-cmds() {
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
-	echo "$bkp_rsync_cmds" | trim-backup-ps # | sort $rsync_sort_opts
+	echo "$bkp_rsync_cmds" | trim-backup-ps | sort -tr # 'r' never in STAT
 	} || echo -e "\nNo backups are running$names_msg."
 
 }
@@ -3862,7 +3862,7 @@ show-backup-cmds-with-full-details() {
 	header "run-backup's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
-	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g"
+	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g" | sort -tr # -t(r)sync
 }
 readonly -f show-backup-cmds-with-full-details
 
@@ -3875,7 +3875,8 @@ show-copy-cmds-with-full-details() {
        header "copy/update's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
-	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
+	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p" |
+	   sort -tr		      # sort on 'r' in (r)sync (never in STAT)
 }
 
 # ------------------------------------------------------------------
@@ -5163,8 +5164,7 @@ function regression-test() {
 
 	_run-debug-cmds u update-drive $dst
 
-	continue-jobs backup prune
-	reset-priority			# ensure only one job running
+	reset-priority			# will continue only one job
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
 	}
