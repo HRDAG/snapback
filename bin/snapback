@@ -893,9 +893,9 @@ set-oldest_snapshot() {
 }
 readonly -f set-oldest_snapshot
 
-##############################################################################-
+##############################################################################
 # Setup variables for working with a specific backup drive.
-##############################################################################-
+##############################################################################
 
 function set-admin_group {
 
@@ -1376,11 +1376,11 @@ function suspended-prune-as-drive-usage-response() {
 }
 readonly -f suspended-prune-as-drive-usage-response
 
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 # Functions and variables used to prune old backup snapshots.
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 
 function count-rsyncs-using-resource() {
 	local regex=$*
@@ -2360,11 +2360,11 @@ function run-backup() {
 }
 readonly -f run-backup
 
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 # Functions and variables used to copy snapshots between backup drives.
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 
 assert-not-in-cron-jobs() {
 
@@ -2611,29 +2611,33 @@ readonly -f set-excluded_drive_dirs_regex
 
 # ----------------------------------------------------------------------------
 
-sorted-useful-srcs() {
-	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
-	assert-not-option ${1-}
-	[[ $# == 1   ]] || abort "need to specify one drive name"
+# --------------------------------
+# functions for sorted-useful-srcs
+# --------------------------------
 
-	suspend-tracing
-	set-drive_name $1
-	set-drive_dir  $drive_name
-	restore-tracing
+_set-src_names_regex() {
 
-	if [[ ${src_names_regex-} ]]
-	   then   if [[ $is_drive_name_upper_cased ]]
-		   then src_names_regex=${src_names_regex^^}
-		elif  [[ $is_drive_name_capitalized ]]
-		   then src_names_regex=${src_names_regex^} # fails if regex
-		fi
+	[[ ${src_names_regex-} ]] || { src_names_regex= ; return ; }
+
+	if [[ $is_drive_name_upper_cased ]]
+	   then src_names_regex=${src_names_regex^^}
+	elif  [[ $is_drive_name_capitalized ]]
+	   then src_names_regex=${src_names_regex^} # fails if regex
 	fi
+}
+readonly -f _set-src_names_regex
+
+# --------------------------------
+
+_set-drive_dirs--for-update-srcs() {
+
+	set-excluded_drive_dirs_regex
+	_set-src_names_regex
 
 	set-backup_type $drive_name
-	set-excluded_drive_dirs_regex
-
 	dst_backup_type=$backup_type
-	local drive_dirs=$(
+
+	drive_dirs=$(
 		set -- $(
 		# -a so include drives excluded from backups
 		set -- $(list-drive-dirs -a | fgrep -v -x $drive_dir |
@@ -2645,33 +2649,63 @@ sorted-useful-srcs() {
 		)
 		echo $*
 	)
+}
+readonly -f _set-drive_dirs--for-update-srcs
 
-	period=$backup_period
-	min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
+# --------------------------------
+
+_useful-srcs() {
+
+	_set-drive_dirs--for-update-srcs
+
+	local period=$backup_period
+	local min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
 	[[ $min_snapshot_glob ]] ||
 	    abort "backup_period2minimal_snapshot_glob is broken"
-
-	set -f
-	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
-		 tr / ' ')
-	set +f
-	let snapshot_key=$# drive_name_key=$#-1
-	local sort_key_args="--key=$snapshot_key --key=$drive_name_key"
-
 	TraceV 1 drive_dirs min_snapshot_glob sort_key_args
 
-	cd $drive_dir || exit 1	# so can kill job with: fuser -k -M $drive_dir
-
-	$Trace
-
+	local dir
 	for dir in $drive_dirs
 	    do	suspend-tracing
 		eval "echo $dir/$min_snapshot_glob{,.links}"   # useful ones
 		eval "echo $dir/$snapshot_glob{,.links}/.keep" # never pruned
 		      echo $dir/$max_snapshot_glob # token to terminate loop
 		restore-tracing
-	done | tr ' ' '\n' |
-	sort --field-separator=/ $sort_key_args # > /dev/null; abort "test"
+	done | tr ' ' '\n'
+}
+readonly -f _useful-srcs
+
+# --------------------------------
+
+_set-sort_key_args() {
+
+	set -f
+	set -- $(echo root$drive_dir_prefix$drive_name_regex/snap |
+		 tr / ' ')
+	set +f
+
+	let snapshot_key=$#  drive_name_key=$#-1
+	sort_key_args="--key=$snapshot_key --key=$drive_name_key"
+}
+readonly -f _set-sort_key_args
+
+# --------------------------------
+
+sorted-useful-srcs() {
+	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
+	assert-not-option ${1-}
+	[[ $# == 1   ]] || abort "need to specify one drive name"
+
+	suspend-tracing
+	set-drive_name $1
+	set-drive_dir  $drive_name
+	restore-tracing
+
+	cd $drive_dir || exit 1	# so can kill job with: fuser -k -M $drive_dir
+
+	_set-sort_key_args
+	$Trace
+	_useful-srcs | sort --field-separator=/ $sort_key_args
 }
 readonly -f sorted-useful-srcs
 
@@ -2837,11 +2871,11 @@ update-drive() {
 }
 readonly -f update-drive
 
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 # Run multiple jobs, each in a separate session (unique PGID, stored in lock).
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 
 function set-drive_dirs--from-user-args() {
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
@@ -2969,11 +3003,11 @@ create-jobs() {
 }
 readonly -f create-jobs
 
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 # Functions used by 'watch' action.
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 
 set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -3897,11 +3931,11 @@ watch() {
 }
 readonly -f watch
 
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 # Functions for monitoring/creating/altering filesystems.
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 
 readonly status_dir=/run/$our_name
 
@@ -4883,11 +4917,11 @@ function finish-copy-backup-drive() {
 }
 readonly -f finish-copy-backup-drive
 
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 # Random maintenance functions.
-##############################################################################-
-##############################################################################-
+##############################################################################
+##############################################################################
 
 function check-snapshot-hard-links() {
 	local name=$1
@@ -5090,14 +5124,16 @@ function regression-test() {
 
 	# --------------------------------------------
 
-	is-arg1-in-arg2 p $tests && {
+	set-drive_dirs
+
+	is-arg1-in-arg2 p $tests && [[ $drive_dirs ]] && {
 	_show-test-header prune all
 	_run-debug-cmds p prune-drives all
 	}
 
 	# --------------------------------------------
 
-	is-arg1-in-arg2 u $tests && {
+	is-arg1-in-arg2 u $tests && [[ $drive_dirs == *' '* ]] && {
 	local dst=${update_test_dst_drive-}
 	[[ $dst ]] || abort "$config_file needs update_test_dst_drive for 'u'"
 	_show-test-header update $dst
@@ -5107,7 +5143,7 @@ function regression-test() {
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
 
-	_run-debug-cmds u update-drives $dst
+	_run-debug-cmds u update-drive $dst
 
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
