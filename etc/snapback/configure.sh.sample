@@ -37,12 +37,14 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # Defaults: -i maxpct=0 -i size=512 -b size=4096 -n size=4096;
 # Optional: -i maxpct=0 -i size=512 -b size=2048 -n size=2048, which allows
 #    ~20% more snapshots than size=4096, but is disallowed in Ubuntu 18.04.
-# Note that you can over-ride any of the individual defaults.
+# Note that you can over-ride any of the individual defaults, but see the
+# long comments near _set-opts-log_opt-mount_opts--for-xfs in snapback.
 # readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
 # readonly mkfs_cmd_opts="mkfs.xfs -i size=1024" # action 'dir-sizes' suggests?
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
-# but first read the long comments in the mkfs_backup_drive function & helpers.
+# but first read the long comments near _set-opts-log_opt-mount_opts--for-extN.
+# Use -I 256 to backup nanosecond timestamps and/or file creation time.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
 # readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # action 'dir-sizes' suggests?

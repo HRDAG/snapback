@@ -105,6 +105,18 @@ drives that are no bigger, use 'snapback copy-drive' to initialize the new
 drive; otherwise, use 'snapback mkfs' to create a filesystem, and 'snapback
 update-drive' to copy snapshots from your other backup drives.
 
+To determine your actual average directory size, e.g. for ext4:
+     # Choose a filesystem type with mkfs_cmd_opts= in configure.sh .
+     # Choose your fastest drive (especially SSD/flash) that holds 1 backup.
+     snapback mkfs -f -b 1024 <device-or-label> # first test, use smallest -b
+     # configure dirs_to_backup= and exclude.txt
+     snapback run-backup <device-or-label>
+     snapback dir-sizes  <device-or-label>
+
+     snapback mkfs -f -b 2048 <drive-name> # next test, overwrite older FS
+     ...
+If the FS stores small dirs in the inode, you might mess with isize.
+
 NOTE: the rest of this document is heavily oriented towards a GNU/Linux system
 like Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
 'copy-drive' actions (see below) support XFS filesystems, because HRDAG uses

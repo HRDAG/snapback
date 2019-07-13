@@ -149,7 +149,7 @@ Usage: $our_name [options] action [options] [args]
 
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
-    mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
+    mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
     filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
 
@@ -4315,109 +4315,60 @@ filesystem-geometry() {
 readonly -f filesystem-geometry
 
 # ----------------------------------------------------------------------------
+# functions leading up to mkfs-backup-drive
+# ----------------------------------------------------------------------------
 
-# For encrypting a drive/partition, see section C. in doc/Install.txt .
+# Since most files are shared between many snapshots, most of our
+# inodes are directories; so directory-size determines space-usage, so
+# we should choose a block-size that will result in the smallest space
+# usage by directories.
 
-# mkfs [-f] [mkfs-opts] device [name]: mkfs 1st/smallest drive (see comments)
-function mkfs-backup-drive() {
-	set-date_time
-	line_1="if you're using a partition or LV that already has backups,"
-	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
-	line_3="e.g. 'now' looks like /$date_time/ ; don't run 'mkfs',"
-	line_4="just re-label the partition and change its record in /etc/fstab"
-	line_5="(which is not needed if the partition is auto-mounted)."
-	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
+# To find your actual average directory size, see section C. in doc/Install.txt
 
-	[[ ${1-} == -f ]] && shift || [[ $mkfs_cmd_opts != mkfs.ext? ]] || {
-	   echo "If this is your first or smallest drive, use the -f option;"
-	   echo "otherwise, use the very-fast 'copy-drive' action instead."
-	   abort-with-action-Usage
-	} >&2
-	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) /dev/.*@\1@')	; set -f
-	set  --   $(echo " $*" | sed -r 's@.* /dev/@/dev/@')	; set +f
-	[[ $# == [12] ]] || abort-with-action-Usage
-	local device=$1 name=${2-}
-	TraceV 3 mkfs_opts device name
-	[[ $device = /* ]] || device=/dev/$device
-	[[ -b $device ]] || $IfRun abort "$device not a block device"
+_set-blocks_per_inode-bytes_per_inode--for-extN() {
 
-	if [[ $name ]]
-	   then _set-drive_name $name
-	   else _set-drive_name $device
-	fi
-	local name=$drive_name drive_dir
-	[[ ${name,,} != all ]] ||
-	    abort-function "name '$name' is a reserved word"
-	_set-drive_dir
+	# On my Ubuntu laptop, and on HRDAG's server (when don't count our
+	# large snap aka snapshot repo), 1 KB extN blocks only use 60% as much
+	# space as 2 KB blocks: So the default extN block size is 1KB.  [When
+	# we include HRDAG's large snap aka snapshot repo, 1 KB blocks use 70%
+	# as much space as 2 KB blocks.]
 
-	set -f; set -- $mkfs_cmd_opts; set +f
-	[[ $# != 0 ]] || abort "$config_file needs a non-empty mkfs_cmd_opts="
-	mkfs_cmd=$1
-	 FS_type=${mkfs_cmd#*.}
-	[[ $FS_type != $mkfs_cmd ]] || abort "ask $coder to fix FS_type logic"
-	local _mkfs_cmd_opts="$mkfs_cmd_opts "
-	_mkfs_cmd_opts+="$mkfs_opts "
-
-	set-FS_label--from-mount_dir $drive_dir
-
-	# Since most files are shared between many snapshots, most of our
-	# inodes are directories; so directory-size determines space-usage, so
-	# we should choose a block-size that will result in the smallest space
-	# usage by directories (unless we only backup files that change often,
-	# and they're large enough that ext* needs to use indirect blocks).
-	# On my Ubuntu laptop, 1 KB blocks result in roughly half the
-	# directory drive space used by 2 KB blocks, so the default ext? block
-	# size is 1KB.  On HRDAG's Ubuntu server using XFS, 1 KB blocks and 2
-	# KB blocks result in the same amount of directory space usage (and 4
-	# KB results in 20% more), since most directories need 0 drive blocks
-	# (because their contents fit in the inode); so 2 KB blocks are
-	# optimal for XFS, since they'll result in better performance ...
-	# unfortunately, 2 KB blocks are no longer supported in Ubuntu 18.04.
-
-	# To determine your actual average directory size, e.g. for ext4:
-	#    # choose a filesystem type with mkfs_cmd_opts= in configure.sh
-	#    snapback mkfs -f -b 1024 <drive-name> # 1st time, use smallest -b
-	#    # configure dirs_to_backup= and excludes
-	#    snapback run-backup <drive-name>
-	#    snapback dir-sizes  <drive-name>
-	#
-	#    snapback mkfs -f -b 2048 <drive-name> # overwrite older FS
-	#    ...
-	# If the FS stores small dirs in the inode, you might mess with isize.
-
-	# ALSO, by making the block size smaller with ext*, you'll be able to
+	# Also, by making the block size smaller with extN, you'll be able to
 	# have more inodes if you have a lot of small files, see:
 	# https://askubuntu.com/a/1104944 .  Having small blocks might reduce
-	# performance on a rotational hard drive (unless you're using extents
-	# and rsync's --preallocate), but probably won't affect performance on
-	# an SSD or flash memory stick (unless you're using ext* and you have
-	# lots of files with indirect blocks).
+	# performance on a rotational disk (unless you're using extents and
+	# rsync's --preallocate), but probably won't affect performance on an
+	# SSD or flash memory stick (unless most files have indirect blocks??).
 
-	if [[ $FS_type == ext? ]]
-	   then local -i block_size=1024 # optimal, see above long comment
-		set -f; set -- $_mkfs_cmd_opts; set +f
-		while [[ $# != 0 ]]
-		   do	[[ $1 == -b       ]] && block_size=${2-}
-			[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
-			shift
-		done
-		local valid_block_sizes="1024 2048 4096"
-		is-arg1-in-arg2 $block_size $valid_block_sizes ||
-		   abort "ext* block size must be one of: $valid_block_sizes"
-		local -i blocks_per_inode=1
-		local -i bytes_per_inode=$blocks_per_inode*$block_size
-		TraceV 3 block_size bytes_per_inode
-	fi
+	declare -g -i block_size=1024	# optimal, see above comments
+	set -f; set -- $opts; set +f
+	while [[ $# != 0 ]]
+	   do	[[ $1 == -b       ]] && block_size=${2-}
+		[[ $1 == -b[0-9]* ]] && block_size=${1#-b}
+		shift
+	done
 
-	# There's no need to store small-files or file's extended-attributes
-	# in inodes: The extra blocks used for small-files or out-of-inode
-	# extended-attributes will be shared between snapshots, since file
-	# inodes are shared between snapshots.  So, we want small inodes.
-	# EXCEPT: If most of the backed-up _directories_ have
-	# extended-attribute-blocks, then select an inode size that will hold
-	# the average set of extended-attributes.  If you want to backup
-	# nanosecond timestamps or file creation time on ext*, then use >= 256;
-	# otherwise, use 128.
+	local valid_block_sizes="1024 2048 4096"
+	is-arg1-in-arg2 $block_size $valid_block_sizes ||
+	   abort "extN block size must be one of: $valid_block_sizes"
+
+	declare -g -i blocks_per_inode=1
+	declare -g -i bytes_per_inode=$blocks_per_inode*$block_size
+	TraceV 2 block_size bytes_per_inode && echo
+}
+
+# ---------------------------------
+
+# There's no need to store small-files or file's extended-attributes in inodes:
+# The extra blocks used for small-files or out-of-inode extended-attributes
+# will be shared between snapshots, since file inodes are shared between
+# snapshots.  So, we want small inodes.  EXCEPT: If most of the backed-up
+# _directories_ have extended-attribute-blocks, then select an inode size that
+# will hold the average set of extended-attributes.
+
+_set-opts-log_opt-mount_opts--for-extN() {
+
+	_set-blocks_per_inode-bytes_per_inode--for-extN
 
 	# https://lwn.net/Articles/645722/ : 4/15: fixed ext4 extent corruption
 	# https://en.wikipedia.org/wiki/Linux_kernel#Releases_4.x.y
@@ -4426,68 +4377,125 @@ function mkfs-backup-drive() {
 	   else local ext4_extent_opt=
 	fi
 
-	set -f; set -- $_mkfs_cmd_opts; set +f
-	local cmd=$1; shift; local opts="$* "  log_opt=
-	if [[ $FS_type == xfs ]]
-	   then have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
-		# The above comment predicts isize=256; but CRCs need size=512,
-		# and 90% of HRDAG's server's dirs fit in a size=512 inode;
-		# using isize=1024 resulted in 10% more directory drive space.
-		# For servers with bigger dirs, experiment with different
-		# mkfs opts (on your fastest drive) and the dir-sizes action.
-		#
-		# See much-earlier long comment for discussion of block size.
-		[[ $opts == *"-b size="* ]] || opts+="-b size=4096 "
-		[[ $opts == *"-n size="* ]] || opts+="-n size=4096 "
-		[[ $opts == *"-i size="* ]] || opts+="-i size=512 "
-		[[ $opts == *maxpct=*    ]] || opts+="-i maxpct=0 "
-		mount_opts="$XFS_mount_options"
-		set-FS_external_log $FS_label &&
-		logdev="logdev=$FS_external_log" &&
-		log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev
-	elif [[ $FS_type == ext? ]]
-	   then opts+="-v "
-		[[ $opts != *-T* ]] && {
-		[[ $opts != *-b* ]]	&& opts+="-b $block_size "
-		[[ $opts != *-i* ]]	&& opts+="-i $bytes_per_inode "
-		[[ $opts != *-I* ]]	&& opts+="-I 128 "	; }
-		[[ $opts != *-m* ]]	&& opts+="-m .1 "
-		[[ $opts != *extent* ]] && opts+="$ext4_extent_opt "
-		[[ $FS_type == ext4  ]] &&
-		mount_opts="$extN_mount_options"
-		set-FS_external_log  $FS_label &&
-		log_label=$(basename $FS_external_log)	&&
-		$IfRun mke2fs -v -b $block_size -O journal_dev \
-			 -L $log_label $FS_external_log &&
-		log_opt="-J device=$FS_external_log"
-	   else abort "don't support FS_type=$FS_type. email $coder"
+	# If you want to backup nanosecond timestamps or file creation time,
+	# use inode size >= 256; otherwise, use 128.
+
+	opts+="-v "
+	[[ $opts != *-T* ]] && {
+	[[ $opts != *-b* ]]	&& opts+="-b $block_size "
+	[[ $opts != *-i* ]]	&& opts+="-i $bytes_per_inode "
+	[[ $opts != *-I* ]]	&& opts+="-I 128 "	; }
+	[[ $opts != *-m* ]]	&& opts+="-m .1 "
+	[[ $opts != *extent* ]] && opts+="$ext4_extent_opt "
+
+	[[ $FS_type == ext4  ]] &&
+	mount_opts="$extN_mount_options" || mount_opts=
+
+	set-FS_external_log $FS_label &&
+	local log_label=${FS_external_log##*/} &&
+	$IfRun mke2fs -v -b $block_size -O journal_dev \
+		      -L $log_label $FS_external_log &&
+	log_opt="-J device=$FS_external_log" || log_opt=
+}
+
+# -------------------------------------------------------
+
+_set-opts-log_opt-mount_opts--for-xfs() {
+
+	have-cmd mkfs.xfs || $IfRun abort "install xfsprogs"
+
+	# On HRDAG's Ubuntu server, 1 KB blocks and 2 KB blocks result in the
+	# same amount of directory space usage (and 4 KB results in 20% more),
+	# since most directories need 0 drive blocks (because their contents
+	# fit in the inode); so 2 KB blocks are optimal, since they'll result
+	# in better performance ... unfortunately, 2 KB blocks are no longer
+	# supported in Ubuntu 18.04.
+
+	# The earlier long comment predicts isize=256; but CRCs need size=512,
+	# and 90% of HRDAG's server's dirs fit in a size=512 inode
+	# (using isize=1024 resulted in 8% more directory drive space;
+	# we chose this, because XFS stores many things in inodes).
+	# For servers with bigger dirs, experiment with different
+	# mkfs opts (on your fastest drive) and the dir-sizes action (see
+	# section C. in doc/Install.txt).
+
+	[[ $opts == *"-b size="* ]] || opts+="-b size=4096 "
+	[[ $opts == *"-n size="* ]] || opts+="-n size=4096 "
+	[[ $opts == *"-i size="* ]] || opts+="-i size=512 "
+	[[ $opts == *maxpct=*    ]] || opts+="-i maxpct=0 " # need lotsa inodes
+
+	mount_opts="$XFS_mount_options"
+
+	set-FS_external_log $FS_label &&
+	logdev="logdev=$FS_external_log" &&
+	log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev || log_opt=
+}
+
+# -------------------------------------------------------
+
+_set-device-drive_name-drive_dir-is_new_dev() {
+	device=$1; local name=${2-} dir
+
+	[[ $device = /* ]] ||
+	for dir in /dev/mapper /dev
+	    do	[[ -b  $dir/$device ]] || continue
+		device=$dir/$device
+		break
+	done
+	[[ -b $device ]] || $IfRun abort "'$device' is not a block device"
+
+	if [[ $name ]]
+	   then _set-drive_name $name
+	   else name=${device##*/}
+		local mount_dir
+		set-mount_dir--from-FS-label $name
+		[[ $mount_dir == $drive_dir_prefix* ]] ||
+		   abort "can't derive name from device or label: specify name"
+		_set-drive_name $mount_dir
 	fi
+	name=$drive_name
+	[[ ${name,,} != all ]] ||
+	    abort "drive_name '$name' is a reserved word"
+	_set-drive_dir
+	TraceV 2 mkfs_opts device drive_name drive_dir && echo
 
 	df -m $drive_dir 2> /dev/null &&
-	  $IfRun abort "there's already a filesystem mounted on $drive_dir"
-	[[ $FS_type == xfs && $opts == *' -N '* ]] || {
-	[[ -d $drive_dir ]] &&
-	  $IfRun abort "if name '$name' not in use: sudo rmdir $drive_dir"
-	local is_new_dev=$true
-	df -m $device 2> /dev/null && { is_new_dev=$false
-	  $IfRun abort "that device is mounted; to *DESTROY* its contents,
-			first run: sudo umount $device"			   ; }
-	}
+	   $IfRun abort   "there's a filesystem mounted on $drive_dir" && echo
 
-	if [[ $FS_type == ext? && $debug_opt && $UID == 0 && $is_new_dev ]]
-	   then local mkfs_debug_opt=-n; warn "running $cmd in debug mode ..."
-	   else local mkfs_debug_opt=
+	[[ -d $drive_dir ]] &&
+	   $IfRun abort "if '$name' not in use: sudo rmdir $drive_dir" && echo
+
+	if ! df -m $device 2> /dev/null
+	   then is_new_dev=$true ; return
+	   else	is_new_dev=$false
+		$IfRun abort "$device is mounted; to *DESTROY* its contents,
+		first run: sudo umount $device" && echo
 	fi
+}
+
+# -------------------------------------------------------
+
+_set-mkfs_debug_opt() {
+
+	mkfs_debug_opt=
+	[[ $debug_opt && $UID == 0 && $is_new_dev ]] || return
+
+	case $FS_type in
+	    ( ext? ) mkfs_debug_opt=-n ;;
+	    ( xfs  ) mkfs_debug_opt=-N ;;
+	    (  *   ) warn "don't know debug opt for $cmd, email $coder" ;;
+	esac
+	warn "running $cmd in debug mode ..."
+}
+
+# -------------------------------------------------------
+
+_create-and-mount-filesystem() {
+	local cmd=$*
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 
-	[[ $mount_opts ]] && mount_opts=,$mount_opts
-	mount_opts=$common_mount_options$mount_opts
-	rec="\n\n\tLABEL=$FS_label\t$drive_dir\t$FS_type\t$mount_opts 0 2"
-	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
-
-	[[ $mkfs_debug_opt ]] && IfRun=
-	cmd="$cmd ${opts# } $log_opt $mkfs_debug_opt -L $FS_label $device"
+	[[ $mkfs_debug_opt ]] && local IfRun= # for RunCmd
 	header "$cmd"
 	RunCmd  $cmd
 	set-drive_log_dir-file_for_logging-is_regression_test $name
@@ -4496,13 +4504,78 @@ function mkfs-backup-drive() {
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
 	fix-drive_dir-perms $drive_dir
+}
+
+# -------------------------------------------------------
+
+_create-fstab-record() {
+
+	[[ $mount_opts ]] && mount_opts=,$mount_opts
+	mount_opts=$common_mount_options$mount_opts
+	rec="\n\n\tLABEL=$FS_label\t$drive_dir\t$FS_type\t$mount_opts 0 2"
+	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
+}
+
+# -------------------------------------------------------
+
+_mkfs-warnings() {
+
+	set-date_time
+	line_1="if you're using a partition or LV that already has backups,"
+	line_2="you can keep them, if you rename them as /Year-Mo-Da,Hr/ , "
+	line_3="e.g. 'now' looks like /$date_time/ ; don't run 'mkfs',"
+	line_4="just re-label the partition and change its record in /etc/fstab"
+	line_5="(which is not needed if the partition is auto-mounted)."
+	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
+
+	[[ $do_force || $mkfs_cmd_opts != mkfs.ext* ]] || {
+	   echo "If this is your first or smallest drive, use the -f option;"
+	   echo "otherwise, use the very-fast 'copy-drive' action instead."
+	   abort-with-action-Usage
+	} >&2
+}
+
+# -------------------------------------------------------
+
+# For encrypting a drive/partition, see section C. in doc/Install.txt .
+
+# mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
+function mkfs-backup-drive() {
+	[[ $1 == -f ]] && { local do_force=$true; shift; } || local do_force=
+	local mkfs_opts opts_args=" $*"; set -f
+	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) (/|[^ ]*[_A-Z]).*@\1@')
+	set -- ${opts_args#$mkfs_opts} ; set +f
+	[[ $# == [12] ]] || abort-with-action-Usage
+	local device=$1 name=${2-}
+	_mkfs-warnings
+
+	_set-device-drive_name-drive_dir-is_new_dev $device $name
+	set-FS_label--from-mount_dir $drive_dir
+
+	set -f; set -- $mkfs_cmd_opts $mkfs_opts; set +f
+	local cmd=$1; shift; local opts="$* "  log_opt=
+	[[ $cmd != mke2fs   ]] || abort "use mkfs.extN instead of mke2fs"
+	FS_type=${cmd#*.}
+	[[ $FS_type != $cmd ]] || abort "ask $coder to fix FS_type logic"
+	case $FS_type in
+	    ( ext? ) _set-opts-log_opt-mount_opts--for-extN ;;
+	    ( xfs  ) _set-opts-log_opt-mount_opts--for-xfs  ;;
+	    (  *   ) abort "don't support FS_type=$FS_type, email $coder" ;;
+	esac
+
+	_set-mkfs_debug_opt
+
+	cmd="$cmd $opts $log_opt $mkfs_debug_opt -L $FS_label $device"
+	_create-and-mount-filesystem $cmd
+
+	_create-fstab-record
 
 	[[ ! $debug_opt ]] || return 1
 
 	echo -e "\nTo populate newly-created drive, run:\n
 	nohup $_our_name update-drive $drive_name	# creates new job"
 
-       warn "DON'T FORGET to add \`$name' to drive_name_regex= in $config_file"
+       warn "REMEMBER: add \`$drive_name' to drive_name_regex= in $config_file"
        return 0
 }
 readonly -f mkfs-backup-drive
@@ -5217,7 +5290,7 @@ case $action in
      filesystem-geometry "$@"
 	;;
 
-   # mkfs [-f] [mkfs-opts] device name: run mkfs optimized for many snapshots
+   # mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
    ( mkfs | mf* ) undo-action-abbrev mkfs
      mkfs-backup-drive "$@"
 	;;
