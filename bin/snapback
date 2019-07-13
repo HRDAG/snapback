@@ -871,7 +871,8 @@ function is-drive-mounted() {
 	set -- $drive_dir/$snapshot_glob*
 	restore-tracing
 	[[ $# != 0 ||
-	   $(df --output=target --no-sync $drive_dir) == *$drive_dir ]]
+	   $(df --output=target --no-sync $drive_dir 2> /dev/null) == \
+	   *$drive_dir ]]
 }
 readonly -f is-drive-mounted
 
@@ -1938,7 +1939,7 @@ readonly -f set-link_dest_opts
 
 # ------------------------------------------------------------------
 
-set-useful_snapshots() {
+set-sorted_snapshots() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local sort_opt=${1-}
 
@@ -1950,24 +1951,25 @@ set-useful_snapshots() {
 	useful_snapshots=$*
 	$xtrace
 }
-readonly -f set-useful_snapshots
+readonly -f set-sorted_snapshots
 
 # --------------------------------------------
 
 set-link_dest_opts--for-run-backup() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
-	set-useful_snapshots -r
+	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
 	set-link_dest_opts $new_snapshot $useful_snapshots
 }
 readonly -f set-link_dest_opts--for-run-backup
 
 # --------------------------------------------------------
 
+# need to link to snapshots that are earlier and later than $new_snapshot
 set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
-	set-useful_snapshots -r
+	set-sorted_snapshots -r
 	suspend-tracing
 	local older_snapshots=
 	for snapshot in $useful_snapshots
@@ -1977,7 +1979,7 @@ set-link_dest_opts--for-copy-snapshot() {
 	restore-tracing
 	set-link_dest_opts $new_snapshot $older_snapshots # newest to oldest
 
-	set-useful_snapshots
+	set-sorted_snapshots
 	suspend-tracing
 	local newer_snapshots=
 	for snapshot in $useful_snapshots
@@ -2080,14 +2082,14 @@ archive-rsync-time-data() {
 
 	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
 	mkdir -p $rsync_time_dir
-	cd $rsync_time_dir &&
+	cd $rsync_time_dir && {
 	set -- *.txt &&
 	if [[ $# != 0 ]]
 	   then set-date_time -r .
-		dir=.${date_time%,*}
-		$IfRun mkdir -p $dir
-		$IfRun mv -v *.txt $PWD/$dir/
-	fi
+		dir=$PWD/.${date_time%,*} # absolute path, for $IfRun and -v
+		$IfRun mkdir -p    $dir
+		$IfRun mv -v *.txt $dir/
+	fi; true; } &&
 	cd $OLDPWD
 }
 readonly -f archive-rsync-time-data
@@ -3864,9 +3866,9 @@ readonly -f show-backup-cmds-with-full-details
 
 show-copy-cmds-with-full-details() {
 
-	[[ $copy_rsync_cmds ]] || return
+	[[ $copy_rsync_cmds == *rsync* ]] || return
 
-	header "copy/update most-CPU-intensive rsync processes (full details)"
+       header "copy/update's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p"
@@ -4503,18 +4505,18 @@ _set-device-drive_name-drive_dir-is_new_dev() {
 	_set-drive_dir
 	TraceV 2 mkfs_opts device drive_name drive_dir && echo
 
-	df -m $drive_dir 2> /dev/null &&
-	   $IfRun abort   "there's a filesystem mounted on $drive_dir" && echo
-
-	[[ -d $drive_dir ]] &&
-	   $IfRun abort "if '$name' not in use: sudo rmdir $drive_dir" && echo
-
-	if ! df -m $device 2> /dev/null
-	   then is_new_dev=$true ; return
+	if [[ $(df --output=source $device 2> /dev/null) != *$device ]]
+	   then is_new_dev=$true
 	   else	is_new_dev=$false
 		$IfRun abort "$device is mounted; to *DESTROY* its contents,
 		first run: sudo umount $device" && echo
 	fi
+
+	is-drive-mounted $drive_dir &&
+	   $IfRun abort   "there's a filesystem mounted on $drive_dir" && echo
+
+	[[ -d $drive_dir ]] &&
+	   $IfRun abort "if '$name' not in use: sudo rmdir $drive_dir" && echo
 }
 
 # -------------------------------------------------------
@@ -4542,7 +4544,7 @@ _create-and-mount-filesystem() {
 	[[ $mkfs_debug_opt ]] && local IfRun= # for RunCmd
 	header "$cmd"
 	RunCmd  $cmd
-	set-drive_log_dir-file_for_logging-is_regression_test $name
+	set-drive_log_dir-file_for_logging-is_regression_test $drive_name
 	archive-rsync-time-data
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
