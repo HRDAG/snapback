@@ -224,7 +224,7 @@ have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
 
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
-shopt -s nullglob			# so don't need to test for no matches
+shopt -s nullglob			# $# is 0 if pathname expansion "fails"
 shopt -s globasciiranges		# so weird locales don't mess us up
 
 umask 02				# log and lock dirs are setgid sudo/etc
@@ -489,8 +489,8 @@ readonly -f lock-PID
 # creates a lock for each of those jobs ( see writer_types= ).  The
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
 # backup job is initiated).  When no backup job is running, and copy and prune
-# jobs both exist, suspended-prune-as-drive-usage-response decides
-# which one should be suspended.
+# jobs both exist, reset-priority aka suspended-prune-as-drive-usage-response
+# decides which one should be suspended.
 #
 # An hourly cron job calls action run-backups (with argument 'all'), which
 # calls create-jobs() to create a run-backup() job for each drive;
@@ -1377,6 +1377,10 @@ function suspended-prune-as-drive-usage-response() {
 	return $status
 }
 readonly -f suspended-prune-as-drive-usage-response
+
+# users besides prune just need a simple/clear name
+reset-priority() { suspended-prune-as-drive-usage-response "$@"; }
+readonly -f reset-priority
 
 ##############################################################################
 ##############################################################################
@@ -2858,7 +2862,7 @@ update-drive() {
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	IfRun= lock copy > /dev/null || exit 1	# can run for days
-	suspended-prune-as-drive-usage-response # we might get suspended
+	reset-priority				# this might suspended us
 
 	remove-empty-partial-snapshots $drive_dir
 
@@ -5152,12 +5156,15 @@ function regression-test() {
 	_show-test-header update $dst
 
 	_set-drive_name $dst
+	suspend-jobs backup prune
 	have-job copy &&
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
 	    warn "killed update-drive (or copy) on drive $dst"
 
 	_run-debug-cmds u update-drive $dst
 
+	continue-jobs backup prune
+	reset-priority			# ensure only one job running
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
 	}
@@ -5308,7 +5315,7 @@ case $action in
 	$Trace
 	for drive_name in $drive_names
 	    do	_set-drive_dir $drive_name
-		suspended-prune-as-drive-usage-response
+		reset-priority
 	done
 	;;
 
