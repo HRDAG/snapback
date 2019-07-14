@@ -225,7 +225,6 @@ have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
 shopt -s nullglob			# $# is 0 if pathname expansion "fails"
-shopt -s globasciiranges		# so weird locales don't mess us up
 
 umask 02				# log and lock dirs are setgid sudo/etc
 
@@ -2645,7 +2644,9 @@ readonly -f _set-src_names_regex
 
 # --------------------------------
 
-_set-drive_dirs--for-useful-srcs() {
+_set-drive_dirs--for-update-srcs() {
+	local drive_name=${1:-$drive_name}
+	_set-drive_dir
 
 	set-excluded_drive_dirs_regex
 	_set-src_names_regex
@@ -2654,25 +2655,29 @@ _set-drive_dirs--for-useful-srcs() {
 	dst_backup_type=$backup_type
 
 	drive_dirs=
-	# -a so include drives excluded from backups
-	set -- $(list-drive-dirs -a | fgrep -v -x $drive_dir |
-			egrep -v "\b$excluded_drive_dirs_regex$" |
-			egrep "$drive_dir_prefix$src_names_regex")
 	local src_drive_dir
-	for src_drive_dir
-	    do	matches-dst_backup_type $src_drive_dir &&
+	for src_drive_dir in $(list-drive-dirs -a)
+	    do	[[ $src_drive_dir != $drive_dir ]] || continue
+
+		local exclude_regex=$drive_dir_prefix$excluded_drive_dirs_regex
+		[[ $src_drive_dir =~ $exclude_regex ]] && continue
+
+		local include_regex=$drive_dir_prefix$src_names_regex
+		[[ $src_drive_dir =~ $include_regex ]] || continue
+
+		matches-dst_backup_type $src_drive_dir &&
 		   drive_dirs+="$src_drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
 	[[ $drive_dirs ]]
 }
-readonly -f _set-drive_dirs--for-useful-srcs
+readonly -f _set-drive_dirs--for-update-srcs
 
 # --------------------------------
 
 _useful-srcs() {
 
-	_set-drive_dirs--for-useful-srcs ||
+	_set-drive_dirs--for-update-srcs ||
 	   abort "couldn't find any drives to copy to $drive_name"
 
 	local period=$backup_period
@@ -3832,7 +3837,7 @@ show-backup-cmds() {
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
-	echo "$bkp_rsync_cmds" | trim-backup-ps | sort -tr # 'r' never in STAT
+	echo "$bkp_rsync_cmds" | trim-backup-ps | sort -ty -k2 # rs(y)nc
 	} || echo -e "\nNo backups are running$names_msg."
 
 }
@@ -3862,7 +3867,7 @@ show-backup-cmds-with-full-details() {
 	header "run-backup's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
-	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g" | sort -tr # -t(r)sync
+	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g" | sort -ty -k2 # rs(y)nc
 }
 readonly -f show-backup-cmds-with-full-details
 
@@ -3876,7 +3881,7 @@ show-copy-cmds-with-full-details() {
 	echo
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p" |
-	   sort -tr		      # sort on 'r' in (r)sync (never in STAT)
+	   sort -ty -k2		      # sort on 'y' in rs(y)nc (never in STAT)
 }
 
 # ------------------------------------------------------------------
@@ -5157,6 +5162,7 @@ function regression-test() {
 	_show-test-header update $dst
 
 	_set-drive_name $dst
+	_set-drive_dir
 	suspend-jobs backup prune
 	have-job copy &&
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
@@ -5587,10 +5593,10 @@ case $action in
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo status=$?
 	set +x
-	[[ $cmd == set-* ]] || exit
+	[[ $cmd =~ ^_?set- ]] || exit
 
 	header "variables set by $cmd"
-	var_names=${cmd#set-} ; var_names=${var_names%%--*}
+	var_names=${cmd#*set-} ; var_names=${var_names%%--*}
 	var_names=${var_names//-/ }
 	declare -i max_name_width=0
 	for var_name in $var_names
