@@ -1512,17 +1512,12 @@ _rm-pruned-snapshots() {
 
 	assert-drive_dir-writable $PWD
 
+	remember-tracing		# in case comment-out next line ...
 	suspend-tracing
-	set -- $(< $snapshots_file)
-	rm $snapshots_file
 
-	[[ $# != 0 && ! $is_update ]] &&
-	if (( $log_level >= 2 ))
-	   then [[ $debug_opt ]] ||
-		log "will prune these snapshots: " $*
-	   else $IfRun \
-		log "pruning $# snapshots: will rename to *.rm for deletion"
-	fi
+	# sort snapshots for regression-test
+	set -- $(tr ' ' '\n' < $snapshots_file | sort -u)
+	rm $snapshots_file
 
 	if [[ $is_update && $debug_opt ]]
 	   then local sudo=sudo-unless-dir-writable
@@ -1530,6 +1525,8 @@ _rm-pruned-snapshots() {
 	fi
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
+	local -i rm_count=0
+	local    rm_snapshots=
 	for snapshot
 	    do	[[ $is_update && $debug_opt ]] ||		   # speedup
 		count-rsyncs-using-resource  $snapshot || continue # in use?
@@ -1539,7 +1536,17 @@ _rm-pruned-snapshots() {
 		   then  $sudo mv $verbose_opt $snapshot $snapshot.rm
 		   else $IfRun mv	       $snapshot $snapshot.rm
 		fi
+		rm_count+=1  rm_snapshots+="$snapshot "
 	done
+
+	[[ $rm_count != 0 && ! $is_update ]] &&
+	if (( $log_level >= 2 ))
+	   then [[ $debug_opt ]] ||
+		log "will prune these snapshots: " $rm_snapshots
+	   else local -i n=$rm_count
+		$IfRun \
+		log "pruning $n snapshots: will rename to *.rm for deletion"
+	fi
 
 	if [[ $is_update ]]
 	   then set -- *.partial.rm	# some from update, some from pruning
@@ -1552,6 +1559,7 @@ _rm-pruned-snapshots() {
 
 	set -- $snapshot_glob*.rm
 	local snapshot_basenames=$*
+
 	restore-tracing
 
 	if [[ ! -d latest ]]
@@ -1616,8 +1624,7 @@ readonly -f _rm-pruned-snapshots
 #    to implement snapshot_date_time_separator, search for: ,0 ,? ,$ ,/ ,* etc
 
 readonly      snapshot_glob="[1-9][0-9][0-9]?-??-??,??" # Year-Mo-Da,Hr
-readonly  max_snapshot_glob="9999-12-31,23"	       # max supported value
-# derived from the above
+# the following 3 are derived from snapshot_glob
 readonly  snapshot_day_glob=${snapshot_glob%,??}       # Year-Mo-Da
 readonly     snapshot_regex=${snapshot_glob//\?/.}
 readonly snapshot_day_regex=${snapshot_regex%,??}
@@ -1844,7 +1851,10 @@ function prune-drive() {
 
 	_should-run-prune || return 1
 
-	set-priority prune
+	if [[ $is_cron ]]		# not a real person?
+	   then set-priority prune
+	   else reset-priority		# this might suspend us
+	fi
 
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
@@ -2625,9 +2635,9 @@ readonly -f set-excluded_drive_dirs_regex
 
 # ----------------------------------------------------------------------------
 
-# --------------------------------
-# functions for sorted-useful-srcs
-# --------------------------------
+# ---------------------------------
+# functions for src_dirs-for-update
+# ---------------------------------
 
 _set-src_names_regex() {
 
@@ -2674,7 +2684,7 @@ readonly -f _set-drive_dirs--for-update-srcs
 
 # --------------------------------
 
-_useful-srcs() {
+src_dirs-for-update() {
 
 	_set-drive_dirs--for-update-srcs ||
 	   abort "couldn't find any drives to copy to $drive_name"
@@ -2691,43 +2701,31 @@ _useful-srcs() {
 	    do	suspend-tracing
 		eval "echo $dir/$min_snapshot_glob{,.links}"   # useful ones
 		eval "echo $dir/$snapshot_glob{,.links}/.keep" # never pruned
-		      echo $dir/$max_snapshot_glob # token to terminate loop
 		restore-tracing
 	done | tr ' ' '\n'
 }
-readonly -f _useful-srcs
+readonly -f src_dirs-for-update
 
-# --------------------------------
+# ----------------------------------------------------------------------------
 
-_set-sort_key_args() {
+# this is a group-by: group snapshots on different drives by snapshot basename
+set-basename2dirs-basename2is_keep() {
+	local dirs_generator=${1:-src_dirs-for-update}
 
-	local path=root$drive_dir_prefix$drive_name_regex/snap
-	set -f; set -- ${path//\// }; set +f
-	let snapshot_key=$#  drive_name_key=$#-1
+	declare -g -A basename2dirs basename2is_keep
 
-	sort_key_args="--key=$snapshot_key --key=$drive_name_key"
+	local dir basename
+	while read dir
+	   do	if [[ $dir == */.keep ]]
+		   then dir=${dir%/.keep}
+			basename=${dir##*/} ; basename2is_keep[$basename]=$true
+		   else basename=${dir##*/}
+		fi
+		[[ -d $dir ]] || continue
+		basename2dirs[$basename]+="$dir "
+	done <<<$($dirs_generator)
 }
-readonly -f _set-sort_key_args
-
-# --------------------------------
-
-sorted-useful-srcs() {
-	[[ $1 == -s* ]] && { src_names_regex=${1#-s}; shift; }
-	assert-not-option ${1-}
-	[[ $# == 1   ]] || abort "need to specify one drive name"
-
-	suspend-tracing
-	set-drive_name $1
-	set-drive_dir  $drive_name
-	restore-tracing
-
-	cd $drive_dir || exit 1	# so can kill job with: fuser -k -M $drive_dir
-
-	_set-sort_key_args
-	$Trace
-	_useful-srcs | sort --field-separator=/ $sort_key_args
-}
-readonly -f sorted-useful-srcs
+readonly -f set-basename2dirs-basename2is_keep
 
 # ----------------------------------------------------------------------------
 
@@ -2738,46 +2736,26 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	   else local sudo=sudo-unless-dir-writable
 	fi
 
-	local date_time prev_date_time=
-	local src_snapshot src_snapshots= is_keep
-	local -A date_time2is_keep
+	set-basename2dirs-basename2is_keep
+	# sort basenames for regression-test
+	set -- $(echo ${!basename2dirs[*]} | tr ' ' '\n' | sort)
 
-	while read src_snapshot
-	    do	if [[ $src_snapshot == */.keep ]]
-		   then src_snapshot=${src_snapshot%/.keep}
-			is_keep=$true
-		   else is_keep=$false
-		fi
-		[[ -d $src_snapshot ]] || continue
-		# oddness: we get multiple src snapshots with the same date
-		date_time=${src_snapshot##*/}
-		date_time=${date_time%%.*}
-		[[ $is_keep ]] && date_time2is_keep[$date_time]=$true
-		if [[  $prev_date_time &&
-		       $prev_date_time != $date_time ]]
-		   then prev_date_time=$date_time # new date, process prev ones
-		   else [[ $prev_date_time ]] ||
-			prev_date_time=$date_time
-			[[ -d $src_snapshot ]] &&
-			src_snapshots+=" $src_snapshot" # put SPACE in front
-			continue
-		fi
-
-		[[ $src_snapshots ]] &&
+	local snapshot basename
+	for snapshot
+	    do	local src_snapshots=${basename2dirs[$snapshot]}
 		copy-snapshot -u $src_snapshots $drive_name # loads a var
-		 src_snapshots=$src_snapshot # prepare to process new date
 		set -- $copy_snapshot_args   # variable set by copy-snapshot
 		[[ $# != 0 ]] || continue    # src might not have been needed
+		local	   dst_snapshot=${!#} # last arg is destination
+		basename=${dst_snapshot##*/}
+		[[ -d $dst_snapshot.links ]] && continue # have upgradable dst?
 
-		local    dst_snapshot=${!#}
-		date_time=${dst_snapshot##*/}
-		date_time=${date_time%%.*}
-		[[ ! -d $dst_snapshot.links ]] &&
-		$sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2 #to prune
-		[[ ${date_time2is_keep[$date_time]-} ]] &&
+		# create a .partial dir for pruning (unless it has a /.keep)
+		$sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2
+		[[ ${basename2is_keep[$basename]-} ]] &&
 		    echo > $dst_snapshot.partial/.keep && [[ $verbose_opt ]] &&
 		echo touch $dst_snapshot.partial/.keep >&2
-		echo "$@"
+		echo "$@"		# the args for future copy-snapshot
 	done
 }
 readonly -f mkdir-missing-snapshots-then-print-copy-args
@@ -2841,16 +2819,17 @@ readonly -f fastest-snapshots
 
 # -------------------------------------------------------
 
-fill-in-unpruned-empty-missing-snapshots() {
+fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
 
-	set-drive_name2do_suspend
+	set-drive_name2do_suspend	# for fastest-snapshots
+
 	local args dst_snapshot=
 	while read args
 	    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
 		set -- $args
 		local   dst_snapshot=${!#}
-		[[ -d  $dst_snapshot ]] && continue # undeleted?
+		[[ -d  $dst_snapshot ]] && continue # was it undeleted?
 		set -- $dst_snapshot*
 		[[ $# != 0 ]] || continue # was it pruned away?
 		set -- $(fastest-snapshots ${args%$dst_snapshot}) # pass srcs
@@ -2858,7 +2837,7 @@ fill-in-unpruned-empty-missing-snapshots() {
 	done   <  $copy_args_file
 	$IfRun rm $copy_args_file
 }
-readonly -f fill-in-unpruned-empty-missing-snapshots
+readonly -f fill-in-unpruned-empty-snapshots
 
 # ----------------------------------------------------------------------------
 
@@ -2868,7 +2847,7 @@ update-drive() {
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	IfRun= lock copy > /dev/null || exit 1	# can run for days
-	reset-priority				# this might suspended us
+	[[ $is_cron ]] || reset-priority	# this might suspend us
 
 	rmdir-empty-partial-snapshots $drive_dir
 
@@ -2879,13 +2858,12 @@ update-drive() {
 
 	set-srcs_dst_file
 
-	sorted-useful-srcs "$@" |	# this checks/sets drive_* globals
 	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
 	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
 	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
 
-	fill-in-unpruned-empty-missing-snapshots $srcs_dst_file
+	fill-in-unpruned-empty-snapshots $srcs_dst_file
 
 	rmdir-empty-partial-snapshots $drive_dir
 
