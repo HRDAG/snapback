@@ -1505,7 +1505,7 @@ readonly -f _prune-exclude-globs-from-all-snapshots
 
 # ---------------------------------
 
-_rm-pruned-snapshots() {
+rm-pruned-snapshots() {
 	local snapshots_file=$1
 
 	local snapshot
@@ -1614,7 +1614,7 @@ _rm-pruned-snapshots() {
 
 	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
 }
-readonly -f _rm-pruned-snapshots
+readonly -f rm-pruned-snapshots
 
 # --------------------------------------------------------------------
 # vars & funcs that implement snapshot date-time format, and pruning #
@@ -1745,7 +1745,7 @@ reverse-sorted-snapshot-basenames() {
 
 	echo $snapshot_glob*  |		# prune everything
 	   tr ' ' '\n' | sort -u -r |
-	   grep -v '\.rm$'		# _rm-pruned-snapshots handles *.rm
+	   grep -v '\.rm$'		# rm-pruned-snapshots handles *.rm
 	$xtrace
 }
 readonly -f reverse-sorted-snapshot-basenames
@@ -1778,10 +1778,9 @@ prune-type-to-file() {
 			    do	echo $date*
 			done
 			break
-
 		fi
-
 		Trace 4 "\n  LOOP $type: $# dates left: ${1-} ${2-} ... ${!#}"
+
 		! _do-skip-newest-span-of-days $type || shift $date_span ||
 		    shift $# # shift does nothing if try to shift more than $#
 		remaining_reverse_sorted_snapshot_dates=$*
@@ -1789,12 +1788,12 @@ prune-type-to-file() {
 		[[ $first_prune_date ]] || break
 
 		set-prune_glob $type "$prune_type_glob"
-		TraceV 5 date_suffix_glob first_prune_date \
-			  prune_type_glob prune_glob
+		TraceV 5 prune_type_glob prune_glob
 		eval "set -- $prune_glob"
 		Trace 5 "\n Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
 
 		# skip over the snapshot prune-matches that aren't old enough
+		TraceV 5 date_suffix_glob first_prune_date
 		set -- $(echo $* | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
 		   do	[[ $1 == [^1-9]* ]] && shift && continue # skip junk
@@ -1870,7 +1869,7 @@ function prune-drive() {
 	set -- $(prune-type-to-file month $snapshots_to_prune_file $*);#set +x
 	set -- $(prune-type-to-file year  $snapshots_to_prune_file $*)
 
-	_rm-pruned-snapshots $snapshots_to_prune_file # it deletes the file
+	rm-pruned-snapshots $snapshots_to_prune_file # it deletes the file
 	rm -f $snapshots_to_prune_file
 
 	[[ $is_update ]] && return 0
@@ -2849,7 +2848,7 @@ update-drive() {
 	IfRun= lock copy > /dev/null || exit 1	# can run for days
 	[[ $is_cron ]] || reset-priority	# this might suspend us
 
-	rmdir-empty-partial-snapshots $drive_dir
+	rmdir-empty-partial-snapshots $drive_dir # in case previously crashed
 
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
