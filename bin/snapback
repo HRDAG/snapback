@@ -516,7 +516,7 @@ function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 #	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
-	assert-not-option ${1-}
+	assert-not-option "${1-}"
 	[[ $# == [12] ]] || abort-function "[-w] type resource"
 	local type=$1 resource=${2:-$drive_name}
 
@@ -674,8 +674,10 @@ function sudo-kill() {
 	$IfRun kill "$@" 2> /dev/null && return 0 # kill is built-in, so cheap
 	is-process-alive ${PID#-} || return 1
 	local  kill_msg=$(kill "$@" 2>&1)
-	if [[ $kill_msg == *"Operation not permitted"* ]]
+	if   [[ $kill_msg == *"Operation not permitted"* ]]
 	   then sudo kill "$@"
+	elif [[ $kill_msg == *"No such process"* ]]
+	   then return 1
 	   else echo "$kill_msg" >&2
 		return 1
 	fi
@@ -751,7 +753,7 @@ function kill-job-on-drives() {
 	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
-	assert-not-option ${1-}
+	assert-not-option "${1-}"
 
 	set-lock_paths "$@" || return 1
 
@@ -865,7 +867,7 @@ function is-drive-mounted() {
 	local drive_dir=$1
 
 	[[ $drive_dir ]] || return 1
-	[[ $drive_dir == *[-/]Z ]] && return 0 # Z is testing pseudo-drive
+	[[ $drive_dir == *[-/][zZ] ]] && return 0 # Z is testing pseudo-drive
 	suspend-tracing
 	set -- $drive_dir/$snapshot_glob*
 	restore-tracing
@@ -987,7 +989,7 @@ set-drive_log_dir-file_for_logging-is_regression_test() {
 	   else return			# skip very-long, duplicative setup
 	fi
 
-	[[ $drive_name == Z || ( $debug_opt && $is_cron ) ]] &&
+	[[ $drive_name == [zZ] || ( $debug_opt && $is_cron ) ]] &&
 	    is_regression_test=$true
 
 	if [[ $drive_name ]]
@@ -1031,7 +1033,7 @@ _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
-	assert-not-option -o $1
+	assert-not-option -o "$1"
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
 	name=${name%/latest*}
@@ -1103,7 +1105,7 @@ readonly -f _set-drive_dir
 
 function set-drive_dir() {
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
-	assert-not-option $1
+	assert-not-option "$1"
 	local drive_name=$1		# result of set-drive_name, i.e. valid
 
 	[[ $drive_name != */* ]] ||
@@ -1141,7 +1143,7 @@ declare -A custom_config_var2default_value # set-drive_usage also uses this
 customize-config-variables() {
 	local drive_name=${1-}
 
-	[[ $drive_name == Z ]] && is_regression_test=$true
+	[[ $drive_name == [zZ] ]] && is_regression_test=$true
 
 	remember-tracing		# since suspend-tracing maybe not run
 	local var_name
@@ -1324,7 +1326,7 @@ function set-priority() {
 	local  IO_priority_cmd=${level2IO_priority_cmd[$priority]}
 
 	# test-prune is very noisy in here
-	[[ $action == prune-drive* && $drive_name == Z ]] && return 0
+	[[ $action == prune-drive* && $drive_name == [zZ] ]] && return 0
 
 	{
 	$IfRun $CPU_priority_cmd $PGID && { [[ ! $IO_priority_cmd ]] ||
@@ -1389,7 +1391,7 @@ readonly -f reset-priority
 function count-rsyncs-using-resource() {
 	local regex=$*
 
-	[[ $drive_name == Z || $IfRun ]] && return 0
+	[[ $drive_name == [zZ] || $IfRun ]] && return 0
 	return $(COLUMNS=999 ps l -u root | egrep -c "\brsync .*$regex")
 }
 readonly -f count-rsyncs-using-resource
@@ -1475,7 +1477,7 @@ readonly -f sudo-unless-dir-writable
 _prune-exclude-globs-from-all-snapshots() {
 
 	local pruned_TS=$drive_dir/$pruned_timestamp
-	[[ $drive_name == Z ||		# regression test?
+	[[ $drive_name == [zZ] ||	# regression test?
 	   ( ! $debug_opt &&		# ... too slow for real drive
 	     # very slow: only run if exclude.txt changed since our last run
 	     ( ! -e $pruned_TS ||
@@ -1578,7 +1580,10 @@ rm-pruned-snapshots() {
 	$Trace
 	# just prune subdirs containing files with massive # of hard-links;
 	# except too-high drive usage is more critical than "Too many files".
-	set-FS_type--from-path $PWD
+	if [[ $drive_name == [zZ] ]]
+	   then FS_type=
+	   else	set-FS_type--from-path $PWD
+	fi
 	case ${FS_type,,} in
 	    ( xfs | btrfs )		# any FS that supports a zillion links
 		hard_link_dirs= ;;
@@ -1779,7 +1784,8 @@ prune-type-to-file() {
 			done
 			break
 		fi
-		Trace 4 "\n  LOOP $type: $# dates left: ${1-} ${2-} ... ${!#}"
+		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
+		Trace 4 "\n  LOOP $type: $# dates left: $ss"
 
 		! _do-skip-newest-span-of-days $type || shift $date_span ||
 		    shift $# # shift does nothing if try to shift more than $#
@@ -1790,7 +1796,8 @@ prune-type-to-file() {
 		set-prune_glob $type "$prune_type_glob"
 		TraceV 5 prune_type_glob prune_glob
 		eval "set -- $prune_glob"
-		Trace 5 "\n Matched  $# snapshots: ${1-} ${2-} ${3-} ... ${!#}"
+		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
+		Trace 5 "\n Matched  $# snapshots: $ss"
 
 		# skip over the snapshot prune-matches that aren't old enough
 		TraceV 5 date_suffix_glob first_prune_date
@@ -1803,7 +1810,8 @@ prune-type-to-file() {
 		done
 		[[ -d ${1-} ]] || continue
 		# delete all the old-enough prune matches
-		Trace 5 "\nDeleting ~$# snapshots: $1 ${2-} ${3-} ... ${!#}"
+		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
+		Trace 5 "\nDeleting ~$# snapshots: $ss"
 		echo ${*%$oldest_snapshot*} # don't delete oldest snapshot
 	done >> $file_of_snapshots_to_prune
 
@@ -1840,7 +1848,7 @@ readonly -f _do-skip-newest-span-of-days
 # for the goals of this function, see prune-variable comments in configure.sh
 function prune-drive() {
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
-	assert-not-option ${1-}
+	assert-not-option "${1-}"
 	local drive_name=$1 drive_dir
 
 	suspend-tracing
@@ -2222,7 +2230,7 @@ _handle-rsync-results() {
 	fi
 
 	if [[  $error_msg ]]
-	   then	[[ $Trace || $drive_name == Z ]] && # Z = debug "drive"
+	   then	[[ $Trace || $drive_name == [zZ] ]] && # Z = debug "drive"
 		log "$error_msg" ||
 		log "$error_msg" |& tee -a /dev/stderr | sed 's/; /\n/g' |
 		   $IfRun mail -s "$our_name: errors" $sysadmin_email_addresses
@@ -2285,7 +2293,7 @@ function run-rsync() {
 		local is_copy_snapshot=$true
 	   else local is_copy_snapshot=$false
 	fi
-	assert-not-option ${1-}
+	assert-not-option "${1-}"
 	local dst_snapshot=${!#}
 	local src_dirs=${*%$dst_snapshot}
 
@@ -2498,7 +2506,7 @@ function copy-snapshot() {
 	[[ $1 == -s* ]] && { local src=${1#-s}   ; shift; } || local src=
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
-	assert-not-option -o ${1-}
+	assert-not-option -o "${1-}"
 	[[ $src     ]] && set -- $src $1
 	(( $# >= 2  )) || abort-function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
@@ -2890,7 +2898,7 @@ function set-drive_dirs--from-user-args() {
 	for drive_dir
 	    do	_set-drive_name -q $drive_dir  &&
 		_set-drive_dir     $drive_name || continue
-		[[ $drive_name != Z || $is_regression_test ]] || continue
+		[[ $drive_name != [zZ] || $is_regression_test ]] || continue
 		is-drive-mounted   $drive_dir  &&
 		      drive_dirs+="$drive_dir "
 	done
@@ -2957,7 +2965,7 @@ create-jobs() {
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 	   else if set-drive_names--from-user-args "$@"
 		   then set -- $drive_names
-		elif [[ $* != Z ]]
+		elif [[ $* != [zZ] ]]
 		   then abort "no valid drive names specified: $*"
 		fi
 	fi
@@ -2977,7 +2985,7 @@ create-jobs() {
 		exit $?
 	fi
 
-	[[ $UID == 0 || $* == Z ]] || $IfRun abort "run with sudo"
+	[[ $UID == 0 || $* == [zZ] ]] || $IfRun abort "run with sudo"
 
 	[[ ! $debug_opt && $* != [Zz] && -t 1 ]] && echo -e "
 	NOTE: your $action command will run as a separate, disconnected job;
@@ -2987,9 +2995,9 @@ create-jobs() {
 "
 	$Trace
 	for name
-	    do	# [[ $name == *[aA] ]] && set -x	  # uncomment to debug
-		_set-drive_name $name && name=$drive_name # cleanup for 'ps'
-		if [[  ! $debug_opt   && $name != Z ]]
+	    do	# [[ $name == *[aA] ]] && set -x	   # uncomment to debug
+		_set-drive_name $name &&  name=$drive_name # cleanup for 'ps'
+		if [[  ! $debug_opt   && $name != [zZ] ]]
 		   then trap '' HUP
 			# Want new process-group so can ps/kill independently.
 			setsid \
@@ -3871,7 +3879,7 @@ watch() {
 	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
-	assert-not-option -o ${1-}
+	assert-not-option -o "${1-}"
 
 	[[ $action == watch ]] && exec-watch-snapback-w
 
@@ -4039,7 +4047,7 @@ readonly -f monitor-drives
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
 function unmount-drives() {
 	[[ $1 == -q  ]] && { local quiet_opt=$1; shift; } || local quiet_opt=
-	assert-not-option ${1-}
+	assert-not-option "${1-}"
 	[[ $* == all ]] && set -- $(list-drive-dirs)
 
 	$Trace
@@ -4102,7 +4110,7 @@ function add-extN-journal() {
 	   then shift;  local FS_label=$1
 	   else local name=$1 FS_label=
 	fi
-	assert-not-option -o ${1-}
+	assert-not-option -o "${1-}"
 	local FS_device=${2-} VG_name=${3-}
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
@@ -4203,7 +4211,7 @@ dir-sizes() {
 		   abort-with-action-Usage
 		set-drive_name $1
 	fi
-	assert-not-option ${1-}
+	assert-not-option "${1-}"
 
 	[[ $file ]] || {
 
@@ -5207,7 +5215,7 @@ case $action in
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
-	assert-not-option -o ${1-}
+	assert-not-option -o "${1-}"
 	[[ $# != 0   ]] || abort-with-action-Usage
 	create-jobs update ${src_names_regex_opt-} $recurse_opt $*
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
@@ -5229,7 +5237,7 @@ case $action in
 	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
 	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
 	[[ $1 == -r  ]] && {  recurse_opt=$1; shift; } ||  recurse_opt=
-	assert-not-option -o ${1-}
+	assert-not-option -o "${1-}"
 	(( $# >= 2   )) || [[ $src_snap_opt && ${1-} ]] ||
 	    abort-with-action-Usage
 	drive_name=${!#}
@@ -5504,7 +5512,7 @@ case $action in
    # for "snapcrypt close": don't eject if didn't get any backups today
    ( has*new*snapshots | hsn ) undo-action-abbrev has-new-snapshots
 	drive=$1
-	[[ $drive == *Z ]] && exit 0	# for debugging
+	[[ $drive == *[zZ] ]] && exit 0	# for debugging
 
 	$Trace
 	is-drive-mounted $drive || exit 0
