@@ -1767,14 +1767,16 @@ validate-prune_globs() {
 		done
 		[[ $debug_opt ]] && header "$type in $PWD" && ls && echo "---"
 
-		declare -a prune_type_globV=(${type2prune_type_globs[$type]})
-		[[ $debug_opt ]] && echo "$type globs: ${prune_type_globV[*]}"
-		local -i span
-		for span in ${!prune_type_globV[*]}
-		   do	local prune_type_glob=${prune_type_globV[$span]}
+		local prune_type_globs=${type2prune_type_globs[$type]}
+		[[ $debug_opt ]] && echo "$type globs: $prune_type_globs"
+		local -i span=0
+		local popped_word
+		while set-popped_word--from-list prune_type_globs
+		   do	let span+=1
+			local prune_type_glob=$popped_word
 			local prune_glob
-			set-prune_glob $type $prune_type_glob
-			set +f; eval "set -- $prune_glob"; set -f
+			set-prune_glob $type "$prune_type_glob"
+			set +f; eval  "set -- $prune_glob"; set -f
 			[[ $debug_opt ]] && echo "span=$span will prune: " $*
 			local pruned
 			for pruned
@@ -1782,7 +1784,7 @@ validate-prune_globs() {
 				    echo $span > $pruned && continue
 				local old_span=$(< $pruned)
 				local new_span=$span
-				abort "$pruned was pruned by spans $old_span and $new_span (first span is 0) in type2prune_type_globs[$type]"
+				abort "$pruned was pruned by spans $old_span and $new_span (first span is 1) in type2prune_type_globs[$type]"
 			done
 		done
 
