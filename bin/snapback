@@ -73,6 +73,7 @@ elif is-arg1-in-arg2 -e $* # regression-test wants config_file inside snapshot?
    else _root=
 fi
 #
+our_name=${our_name%.~*~}
 [[ ! ${config_dir-} ]] &&
 for dir in ~/etc /usr/local/etc /etc
     do	[[ -d $_root$dir/$our_name ]] && break
@@ -1658,6 +1659,8 @@ shorten-date() {
 }
 readonly -f shorten-date
 
+# ---------------------------------
+
 declare -r -A type2date_suffix_glob=(
 	 [NONE]=""
 	 [hour]=",??"
@@ -1669,22 +1672,6 @@ declare -r -A type2date_suffix_glob=(
    "$snapshot_glob" ]] ||
 	abort "snapshot_glob has to end with type2date_suffix_glob[year]"
 
-set-prune_glob() {
-	local type=$1 glob=$2
-
-	local date_suffix_glob=${type2date_suffix_glob[$type]}
-	local date_prefix_glob=${snapshot_glob%$date_suffix_glob}
-	case $type in
-	   (  hour ) local date_suffix_type=NONE  ;;
-	   (   day ) local date_suffix_type=hour  ;;
-	   ( month ) local date_suffix_type=day   ;;
-	   (  year ) local date_suffix_type=month ;;
-	esac
-	date_suffix_glob=${type2date_suffix_glob[$date_suffix_type]}
-	prune_glob=$date_prefix_glob$glob$date_suffix_glob{,.*}
-}
-readonly -f set-prune_glob
-
 readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
 
 declare -r -A backup_period2minimal_snapshot_glob=(
@@ -1695,26 +1682,136 @@ declare -r -A backup_period2minimal_snapshot_glob=(
    [12]="$snapshot_day_glob,{00,12}"
    [24]="$snapshot_day_glob,00"
 )
+for _hr in ${!backup_period2minimal_snapshot_glob[*]}
+    do	is-arg1-in-arg2 $_hr $valid_backup_periods || abort "$_hr missing"
+done
 #
 # the [hour] chunks are the complement of the previous map's values
-is-set        type2prune_type_globs ||	# can set custom value in $config_file
-declare -r -A type2prune_type_globs=(
-# the ones these globs skip: hour=00, day=01, month=01, year=00
+declare -r -A type2prune_type_globs_=(
 # period after prune: 2                4                 ~8          ~12   all
    [hour]=",?[13579]         ,{[02][26],1[048]}       ,{04,20}    ,{08,16} ,12"
     [day]="-{?[3579],[1-3]1} -{[02][26],1[048],30} -{04,12,20,28} -{08,24} -16"
   [month]="-{0[3579],11}          -{02,08,12}         -{04,10}       -06"
    [year]="  [13579]                 {2,6}              {4,8}"
 )
+#
+if \
+is-var type2prune_type_globs		# can set custom value in $config_file
+   then [[ "${type2prune_type_globs[hour]}" == \
+	   "${type2prune_type_globs_[hour]}" ]] ||
+	   abort "your custom type2prune_type_globs[hour] must match $our_name"
+   else _array_declare=$(declare -p type2prune_type_globs_)
+	eval "${_array_declare/type2prune_type_globs_=/type2prune_type_globs=}"
+fi
+
+# each set of globs skips one value in the range of possibilities, since
+# that value is kept for the next higher-order span
+declare -r -A type2skipped_value=([hour]=00 [day]=01 [month]=01 [year]=0)
+
+set-prune_glob() {
+	local type=$1 prune_type_glob=$2
+
+	local date_suffix_glob=${type2date_suffix_glob[$type]}
+	local date_prefix_glob=${snapshot_glob%$date_suffix_glob}
+	case $type in
+	   (  hour ) local date_suffix_type=NONE  ;;
+	   (   day ) local date_suffix_type=hour  ;;
+	   ( month ) local date_suffix_type=day   ;;
+	   (  year ) local date_suffix_type=month ;;
+	esac
+	date_suffix_glob=${type2date_suffix_glob[$date_suffix_type]}
+	prune_glob=$date_prefix_glob$prune_type_glob$date_suffix_glob{,.*}
+}
+readonly -f set-prune_glob
+
+# ----------------------
+
+validate-prune_globs() {
+	while [[ ${1-} == -* ]]; do shift; done
+	local name=${1:-Z}
+	[[ $name == all ]] && name=Z
+	_set-drive_name $name
+
+	local parent_cmd=$(COLUMNS=9999 ps -o command= $PPID)
+	[[  "$parent_cmd " =~ ' '(regression-test|rt)' ' ]] && local debug_opt=
+	[[  "$parent_cmd " == *' -C -d prune-drive'*	 ]] && local debug_opt=
+
+	customize-config-variables $drive_name
+	local -A type2date_span
+	set-type2date_span
+	[[ $debug_opt ]] && declare -p type2date_span
+
+	local test_dir=$tmp_dir/$_our_name-prune
+	mkdir -p $test_dir
+	cd $test_dir || abort cd
+
+	set -f		  # make sure code not confused by unexpected globbing
+	local type prefix tst_seq suffix
+	for type in ${!type2prune_type_globs[*]}
+	    do	[[ ${type2date_span[$type]-} =~ ^[1-9][0-9]*$ ]] ||
+		    abort "don't have (valid) type2date_span[$type]"
+
+		case $type in
+		  ( hour  ) prefix=2000-01-01, tst_seq=0..23 suffix= ;;
+		  (  day  ) prefix=2000-01-    tst_seq=1..31 suffix=,00 ;;
+		  ( month ) prefix=2000-       tst_seq=1..12 suffix=-01,00 ;;
+		  ( year  ) prefix=200	       tst_seq=0..9  suffix=-01-01,00;;
+		esac
+
+		set +f; rm -f *; set -f
+		eval "set -- {$tst_seq}"
+		local tst
+		for tst
+		    do	[[ $type != year && $tst == ? ]] && tst=0$tst
+			> $prefix$tst$suffix
+		done
+		[[ $debug_opt ]] && header "$type in $PWD" && ls && echo "---"
+
+		declare -a prune_type_globV=(${type2prune_type_globs[$type]})
+		[[ $debug_opt ]] && echo "$type globs: ${prune_type_globV[*]}"
+		local -i span
+		for span in ${!prune_type_globV[*]}
+		   do	local prune_type_glob=${prune_type_globV[$span]}
+			local prune_glob
+			set-prune_glob $type $prune_type_glob
+			set +f; eval "set -- $prune_glob"; set -f
+			[[ $debug_opt ]] && echo "span=$span will prune: " $*
+			local pruned
+			for pruned
+			    do	[[ ! -s $pruned ]] &&
+				    echo $span > $pruned && continue
+				local old_span=$(< $pruned)
+				local new_span=$span
+				abort "$pruned was pruned by spans $old_span and $new_span (first span is 0) in type2prune_type_globs[$type]"
+			done
+		done
+
+		set +f; set -- *; set -f
+		for tst in $*
+		    do	[[ -s $tst ]] && continue
+			local skipped_value=${type2skipped_value[$type]}
+			local skipped_snapshot=$prefix$skipped_value$suffix
+			[[ $skipped_snapshot == $tst ]] && { set +x;continue; }
+			ls -s
+			abort "$tst not pruned by type2prune_type_globs[$type]"
+		done
+	done
+
+	cd $OLDPWD
+	set +f
+}
+readonly -f validate-prune_globs
+
+# ---------------------------------
 
 function set-type2date_span {
 
-    type2date_span=(
-	 [hour]=$days_per_span_for_hour_prune
-	  [day]=$months_per_span_for_day_prune
-	[month]=$years_per_span_for_month_prune
-	 [year]=$decades_per_span_for_year_prune
-    )
+	type2date_span=(
+	    [hour]=$days_per_span_for_hour_prune
+	     [day]=$months_per_span_for_day_prune
+	   [month]=$years_per_span_for_month_prune
+	    [year]=$decades_per_span_for_year_prune
+	)
 }
 readonly -f set-type2date_span
 
@@ -2723,10 +2820,13 @@ set-basename2dirs-basename2is_keep() {
 
 	local dir basename
 	while read dir
-	   do	if [[ $dir == */.keep ]]
-		   then dir=${dir%/.keep}
-			basename=${dir##*/} ; basename2is_keep[$basename]=$true
-		   else basename=${dir##*/}
+	   do	if [[ $dir != */.keep ]]
+		   then basename=${dir##*/}
+		   else dir=${dir%/.keep}
+			basename=${dir##*/}
+			basename2is_keep[$basename]=$true
+			is-arg1-in-arg2  $dir \
+			 ${basename2dirs[$basename]-} && continue # duplicate?
 		fi
 		[[ -d $dir ]] || continue
 		basename2dirs[$basename]+="$dir "
@@ -5207,6 +5307,7 @@ case $action in
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $# != 0 ]] || abort-with-action-Usage
+	validate-prune_globs "$@"
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
@@ -5439,9 +5540,10 @@ case $action in
 
 	customize-and-validate-configuration-variables Z
 
-	cmd_dirs="/usr/local/bin/ ~/git/$_our_name/bin/"
-	echo -e "\nComparing prune results using '$_our_name' in:
-	${cmd_dirs/ / vs }"
+	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
+	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
+	echo -e "\nComparing $old_cmd to $tst_cmd"
+
 	set-drive_dir Z
 
 	# see the comment at the top of the mk-Z option, above
@@ -5470,13 +5572,12 @@ case $action in
 		$IfRun $our_path mk-Z -q $mk_Z_args &&
 		   $IfRun mv .mk-Z $stash && $IfRun rm -f $stash/latest ||
 			abort "couldn't populate $stash"; }
-		for dir in $cmd_dirs
-		    do	eval "dir=$dir"	# expand ~
-			$IfRun clone-stashed-mk-Z $type
-			$IfRun $dir$_our_name $our_opts prune-drive Z |&
+		for cmd in $old_cmd $tst_cmd
+		    do	$IfRun clone-stashed-mk-Z $type
+			$IfRun $cmd $our_opts prune-drive Z |&
 			   fgrep -v ' prune-drive Z: pruned '
-			[[ $dir == /usr/* ]] && cmd=old || cmd=new
-			ls > $stash.$cmd.ls
+			[[ $cmd == $old_cmd ]] && which=old || which=new
+			ls > $stash.$which.ls
 		done
 		set-reversed_words $stash.*.ls; set -- $reversed_words
 		diff -q $*  &&  mv $stash.new.ls $stash.pruned.ls &&
@@ -5490,7 +5591,7 @@ case $action in
 	;;
 
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
-   ( r*t* ) undo-action-abbrev regression-test
+   ( regression-test | rt ) undo-action-abbrev regression-test
 	# $Trace
 	regression-test "$@"
 	;;
