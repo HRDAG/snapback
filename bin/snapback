@@ -1539,7 +1539,7 @@ rm-pruned-snapshots() {
 		   then  $sudo mv $verbose_opt $snapshot $snapshot.rm
 		   else $IfRun mv	       $snapshot $snapshot.rm
 		fi
-		rm_count+=1  rm_snapshots+="$snapshot "
+		let rm_count+=1;  rm_snapshots+="$snapshot "
 	done
 
 	[[ $rm_count != 0 && ! $is_update ]] &&
@@ -2909,7 +2909,7 @@ fastest-snapshots() {
 
 		local -i writer_count=0
 		for writer in backup copy prune
-		    do	have-job $writer && writer_count+=1
+		    do	have-job $writer && let writer_count+=1
 		done
 
 		_set-drive_dir
@@ -3552,7 +3552,7 @@ set-max_ps_width() {
 	set-max_drive_name_len $drive_dirs
 	declare -g -i \
 	max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
-	max_ps_width+=1	       # 'watch' executable requires blank last column
+	let max_ps_width+=1    # 'watch' executable requires blank last column
 }
 readonly -f set-max_ps_width
 
@@ -4095,7 +4095,7 @@ _monitor-drives() {
 			local  count_file=$response_dir/counter/$name
 			[[ -s $count_file ]] || echo 0 > $count_file
 			local -i count=$(< $count_file)
-			count+=1
+			let count+=1
 			echo $count > $count_file
 
 			hung_msecs=${name2msecs[$name]}
@@ -4373,7 +4373,7 @@ dir-sizes() {
 	for i in {0..9}
 	    do	set -- $(bzcat $file.bz2 | sed -n ${decile_median_line}p)
 		echo "Decile $i has median directory size of ${1}B"
-		decile_median_line+=decile_count
+		let   decile_median_line+=decile_count
 	done
 	echo
 	}
@@ -5491,7 +5491,7 @@ case $action in
 	let end_secs-=3600		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
 	   do	set-day--from-secs $secs
-		secs+=secs_per_day
+		let secs+=secs_per_day
 		[[ $day == *01 || ! $is_months ]] || continue
 		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
 		for hour in $hours
