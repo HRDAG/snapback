@@ -1,4 +1,4 @@
-# version=22
+# version=23
 
 ##################################################################
 ##################################################################
@@ -97,7 +97,7 @@ declare -i -r log_level=0	     # verbosity of logs in /var/log/snapback/
 # ---------------------------------------------------------
 
 # See set-job_type2priority_level to see the policy for deciding priority level
-# (policy is partially controlled by $min_FS_usage_percent).
+# (policy is partially controlled by $max_FS_usage_percent).
 
 # PGIDs (PIDs of process-group leaders) will be appended to these commands;
 # if that's not adequate, define a function that takes PGIDs as the final args,
@@ -181,8 +181,8 @@ declare -i backup_period=1		# need much RAM for small period
 #    and excluded_backup_hours (above) are also used in pruning.	     #
 # ----------------------------------------------------------------------------
 
-# How high can FileSystem usage get before making pruning highest priority?
-declare -i -r min_FS_usage_percent=95	# for "df" and "df -i"
+# Maximum acceptable FileSystem usage (before make pruning highest priority).
+declare -i -r max_FS_usage_percent=95	# for "df" and "df -i"
 
 # -----------------------------------------------------------------------------
 
