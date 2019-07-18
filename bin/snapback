@@ -431,8 +431,6 @@ readonly -f do-log-common-events
 
 # ---------------------------------
 
-xtrace=				  # in case comment-out first line of function
-
 function lock-PID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
@@ -1542,6 +1540,8 @@ rm-pruned-snapshots() {
 		let rm_count+=1;  rm_snapshots+="$snapshot "
 	done
 
+	update-snapshots-ls
+
 	[[ $rm_count != 0 && ! $is_update ]] &&
 	if (( $log_level >= 2 ))
 	   then [[ $debug_opt ]] ||
@@ -1557,8 +1557,6 @@ rm-pruned-snapshots() {
 		restore-tracing
 		return
 	fi
-
-	update-snapshots-ls
 
 	set -- $snapshot_glob*.rm
 	local snapshot_basenames=$*
@@ -1672,8 +1670,6 @@ declare -r -A type2date_suffix_glob=(
    "$snapshot_glob" ]] ||
 	abort "snapshot_glob has to end with type2date_suffix_glob[year]"
 
-readonly valid_backup_periods="1 2 4 8 12 24" # also in configure.sh comment
-
 declare -r -A backup_period2minimal_snapshot_glob=(
     [1]="$snapshot_glob"
     [2]="$snapshot_day_glob,?[02468]"
@@ -1682,9 +1678,7 @@ declare -r -A backup_period2minimal_snapshot_glob=(
    [12]="$snapshot_day_glob,{00,12}"
    [24]="$snapshot_day_glob,00"
 )
-for _hr in ${!backup_period2minimal_snapshot_glob[*]}
-    do	is-arg1-in-arg2 $_hr $valid_backup_periods || abort "$_hr missing"
-done
+readonly valid_backup_periods=${!backup_period2minimal_snapshot_glob[*]}
 #
 # the [hour] chunks are the complement of the previous map's values
 declare -r -A type2prune_type_globs_=(
