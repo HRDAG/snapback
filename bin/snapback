@@ -1829,12 +1829,12 @@ done
 unset _period
 readonly backup_period2minimal_snapshot_regex
 
-set-date_span-scaled() {
+set-date_span--scaled() {
 
 	date_span=$( echo "$date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
 }
-readonly -f set-date_span-scaled
+readonly -f set-date_span--scaled
 
 # --------------------------------------------
 
@@ -1858,7 +1858,7 @@ prune-type-to-file() {
 	local -A type2date_span
 	set-type2date_span	# run after call to customize-config-variables
 	local date_span=${type2date_span[$type]}
-	set-date_span-scaled
+	set-date_span--scaled
 	local prune_type_globs=${type2prune_type_globs[$type]}
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
 
