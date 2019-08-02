@@ -196,9 +196,9 @@ while getopts "C cnvqr: E:edtT: hk"  arg
 
 	   ( E ) ;;				 # handled at top of file
 	   ( e ) ;;				 # handled at top of file
-	   ( d ) IfRun="echo -e" debug_opt=-d ;; # put $IfRun b4 'active' cmds
+	   ( d ) IfRun="echo"	debug_opt=-d ;; # put $IfRun b4 'active' cmds
 	   ( t ) [[ $Trace ]] && TraceAll=$Trace
-		 Trace="set -x"  trace_opt=-t ;;
+		 Trace="set -x" trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
 
 	   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
