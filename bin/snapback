@@ -229,7 +229,7 @@ shopt -s nullglob			# $# is 0 if pathname expansion "fails"
 
 umask 02				# log and lock dirs are setgid sudo/etc
 
-FUNCNEST=100				# catch coding errors
+FUNCNEST=100				# abort on infinite recursion
 
 fgrep -q -x "# version=$version" $config_file_sample ||
   $IfRun abort "$config_file_sample version= does not match $our_path"
@@ -2135,7 +2135,7 @@ function _is-time-to-run-backup {
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
 	set -- $(date '+%k %M')
-	local -i current_hour=$1 current_minute=$2
+	local -i current_hour=$1 current_minute=${2#0}
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
@@ -2957,7 +2957,7 @@ update-drive() {
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
 	set-num_full_link_dests
-	wait-for-full-snapshots $num_full_link_dests
+	is-arg1-in-arg2 -f $* || wait-for-full-snapshots $num_full_link_dests
 
 	set-srcs_dst_file
 
@@ -3398,7 +3398,8 @@ function run-df() {
 
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
-	(( ${cols:-99} >= $min_full_columns )) || df_fields=${df_fields/,size/}
+	(( ${columns:-99} >= $min_full_columns )) ||
+	    df_fields=${df_fields/,size/}
 	df --block-size=G --output=$df_fields --no-sync $drive_dirs
 }
 readonly -f run-df
@@ -3417,8 +3418,8 @@ function run-lsblk() {
 	done
 
 	echo
-	# fields that don't work: rm,model
-	lsblk_fields=name,fstype,type,rota,size,state,sched,opt-io,mountpoint
+	# fields that don't work: rm,model; unreliable fields: rota
+	lsblk_fields=name,fstype,type,size,state,sched,opt-io,mountpoint
 	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
 	lsblk --output=$lsblk_fields			$devices
 }
@@ -3435,7 +3436,8 @@ function trim-ps {
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
-	    -e "s@ $HOME/@ ~/@g"
+	    -e "s@ $HOME/@ ~/@g"	\
+	    -e 's@\([0-9]\)     rsync@\1   rsync@'
 	return 0
 }
 readonly -f trim-ps
@@ -4179,12 +4181,12 @@ readonly -f unmount-drives
 # Rewrite this function if you're not using LVM.
 have-cmd set-FS_external_log ||	   # can define custom version in $config_file
 function set-FS_external_log() {
-	[[ ${1-} == -f ]] && { do_force=$true; shift; } || do_force=$false
+	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	local FS_label=$1 VG=${2:-$FS_log_VG} # FS_log_VG in $config_file
 
 	[[ $VG ]] &&
 	[[ $do_want_external_log ||	# defined in $config_file
-	   $do_force                ]] || { FS_external_log= && return 1; }
+	   $force_opt               ]] || { FS_external_log= && return 1; }
 
 	       FS_external_log=/dev/$VG/${FS_label}_log
 	[[ -b $FS_external_log ]] && return 0
@@ -4557,6 +4559,8 @@ _set-opts-log_opt-mount_opts--for-xfs() {
 	# mkfs opts (on your fastest drive) and the dir-sizes action (see
 	# section C. in doc/Install.txt).
 
+	[[ $force_opt		 ]] && opts+="$force_opt "
+
 	[[ $opts == *"-b size="* ]] || opts+="-b size=4096 "
 	[[ $opts == *"-n size="* ]] || opts+="-n size=4096 "
 	[[ $opts == *"-i size="* ]] || opts+="-i size=512 "
@@ -4666,7 +4670,7 @@ _mkfs-warnings() {
 	line_5="(which is not needed if the partition is auto-mounted)."
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
-	[[ $do_force || $mkfs_cmd_opts != mkfs.ext* ]] || {
+	[[ $force_opt || $mkfs_cmd_opts != mkfs.ext* ]] || {
 	   echo "If this is your first or smallest drive, use the -f option;"
 	   echo "otherwise, use the very-fast 'copy-drive' action instead."
 	   abort-with-action-Usage
@@ -4679,9 +4683,10 @@ _mkfs-warnings() {
 
 # mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
 function mkfs-backup-drive() {
-	[[ $1 == -f ]] && { local do_force=$true; shift; } || local do_force=
-	local mkfs_opts opts_args=" $*"; set -f
-	mkfs_opts=$(echo " $*" | sed -r 's@^(.*) (/|[^ ]*[_A-Z]).*@\1@')
+	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
+	local mkfs_opts= opts_args=" $*"; set -f
+	[[ " $*" =~ ^([^/]*)\ (/|[^\ ]*[_A-Z]) ]] &&
+	    mkfs_opts=${BASH_REMATCH[1]}
 	set -- ${opts_args#$mkfs_opts} ; set +f
 	[[ $# == [12] ]] || abort-with-action-Usage
 	local device=$1 name=${2-}
@@ -5309,6 +5314,7 @@ case $action in
 	;;
    # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
+	[[ $1 == -f  ]] && { do_force=$true; shift; }
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
