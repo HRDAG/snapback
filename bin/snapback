@@ -49,9 +49,9 @@ readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
 readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
 readonly -f assert-not-option set-var_value--from-var_name echoE echoEV
 readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
-readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log
-readonly -f header set-absolute_path cd_ setup-df-data-from-fields
-readonly -f have-proc is-process-alive set-reversed_words
+readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
+readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
+readonly -f cd_ have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word--from-list set-division set-warning_string
 readonly -f confirm run-function set-backup_suffix
 
@@ -196,7 +196,7 @@ while getopts "C cnvqr: E:edtT: hk"  arg
 
 	   ( E ) ;;				 # handled at top of file
 	   ( e ) ;;				 # handled at top of file
-	   ( d ) IfRun="echo"	debug_opt=-d ;; # put $IfRun b4 'active' cmds
+	   ( d ) IfRun="echo"	debug_opt=-d ;;	 # put $IfRun b4 'active' cmds
 	   ( t ) [[ $Trace ]] && TraceAll=$Trace
 		 Trace="set -x" trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
@@ -867,12 +867,11 @@ function is-drive-mounted() {
 
 	[[ $drive_dir ]] || return 1
 	[[ $drive_dir == *[-/][zZ] ]] && return 0 # Z is testing pseudo-drive
+
 	suspend-tracing
 	set -- $drive_dir/$snapshot_glob*
 	restore-tracing
-	[[ $# != 0 ||
-	   $(df --output=target --no-sync $drive_dir 2> /dev/null) == \
-	   *$drive_dir ]]
+	[[ $# != 0 ]] || is-an-FS-device-mounted $drive_dir
 }
 readonly -f is-drive-mounted
 
@@ -3437,7 +3436,7 @@ function trim-ps {
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
 	    -e "s@ $HOME/@ ~/@g"	\
-	    -e 's@\([0-9]\)     rsync@\1   rsync@'
+	    -e 's@\([0-9]\)     rsync@\1   rsync@' # so can fit in 80 columns
 	return 0
 }
 readonly -f trim-ps
@@ -3575,7 +3574,8 @@ setup-ps-variables-and-function() {
 	    (   *    ) ps_H_opt=    ps_f_opt=   ;;
 	esac; readonly ps_H_opt     ps_f_opt
 
-	max_rsync_ps_out="    rsync X/.snap/. /2019-03-30,00.links.partial/"
+	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
+	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
 	[[ $ps_H_opt ]] || {
 	    [[ max_rsync_ps_out =~ rsync.* ]] &&
 	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip leading SPACEs
@@ -5666,6 +5666,7 @@ case $action in
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
+	[[ $# == 1 ]] || abort "specify a name for a drive"
 	 _set-drive_name $1 || abort "$1 is not a valid backup drive name"
 	 _set-drive_dir
 	echo $drive_dir
