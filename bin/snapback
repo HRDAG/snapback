@@ -918,7 +918,7 @@ function set-admin_group {
 	local users_groups=$(id -G -n $user)
 
 	local group
-	for group in sudo wheel admin adm NoNe '' # 'admin' is Darwin / macOS
+	for group in sudo wheel admin staff adm NoNe '' # 'admin' is macOS
 	    do	is-arg1-in-arg2 $group $users_groups && break
 	done
 	[[ $group == NoNe ]] && admin_group= || admin_group=$group

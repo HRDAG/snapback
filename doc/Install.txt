@@ -81,29 +81,28 @@ link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
 the file?!).
 
 Here's how to setup a brand new drive to be an encrypted drive (this process
-will eventually be automated in HRDAG's 'snapscrypt' utility).  Find its
-device name with:
-    ls -lt /dev/sd?
-Save the device name and drive name:
-    device=/dev/sdX drive=Y
-Verify it's a new drive (which should have partition table):
+will eventually be automated in HRDAG's 'snapcrypt' utility).  Find the
+drive's device name with:
+    ls -lt /dev/sd*	# most-recently-plugged-in-drive at the top
+Save the device name, and specify the drive name you will use
+    device=/dev/sd??  drive=?
+Verify it's the drive you want:
     fdisk -l $device
+Choose the partition you want:
+    device=${device}?
 See if someone is using it:
     fuser -v $device
-Create an encryption keypair (if you haven't already):
+Create an encryption keypair (if don't already have one you want to use):
+    sudo mkdir -p /etc/snapcrypt/keys
     cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
 	(be SURE you type "YES" not "yes")
-Make sure encryption succeeded:
-    fdisk -l $device	# shouldn't see any partitions
-Then run:
+Now decrypt the device:
     snapcrypt open $device $drive	# the mount will fail
 
-[Instead of encrypting the whole drive, you could just encrypt a single
-partition, and create a slightly different kind of rule ...]  Then create a
-new rule in /etc/snapcrypt/drives.rules .  If you have existing ext4 backup
-drives that are no bigger, use 'snapback copy-drive' to initialize the new
-drive; otherwise, use 'snapback mkfs' to create a filesystem, and 'snapback
-update-drive' to copy snapshots from your other backup drives.
+Then create a new rule in /etc/snapcrypt/drives.rules .  If you have existing
+ext4 backup drives that are no bigger, use 'snapback copy-drive' to initialize
+the new drive; otherwise, use 'snapback mkfs' to create a filesystem, and
+'snapback update-drive' to copy snapshots from your other backup drives.
 
 To determine your actual average directory size, e.g. for ext4:
      # Specify your filesystem type with mkfs_cmd_opts= in configure.sh .
