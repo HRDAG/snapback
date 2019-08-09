@@ -933,6 +933,7 @@ readonly -f set-admin_group
 fix-drive_dir-perms() {
 	local drive_dir=${1:-$drive_dir}
 
+	is-an-FS-device-mounted $drive_dir || return
 	mkdir -p $drive_dir/.junk	# for sysadmin
 	set-admin_group &&
 	chgrp $admin_group $drive_dir/{.,.??*} &&
@@ -2489,12 +2490,21 @@ readonly -f run-backup
 ##############################################################################
 ##############################################################################
 
+is-in-cron-job() {
+	local name=$1  drive_name
+
+	set-drive_name $name
+	[[ $drive_name =~ ^$drive_name_regex$ ]]
+}
+readonly -f is-in-cron-job
+
+# ---------------------------------
+
 assert-not-in-cron-jobs() {
 
-	local name  drive_name
+	local name
 	for name
-	    do	set-drive_name $name
-		[[ $drive_name =~ ^$drive_name_regex$ ]] || continue
+	    do	is-in-cron-job $name || continue
 		local regex=drive_name_regex
 		$IfRun abort "remove $drive_name from $regex= in $config_file"
 	done
@@ -2944,7 +2954,10 @@ readonly -f fill-in-unpruned-empty-snapshots
 # ----------------------------------------------------------------------------
 
 update-drive() {
-	set-drive_name ${!#}		# sorted-useful-srcs handles options
+	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
+	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
+	assert-not-option $1
+	set-drive_name $1
 	set-drive_dir $drive_name
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
@@ -2956,7 +2969,8 @@ update-drive() {
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
 	set-num_full_link_dests
-	is-arg1-in-arg2 -f $* || wait-for-full-snapshots $num_full_link_dests
+	[[ $do_force ]] || ! is-in-cron-job $drive_name ||
+	    wait-for-full-snapshots $num_full_link_dests
 
 	set-srcs_dst_file
 
@@ -5314,13 +5328,13 @@ case $action in
 	;;
    # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
-	[[ $1 == -f  ]] && { do_force=$true; shift; }
+	[[ $1 == -f  ]] && { force_opt=$1; shift; } || force_opt=
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
 	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
 	assert-not-option -o "${1-}"
 	[[ $# != 0   ]] || abort-with-action-Usage
-	create-jobs update ${src_names_regex_opt-} $recurse_opt $*
+	create-jobs update $force_opt ${src_names_regex_opt-} $recurse_opt $*
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
