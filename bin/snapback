@@ -976,7 +976,10 @@ readonly -f create-lock_dir-log_dirs
 
 # -----------------------------------
 
-is_regression_test=$false
+if [[ $debug_opt && $is_cron ]]
+   then is_regression_test=$true
+   else is_regression_test=$false
+fi
 
 readonly none=NoNe
 _last_fully_initialized_drive_name=
@@ -2643,7 +2646,7 @@ copy-snapshots() {
 	assert-not-option -o "${1-}"
 	[[ $src_snapshots && $# == 1 ]] ||
 	    abort-function "src_option(s) [-q] dst_drive_name"
-	local dst_drive_name=$1
+	set-drive_name $1
 
 	lock -w copy || exit 1
 
@@ -5360,7 +5363,7 @@ case $action in
 	local opts=
 	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
 	(( $# >= 2 )) || abort-with-action-Usage
-	drive_name=${!#}
+	set-drive_name ${!#}
 	src_snapshots=${*%$drive_name}
 	src_snapshots=${src_snapshots% }
 	create-jobs copy -s${src_snapshots// / -s} $opts $drive_name
