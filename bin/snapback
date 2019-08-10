@@ -2625,7 +2625,9 @@ function copy-snapshot() {
 	[[ $is_update ]] &&
 	    copy_snapshot_args="$src_snapshots $dst_snapshot" && return 0
 
+	lock copy || exit 1
 	copy-snapshot-rsync $src_snapshot $dst_snapshot
+	unlock copy
 }
 readonly -f copy-snapshot
 
@@ -3428,6 +3430,7 @@ function trim-ps {
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
 	    -e 's@ /usr/local/bin/@ @'	\
+	    -e 's@ -r @ @'		\
 	    -e "s@ $HOME/@ ~/@g"	\
 	    -e 's@\([0-9]\)     rsync@\1   rsync@' # so can fit in 80 columns
 	return 0
@@ -3439,8 +3442,7 @@ readonly -f trim-ps
 function trim-backup-ps {
 
 	trim-ps |
-	sed -e 's@run-backup -r @run-backup @g' \
-	    -e 's@ --.* @ $opts -R $dirs @' \
+	sed -e 's@ --.* @ $opts -R $dirs @' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
 }
@@ -3450,9 +3452,7 @@ readonly -f trim-backup-ps
 
 function trim-prune-ps {
 
-	trim-ps |
-	sed -e 's@prune-drive -r @prune-drive @g'
-	return 0
+	trim-ps
 }
 readonly -f trim-prune-ps
 
@@ -3462,7 +3462,6 @@ function trim-copy-update-ps {
 
 	set -f; set -- $rsync_backup_opts; set +f # standardize whitespace
 
-	local cpss="$_our_name c"
 	trim-ps |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
@@ -3471,7 +3470,6 @@ function trim-copy-update-ps {
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
-	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$snap/. /@' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
@@ -5345,11 +5343,10 @@ case $action in
 	set-drive_name $drive_name
 	set-drive_dir  $drive_name
 
-	lock copy || exit 1
 	for snapshot in $src_snapshots
 	    do	create-jobs copy $quiet_opt -s$snapshot $drive_name
+		wait
 	done
-	unlock copy
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
