@@ -1881,7 +1881,7 @@ prune-type-to-file() {
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 4 "\n  LOOP $type: $# dates left: $ss"
 
-		! _do-skip-newest-span-of-days $type || shift $date_span ||
+		shift $date_span ||
 		    shift $# # shift does nothing if try to shift more than $#
 		remaining_reverse_sorted_snapshot_dates=$*
 		local first_prune_date=${1-}
@@ -1912,28 +1912,6 @@ prune-type-to-file() {
 	echo $remaining_reverse_sorted_snapshot_dates
 }
 readonly -f prune-type-to-file
-
-# ----------------------
-
-function _do-skip-newest-span-of-days() {
-	local type=$1
-
-	[[ $type != hour* ]] && return 0
-
-	# if $backup_period had been too short and we lengthened it,
-	#   we delete recent snapshots that "shouldn't" have been created,
-	#   by not shifting remaining-days until we've pruned the "spurious"
-	if   (( period <=  1 )) ; then return 0
-	elif (( period <=  2 )) ; then period=1
-	elif (( period <=  4 )) ; then period=2
-	elif (( period <=  8 )) ; then period=4
-	elif (( period <= 24 )) ; then period=8
-				  else period=24
-	fi
-	Trace 5 "period now $period, didn't shift"
-	return 2			# higher than 'shift' error status
-}
-readonly -f _do-skip-newest-span-of-days
 
 # ---------------------------------------------------------
 
@@ -5323,7 +5301,7 @@ case $action in
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $# != 0 ]] || abort-with-action-Usage
-	validate-prune_globs "$@"
+	debug_opt= validate-prune_globs "$@"
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
