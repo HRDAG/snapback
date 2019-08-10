@@ -535,7 +535,8 @@ function lock() {
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
 	[[ $do_wait || ! $is_cron ]] &&	# interactive user waits for lock
 	if [[ $type == backup ]]
-	   then declare -i half_backup_period_mins=$backup_period*60/2
+	   then [[ $is_cron ]] && continue-jobs $type # maybe suspended
+		declare -i half_backup_period_mins=$backup_period*60/2
 		  if [[ $date_time == *-01,00 ]] # kept a very long time?
 		   then wait_opt=--wait-expiration=15d # want it, or next month
 		elif [[ $date_time == *-16,00 ]] # kept a long time?
