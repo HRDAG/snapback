@@ -367,6 +367,7 @@ readonly -f set-lock_path
 
 # turn comma-separated lists and/or ranges into a single glob
 function set-glob() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	glob=
 	local arg
@@ -383,6 +384,7 @@ function set-glob() {
 	done
 	glob=${glob%,}
 	(( $# > 1 )) && glob="{$glob}"
+	$xtrace
 	[[ $glob == *['[{*?,+@!']* ]]
 }
 readonly -f set-glob
@@ -1279,7 +1281,6 @@ function is-drive-usage-too-high() {
 	local -i pcent ipcent
 	setup-df-data-from-fields $drive_dir pcent ipcent
 	local block_percent=$pcent  inode_percent=$ipcent
-	# caller can declare max_drive_usage_percent to use it
 	if (( $block_percent > $inode_percent ))
 	   then max_drive_usage_percent=b$block_percent
 	   else max_drive_usage_percent=i$inode_percent
@@ -2625,11 +2626,34 @@ function copy-snapshot() {
 	[[ $is_update ]] &&
 	    copy_snapshot_args="$src_snapshots $dst_snapshot" && return 0
 
-	lock copy || exit 1
 	copy-snapshot-rsync $src_snapshot $dst_snapshot
-	unlock copy
 }
 readonly -f copy-snapshot
+
+# -----------------------------------------
+
+copy-snapshots() {
+	local src_snapshots=  src_snapshot
+	while [[ $1 == -s* ]]
+	   do	src_snapshot=${1#-s}
+		src_snapshots+="${src_snapshot%/.keep} "
+		shift
+	done
+	[[ $1 == -q ]] && { local quiet_opt=$1 ; shift; } || local quiet_opt=
+	assert-not-option -o "${1-}"
+	[[ $src_snapshots && $# == 1 ]] ||
+	    abort-function "src_option(s) [-q] dst_drive_name"
+	local dst_drive_name=$1
+
+	lock -w copy || exit 1
+
+	for src_snapshot in $src_snapshots
+	    do	copy-snapshot $quiet_opt $src_snapshot $drive_name
+	done
+
+	unlock copy
+}
+readonly -f copy-snapshots
 
 # -------------------------------------------------------
 
@@ -2935,8 +2959,8 @@ readonly -f fill-in-unpruned-empty-snapshots
 # ----------------------------------------------------------------------------
 
 update-drive() {
-	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
+	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
 	set-drive_name $1
 	set-drive_dir $drive_name
@@ -2975,10 +2999,12 @@ readonly -f update-drive
 ##############################################################################
 
 function set-drive_dirs--from-user-args() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 
 	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
 	   then set-drive_dirs $all_opt
+		$xtrace
 		return $?
 	fi
 
@@ -2993,6 +3019,7 @@ function set-drive_dirs--from-user-args() {
 		      drive_dirs+="$drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
+	$xtrace
 	[[ $drive_dirs ]]
 }
 readonly -f set-drive_dirs--from-user-args
@@ -3002,6 +3029,7 @@ readonly -f set-drive_dirs--from-user-args
 function set-drive_names--from-user-args() {
 	 set-drive_dirs--from-user-args "$@" || return $?
 
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	drive_names=
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
@@ -3009,6 +3037,7 @@ function set-drive_names--from-user-args() {
 		  drive_names+="$drive_name "
 	done
 	drive_names=${drive_names% }
+	$xtrace
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names--from-user-args
@@ -3021,7 +3050,7 @@ _set-function-exe() {
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
 	   ( backup ) function=run-backup     exe=$run_backup_exe    ;;
-	   ( copy   ) function=copy-snapshot  exe=$copy_snapshot_exe ;;
+	   ( copy   ) function=copy-snapshots exe=$copy_snapshot_exe ;;
 	   ( prune  ) function=prune-drive    exe=$prune_drive_exe   ;;
 	   ( update ) function=update-drive   exe=$update_drive_exe  ;;
 	   (   *    ) abort "action '$type' is not supported" ;;
@@ -3462,6 +3491,7 @@ function trim-copy-update-ps {
 
 	set -f; set -- $rsync_backup_opts; set +f # standardize whitespace
 
+	local cpss="$_our_name c"
 	trim-ps |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
@@ -3470,6 +3500,7 @@ function trim-copy-update-ps {
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
+	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$snap/. /@' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
@@ -5305,13 +5336,9 @@ case $action in
 	;;
    # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
-	[[ $1 == -f  ]] && { force_opt=$1; shift; } || force_opt=
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
-	[[ $1 == -s* ]] && { src_names_regex_opt="$1"  ; shift  ; }
-	[[ $1 == -r  ]] && { recurse_opt=$1; shift; } || recurse_opt=
-	assert-not-option -o "${1-}"
 	[[ $# != 0   ]] || abort-with-action-Usage
-	create-jobs update $force_opt ${src_names_regex_opt-} $recurse_opt $*
+	create-jobs update ${src_names_regex_opt-} "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
@@ -5328,25 +5355,15 @@ case $action in
 	;;
    # copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
-	[[ $1 == -q  ]] && {    quiet_opt=$1; shift; } ||    quiet_opt=
-	[[ $1 == -s* ]] && { src_snap_opt=$1; shift; } || src_snap_opt=
-	[[ $1 == -r  ]] && {  recurse_opt=$1; shift; } ||  recurse_opt=
-	assert-not-option -o "${1-}"
-	(( $# >= 2   )) || [[ $src_snap_opt && ${1-} ]] ||
-	    abort-with-action-Usage
+	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit $?; }
+
+	local opts=
+	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
+	(( $# >= 2 )) || abort-with-action-Usage
 	drive_name=${!#}
 	src_snapshots=${*%$drive_name}
-
-	[[ $recurse_opt ]] &&
-	    { create-jobs copy $src_snap_opt $quiet_opt -r $*; exit; }
-
-	set-drive_name $drive_name
-	set-drive_dir  $drive_name
-
-	for snapshot in $src_snapshots
-	    do	create-jobs copy $quiet_opt -s$snapshot $drive_name
-		wait
-	done
+	src_snapshots=${src_snapshots% }
+	create-jobs copy -s${src_snapshots// / -s} $opts $drive_name
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
