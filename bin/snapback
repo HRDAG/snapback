@@ -3498,8 +3498,8 @@ function trim-copy-update-ps {
 	trim-ps |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
-	sed -e '/update-drive/s@ -r @ @g' \
-	    -e '/update-drive/s@ -s@ -s @' \
+	sed -e '/update-drive/s@ -s@ -s @' \
+	    -e "/$cpss/s@ -s@ @g" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
