@@ -1846,6 +1846,7 @@ set-date_span--scaled() {
 
 	date_span=$( echo "$date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
+	(( $date_span <= 0 )) && date_span=1
 }
 readonly -f set-date_span--scaled
 

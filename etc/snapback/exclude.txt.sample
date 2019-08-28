@@ -20,7 +20,11 @@
 
 /tmp/*
 
-# you can uncomment these if you're tight on backup drive disk space
+# you can uncomment the following section if you're tight on backup drive space
+#
+# kernels come and go, and are large
+# /lib/modules/*
+#
 # /usr/lib/jvm
 # /usr/lib64/eclipse
 # /usr/lib64/openoffice.org
@@ -47,11 +51,12 @@
 # If you're security-sensitive and comment-out the above for forensics,
 # you should add 'dateext' and 'compress' and etc to /etc/logrotate.conf
 # (see etc/logrotate.conf.sample for a way to keep months of old logs),
-# then leave the following four records so the old rolled-logs get deleted.
+# then leave the following records so the old rolled-logs get deleted.
 /var/log/**.[0-9]
 /var/log/**.[0-9].*[zZ]*
 /var/log/**.[1-9][0-9].*[zZ]*
 /var/log/**.[1-9][0-9][0-9].*[zZ]*
+/var/log/journal/*
 
 /var/staging/*
 /var/tmp/*cache*
@@ -93,6 +98,12 @@
 /home/*/.config/google-chrome/Default/Web?Data
 /home/*/.config/google-chrome/EVWhitelist/?/_platform_specific/*/ev_hashes_*
 /home/*/.config/google-chrome/Safe?Browsing*
+#
+# chromium files that can disappear, or are very large and change often
+/home/*/.cache/chromium/Profile ?/Cache
+/home/*/.cache/chromium/Profile ?/Code?Cache
+/home/*/.config/chromium/Profile ?/Sync?Data
+/home/*/.config/chromium/Profile ?/Top?Sites
 
 # mostly browser/mailer stuff
 /home/*/.claws-mail/imapcache
@@ -107,6 +118,9 @@
 /home/*/.cxoffice/Microsoft?Office?20??/drive_?/users/crossover/Local?Settings/Temporary?Internet?Files/*
 /home/*/.cxoffice/Microsoft?Office?20??/drive_?/users/crossover/Local?Settings/Application?Data/Microsoft/*Outlook/outlook.ost
 /home/*/.cxoffice/**/*.tmp
+
+# cloud storage that can probably be repopulated
+/home/*/Dropbox
 
 # miscellaneous config
 /home/*/.dbus/session-bus/*
