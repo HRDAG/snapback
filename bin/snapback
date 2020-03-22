@@ -2352,7 +2352,7 @@ function _run-rsync-cmd() {
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
 	[[ ! $is_copy_snapshot ]] &&
-	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*/*
+	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
 	SECONDS=0			# time the rsync
 	$Trace
