@@ -1371,7 +1371,8 @@ readonly -f reset-drive-jobs-priorities
 function suspended-prune-as-drive-usage-response() {
 	local drive_names=${*:-$drive_name}
 
-	local drive_name status=1
+	local status=1			# assume won't suspend
+	local drive_name
 	for drive_name in $drive_names
 	    do	_set-drive_name $drive_name
 		reset-drive-jobs-priorities || continue
@@ -1928,6 +1929,25 @@ readonly -f prune-type-to-file
 
 # ---------------------------------------------------------
 
+function prune-snapshots-not-matching-backup_period() {
+	local file_of_snapshots_to_prune=$1
+
+	local bp=$backup_period
+	Trace 5 "prune snapshots whose hour doesn't fit backup_period=$bp"
+
+	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
+	local valid_snapshot_regex="$regex(|\..*)"
+	local snapshot
+	for snapshot in $snapshot_glob*
+	    do	[[ $snapshot =~ $valid_snapshot_regex ]] ||
+		   echo $snapshot
+	done > $file_of_snapshots_to_prune
+	[[  -s $file_of_snapshots_to_prune ]]
+}
+readonly -f prune-snapshots-not-matching-backup_period
+
+# ---------------------------------------------------------
+
 # The locking & job-management policy is documented in front of function lock()
 
 # for the goals of this function, see prune-variable comments in configure.sh
@@ -1966,6 +1986,12 @@ function prune-drive() {
 	rm -f $snapshots_to_prune_file
 
 	[[ $is_update ]] && return 0
+
+	if is-drive-usage-too-high
+	   then local file=$snapshots_to_prune_file
+		prune-snapshots-not-matching-backup_period $file &&
+		    rm-pruned-snapshots $file
+	fi
 
 	$IfRun touch $drive_dir/$pruned_timestamp # touch even if did nothing
 
