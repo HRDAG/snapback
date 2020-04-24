@@ -239,6 +239,8 @@ FUNCNEST=100				# abort on infinite recursion
 fgrep -q -x "# version=$version" $config_file_sample ||
   $IfRun abort "$config_file_sample version= does not match $our_path"
 
+need-cmds fuser
+
 $TraceAll
 
 ##############################################################################
@@ -1543,10 +1545,10 @@ rm-pruned-snapshots() {
 	local -i rm_count=0
 	local    rm_snapshots=
 	for snapshot
-	    do	[[ $is_update && $debug_opt ]] ||		   # speedup
-		count-rsyncs-using-resource  $snapshot || continue # in use?
-		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
+	    do	[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
+		[[ ! $debug_opt ]] &&		 # speedup for regression test
+		# could instead use: count-rsyncs-using-resource $snapshot
 		fuser -s $snapshot/. && continue # don't rename if in-use
 		if [[ $is_update ]]
 		   then  $sudo mv $verbose_opt $snapshot $snapshot.rm
@@ -2712,6 +2714,7 @@ function copy-snapshot-rsync() {
 	run-rsync -c $src_snapshot/. $dst_snapshot; local status=$?
 	cd_ $OLDPWD
 
+	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
 
 	return $status
@@ -5340,10 +5343,10 @@ function regression-test() {
 	suspend-jobs backup prune
 	have-job copy &&
 	$our_path kill copy $dst &> /dev/null && killed_dst=$dst && {
+	    warn "killed update-drive (or copy) on drive $dst"
 	    cd_ $drive_dir
 	    $IfRun sudo rm -f *.partial/.keep
 	    $IfRun sudo rmdir *.partial &> /dev/null
-	    warn "killed update-drive (or copy) on drive $dst"
 	}
 
 	_run-debug-cmds u update-drive $dst
