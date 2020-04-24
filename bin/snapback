@@ -1547,6 +1547,7 @@ rm-pruned-snapshots() {
 		count-rsyncs-using-resource  $snapshot || continue # in use?
 		[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
+		fuser -s $snapshot/. && continue # don't rename if in-use
 		if [[ $is_update ]]
 		   then  $sudo mv $verbose_opt $snapshot $snapshot.rm
 		   else $IfRun mv	       $snapshot $snapshot.rm
@@ -2702,13 +2703,17 @@ readonly -f copy-snapshots
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	suspend-jobs prune # hourly cron will continue prune if drive space low
+	[[ ! $is_multi_writer_drive ]] &&
+	suspend-jobs prune	      # cron will swap jobs if drive space low
 
 	set-priority copy
 
 	cd_ ${dst_snapshot%/*}	     # can kill job with: fuser -k -M $dst_dir
 	run-rsync -c $src_snapshot/. $dst_snapshot; local status=$?
 	cd_ $OLDPWD
+
+	continue-jobs prune
+
 	return $status
 }
 readonly -f copy-snapshot-rsync
@@ -5212,7 +5217,7 @@ readonly -f chroot-backup
 
 _show-test-header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	header "$* (first number is sorted md5sum, second is unsorted)"
+	header "$* (first number is md5sum of sorted data, second is unsorted)"
 	$xtrace
 }
 readonly -f _show-test-header
@@ -5334,8 +5339,12 @@ function regression-test() {
 	_set-drive_dir
 	suspend-jobs backup prune
 	have-job copy &&
-	$our_path kill copy $dst &> /dev/null && killed_dst=$dst &&
+	$our_path kill copy $dst &> /dev/null && killed_dst=$dst && {
+	    cd_ $drive_dir
+	    $IfRun sudo rm -f *.partial/.keep
+	    $IfRun sudo rmdir *.partial &> /dev/null
 	    warn "killed update-drive (or copy) on drive $dst"
+	}
 
 	_run-debug-cmds u update-drive $dst
 
