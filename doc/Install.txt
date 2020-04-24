@@ -81,7 +81,7 @@ link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
 the file?!).
 
 Here's how to setup a brand new drive to be an encrypted drive (this process
-will eventually be automated in HRDAG's 'snapcrypt' utility).  Find the
+has been automated in HRDAG's 'snapcrypt' utility).  Find the
 drive's device name with:
     ls -lt /dev/sd*	# most-recently-plugged-in-drive at the top
 Save the device name, and specify the drive name you will use
@@ -92,10 +92,15 @@ Choose the partition you want:
     device=${device}?
 See if someone is using it:
     fuser -v $device
+Use an encryption keypair:
+    keypair=/etc/snapcrypt/keys/keyfile.bin
 Create an encryption keypair (if don't already have one you want to use):
-    sudo mkdir -p /etc/snapcrypt/keys
-    cryptsetup luksFormat $device /etc/snapcrypt/keys/keyfile.bin
-	(be SURE you type "YES" not "yes")
+    sudo mkdir -p $(dirname $keypair)
+    cd $(dirname $keypair)
+    # create key $(basename $keypair)
+Encrypt the device:
+    echo -e "\nbe SURE you type 'YES' not 'yes' ..."
+    cryptsetup luksFormat $device $keypair
 Now decrypt the device:
     snapcrypt open $device $drive	# the mount will fail
 
