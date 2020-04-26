@@ -104,10 +104,20 @@ Encrypt the device:
 Now decrypt the device:
     snapcrypt open $device $drive	# the mount will fail
 
-Then create a new rule in /etc/snapcrypt/drives.rules .  If you have existing
-ext4 backup drives that are no bigger, use 'snapback copy-drive' to initialize
-the new drive; otherwise, use 'snapback mkfs' to create a filesystem, and
-'snapback update-drive' to copy snapshots from your other backup drives.
+Then create a new rule in /etc/snapcrypt/drives.rules, with the same format as
+the existing rules (see sample in file snapcrypt/drives.rules.sample found in
+the snapcrypt repo).  You find the serial number with:
+
+    udevadm info $device | fgrep SERIAL_SHORT
+
+You can test the rule with:
+
+    udevadm test $(udevadm info $device | sed -n 's/^P: //p') |& tail -n1
+
+If you have existing ext4 backup drives that are no bigger, use 'snapback
+copy-drive' to initialize the new drive; otherwise, use 'snapback mkfs' to
+create a filesystem, and 'snapback update-drive' to copy snapshots from your
+other backup drives.
 
 To determine your actual average directory size, e.g. for ext4:
      # Specify your filesystem type with mkfs_cmd_opts= in configure.sh .
