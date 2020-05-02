@@ -3205,10 +3205,28 @@ readonly -f set-stats_format
 
 # ---------------------------------
 
+# "printf %7s" doesn't handle terminfo escape sequence
+set-padded_string--for-terminfo-escape() {
+	local value=$1 string=$2
+	declare -i field_width=${3-4} # default: dashboard values <= 4B wide
+
+	padded_string=$string
+	declare -i n
+	for (( n=1; n <= field_width; n+=1 ))
+	    do	(( ${#value} < $n )) && padded_string+='_'
+	done
+}
+readonly -f set-padded_string--for-terminfo-escape
+
+# ---------------------------------
+
 set-rsync_hour_avgs-rsync_hour_maxs() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
 
 	set-stats_format $all_drive_dirs
+	customize-config-variables
+	local var_name=backup_period; local \
+	   default_backup_period=${custom_config_var2default_value[$var_name]-}
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
 	for dir in $all_drive_dirs
@@ -3228,6 +3246,18 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 			local -i total=${sum%+}
 			local -i avg=$(( ($total+($#/2)) / $# ))
 			set-hours--from-minutes -1 $avg # want 1 decimal point
+			[[ $default_backup_period ]] &&
+			backup_period=${drv_name2backup_period[$drive_name]-$default_backup_period}
+			if [[ $hours > $backup_period. ]] # just '.', so >=
+			   then if [[ $hours == $backup_period.0 ]]
+				   then local type=warning
+				   else local type=error
+				fi
+				set-warning_string $type $hours
+				set-padded_string--for-terminfo-escape \
+				    $hours $warning_string
+				hours=$padded_string
+			fi
 			hour_avg=$hours
 			set-hours--from-minutes -1 $max_mins
 			hour_max=$hours
@@ -3313,11 +3343,9 @@ _set-colorized_new() {
 	    ( 1  ) set-warning_string warning $new ;;
 	    ( *  ) set-warning_string error   $new ;;
 	esac
-	# "printf %7s" doesn't handle terminfo escape sequence
-	if [[ $warning_string && $new ]] # NONE fills the assigned slot
-	   then (( ${#new} <= 1 )) && warning_string+='_'
-		(( ${#new} <= 2 )) && warning_string+='_'
-		(( ${#new} <= 3 )) && warning_string+='_'
+	if [[ $warning_string ]]
+	   then set-padded_string--for-terminfo-escape $new $warning_string
+		warning_string=$padded_string
 	fi
 	colorized_new=${warning_string:-$new}
 }
