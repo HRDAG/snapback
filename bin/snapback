@@ -3206,6 +3206,7 @@ readonly -f set-stats_format
 # ---------------------------------
 
 # "printf %7s" doesn't handle terminfo escape sequence
+# printf strips trailing SPACES; so pad with '_', and replace them later
 set-padded_terminfo_string--for-printf() {
 	local value=$1 string=$2
 	declare -i field_width=${3-4} # default: dashboard values <= 4B wide
@@ -3271,6 +3272,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
 	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
+	rsync_hour_avgs=${rsync_hour_avgs//_/ }	# no more printf, fix padding
 	rsync_hour_avgs=${rsync_hour_avgs% }
 	rsync_hour_maxs=${rsync_hour_maxs% }
 }
@@ -3398,6 +3400,10 @@ _recalculate-stats-vars() {
 	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
 	printf -v stats_oldest_age "$stats_format" $oldies
 	printf -v stats_newest_age "$stats_format" $newies		    ; }
+	# no more printf, fix padding
+	stats_number=${stats_number//_/ }
+	stats_oldest_age=${stats_oldest_age//_/ }
+	stats_newest_age=${stats_newest_age//_/ }
 }
 readonly -f _recalculate-stats-vars
 
