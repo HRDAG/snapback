@@ -3207,22 +3207,22 @@ readonly -f set-stats_format
 
 # "printf %7s" doesn't handle terminfo escape sequence
 # printf strips trailing SPACES; so pad with '_', and replace them later
-set-padded_terminfo_string--for-printf() {
+set-padded_colorized_string--for-printf() {
 	[[ $# == [23] ]] || abort-function "need 2-3 args"
-	local value=$1 string=$2
-	declare -i field_width=${3-4} # default: dashboard values <= 4B wide
+	local string=$1 colorized_string=$2
+	declare -i field_width=${3-4} # default: dashboard strings <= 4B wide
 
-	padded_terminfo_string=$string
+	padded_colorized_string=$colorized_string
 	declare -i n
 	for (( n=1; n <= field_width; n+=1 ))
-	    do	(( ${#value} < $n )) && padded_terminfo_string+='_'
+	    do	(( ${#string} < $n )) && padded_colorized_string+='_'
 	done
 }
-readonly -f set-padded_terminfo_string--for-printf
+readonly -f set-padded_colorized_string--for-printf
 
 # -------------------
 
-fix-padded-terminfo-string-vars() {
+fix-padded-colorized-string-vars() {
 
 	local var_name
 	for var_name
@@ -3231,7 +3231,7 @@ fix-padded-terminfo-string-vars() {
 		eval "$var_name=\$value"
 	done
 }
-readonly -f fix-padded-terminfo-string-vars
+readonly -f fix-padded-colorized-string-vars
 
 # ---------------------------------
 
@@ -3270,9 +3270,9 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 				   else local type=error
 				fi
 				set-warning_string $type $hours
-				set-padded_terminfo_string--for-printf \
+				set-padded_colorized_string--for-printf \
 				    $hours $warning_string
-				hours=$padded_terminfo_string
+				hours=$padded_colorized_string
 			fi
 			hour_avg=$hours
 			set-hours--from-minutes -1 $max_mins
@@ -3286,7 +3286,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
 	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
-	fix-padded-terminfo-string-vars rsync_hour_avgs
+	fix-padded-colorized-string-vars rsync_hour_avgs
 	rsync_hour_avgs=${rsync_hour_avgs% }
 	rsync_hour_maxs=${rsync_hour_maxs% }
 }
@@ -3361,8 +3361,8 @@ _set-colorized_new() {
 	    ( *  ) set-warning_string error   $new ;;
 	esac
 	if [[ $warning_string ]]
-	   then set-padded_terminfo_string--for-printf $new $warning_string
-		warning_string=$padded_terminfo_string
+	   then set-padded_colorized_string--for-printf $new $warning_string
+		warning_string=$padded_colorized_string
 	fi
 	colorized_new=${warning_string:-$new}
 }
@@ -3414,7 +3414,7 @@ _recalculate-stats-vars() {
 	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
 	printf -v stats_oldest_age "$stats_format" $oldies
 	printf -v stats_newest_age "$stats_format" $newies		    ; }
-	fix-padded-terminfo-string-vars \
+	fix-padded-colorized-string-vars \
 	    stats_number stats_oldest_age stats_newest_age # done with printf
 }
 readonly -f _recalculate-stats-vars
