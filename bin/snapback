@@ -3246,13 +3246,13 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 				   max_mins=$mins
 			done
 			local -i total=${sum%+}
-			local -i avg=$(( ($total+($#/2)) / $# ))
-			set-hours--from-minutes -1 $avg # want 1 decimal point
+			local -i avg_mins=$(( ($total+($#/2)) / $# ))
+			set-hours--from-minutes -1 $avg_mins # 1 decimal point
 			[[ $default_backup_period ]] &&
 			backup_period=${drv_name2backup_period[$drive_name]-$default_backup_period}
 			local -i backup_period_mins=$backup_period*60
-			if (( mins >= backup_period_mins ))
-			   then if (( mins == backup_period_mins ))
+			if (( avg_mins >= backup_period_mins ))
+			   then if (( avg_mins == backup_period_mins ))
 				   then local type=warning
 				   else local type=error
 				fi
