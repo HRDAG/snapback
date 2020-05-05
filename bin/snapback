@@ -3208,14 +3208,14 @@ readonly -f set-stats_format
 # "printf %7s" doesn't handle terminfo escape sequence
 # printf strips trailing SPACES; so pad with '_', and replace them later
 set-padded_terminfo_string--for-printf() {
-	[[ $# == 2 ]] || abort-function "need 2 args"
+	[[ $# == [23] ]] || abort-function "need 2-3 args"
 	local value=$1 string=$2
 	declare -i field_width=${3-4} # default: dashboard values <= 4B wide
 
-	padded_string=$string
+	padded_terminfo_string=$string
 	declare -i n
 	for (( n=1; n <= field_width; n+=1 ))
-	    do	(( ${#value} < $n )) && padded_string+='_'
+	    do	(( ${#value} < $n )) && padded_terminfo_string+='_'
 	done
 }
 readonly -f set-padded_terminfo_string--for-printf
@@ -3272,7 +3272,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 				set-warning_string $type $hours
 				set-padded_terminfo_string--for-printf \
 				    $hours $warning_string
-				hours=$padded_string
+				hours=$padded_terminfo_string
 			fi
 			hour_avg=$hours
 			set-hours--from-minutes -1 $max_mins
@@ -3362,7 +3362,7 @@ _set-colorized_new() {
 	esac
 	if [[ $warning_string ]]
 	   then set-padded_terminfo_string--for-printf $new $warning_string
-		warning_string=$padded_string
+		warning_string=$padded_terminfo_string
 	fi
 	colorized_new=${warning_string:-$new}
 }
