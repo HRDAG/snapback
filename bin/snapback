@@ -3208,6 +3208,7 @@ readonly -f set-stats_format
 # "printf %7s" doesn't handle terminfo escape sequence
 # printf strips trailing SPACES; so pad with '_', and replace them later
 set-padded_terminfo_string--for-printf() {
+	[[ $# == 2 ]] || abort-function "need 2 args"
 	local value=$1 string=$2
 	declare -i field_width=${3-4} # default: dashboard values <= 4B wide
 
@@ -3340,8 +3341,8 @@ _set-colorized_new() {
 	local new=${1-}
 
 	local warning_string=
+	[[ $new ]] || new=NONE
 	case $new in
-	    ( '' ) set-warning_string error   NONE ;;
 	    ( 0  ) true				   ;;
 	    ( 1  ) set-warning_string warning $new ;;
 	    ( *  ) set-warning_string error   $new ;;
