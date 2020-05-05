@@ -3220,6 +3220,19 @@ set-padded_terminfo_string--for-printf() {
 }
 readonly -f set-padded_terminfo_string--for-printf
 
+# -------------------
+
+fix-padded-terminfo-string-vars() {
+
+	local var_name
+	for var_name
+	    do	local value=${!var_name}
+		value=${value//_/ }	# rewrite padding
+		eval "$var_name=\$value"
+	done
+}
+readonly -f fix-padded-terminfo-string-vars
+
 # ---------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
@@ -3273,7 +3286,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
 	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
-	rsync_hour_avgs=${rsync_hour_avgs//_/ }	# no more printf, fix padding
+	fix-padded-terminfo-string-vars rsync_hour_avgs
 	rsync_hour_avgs=${rsync_hour_avgs% }
 	rsync_hour_maxs=${rsync_hour_maxs% }
 }
@@ -3401,10 +3414,8 @@ _recalculate-stats-vars() {
 	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
 	printf -v stats_oldest_age "$stats_format" $oldies
 	printf -v stats_newest_age "$stats_format" $newies		    ; }
-	# no more printf, fix padding
-	stats_number=${stats_number//_/ }
-	stats_oldest_age=${stats_oldest_age//_/ }
-	stats_newest_age=${stats_newest_age//_/ }
+	fix-padded-terminfo-string-vars \
+	    stats_number stats_oldest_age stats_newest_age # done with printf
 }
 readonly -f _recalculate-stats-vars
 
