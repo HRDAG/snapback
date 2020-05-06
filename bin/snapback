@@ -3213,9 +3213,12 @@ set-padded_colorized_string--for-printf() {
 	declare -i field_width=${3-4} # default: dashboard strings <= 4B wide
 
 	padded_colorized_string=$colorized_string
+	declare -i pad_count=$terminfo_color_bytes
+	(( ${#string} + $pad_count <= $field_width )) ||
+	    pad_count=field_width-${#string}
 	declare -i n
-	for (( n=1; n <= field_width; n+=1 ))
-	    do	(( ${#string} < $n )) && padded_colorized_string+='_'
+	for (( n=1; n <= pad_count; n+=1 ))
+	    do	padded_colorized_string+='_'
 	done
 }
 readonly -f set-padded_colorized_string--for-printf
@@ -5831,6 +5834,14 @@ case $action in
 	for l in ${!warning_level2tput_args[*]}
 	    do set-warning_string $l $l; echo -n "$warning_string  "; done;echo
 	print-string-colors; exit
+
+	for str in 1 22 333 4444 55555 666666
+	   do	set-warning_string error $str
+		set-padded_colorized_string--for-printf $str $warning_string
+		printf -v foo ".%4s." $padded_colorized_string
+		fix-padded-colorized-string-vars foo
+		echo "$foo"
+	done; exit
 
 	set-hours() { set-hours--from-minutes "$@"; }
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
