@@ -50,6 +50,8 @@ readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
 readonly -f assert-not-option set-var_value--from-var_name echoE echoEV
 readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
+readonly -f set-padded_colorized_string--for-printf
+readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
 readonly -f cd_ have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word--from-list set-division set-warning_string
@@ -3202,39 +3204,6 @@ set-stats_format() {
 	$xtrace
 }
 readonly -f set-stats_format
-
-# ---------------------------------
-
-# "printf %7s" doesn't handle terminfo escape sequence
-# printf strips trailing SPACES; so pad with '_', and replace them later
-set-padded_colorized_string--for-printf() {
-	[[ $# == [23] ]] || abort-function "need 2-3 args"
-	local string=$1 colorized_string=$2
-	declare -i field_width=${3-4} # default: dashboard strings <= 4B wide
-
-	padded_colorized_string=$colorized_string
-	declare -i pad_count=$terminfo_color_bytes
-	(( ${#string} + $pad_count <= $field_width )) ||
-	    pad_count=field_width-${#string}
-	declare -i n
-	for (( n=1; n <= pad_count; n+=1 ))
-	    do	padded_colorized_string+='_'
-	done
-}
-readonly -f set-padded_colorized_string--for-printf
-
-# -------------------
-
-fix-padded-colorized-string-vars() {
-
-	local var_name
-	for var_name
-	    do	local value=${!var_name}
-		value=${value//_/ }	# rewrite padding
-		eval "$var_name=\$value"
-	done
-}
-readonly -f fix-padded-colorized-string-vars
 
 # ---------------------------------
 
