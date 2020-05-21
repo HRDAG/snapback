@@ -1855,6 +1855,9 @@ set-date_span--scaled() {
 	date_span=$( echo "$date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
 	(( $date_span <= 0 )) && date_span=1
+
+	[[ ${type-} == hour ]] && local trace_level=2 || local trace_level=3
+	TraceV $trace_level type date_span
 }
 readonly -f set-date_span--scaled
 
