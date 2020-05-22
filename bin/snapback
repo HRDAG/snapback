@@ -411,6 +411,7 @@ function set-lock_paths() {
 	set-glob "$name_glob" && name_glob=$glob
 
 	[[    $type_glob == a*  ]] && type_glob=*
+	[[    $type_glob == u*  ]] && type_glob=c
 	if [[ $name_glob == all ]]
 	   then name_glob=*
 	elif [[ $name_glob == /* ]]
