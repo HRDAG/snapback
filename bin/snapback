@@ -365,6 +365,8 @@ set-lock_path() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local type=$1 name=${2:-$drive_name}
 
+	is-arg1-in-arg2 $type $writer_types ||
+	   abort-function "'$type' is unknown lock type"
 	[[ $name ]] || abort-function "missing \$2 and \$drive_name null"
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	lock_path=$lock_dir/$type-$name.pid
@@ -450,8 +452,6 @@ function lock-PID() {
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
 	local type=$1 lock_holder_action=$2
 
-	is-arg1-in-arg2 $type $writer_types ||
-	   abort-function "'$type' is unknown lock type"
 	set-lock_path $type $name
 	local lock_file=${lock_path##*/}
 
