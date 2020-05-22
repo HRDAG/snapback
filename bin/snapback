@@ -29,6 +29,8 @@ set -u					# abort if access unset variable
 readonly libsnap_project=git@github.com:HRDAG/libsnap
 #
 # search for '####' in libsnap.sh to see coding-conventions and environment
+[[ :$PATH: == *:/usr/local/bin:* ]] || PATH=/usr/local/bin:$PATH
+type -t  libsnap.sh > /dev/null     || PATH=$PATH:${0%/*/*/*}/libsnap/bin
 source libsnap.sh ||
 if which libsnap.sh > /dev/null
    then abort "libsnap.sh needs to end with 'true'"
@@ -904,8 +906,9 @@ function set-lock_PGIDs() {
 	for lock in $locks
 	    do	set -- $(< $lock)
 		[[ $# == 1 ]] || continue
-		lock_PGIDs+="-$1 "
+		lock_PGIDs+=$1,
 	done 2> /dev/null	    # a lock might disappear, i.e. $(< ) fails
+	lock_PGIDs=${lock_PGIDs%,}
 	[[ $lock_PGIDs ]]
 }
 readonly -f set-lock_PGIDs
@@ -960,6 +963,9 @@ list-drive-dirs() {
 readonly -f list-drive-dirs
 
 # ----------------------
+
+is-set   darwin_drive_dir ||		# can set custom value in $config_file
+readonly darwin_drive_dir=/var/local/snapback
 
 function set-drive_dirs() {
 	set -- $(list-drive-dirs "$@")
@@ -1241,10 +1247,14 @@ function set-drive_dir() {
 	if [[ $is_regression_test && ! -d $drive_dir ]]
 	   then	set-admin_group
 		[[ $admin_group ]] && local group=:$admin_group || local group=
+		[[ $is_darwin ]] &&
+		    local _drive_dir=$drive_dir &&
+		    drive_dir=$darwin_drive_dir/$(basename $drive_dir)
 		sudo mkdir $drive_dir &&
 		sudo chmod g+s,g+w $drive_dir &&
 		sudo chown $LOGNAME$group $drive_dir ||
 		  abort "need sudo privs to setup pseudo-drive 'Z' for testing"
+		[[ $is_darwin ]] && sudo ln -s $drive_dir $_drive_dir
 	fi
 
 	if is-drive-mounted $drive_dir
@@ -3873,9 +3883,13 @@ function run-df() {
 
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
-	(( ${columns:-99} >= $min_full_columns )) ||
-	    df_fields=${df_fields/,size/}
-	df --block-size=G --output=$df_fields --no-sync $drive_dirs
+	if (( ${columns:-99} >= $min_full_columns ))
+	   then df_sed() { cat; }
+	   else df_sed() { sed	-e 's/Mounted on/Drive/' \
+				-e "s@$drive_dir_prefix@ @" ; }
+		df_fields=${df_fields/,size/}
+	fi
+	df --block-size=G --output=$df_fields --no-sync $drive_dirs | df_sed
 }
 readonly -f run-df
 
@@ -4082,7 +4096,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	declare -g -i num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ -g $lock_PGIDs 2>/dev/null  |
 	  egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
@@ -4093,7 +4107,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
-	copy_rsync_cmds=$(ps_ $lock_PGIDs |
+	copy_rsync_cmds=$(ps_ -g $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
 			   grep -e "[0-9] .*$_our_name.* [cu]"  \
 				-e " [l]ockpid " -e " [s]leep " \
@@ -4101,7 +4115,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	[[ $ps_H_opt ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9] $rsync_ps")
+	bkp_rsync_cmds=$(ps_ -g $lock_PGIDs | grep "[0-9] $rsync_ps")
 	[[ $ps_H_opt ]] ||
 	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
 }
@@ -4756,7 +4770,7 @@ set-total_dir_MB-avg_dir_KB() {
 
 	isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
 	set -- $( bzcat $file |
-		  awk --assign isize=$isize --field-separator K \
+		  awk -F K -v isize=$isize \
 			'{ space += ($1*1024) + isize; count += 1 }
 			 END { printf "%.1f %.2f\n",
 					space/(1024*1024),
