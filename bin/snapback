@@ -544,6 +544,7 @@ function lock() {
 	local	    lock_msg="holds '$type' lock for $drive_name"
 	local extra_lock_msg="${lock_msg/$type/backup}, so can't $type"
 
+	[[ ${date_time-} ]] || set-date_time
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
 	[[ $do_wait || ! $is_cron ]] &&	# interactive user waits for lock
 	if [[ $type == backup ]]
@@ -592,11 +593,13 @@ unlock() {
 	    do	local lock_path=${_lock_type2lock_path[$type]-}
 		[[   $lock_path ]] || abort "don't hold lock of type '$type'"
 		RunCmd lockpid --release $lock_path
-		unset _lock_type2lock_path[$type]
-		unset  lock_type2locked_resource[$type]
+#		unset _lock_type2lock_path[$type] # this sometimes fails?!
+#		unset  lock_type2locked_resource[$type] # ditto
+		_lock_type2lock_path[$type]=
+		 lock_type2locked_resource[$type]=
 	done
 
-	$xtrace
+#	$xtrace
 }
 readonly -f unlock
 
@@ -1055,15 +1058,15 @@ _set-drive_name() {
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
 	name=${name%/latest*}
-	[[ $clean ]] && drive_name=$name && return 0
+	[[ $clean ]] && drive_name=$name && { $xtrace; return 0; }
 
 	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
-	   [[ $is_quiet ]] && return 1
+	   [[ $is_quiet ]] && { $xtrace; return 1; }
 	   abort "drive_name $1 has disallowed chars (can ask $coder to allow)"
 	}
 
 	[[ $name =~ ^$admin_drive_name_regex$ ]] ||	  {
-	    [[ $is_quiet ]] && return 1
+	    [[ $is_quiet ]] && { $xtrace; return 1; }
 	    abort "'$name' is not a valid drive-name"	; }
 
 	  if [[ $is_drive_name_upper_cased ]]
@@ -2712,6 +2715,9 @@ readonly -f copy-snapshots
 # it's called by copy-snapshot and update-drive, to do the real work.
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
+
+	is_cron= lock -w backup || exit 1 # wait for any backup to finish
+	unlock  backup
 
 	[[ ! $is_multi_writer_drive ]] &&
 	suspend-jobs prune	      # cron will swap jobs if drive space low
