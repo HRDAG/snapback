@@ -81,32 +81,37 @@ link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
 the file?!).
 
 Here's how to setup a brand new drive to be an encrypted drive (this process
-has been automated in HRDAG's 'snapcrypt' utility).  Find the
-drive's device name with:
+has been automated in HRDAG's 'snapcrypt' utility).  [NOTE: on a Mac, use the
+macOS encryption utility instead.]  Find the drive's device name with:
     ls -lt /dev/sd*	# most-recently-plugged-in-drive at the top
-Save the device name, and specify the drive name you will use
-    device=/dev/sd??  drive=?
+Save the device name, and specify the drive-name you will use
+    device=/dev/sd?  drive=?
+    label=backup_$drive			# assumes drive_dir_prefix=/backup/
 Verify it's the drive you want:
     fdisk -l $device
 Choose the partition you want:
     device=${device}?
 See if someone is using it:
-    fuser -v $device
+    fuser -m -v $device
 Use an encryption keypair:
     keypair=/etc/snapcrypt/keys/keyfile.bin
 Create an encryption keypair (if don't already have one you want to use):
     sudo mkdir -p $(dirname $keypair)
     cd $(dirname $keypair)
     # create key $(basename $keypair)
-Encrypt the device:
+Format (i.e. initialize for encryption) the device:
     echo -e "\nbe SURE you type 'YES' not 'yes' ..."
     cryptsetup luksFormat $device $keypair
+If the luksFormat fails with "... in use ... already mapped ...", run:
+    cryptsetup close $label
+    # after 'close': repeat the 'luksFormat' command, above
 Now decrypt the device:
-    snapcrypt open $device $drive	# the mount will fail
+    cryptsetup open --key-file $keypair --type luks $device $label
 
-Then create a new rule in /etc/snapcrypt/drives.rules, with the same format as
-the existing rules (see sample in file snapcrypt/drives.rules.sample found in
-the snapcrypt repo).  You find the serial number with:
+Then create a new rule in /etc/snapcrypt/drives.rules (this step is needed
+even when using HRDAG's 'snapcrypt' utility), with the same format as the
+existing rules (see sample file snapcrypt/drives.rules.sample, found in the
+snapcrypt repo).  You find the serial number with:
 
     udevadm info $device | fgrep SERIAL_SHORT
 
