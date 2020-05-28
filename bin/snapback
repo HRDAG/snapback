@@ -2980,7 +2980,11 @@ fastest-snapshots() {
 		local do_suspend=${drive_name2do_suspend[$drive_name]}
 
 		local -i writer_count=0
-		for writer in backup copy prune
+		# copy-snapshot-rsync will wait for backup, and wait for
+		#   enough drive space to kill prune; but it can't do anything
+		#   about "coarse-grained" (held during whole job) 'copy' lock,
+		#   so check for 'copy' lock first
+		for writer in copy prune backup
 		    do	have-job $writer && let writer_count+=1
 		done
 
@@ -4822,8 +4826,12 @@ function mkfs-backup-drive() {
 
 	[[ ! $debug_opt ]] || return 1
 
+	set -- $(which -a $_our_name)
+	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
+	local _our_path=$1
 	echo -e "\nTo populate newly-created drive, run:\n
-	nohup $_our_name update-drive $drive_name	# creates new job"
+	nohup $_our_path run-backups  $drive_name	# creates new job
+	nohup $_our_path update-drive $drive_name	# creates new job"
 
        warn "REMEMBER: add \`$drive_name' to drive_name_regex= in $config_file"
        return 0
