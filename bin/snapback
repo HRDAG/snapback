@@ -519,14 +519,16 @@ readonly -f lock-PID
 declare -A _lock_type2lock_path
 declare -A  lock_type2locked_resource
 
-# Usage: lock [-w] type resource
+# Usage: lock [-w [-c]] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
-#    If -w and lock is held by other job, Wait for lock to be freed.
+#    If -w and lock is held by other job, Wait for lock to be freed;
+#    if -c also, it's copy (or update) not backup, so no trickiness.
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 #	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ $1 == -w   ]] && { shift; local do_wait=$true; } || local do_wait=
+	[[ ${1-} == -w ]] && { shift; local do_wait=$true; } || local do_wait=
+	[[ ${1-} == -c ]] && { shift; local is_copy=$true; } || local is_copy=
 	assert-not-option "${1-}"
 	[[ $# == [12] ]] || abort-function "[-w] type resource"
 	local type=$1 resource=${2:-$drive_name}
@@ -547,7 +549,7 @@ function lock() {
 	[[ ${date_time-} ]] || set-date_time
 	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
 	[[ $do_wait || ! $is_cron ]] &&	# interactive user waits for lock
-	if [[ $type == backup ]]
+	if [[ $type == backup  && ! $is_copy ]]
 	   then [[ $is_cron ]] && continue-jobs $type # maybe suspended
 		declare -i half_backup_period_mins=$backup_period*60/2
 		  if [[ $date_time == *-01,00 ]] # kept a very long time?
@@ -2716,8 +2718,8 @@ readonly -f copy-snapshots
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	is_cron= lock -w backup || exit 1 # wait for any backup to finish
-	unlock  backup
+	  lock -w -c backup || return 1 # wait for any backup to finish
+	unlock	     backup
 
 	[[ ! $is_multi_writer_drive ]] &&
 	suspend-jobs prune	      # cron will swap jobs if drive space low
