@@ -2504,6 +2504,26 @@ readonly -f run-backup-rsync
 
 # ----------------------
 
+_set-src_drive--if-release-copy-src-prune-lock() {
+
+	src_drive=
+}
+
+# ----------------------
+
+prevent-pruning() {
+	local resource=${1-}
+
+	[[ $resource ]] || return
+
+	until lock prune $resource
+	    do	kill-job-on-drives prune $resource
+		$IfRun sleep 1
+	done
+}
+
+# ----------------------
+
 # The locking & job-management policy is documented in front of function lock()
 
 function run-backup() {
@@ -2529,6 +2549,7 @@ function run-backup() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then suspend-jobs copy prune
+		_set-src_drive--if-release-copy-src-prune-lock
 	fi
 
 	run-backup-rsync $date_time
@@ -2537,7 +2558,8 @@ function run-backup() {
 	unlock backup
 
 	if [[ ! $is_multi_writer_drive ]]
-	   then $IfRun create-jobs prune # also manages copy job
+	   then prevent-pruning $src_drive
+		$IfRun create-jobs prune # also manages copy job
 	fi
 
 	return $status
@@ -2755,10 +2777,7 @@ function copy-snapshot-rsync() {
 	   is-drive-usage-too-high $src_snapshot
 	   then local did_lock_src_prune=$false
 	   else local did_lock_src_prune=$true
-		until lock prune $src_snapshot
-		    do	kill-job-on-drives prune $src_snapshot
-			$IfRun sleep 1
-		done
+		prevent-pruning $src_snapshot
 	fi
 
 	set-priority copy
