@@ -498,6 +498,31 @@ _set-type-name() {
 	$xtrace
 }
 
+# --------------------------------------------
+
+_set-wait_opt() {
+	local do_wait=${1-}
+
+	[[ $do_wait ]] || { wait_opt= ; return; }
+	wait_opt=--wait
+	[[ ! $is_cron ]] && return	# interactive user waits for lock
+	[[ $type == backup && ! $is_copy ]] || return # only run-backup special
+
+	[[ $is_cron ]] && continue-jobs $type # maybe suspended
+
+	declare -i half_backup_period_mins=$backup_period*60/2
+	[[ ${date_time-} ]] || set-date_time
+
+	  if [[ $date_time == *-01,00 ]] # kept a very long time?
+	   then wait_opt=--wait-expiration=15d # want it, or next month
+	elif [[ $date_time == *-16,00 ]] # kept a long time?
+	   then wait_opt=--wait-expiration=8d # want it, or next one
+	elif [[ $date_time ==    *,00 ]] # kept a fairly long time?
+	   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
+	   else wait_opt=--wait-expiration=${half_backup_period_mins}m
+	fi
+	wait_opt+=" --quiet"
+}
 
 # --------------------------------------------
 
@@ -554,24 +579,8 @@ function lock() {
 	local	    lock_msg="holds '$type' lock for $drive_name"
 	local extra_lock_msg="${lock_msg/$type/backup}, so can't $type"
 
-	[[ ${date_time-} ]] || set-date_time
-	[[ $do_wait ]] && local wait_opt=--wait || local wait_opt=
-	[[ $do_wait || ! $is_cron ]] &&	# interactive user waits for lock
-	if [[ $type == backup  && ! $is_copy ]]
-	   then [[ $is_cron ]] && continue-jobs $type # maybe suspended
-		declare -i half_backup_period_mins=$backup_period*60/2
-		  if [[ $date_time == *-01,00 ]] # kept a very long time?
-		   then wait_opt=--wait-expiration=15d # want it, or next month
-		elif [[ $date_time == *-16,00 ]] # kept a long time?
-		   then wait_opt=--wait-expiration=8d # want it, or next one
-		elif [[ $date_time ==    *,00 ]] # kept a fairly long time?
-		   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
-		   else wait_opt=--wait-expiration=${half_backup_period_mins}m
-		fi
-		wait_opt+=" --quiet"
-	fi
-	# if interactive user, want to honor their request eventually
-	[[ ! $is_cron ]] && : ${wait_opt:=--wait}
+	local wait_opt
+	 _set-wait_opt $do_wait
 
 	# be sure to grab primary lock first, so job appears on dashboard
 	lock-PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
