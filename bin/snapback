@@ -2527,16 +2527,18 @@ function run-backup() {
 	# suspended the backup and continued the prune (is it still relevant?)
 	lock -w backup || return 1	# wait for lock, so don't skip backup
 
-	[[ ! $is_multi_writer_drive ]] &&
-	suspend-jobs copy prune
+	if [[ ! $is_multi_writer_drive ]]
+	   then suspend-jobs copy prune
+	fi
 
 	run-backup-rsync $date_time
 	local status=$?
 
 	unlock backup
 
-	[[ ! $is_multi_writer_drive ]] &&
-	$IfRun create-jobs prune	# also manages copy job
+	if [[ ! $is_multi_writer_drive ]]
+	   then $IfRun create-jobs prune # also manages copy job
+	fi
 
 	return $status
 }
