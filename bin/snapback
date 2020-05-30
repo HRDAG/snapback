@@ -487,6 +487,20 @@ readonly -f lock-PID
 
 # ------------------------------------------------------------------
 
+_set-type-name() {
+	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	type=$1 resource=${2:-$drive_name}
+
+	local drive_name		# don't mess up caller's value
+	 _set-drive_name $resource
+	name=$drive_name
+
+	$xtrace
+}
+
+
+# --------------------------------------------
+
 # When $is_multi_writer_drive == $true, all writer jobs run in parallel, with
 # their (relative) I/O and CPU priorities controlled by
 # set-job_type2priority_level() .  [Locking and job creation are described in
@@ -516,8 +530,7 @@ readonly -f lock-PID
 # Similarly, a call to continue-jobs() for a non-backup job will be silently
 # ignored if a backup is running, and will return 'failed'.
 
-declare -A _lock_type2lock_path
-declare -A  lock_type2locked_resource
+declare -A _lock_type_name2lock_path
 
 # Usage: lock [-w [-c]] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
@@ -530,16 +543,11 @@ function lock() {
 	[[ ${1-} == -w ]] && { shift; local do_wait=$true; } || local do_wait=
 	[[ ${1-} == -c ]] && { shift; local is_copy=$true; } || local is_copy=
 	assert-not-option "${1-}"
-	[[ $# == [12] ]] || abort-function "[-w] type resource"
-	local type=$1 resource=${2:-$drive_name}
+	[[ $# == [12] ]] || abort-function "[-w [-c]] type resource"
+	local type name
+	 _set-type-name "$@"
 
-	suspend-tracing
-	local drive_name drive_dir	# don't mess up caller's values
-	 _set-drive_name $resource
-	 _set-drive_dir
-	restore-tracing drive_name
-
-	local prev_lock_path=${_lock_type2lock_path[$type]-}
+	local prev_lock_path=${_lock_type_name2lock_path[$type,$name]-}
 	[[ ! $prev_lock_path ]] ||
 	   abort "hold $(basename $prev_lock_path), can't grab $type lock file"
 
@@ -577,8 +585,7 @@ function lock() {
 		   { lockpid --release $primary_lock_path; $xtrace; return 1; }
 	fi
 
-	_lock_type2lock_path[$type]=$primary_lock_path
-	 lock_type2locked_resource[$type]=$resource
+	_lock_type_name2lock_path[$type,$name]=$primary_lock_path
 
 	 $xtrace
 	return 0
@@ -589,17 +596,14 @@ readonly -f lock
 
 unlock() {
 #	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local type name
+	 _set-type-name "$@"
 
-	local type
-	for type
-	    do	local lock_path=${_lock_type2lock_path[$type]-}
-		[[   $lock_path ]] || abort "don't hold lock of type '$type'"
-		RunCmd lockpid --release $lock_path
-#		unset _lock_type2lock_path[$type] # this sometimes fails?!
-#		unset  lock_type2locked_resource[$type] # ditto
-		_lock_type2lock_path[$type]=
-		 lock_type2locked_resource[$type]=
-	done
+	local lock_path=${_lock_type_name2lock_path[$type,$name]-}
+	[[   $lock_path ]] || abort "don't hold lock: type=$type, name=$name"
+	RunCmd lockpid --release $lock_path
+#	unset _lock_type_name2lock_path[$type,$name] # this sometimes fails?!
+	_lock_type_name2lock_path[$type,$name]=
 
 #	$xtrace
 }
@@ -1294,6 +1298,17 @@ readonly -f customize-and-validate-configuration-variables
 ##############################################################################
 # Manage priorities for backup and prune and update/merge.
 ##############################################################################
+
+function is-multi-writer-drive() {
+	local resource=$1
+
+	local drive_name
+	 _set-drive_name $resource
+
+	[[ ${drv_name2is_multi_writer_drive[$drive_name]-} ]]
+}
+
+# ----------------------------------------------------------------------------
 
 function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
@@ -2718,11 +2733,22 @@ readonly -f copy-snapshots
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
-	  lock -w -c backup || return 1 # wait for any backup to finish
-	unlock	     backup
+	if [[ ! $is_multi_writer_drive ]]
+	   then   lock -w -c backup || return 1 # wait for any backup to finish
+		unlock	     backup
 
-	[[ ! $is_multi_writer_drive ]] &&
-	suspend-jobs prune	      # cron will swap jobs if drive space low
+		suspend-jobs prune    # cron will swap jobs if drive space low
+	fi
+
+	if is-multi-writer-drive   $src_snapshot ||
+	   is-drive-usage-too-high $src_snapshot
+	   then local did_lock_src_prune=$false
+	   else local did_lock_src_prune=$true
+		until lock prune $src_snapshot
+		    do	kill-job-on-drives prune $src_snapshot
+			$IfRun sleep 1
+		done
+	fi
 
 	set-priority copy
 
@@ -2732,6 +2758,8 @@ function copy-snapshot-rsync() {
 
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
+
+	[[ $did_lock_src_prune ]] && unlock prune $src_snapshot
 
 	return $status
 }
