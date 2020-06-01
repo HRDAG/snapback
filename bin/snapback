@@ -348,6 +348,8 @@ readonly -f sudo-lockpid
 rm-stale-locks() {
 
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
+	[[ $debug_opt ]] && return	# 'sudo-lockpid -o' will return 0
+
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
@@ -521,13 +523,24 @@ _set-wait_opt() {
 
 	declare -i half_backup_period_mins=$backup_period*60/2
 	[[ ${date_time-} ]] || set-date_time
+	declare    hour=${date_time##*,}
+	declare -i hour=${hour#0}    # don't treat zero-padded number as octal
 
+	# if we have to skip backups because they take longer than
+	# the $backup_period, try to skip backups that will be pruned
+	# soon (instead of long-lasting backups)
 	  if [[ $date_time == *-01,00 ]] # kept a very long time?
-	   then wait_opt=--wait-expiration=15d # want it, or next month
+	   then wait_opt=--wait		 # want it
 	elif [[ $date_time == *-16,00 ]] # kept a long time?
-	   then wait_opt=--wait-expiration=8d # want it, or next one
+	   then wait_opt=--wait		 # want it
 	elif [[ $date_time ==    *,00 ]] # kept a fairly long time?
-	   then wait_opt=--wait-expiration=12h # want it, or tomorrow's
+	   then wait_opt=--wait-expiration=23h # want it (if possible)
+	elif (( hour % 8 == 0 ))	      # multiple of 8 (i.e. 08 or 16)?
+	   then wait_opt=--wait-expiration=7h # want it, pruned slower
+	elif (( hour % 4 == 0 ))	      # multiple of 4?
+	   then wait_opt=--wait-expiration=3h # want it, pruned slower
+	elif (( hour % 2 == 0 ))	      # multiple of 2?
+	   then wait_opt=--wait-expiration=1h # want it, pruned slower
 	   else wait_opt=--wait-expiration=${half_backup_period_mins}m
 	fi
 	wait_opt+=" --quiet"
@@ -1285,6 +1298,7 @@ validate-config-variables() {
 
 	is-arg1-in-arg2 $backup_period $valid_backup_periods ||
 	   abort "invalid 'backup_period=$backup_period' in $*"
+	declare -i backup_period
 
 	[[ -s $exclude_file ]] ||
 	   abort "'exclude_file=$exclude_file' is empty file (from $*)"
@@ -2187,7 +2201,7 @@ set-excluded_hours() {
 
 	set -- $(
 	for hour
-	    do	[[ $hour == 0?   ]] && hour=${hour#0}
+	    do	[[ $hour == 0?   ]] && hour=${hour#0} # zero-padded, not octal
 		[[ $hour =~ ^0+$ ]] && continue # pruning needs midnight backup
 		[[ $hour == *-*  ]] || { echo $hour; continue; }
 		[[ $hour != *-*-* ]] || abort "bad $var_name range"
