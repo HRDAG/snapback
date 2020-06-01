@@ -368,6 +368,7 @@ set-lock_drive_name() {
 	lock=${lock#*-}
 	lock_drive_name=${lock%.pid}
 }
+readonly -f set-lock_drive_name
 
 # ----------------------------------------------------------------------------
 
@@ -508,6 +509,7 @@ _set-type-name() {
 
 	$xtrace
 }
+readonly -f _set-type-name
 
 # --------------------------------------------
 
@@ -545,6 +547,7 @@ _set-wait_opt() {
 	fi
 	wait_opt+=" --quiet"
 }
+readonly -f _set-wait_opt
 
 # --------------------------------------------
 
@@ -1126,6 +1129,7 @@ _set-_drive_name() {
 	_set-drive_name "$@"
 	_drive_name=$drive_name
 }
+readonly -f _set-_drive_name
 
 # ----------------------
 
@@ -1348,6 +1352,7 @@ function is-multi-writer-drive() {
 
 	[[ ${drv_name2is_multi_writer_drive[$_drive_name]-${custom_config_var2default_value[is_multi_writer_drive]-}} ]]
 }
+readonly -f is-multi-writer-drive
 
 # ----------------------------------------------------------------------------
 
@@ -2558,6 +2563,7 @@ return
 		return
 	done
 }
+readonly -f _set-src_lock-copy_PID--if-release-copy-src-prune-lock
 
 # ----------------------
 
@@ -2580,6 +2586,7 @@ prevent-pruning() {
 		$IfRun sleep 1
 	done
 }
+readonly -f prevent-pruning
 
 # ----------------------
 
@@ -3611,6 +3618,7 @@ set-max_drive_name_len() {
 		   max_drive_name_len=${#drive_name}
 	done
 }
+readonly -f set-max_drive_name_len
 
 # -------------------------------------------------------
 
@@ -4163,6 +4171,7 @@ show-cron-jobs() {
 	(( $rows_left < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
 	echo "$cron_cmds"	   # we used trim-backup-ps when we created it
 }
+readonly -f show-cron-jobs
 
 # --------------------------------------------
 
@@ -4189,6 +4198,7 @@ show-copy-cmds-with-full-details() {
 	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p" |
 	   sort -ty -k2		      # sort on 'y' in rs(y)nc (never in STAT)
 }
+readonly -f show-copy-cmds-with-full-details
 
 # ------------------------------------------------------------------
 
@@ -4420,6 +4430,7 @@ function set-FS_external_log() {
 	    FS_external_log=
 	[[ $FS_external_log ]]
 }
+readonly -f set-FS_external_log
 
 # ----------------------------------------------------------------------------
 
@@ -4721,6 +4732,7 @@ _set-blocks_per_inode-bytes_per_inode--for-extN() {
 	declare -g -i bytes_per_inode=$blocks_per_inode*$block_size
 	TraceV 2 block_size bytes_per_inode && echo
 }
+readonly -f _set-blocks_per_inode-bytes_per_inode--for-extN
 
 # ---------------------------------
 
@@ -4762,6 +4774,7 @@ _set-opts-log_opt-mount_opts--for-extN() {
 		      -L $log_label $FS_external_log &&
 	log_opt="-J device=$FS_external_log" || log_opt=
 }
+readonly -f _set-opts-log_opt-mount_opts--for-extN
 
 # -------------------------------------------------------
 
@@ -4797,6 +4810,7 @@ _set-opts-log_opt-mount_opts--for-xfs() {
 	logdev="logdev=$FS_external_log" &&
 	log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev || log_opt=
 }
+readonly -f _set-opts-log_opt-mount_opts--for-xfs
 
 # -------------------------------------------------------
 
@@ -4839,6 +4853,7 @@ _set-device-drive_name-drive_dir-is_new_dev() {
 	[[ -d $drive_dir ]] &&
 	   $IfRun abort "if '$name' not in use: sudo rmdir $drive_dir" && echo
 }
+readonly -f _set-device-drive_name-drive_dir-is_new_dev
 
 # -------------------------------------------------------
 
@@ -4854,6 +4869,7 @@ _set-mkfs_debug_opt() {
 	esac
 	warn "running $cmd in debug mode ..."
 }
+readonly -f _set-mkfs_debug_opt
 
 # -------------------------------------------------------
 
@@ -4872,6 +4888,7 @@ _create-and-mount-filesystem() {
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
 	fix-drive_dir-perms $drive_dir
 }
+readonly -f _create-and-mount-filesystem
 
 # -------------------------------------------------------
 
@@ -4882,6 +4899,7 @@ _create-fstab-record() {
 	rec="\n\n\tLABEL=$FS_label\t$drive_dir\t$FS_type\t$mount_opts 0 2"
 	warn "sample record for /etc/fstab (optional with 'snapcrypt'):$rec"
 }
+readonly -f _create-fstab-record
 
 # -------------------------------------------------------
 
@@ -4904,6 +4922,7 @@ _mkfs-warnings() {
 	   abort-with-action-Usage
 	} >&2
 }
+readonly -f _mkfs-warnings
 
 # -------------------------------------------------------
 
