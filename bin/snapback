@@ -636,8 +636,8 @@ unlock() {
 	local lock_path=${_lock_type_name2lock_path[$type,$name]-}
 	[[   $lock_path ]] || abort "don't hold lock: type=$type, name=$name"
 	sudo-lockpid --release $lock_path
-#	unset _lock_type_name2lock_path[$type,$name] # this sometimes fails?!
-	_lock_type_name2lock_path[$type,$name]=
+	_lock_type_name2lock_path[$type,$name]=	     # in case unset fails ...
+	unset _lock_type_name2lock_path[$type,$name] # this sometimes fails?!
 
 #	$xtrace
 }
@@ -2800,7 +2800,7 @@ readonly -f copy-snapshot
 
 # -----------------------------------------
 
-copy-snapshots() {
+function copy-snapshots() {
 	local src_snapshots=  src_snapshot
 	while [[ $1 == -s* ]]
 	   do	src_snapshot=${1#-s}
@@ -2815,11 +2815,14 @@ copy-snapshots() {
 
 	lock -w copy || exit 1
 
+	loval status=0
 	for src_snapshot in $src_snapshots
-	    do	copy-snapshot $quiet_opt $src_snapshot $drive_name
+	    do	copy-snapshot $quiet_opt $src_snapshot $drive_name ||
+		    status=$?
 	done
 
 	unlock copy
+	return $status
 }
 readonly -f copy-snapshots
 
@@ -3175,10 +3178,12 @@ update-drive() {
 	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
 
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
+	local status=$?
 
 	rmdir-empty-partial-snapshots $drive_dir
 
 	IfRun= unlock copy
+	return $status
 }
 readonly -f update-drive
 
