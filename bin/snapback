@@ -2815,7 +2815,7 @@ function copy-snapshots() {
 
 	lock -w copy || exit 1
 
-	loval status=0
+	local status=0
 	for src_snapshot in $src_snapshots
 	    do	copy-snapshot $quiet_opt $src_snapshot $drive_name ||
 		    status=$?
@@ -3134,24 +3134,27 @@ fill-in-unpruned-empty-snapshots() {
 
 	set-drive_name2do_suspend	# for fastest-snapshots
 
-	local args dst_snapshot=
-	while read args
-	    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
-		set -- $args
-		local   dst_snapshot=${!#}
-		[[ -d  $dst_snapshot ]] && continue # was it undeleted?
-		set -- $dst_snapshot*
-		[[ $# != 0 ]] || continue # was it pruned away?
-		set -- $(fastest-snapshots ${args%$dst_snapshot}) # pass srcs
-		[[ $# != 0 ]] && copy-snapshot-rsync $1 $dst_snapshot
-	done   <  $copy_args_file
+	while true
+	    do	local args dst_snapshot=
+		while read args
+		    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
+			set -- $args
+			local   dst_snapshot=${!#}
+			[[ -d  $dst_snapshot ]] && continue # was it undeleted?
+			set -- $dst_snapshot*
+			[[ $# != 0 ]] || continue # was it pruned away?
+			set -- $(fastest-snapshots ${args%$dst_snapshot})
+			[[ $# != 0 ]] && copy-snapshot-rsync $1 $dst_snapshot
+		done < $copy_args_file
+		break
+	done
 	$IfRun rm $copy_args_file
 }
 readonly -f fill-in-unpruned-empty-snapshots
 
 # ----------------------------------------------------------------------------
 
-update-drive() {
+function update-drive() {
 	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
