@@ -3166,8 +3166,9 @@ function update-drive() {
 	set-drive_dir $drive_name
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
-	IfRun= lock copy > /dev/null || exit 1	# can run for days
-	[[ $is_cron ]] || reset-priority	# this might suspend us
+	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
+	IfRun= lock $lock_opt copy > /dev/null || exit 1
+	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir-empty-partial-snapshots $drive_dir # in case previously crashed
 
