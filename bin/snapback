@@ -797,6 +797,11 @@ function _signal-jobs() {
 readonly -f _signal-jobs
 
 # these take multiple types, and work with the current $drive_name
+function  suspend-jobs() {
+
+	[[ $UID == 0 ]] && print-call-stack | tee -a $file_for_logging
+	_signal-jobs -STOP "$@"
+}
 function  suspend-jobs() { _signal-jobs -STOP "$@"; }
 function continue-jobs() { _signal-jobs -CONT "$@"; }
 readonly -f suspend-jobs continue-jobs
@@ -3140,11 +3145,15 @@ fill-in-unpruned-empty-snapshots() {
 		while read args
 		    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
 			set -- $args
+			local   src_snapshot_1=$1
 			local   dst_snapshot=${!#}
 			[[ -d  $dst_snapshot ]] && continue #undeleted or done?
 			set -- $dst_snapshot*
 			[[ $# != 0 ]] || continue # was it pruned away?
-			set -- $(fastest-snapshots ${args%$dst_snapshot})
+			# desired snapshot could be newly created, or pruned...
+			set -- $drive_dir_prefix*/${src_snapshot_1##*/}
+			[[ $# != 0 ]] || continue # sources pruned away?
+			set -- $(fastest-snapshots $*)
 			[[ $# != 0 ]] && copy-snapshot-rsync $1 $dst_snapshot||
 			   did_skip_a_snapshot=$true
 		done < $copy_args_file
