@@ -421,6 +421,8 @@ function set-lock_paths() {
 	    abort-function "$*: must be 0-2 args (can use globs)"
 	[[ ${1-} == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
 	local type_glob=${1:-*} name_glob=${2:-${drive_name:-*}}
+	[[ $name_glob == */* ]] &&
+	    { _set-_drive_name $name_glob; name_glob=$_drive_name; }
 
 	set-glob "$type_glob" && type_glob=$glob
 	set-glob "$name_glob" && name_glob=$glob
@@ -429,9 +431,6 @@ function set-lock_paths() {
 	[[    $type_glob == u*  ]] && type_glob=c
 	if [[ $name_glob == all ]]
 	   then name_glob=*
-	elif [[ $name_glob == /* ]]
-	   then _set-_drive_name $name_glob
-		name_glob=$_drive_name
 	elif [[ ${is_drive_name_upper_cased-} ]]
 	   then name_glob=${name_glob^^}
 	elif [[ ${is_drive_name_capitalized-} && $name_glob != *[\[,]* ]]
@@ -1826,7 +1825,6 @@ validate-prune_globs() {
 	[[  "$parent_cmd " == *' -C -d prune-drive'*	 ]] && local debug_opt=
 
 	customize-config-variables $drive_name
-	local -A type2date_span
 	set-type2date_span
 	[[ $debug_opt ]] && declare -p type2date_span
 
@@ -1895,14 +1893,23 @@ readonly -f validate-prune_globs
 
 # ---------------------------------
 
+declare -r -A type2date_span_var=(
+    [hour]=days_per_span_for_hour_prune
+     [day]=months_per_span_for_day_prune
+   [month]=years_per_span_for_month_prune
+    [year]=decades_per_span_for_year_prune
+)
+
+# ---------------
+
 function set-type2date_span {
 
-	type2date_span=(
-	    [hour]=$days_per_span_for_hour_prune
-	     [day]=$months_per_span_for_day_prune
-	   [month]=$years_per_span_for_month_prune
-	    [year]=$decades_per_span_for_year_prune
-	)
+	declare -g -A type2date_span
+	local _type
+	for _type in ${!type2date_span_var[*]}
+	    do	local var=${type2date_span_var[$_type]}
+		type2date_span[$_type]=${!var}
+	done
 }
 readonly -f set-type2date_span
 
@@ -1925,8 +1932,9 @@ unset _period
 readonly backup_period2minimal_snapshot_regex
 
 set-date_span--scaled() {
+	local _date_span=${1-$date_span}
 
-	date_span=$( echo "$date_span $pruning_span_scale_factor" |
+	date_span=$( echo "$_date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
 	(( $date_span <= 0 )) && date_span=1
 
@@ -1954,12 +1962,13 @@ prune-type-to-file() {
 	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten-date $type)
 	local remaining_reverse_sorted_snapshot_dates=$*
 
-	local -A type2date_span
 	set-type2date_span	# run after call to customize-config-variables
 	local date_span=${type2date_span[$type]}
 	set-date_span--scaled
-	local prune_type_globs=${type2prune_type_globs[$type]}
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
+	local prune_type_globs=${type2prune_type_globs[$type]}
+	set -f; set -- $prune_type_globs; set +f
+	declare -i number_prune_globs=$#
 
 	Trace 5 "\n==> $type prune <=="
 	local -i period=$backup_period
@@ -2006,6 +2015,23 @@ prune-type-to-file() {
 		Trace 5 "\nDeleting ~$# snapshots: $ss"
 		echo ${*%$oldest_snapshot*} # don't delete oldest snapshot
 	done >> $file_of_snapshots_to_prune
+
+	echo $remaining_reverse_sorted_snapshot_dates; return
+
+	# if short date span, skip over the same dates as would default span
+	local span_var=${type2date_span_var[$type]}
+	local default_date_span=${custom_config_var2default_value[$span_var]-}
+	[[ $default_date_span && ! $is_regression_test ]] && {
+	local -i custom_date_span=$date_span
+	set-date_span--scaled $default_date_span
+	local -i default_date_span=$date_span
+	local -i date_span_diff=$(( $default_date_span - $custom_date_span))
+	if (( $date_span_diff > 0 ))
+	   then set -- $remaining_reverse_sorted_snapshot_dates
+		shift $(( $date_span_diff * $number_prune_globs ))
+		remaining_reverse_sorted_snapshot_dates=$*
+	fi
+	}
 
 	echo $remaining_reverse_sorted_snapshot_dates
 }
@@ -5981,6 +6007,11 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-lock_paths prune /backup/E/2020-05-08,08; echo $lock_paths; exit
+
+	set -x; set-type2date_span; TraceV exit
+	set -x; validate-prune_globs; exit
+
 	for l in ${!warning_level2tput_args[*]}
 	    do set-warning_string $l $l; echo -n "$warning_string  "; done;echo
 	print-string-colors; exit
