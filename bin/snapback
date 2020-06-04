@@ -596,6 +596,7 @@ function lock() {
 	[[ $# == [12] ]] || abort-function "[-w [-c]] type resource"
 	local type name
 	 _set-type-name "$@"
+	local drive_name=$name
 
 	local prev_lock_path=${_lock_type_name2lock_path[$type,$name]-}
 	[[ ! $prev_lock_path ]] ||
@@ -799,7 +800,8 @@ readonly -f _signal-jobs
 # these take multiple types, and work with the current $drive_name
 function  suspend-jobs() {
 
-	[[ $UID == 0 ]] && print-call-stack | tee -a $file_for_logging
+	[[ $UID == 0 ]] &&
+	print-call-stack $drive_name | tee -a $file_for_logging
 	_signal-jobs -STOP "$@"
 }
 function  suspend-jobs() { _signal-jobs -STOP "$@"; }
@@ -6010,6 +6012,12 @@ case $action in
 	_have-full-snapshot
 	echo "status=$?"
 	exit
+
+	_set-type-name prune /backup/J/2019-11-27,12
+	TraceV 0 type name; exit
+
+	print-call-stack test
+	print-call-stack; exit
 
 	lock backup x
 	lock backup x || abort badness 1
