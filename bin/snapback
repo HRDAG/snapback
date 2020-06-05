@@ -3109,8 +3109,11 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 # ----------------------------------------------------------------------------
 
 # the "fastest" snapshot is on drive that's: 1. multi-writer; else 2. not
-# running a backup or copy; else 3. not being pruned or can kill prune;
+# running a backup or copy; else 3. not being pruned (or can kill prune);
 # else 4. hosting the smallest number of rsync commands.
+# but, we'll skip a drive that's not mulit-writer && hosts write jobs, which
+# means we might not return anything (so caller has to do multiple passes, to
+# wait for a source drive to become "available")
 fastest-snapshots() {
 
 	local drive_name drive_dir	# don't change caller's values
@@ -3127,6 +3130,8 @@ fastest-snapshots() {
 		for writer in copy prune backup
 		    do	have-job $writer && let writer_count+=1
 		done
+		[[ $writer_count -gt 0 && $not_multi_writer_drive == 1 ]] &&
+		    continue		# might need to skip this drive
 
 		_set-drive_dir
 		count-rsyncs-using-resource " $drive_dir/"
@@ -5985,6 +5990,12 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	suspend-tracing
+	set -- $drive_dir_prefix*/$snapshot_day_glob,00
+	restore-tracing
+	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
+	exit
+
 	set-lock_paths prune /backup/E/2020-05-08,08; echo $lock_paths; exit
 
 	set -x; set-type2date_span; TraceV exit
@@ -6006,12 +6017,6 @@ case $action in
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
 	for m in $ml; do set-hours    $m; printf "%3s -> %s\n" $m $hours; done
 	for m in $ml; do set-hours -1 $m; printf "%3s -> %s\n" $m $hours; done
-	exit
-
-	suspend-tracing
-	set -- $drive_dir_prefix*/$snapshot_day_glob,00
-	restore-tracing
-	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
 	exit
 
 	set -- $drive_dir_prefix${1^^}/$snapshot_glob*
