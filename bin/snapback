@@ -339,6 +339,7 @@ function sudo-lockpid() {
 	   then local sudo_lockpid="sudo lockpid --pid=$BASHPID"
 	   else local sudo_lockpid=lockpid # only reclaim writable locks
 	fi
+	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $sudo_lockpid" >&2
 	$IfRun $sudo_lockpid "$@"
 }
 readonly -f sudo-lockpid
@@ -472,14 +473,19 @@ function lock-PID() {
 	local output_file=$tmp_3
 	set -f; set -- lockpid --dir=$lock_dir $lock_opts $lock_file; set +f
 	[[ $UID == 0 ]] || { shift; set -- sudo lockpid --pid=$BASHPID "$@"; }
-	local   lock_cmd=$*
+	local lock_cmd=$*
+	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
 	$IfRun $lock_cmd &> $output_file ; local status=$?
 	lockpid_output=$(<  $output_file)
 	rm $output_file
 
 	if [[ $status == 0 ]]
-	   then [[ $is_regression_test && $lockpid_output ]] &&
-		    echo "$lockpid_output" | sed "s/--pid=[0-9]* /--pid=PID /"
+	   then if [[ $lockpid_output ]]
+		   then if [[ $is_regression_test ]]
+			   then echo "$lockpid_output" | sed "s/--pid=[0-9]*/--pid=PID/"
+			   else echo "$lockpid_output"
+			fi
+		fi
 		$xtrace
 		return 0
 	fi
