@@ -3108,49 +3108,22 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 
 # ----------------------------------------------------------------------------
 
-declare -A drive_name2do_suspend
-
-set-drive_name2do_suspend() {
-
-	[[   ${custom_config_var_assignments-} ]] &&
-	local $custom_config_var_assignments # for customize-config-variables
-
-	local drive drive_name
-	for drive in $(list-drive-dirs -a)
-	    do	_set-drive_name $drive
-		suspend-tracing
-		customize-config-variables $drive_name
-		restore-tracing
-		if [[ $is_multi_writer_drive ]]
-		   then local do_suspend=0
-		   else local do_suspend=1
-		fi
-		drive_name2do_suspend[$drive_name]=$do_suspend
-	done
-}
-readonly -f set-drive_name2do_suspend
-
-# -------------------------------------------------------
-
-# the "fastest" snapshot is on drive that's: 1. not suspendable; else 2. not
-# running a backup; else 3. not being pruned; else 4. hosting the smallest
-# number of rsync commands.
+# the "fastest" snapshot is on drive that's: 1. multi-writer; else 2. not
+# running a backup or copy; else 3. not being pruned or can kill prune;
+# else 4. hosting the smallest number of rsync commands.
 fastest-snapshots() {
 
-	local drive_name drive_dir	       # don't change caller's values
+	local drive_name drive_dir	# don't change caller's values
 
 	local snapshot
 	for snapshot
 	    do	_set-drive_name $snapshot
-		[[ -v drive_name2do_suspend[$drive_name] ]] ||
-		   abort-function ": must call set-drive_name2do_suspend first"
-		local do_suspend=${drive_name2do_suspend[$drive_name]}
+		if is-multi-writer-drive $snapshot
+		   then not_multi_writer_drive=0
+		   else not_multi_writer_drive=1
+		fi
 
 		local -i writer_count=0
-		# copy-snapshot-rsync will wait for backup, and wait for
-		#   enough drive space to kill prune; but it can't do anything
-		#   about "coarse-grained" (held during whole job) 'copy' lock,
-		#   so check for 'copy' lock first
 		for writer in copy prune backup
 		    do	have-job $writer && let writer_count+=1
 		done
@@ -3160,7 +3133,7 @@ fastest-snapshots() {
 		local rsync_count=$?
 
 		local ss=$snapshot
-		echo "$do_suspend|$writer_count|$rsync_count|$ss"
+		echo "$not_multi_writer_drive|$writer_count|$rsync_count|$ss"
 	done | sort -t\| -n |		# numeric sort
 	# cat; return			# uncomment to debug with action 'test'
 	cut -d\| -f4
@@ -3171,8 +3144,6 @@ readonly -f fastest-snapshots
 
 fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
-
-	set-drive_name2do_suspend	# for fastest-snapshots
 
 	while true
 	    do	local args dst_snapshot=
@@ -5420,8 +5391,8 @@ chroot-backup() {
 	[[ $snapshots ]] || abort "can't find snapshot matching $date_time"
 
 	set -- $snapshots
-	[[ $# == 1 ]] || { set-drive_name2do_suspend
-			   set -- $(fastest-snapshots $snapshots) ; }
+	[[ $# == 1 ]] || set -- $(fastest-snapshots $snapshots)
+	[[ $# != 0 ]] || abort-function "ask Scott to add option to fastest-snapshots"
 	local chroot_dir=$1
 
 	# $Trace
@@ -6037,7 +6008,6 @@ case $action in
 	for m in $ml; do set-hours -1 $m; printf "%3s -> %s\n" $m $hours; done
 	exit
 
-	set-drive_name2do_suspend
 	suspend-tracing
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	restore-tracing
