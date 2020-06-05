@@ -472,7 +472,8 @@ function lock-PID() {
 
 	local output_file=$tmp_3
 	set -f; set -- lockpid --dir=$lock_dir $lock_opts $lock_file; set +f
-	[[ $UID == 0 ]] || { shift; set -- sudo lockpid --pid=$BASHPID "$@"; }
+	[[ $UID == 0 || $debug_opt ]] ||
+	    { shift; set -- sudo lockpid --pid=$BASHPID "$@"; }
 	local lock_cmd=$*
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
 	$IfRun $lock_cmd &> $output_file ; local status=$?
