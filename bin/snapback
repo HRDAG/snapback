@@ -3115,6 +3115,7 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 # means we might not return anything (so caller has to do multiple passes, to
 # wait for a source drive to become "available")
 fastest-snapshots() {
+	[[ $1 == -f ]] && { shift; local do_force=$true; } || local do_force=$false
 
 	local drive_name drive_dir	# don't change caller's values
 
@@ -3130,7 +3131,7 @@ fastest-snapshots() {
 		for writer in copy prune backup
 		    do	have-job $writer && let writer_count+=1
 		done
-		[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
+		[[ $writer_count -gt 0 && $not_multi_writer == 1 && ! $do_force ]] &&
 		    continue		# might need to skip this drive
 
 		_set-drive_dir
@@ -5396,8 +5397,7 @@ chroot-backup() {
 	[[ $snapshots ]] || abort "can't find snapshot matching $date_time"
 
 	set -- $snapshots
-	[[ $# == 1 ]] || set -- $(fastest-snapshots $snapshots)
-	[[ $# != 0 ]] || abort-function "ask Scott to add option to fastest-snapshots"
+	[[ $# == 1 ]] || set -- $(fastest-snapshots -f $snapshots)
 	local chroot_dir=$1
 
 	# $Trace
