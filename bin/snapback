@@ -2643,9 +2643,9 @@ readonly -f run-backup-rsync
 
 # ----------------------
 
-_set-src_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
+_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
 
-	src_lock_path=
+	prune_lock_path=
 return
 	local lock_paths
 	set-lock_paths copy && set-lock_PGID $lock_paths || return
@@ -2661,12 +2661,12 @@ return
 		set-lock_PGID $lock_path
 		(( $lock_PGID == $copy_PGID )) || continue
 
-		src_lock_path=$lock_path
-		$IfRun sudo rm $src_lock_path
+		prune_lock_path=$lock_path
+		$IfRun sudo rm $prune_lock_path
 		return
 	done
 }
-readonly -f _set-src_lock_path-copy_PGID--if-release-copy-src-prune-lock
+readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
@@ -2718,7 +2718,7 @@ function run-backup() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then suspend-jobs copy prune
-		_set-src_lock_path-copy_PGID--if-release-copy-src-prune-lock
+		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
 	run-backup-rsync $date_time
@@ -2727,7 +2727,7 @@ function run-backup() {
 	unlock backup
 
 	if [[ ! $is_multi_writer_drive ]]
-	   then [[ $src_lock_path ]] && prevent-pruning $src_lock_path $copy_PGID
+	   then [[ $prune_lock_path ]] && prevent-pruning $prune_lock_path $copy_PGID
 		$IfRun create-jobs prune # also manages copy job
 	fi
 
