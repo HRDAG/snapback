@@ -5659,7 +5659,8 @@ case $action in
 	;;
    # run-backups   names: backup names ('all' for every mounted backup drive)
    ( r*b*k*p* | rb* ) undo-action-abbrev run-backups
-	[[ $# != 0 ]] || abort-with-action-Usage
+	[[ $1 != -r  ]] && assert-not-option $1
+	[[ $# != 0   ]] || abort-with-action-Usage
 	[[ $1 == all ]] && rm-stale-locks
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
@@ -5671,13 +5672,15 @@ case $action in
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $1 == -f ]] && { final_prune_type=$2; shift 2; } || final_prune_type=
-	[[ $# != 0 ]] || abort-with-action-Usage
+	[[ $1 != -r ]] && assert-not-option $1
+	[[ $# != 0  ]] || abort-with-action-Usage
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
+	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
 	create-jobs update ${src_names_regex_opt-} "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
@@ -5685,6 +5688,7 @@ case $action in
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
+	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
 	set-drive_names--from-user-args "$@"
 
