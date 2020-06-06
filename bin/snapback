@@ -2641,6 +2641,50 @@ function run-backup-rsync() {
 }
 readonly -f run-backup-rsync
 
+# ----------------------------
+
+function is-copy-src() {
+	local prune_lock_path=$1
+
+	local lock_PGID
+	  set-lock_PGID $prune_lock_path || return 1
+	local prune_lock_PGID=$lock_PGID
+
+	  set-lock_paths copy all
+	local lock_path
+	for lock_path in $lock_paths
+	    do	set-lock_PGID $lock_path
+		(( $lock_PGID == $prune_lock_PGID )) && return 0
+	done
+
+	return 1
+}
+readonly -f is-copy-src
+
+# ----------------------
+
+function set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy() {
+	local drive_name=${1:-$drive_name}
+
+	local lock_paths
+	set-lock_paths copy && set-lock_PGID $lock_paths || return 1
+	copy_PGID=$lock_PGID
+
+	  set-lock_paths prune all
+	local lock_path
+	for lock_path in $lock_paths
+	    do	set-lock_PGID $lock_path
+		(( $lock_PGID == $copy_PGID )) || continue
+
+		prune_lock_path=$lock_path
+		return 0
+	done
+
+	prune_lock_path=
+	return 1
+}
+readonly -f set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy
+
 # ----------------------
 
 _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
@@ -2651,14 +2695,10 @@ return
 	set-lock_paths copy && set-lock_PGID $lock_paths || return
 	copy_PGID=$lock_PGID
 
-	set-lock_paths prune
-	local our_lock_path=$lock_paths
-
 	  set-lock_paths prune all
 	local lock_path
 	for lock_path in $lock_paths
-	    do	[[ $lock_path == $our_lock_path ]] && continue
-		set-lock_PGID $lock_path
+	    do	set-lock_PGID $lock_path
 		(( $lock_PGID == $copy_PGID )) || continue
 
 		prune_lock_path=$lock_path
@@ -2675,16 +2715,16 @@ prevent-pruning() {
 
 	[[ $resource ]] || return
 
-	if [[ $lock_PGID ]]
-	   then  _set-_drive_name $resource
-		local lock_path
-		set-lock_path prune $_drive_name
-	fi
+	 _set-_drive_name $resource
+	local lock_path
+	set-lock_path prune $_drive_name
+
 	while true
 	    do	if [[ $lock_PGID ]]
 		   then sudo-lockpid --pid=$lock_PGID $lock_path
 		   else lock prune $resource
 		fi && break
+		is-copy-src $lock_path || return
 		kill-job-on-drives prune $resource
 		$IfRun sleep 1
 	done
@@ -5627,6 +5667,7 @@ function regression-test() {
 	_run-debug-cmds u update-drive $dst
 
 	reset-priority			# will continue only one job
+	continue-jobs backup
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
 	}
@@ -6059,12 +6100,12 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	for final in "" hour da m y
+	    do	set-prune_types $final; echo $prune_types; done; exit
+
 	has-rsyncs $*; exit $?
 	set-executables--in-process-groups   $* || exit 1; echo $executables  ; exit
 	set-PID_ps_fields--in-process-groups $* || exit 1; echo $PID_ps_fields; exit
-
-	for final in "" hour da m y
-	    do	set-prune_types $final; echo $prune_types; done; exit
 
 	suspend-tracing
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
