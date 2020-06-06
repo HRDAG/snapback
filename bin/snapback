@@ -654,18 +654,42 @@ readonly -f unlock
 # enumerating/showing/signaling/killing process groups
 ##############################################################################
 
-process-group-PIDs() {
+function set-PID_ps_fields--in-process-groups() {
+	local columns_opt=$1; shift
 
+	PID_ps_fields=
+
+	[[ $is_darwin ]] && local ps_PGID_opt=-G || local ps_PGID_opt=-g
 	local PGID
 	for PGID
-	    do	# I don't know why this didn't work
-		# ps -u root -o pid,pgid | grep " $PGID$" | awk '{ print $1 }'
-
-		# "pstree -p -a" lines start with: <command>,<PID> ...
-		pstree -p -a $PGID | sed 's/^[^,]*,\([0-9]*\).*/\1/'
+	    do	set -- $(COLUMNS=999 ps -o $columns_opt $ps_PGID_opt $PGID)
+		shift			# toss header
+		[[ $# != 0 ]] && PID_ps_fields+="$* "
 	done
+
+	[[ $PID_ps_fields ]]
 }
-readonly -f process-group-PIDs
+readonly -f set-PID_ps_fields--in-process-groups
+
+# ---------------------------------
+
+function set-PIDs--in-process-groups() {
+
+	PIDs=
+	set-PID_ps_fields--in-process-groups pid $* || return 1
+	PIDs=$PID_ps_fields
+}
+readonly -f set-PIDs--in-process-groups
+
+# ---------------------------------
+
+set-executables--in-process-groups() {
+
+	executables=
+	set-PID_ps_fields--in-process-groups comm $* || return 1
+	executables=$PID_ps_fields
+}
+readonly -f set-executables--in-process-groups
 
 # ----------------------------------------------------------------------------
 
@@ -1493,6 +1517,18 @@ function count-rsyncs-using-resource() {
 }
 readonly -f count-rsyncs-using-resource
 
+# ---------------------------------
+
+function has-rsyncs() {
+	local job_type=$1 drive_name=${2:-$drive_name}
+
+	_set-drive_name $drive_name
+	set-job_PGID $job_type || return 1
+	set-executables--in-process-groups $job_PGID || abort-function weirdness
+	is-arg1-in-arg2 rsync $executables
+}
+readonly -f has-rsyncs
+
 # ----------------------------------------------------------------------------
 
 function update-snapshots-ls {
@@ -1746,6 +1782,10 @@ readonly -f set-date_time set-day--from-secs set-seconds--from-snapshot
 
 # --------------------------------------------
 
+readonly ordered_prune_types="hour day month year"
+
+# ---------------------------------
+
 shorten-date() {
 	case $1 in
 	    (  hour ) sed 's/,..$//' ;;	# strip time from snapshot's date-time
@@ -1964,9 +2004,25 @@ readonly -f reverse-sorted-snapshot-basenames
 
 # --------------------------------------------
 
+set-prune_types() {
+	local final_prune_type=${1-X}
+
+	prune_types=
+
+	local _type
+	for _type in $ordered_prune_types
+	    do	prune_types+="$_type "
+		[[ ${final_prune_type:0:1} == ${_type:0:1} ]] && break
+	done
+}
+readonly -f set-prune_types
+
+# --------------------------------------------
+
 prune-type-to-file() {
 	local type=${1%s} file_of_snapshots_to_prune=$2; shift 2
 	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten-date $type)
+	is-arg1-in-arg2 $type $prune_types || { echo $*; return; }
 	local remaining_reverse_sorted_snapshot_dates=$*
 
 	set-type2date_span	# run after call to customize-config-variables
@@ -2084,6 +2140,8 @@ function prune-drive() {
 	   then set-priority prune
 	   else reset-priority		# this might suspend us
 	fi
+
+	set-prune_types ${final_prune_type-}
 
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
@@ -3122,19 +3180,20 @@ fastest-snapshots() {
 	local snapshot
 	for snapshot
 	    do	_set-drive_name $snapshot
+		_set-drive_dir
 		if is-multi-writer-drive $snapshot
 		   then local not_multi_writer=0
 		   else local not_multi_writer=1
 		fi
 
 		local -i writer_count=0
-		for writer in copy prune backup
-		    do	have-job $writer && let writer_count+=1
-		done
+		have-job backup && writer_count+=1
+		have-job copy	&& has-rsyncs copy && writer_count+=1 # sleeping?
+		have-job prune	&& is-drive-usage-too-high && writer_count+=1
+
 		[[ $writer_count -gt 0 && $not_multi_writer == 1 && ! $do_force ]] &&
 		    continue		# might need to skip this drive
 
-		_set-drive_dir
 		count-rsyncs-using-resource " $drive_dir/"
 		local rsync_count=$?
 
@@ -3886,7 +3945,6 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 				-e "[0-9] $rsync_ps")
 	[[ $ps_H_opt ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
-
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
 	bkp_rsync_cmds=$(ps_ $lock_PGIDs | grep "[0-9] $rsync_ps")
 	[[ $ps_H_opt ]] ||
@@ -3972,9 +4030,10 @@ readonly -f _set-ps_keywords--from-columns
 _set-cron_cmds--from-PGIDs() {
 	local PGIDs=$*
 
-	set -- $(process-group-PIDs $PGIDs)
+	local PIDs
+	set-PIDs--in-process-groups $PGIDs
 	#  option f for "forest"; run trim-backup-ps now, for next adjustment
-	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $* | trim-backup-ps)
+	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $PIDs | trim-backup-ps)
 	[[ $ps_f_opt ]] ||
 	# since no forest ascii-art to visually separate jobs, use blank lines
 	cron_cmds=$(echo "$cron_cmds" |
@@ -5611,6 +5670,7 @@ case $action in
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
+	[[ $1 == -f ]] && { final_prune_type=$2; shift 2; } || final_prune_type=
 	[[ $# != 0 ]] || abort-with-action-Usage
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
@@ -5990,6 +6050,13 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	has-rsyncs $*; exit $?
+	set-executables--in-process-groups   $* || exit 1; echo $executables  ; exit
+	set-PID_ps_fields--in-process-groups $* || exit 1; echo $PID_ps_fields; exit
+
+	for final in "" hour da m y
+	    do	set-prune_types $final; echo $prune_types; done; exit
+
 	suspend-tracing
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	restore-tracing
