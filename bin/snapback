@@ -693,6 +693,19 @@ readonly -f set-executables--in-process-groups
 
 # ----------------------------------------------------------------------------
 
+function set-lock_PGID() {
+	local lock=$1
+
+	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
+	lock_PGID=
+	[[ -s $lock ]] && set -- $(< $lock) && [[ $# == 1 ]] || return 1
+	lock_PGID=$1
+	return 0
+}
+readonly -f set-lock_PGID
+
+# ----------------------
+
 function set-job_PGID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local job_type=$1 lock_path
@@ -723,25 +736,12 @@ readonly -f set-signal_is_kill
 
 # ----------------------
 
-function set-lock_PID() {
-	local lock=$1
-
-	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
-	lock_PID=
-	[[ -s $lock ]] && set -- $(< $lock) && [[ $# == 1 ]] || return 1
-	lock_PID=$1
-	return 0
-}
-readonly -f set-lock_PID
-
-# ----------------------
-
 function is-active-lock() {
 	set-lock_paths "$@"
 
-	local lock lock_PID
+	local lock lock_PGID
 	for lock in $lock_paths
-	    do	set-lock_PID $lock && is-process-alive $lock_PID && return 0
+	    do	set-lock_PGID $lock && is-process-alive $lock_PGID && return 0
 	done
 	return 1
 }
@@ -790,8 +790,8 @@ function signal-job() {
 	sudo-lockpid -o --not-hold $lock_path &> /dev/null && # if stale ...
 	sudo-lockpid    --release  $lock_path && return 0     # nothing to kill
 
-	set-lock_PID $lock_path || return 0 # is there a valid job to signal?
-	sudo-kill -s ${signal^^} -$lock_PID || return 1 # did our kill work?
+	set-lock_PGID $lock_path || return 0 # is there a valid job to signal?
+	sudo-kill -s ${signal^^} -$lock_PGID || return 1 # did our kill work?
 
 	set-signal_is_kill $signal || return 0 # (wanted to) terminate job?
 
@@ -1387,7 +1387,7 @@ function is-multi-writer-drive() {
 
 	 _set-_drive_name $resource
 
-	[[ ${drv_name2is_multi_writer_drive[$_drive_name]-${custom_config_var2default_value[is_multi_writer_drive]-}} ]]
+	[[ ${drv_name2is_multi_writer_drive[$_drive_name]-${custom_config_var2default_value[is_multi_writer_drive]-$is_multi_writer_drive}} ]]
 }
 readonly -f is-multi-writer-drive
 
@@ -1395,6 +1395,10 @@ readonly -f is-multi-writer-drive
 
 function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
+
+	_set-_drive_name $drive_dir
+	[[ $_drive_name == $drive_name ]] ||
+	local max_FS_usage_percent=${drv_name2max_FS_usage_percent[$_drive_name]-${custom_config_var2default_value[max_FS_usage_percent]-$max_FS_usage_percent}}
 
 	suspend-tracing
 	local -i pcent ipcent
@@ -2666,18 +2670,18 @@ readonly -f _set-src_lock-copy_PID--if-release-copy-src-prune-lock
 # ----------------------
 
 prevent-pruning() {
-	local resource=${1-} lock_PID=${2-}
+	local resource=${1-} lock_PGID=${2-}
 
 	[[ $resource ]] || return
 
-	if [[ $lock_PID ]]
+	if [[ $lock_PGID ]]
 	   then  _set-_drive_name $resource
 		local lock_path
 		set-lock_path prune $_drive_name
 	fi
 	while true
-	    do	if [[ $lock_PID ]]
-		   then sudo-lockpid --pid=$lock_PID $lock_path
+	    do	if [[ $lock_PGID ]]
+		   then sudo-lockpid --pid=$lock_PGID $lock_path
 		   else lock prune $resource
 		fi && break
 		kill-job-on-drives prune $resource
@@ -3189,7 +3193,7 @@ fastest-snapshots() {
 		local -i writer_count=0
 		have-job backup && writer_count+=1
 		have-job copy	&& has-rsyncs copy && writer_count+=1 # sleeping?
-		have-job prune	&& is-drive-usage-too-high && writer_count+=1
+		have-job prune	&& is-drive-usage-too-high && writer_count+=1 #killable?
 
 		[[ $writer_count -gt 0 && $not_multi_writer == 1 && ! $do_force ]] &&
 		    continue		# might need to skip this drive
@@ -3229,7 +3233,7 @@ fill-in-unpruned-empty-snapshots() {
 			   did_skip_a_snapshot=$true
 		done < $copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
-		sleep 1m		# wait for source(s) to become unbusy
+		sleep 5m		# wait for source(s) to become unbusy
 	done
 	$IfRun rm $copy_args_file
 	return 0
