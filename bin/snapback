@@ -2028,19 +2028,18 @@ readonly -f set-prune_types
 
 # if short date span, want to skip over the same dates as would default span
 set-date_span_diff() {
+	local type=$1
+
+	declare -g -i date_span_diff=0
 
 	local span_var=${type2date_span_var[$type]}
 	local default_date_span=${custom_config_var2default_value[$span_var]-}
-	[[ $default_date_span && ! $is_regression_test ]] && {
+	[[ $default_date_span && ! $is_regression_test ]] || return
+
 	local -i custom_date_span=$date_span
 	set-date_span--scaled $default_date_span
 	local -i default_date_span=$date_span
-	local -i date_span_diff=$(( $default_date_span - $custom_date_span))
-	if (( $date_span_diff > 0 ))
-	   then set -- $remaining_reverse_sorted_snapshot_dates
-		shift $(( $date_span_diff * $number_prune_globs ))
-		remaining_reverse_sorted_snapshot_dates=$*
-	fi
+	date_span_diff=$(( $default_date_span - $custom_date_span ))
 }
 
 # --------------------------------------------
@@ -2054,6 +2053,7 @@ prune-type-to-file() {
 	set-type2date_span	# run after call to customize-config-variables
 	local date_span=${type2date_span[$type]}
 	set-date_span--scaled
+	set-date_span_diff $type
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
 	local prune_type_globs=${type2prune_type_globs[$type]}
 	set -f; set -- $prune_type_globs; set +f
@@ -2079,12 +2079,13 @@ prune-type-to-file() {
 
 		shift $date_span ||	# skip span of newer dates
 		    shift $# # shift does nothing if try to shift more than $#
+		[[ ! $is_last_word ]] || shift $date_span_diff || shift $#
 		remaining_reverse_sorted_snapshot_dates=$*
 		local newest_prune_date_in_this_pass=${1-}
 		[[ $newest_prune_date_in_this_pass ]] || break
 
 		set-prune_glob $type "$prune_type_glob"
-		TraceV 5 prune_type_glob prune_glob
+		TraceV 5 prune_type_glob prune_glob is_last_word
 		eval "set -- $prune_glob"
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\n Matched  $# snapshots: $ss"
@@ -6107,6 +6108,10 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-drive_name $1; set-type2date_span; type=${2-hour}
+	date_span=${type2date_span[$type]}; set-date_span--scaled
+	set-date_span_diff $type; echo $date_span_diff; exit
+
 	for final in "" hour da m y
 	    do	set-prune_types $final; echo $prune_types; done; exit
 
