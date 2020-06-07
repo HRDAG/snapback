@@ -54,7 +54,8 @@ readonly -f set-padded_colorized_string--for-printf
 readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
 readonly -f cd_ have-proc is-process-alive set-reversed_words
-readonly -f set-popped_word--from-list set-division set-warning_string
+readonly -f set-popped_word-is_last_word--from-list
+readonly -f set-division set-warning_string
 readonly -f confirm run-function set-backup_suffix
 
 is-set \
@@ -1911,7 +1912,7 @@ validate-prune_globs() {
 		[[ $debug_opt ]] && echo "$type globs: $prune_type_globs"
 		local -i span=0
 		local popped_word
-		while set-popped_word--from-list prune_type_globs
+		while set-popped_word-is_last_word--from-list prune_type_globs
 		   do	let span+=1
 			local prune_type_glob=$popped_word
 			local prune_glob
@@ -2025,6 +2026,25 @@ readonly -f set-prune_types
 
 # --------------------------------------------
 
+# if short date span, want to skip over the same dates as would default span
+set-date_span_diff() {
+
+	local span_var=${type2date_span_var[$type]}
+	local default_date_span=${custom_config_var2default_value[$span_var]-}
+	[[ $default_date_span && ! $is_regression_test ]] && {
+	local -i custom_date_span=$date_span
+	set-date_span--scaled $default_date_span
+	local -i default_date_span=$date_span
+	local -i date_span_diff=$(( $default_date_span - $custom_date_span))
+	if (( $date_span_diff > 0 ))
+	   then set -- $remaining_reverse_sorted_snapshot_dates
+		shift $(( $date_span_diff * $number_prune_globs ))
+		remaining_reverse_sorted_snapshot_dates=$*
+	fi
+}
+
+# --------------------------------------------
+
 prune-type-to-file() {
 	local type=${1%s} file_of_snapshots_to_prune=$2; shift 2
 	set -- $(echo $* | tr ' ' '\n' | cut -d. -f1 | shorten-date $type)
@@ -2042,7 +2062,7 @@ prune-type-to-file() {
 	Trace 5 "\n==> $type prune <=="
 	local -i period=$backup_period
 	local prune_glob
-	while set-popped_word--from-list prune_type_globs
+	while set-popped_word-is_last_word--from-list prune_type_globs
 	    do	local prune_type_glob=$popped_word
 		set -- $remaining_reverse_sorted_snapshot_dates
 
@@ -2086,23 +2106,6 @@ prune-type-to-file() {
 		Trace 5 "\nDeleting ~$# snapshots: $ss"
 		echo ${*%$oldest_snapshot*} # don't delete oldest snapshot
 	done >> $file_of_snapshots_to_prune
-
-	echo $remaining_reverse_sorted_snapshot_dates; return
-
-	# if short date span, skip over the same dates as would default span
-	local span_var=${type2date_span_var[$type]}
-	local default_date_span=${custom_config_var2default_value[$span_var]-}
-	[[ $default_date_span && ! $is_regression_test ]] && {
-	local -i custom_date_span=$date_span
-	set-date_span--scaled $default_date_span
-	local -i default_date_span=$date_span
-	local -i date_span_diff=$(( $default_date_span - $custom_date_span))
-	if (( $date_span_diff > 0 ))
-	   then set -- $remaining_reverse_sorted_snapshot_dates
-		shift $(( $date_span_diff * $number_prune_globs ))
-		remaining_reverse_sorted_snapshot_dates=$*
-	fi
-	}
 
 	echo $remaining_reverse_sorted_snapshot_dates
 }
