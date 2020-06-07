@@ -2674,6 +2674,8 @@ readonly -f is-copy-src
 function set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy() {
 	local drive_name=${1:-$drive_name}
 
+	prune_lock_path= copy_PGID=
+
 	local lock_paths
 	set-lock_paths copy && set-lock_PGID $lock_paths || return 1
 	copy_PGID=$lock_PGID
@@ -2688,31 +2690,17 @@ function set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy() {
 		return 0
 	done
 
-	prune_lock_path=
+	copy_PGID=
 	return 1
 }
 readonly -f set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy
 
 # ----------------------
 
-_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
+function _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
 
-	prune_lock_path=
-return
-	local lock_paths
-	set-lock_paths copy && set-lock_PGID $lock_paths || return
-	copy_PGID=$lock_PGID
-
-	  set-lock_paths prune all
-	local lock_path
-	for lock_path in $lock_paths
-	    do	set-lock_PGID $lock_path
-		(( $lock_PGID == $copy_PGID )) || continue
-
-		prune_lock_path=$lock_path
-		$IfRun sudo rm $prune_lock_path
-		return
-	done
+	set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy ${1-} &&
+	    $IfRun sudo rm $prune_lock_path || unset prune_lock_path copy_PGID
 }
 readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
@@ -2766,6 +2754,7 @@ function run-backup() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then suspend-jobs copy prune
+		# if suspended a copy, it's now OK to prune its source drive
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
@@ -2775,8 +2764,9 @@ function run-backup() {
 	unlock backup
 
 	if [[ ! $is_multi_writer_drive ]]
-	   then [[ $prune_lock_path ]] && prevent-pruning $prune_lock_path $copy_PGID
-		$IfRun create-jobs prune # also manages copy job
+	   then # before continue a copy, disable the pruning of its source
+		prevent-pruning ${prune_lock_path-} ${copy_PGID-}
+		$IfRun create-jobs prune # also manages (continues) a copy job
 	fi
 
 	return $status
