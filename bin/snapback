@@ -1583,7 +1583,9 @@ function _should-run-prune {
 		kill-job-on-drives prune # kill old job, we'll be new job
 	fi
 
-	lock prune || { suspended-prune-as-drive-usage-response; return 1; }
+	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
+	lock $lock_opt prune ||
+	    { suspended-prune-as-drive-usage-response; return 1; }
 
 	if [[ $is_cron ]]
 	   then _is-time-to-prune-drive || { unlock prune; return 1; }
@@ -2055,11 +2057,11 @@ prune-type-to-file() {
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 4 "\n  LOOP $type: $# dates left: $ss"
 
-		shift $date_span ||
+		shift $date_span ||	# skip span of newer dates
 		    shift $# # shift does nothing if try to shift more than $#
 		remaining_reverse_sorted_snapshot_dates=$*
-		local first_prune_date=${1-}
-		[[ $first_prune_date ]] || break
+		local newest_prune_date_in_this_pass=${1-}
+		[[ $newest_prune_date_in_this_pass ]] || break
 
 		set-prune_glob $type "$prune_type_glob"
 		TraceV 5 prune_type_glob prune_glob
@@ -2067,13 +2069,15 @@ prune-type-to-file() {
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\n Matched  $# snapshots: $ss"
 
-		# skip over the snapshot prune-matches that aren't old enough
-		TraceV 5 date_suffix_glob first_prune_date
+		# skip over the snapshot prune-matches that aren't old enough,
+		# i.e. the ones that were handled in earlier passes (spans)
+		TraceV 5 date_suffix_glob newest_prune_date_in_this_pass
 		set -- $(echo $* | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
 		   do	[[ $1 == [^1-9]* ]] && shift && continue # skip junk
 			local date=${1%$date_suffix_glob*}
-			[[   $date > $first_prune_date ]] || break
+			[[   $date > $newest_prune_date_in_this_pass ]] ||
+			    break
 			shift
 		done
 		[[ -d ${1-} ]] || continue
