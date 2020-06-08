@@ -621,8 +621,9 @@ function lock() {
 
 	! [[ $action == update* && $debug_opt ]] && # not regression-test?
 	# this 'if' logic is similar to the logic in _signal-job()
-	if ! [[ $is_multi_writer_drive || $type == backup ]]
-	   then lock-PID $wait_opt backup "$extra_lock_msg" &&
+	if is-multi-writer-drive || [[ $type == backup ]]
+	   then true
+	   else lock-PID $wait_opt backup "$extra_lock_msg" &&
 		lock-PID --release backup "$extra_lock_msg" ||
 		   { sudo-lockpid -r $primary_lock_path; $xtrace; return 1; }
 	fi
@@ -709,14 +710,12 @@ readonly -f set-lock_PGID
 
 function set-job_PGID() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local job_type=$1 lock_path
+	local job_type=$1 lock_path lock_PGID
 
 	set-lock_path $job_type
-	if [[ -s $lock_path ]]
-	   then set -- $(< $lock_path)
-		job_PGID=$1
-	   else job_PGID=
-	fi
+	set-lock_PGID $lock_path
+	job_PGID=$lock_PGID
+
 	$xtrace
 	[[ $job_PGID ]]
 }
@@ -816,9 +815,10 @@ function _signal-jobs() {
 	    do	have-job $type || continue
 		if [[ $signal == *CONT ]]
 		   then # this logic is similar to the logic in lock()
-			! [[ $is_multi_writer_drive || $type == backup ]] &&
-			have-job backup &&
-			    return 1  # only 1 writer allowed, bkp has priority
+			if is-multi-writer-drive || [[ $type == backup ]]
+			   then true
+			   else have-job backup && return 1 # bkp has priority
+			fi
 			set-job_PGID $type &&
 			set-priority $type $job_PGID
 		fi
@@ -1384,7 +1384,7 @@ readonly -f customize-and-validate-configuration-variables
 ##############################################################################
 
 function is-multi-writer-drive() {
-	local resource=$1
+	local resource=${1-$drive_name}
 
 	 _set-_drive_name $resource
 
@@ -1496,7 +1496,7 @@ function suspended-prune-as-drive-usage-response() {
 		   then  suspend-jobs copy
 			continue-jobs prune # may do nothing if backup running
 		   else continue-jobs copy  # may do nothing if backup running
-			[[ $is_multi_writer_drive ]] ||
+			is-multi-writer-drive ||
 			   { suspend-jobs prune; status=0; }
 		fi
 	done
@@ -1529,7 +1529,8 @@ function has-rsyncs() {
 
 	_set-drive_name $drive_name
 	set-job_PGID $job_type || return 1
-	set-executables--in-process-groups $job_PGID || abort-function weirdness
+	set-executables--in-process-groups $job_PGID || { warn "set-exe* -> $?"
+		print-call-stack $drive_name; ps www -$job_PGID; return 1; }
 	is-arg1-in-arg2 rsync $executables
 }
 readonly -f has-rsyncs
@@ -6098,22 +6099,32 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	date "$log_date_format"
+	print-call-stack test
+	print-call-stack; exit
+
+	set-drive_name ${1:-E}
+	fastest-snapshots /backup/E/2020-05-17,08 /backup/F/2020-05-17,08; exit
+
+	set-executables--in-process-groups   $* || exit 1
+	echo $executables; exit
+	set-PID_ps_fields--in-process-groups $* || exit 1
+	echo $PID_ps_fields; exit
+	has-rsyncs $*; exit $?
+
+	set-drive_name ${1:-J}
+	suspend-tracing
+	set -- $drive_dir_prefix$drive_name/$snapshot_day_glob,00
+	restore-tracing
+	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
+	exit
+
 	set-drive_name $1; set-type2date_span; type=${2-hour}
 	date_span=${type2date_span[$type]}; set-date_span--scaled
 	set-date_span_diff $type; echo $date_span_diff; exit
 
 	for final in "" hour da m y
 	    do	set-prune_types $final; echo $prune_types; done; exit
-
-	has-rsyncs $*; exit $?
-	set-executables--in-process-groups   $* || exit 1; echo $executables  ; exit
-	set-PID_ps_fields--in-process-groups $* || exit 1; echo $PID_ps_fields; exit
-
-	suspend-tracing
-	set -- $drive_dir_prefix*/$snapshot_day_glob,00
-	restore-tracing
-	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
-	exit
 
 	set-lock_paths prune /backup/E/2020-05-08,08; echo $lock_paths; exit
 
