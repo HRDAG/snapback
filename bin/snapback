@@ -1496,6 +1496,8 @@ function suspended-prune-as-drive-usage-response() {
 		   then  suspend-jobs copy
 			continue-jobs prune # may do nothing if backup running
 		   else continue-jobs copy  # may do nothing if backup running
+			is-copy-src  &&	    # don't suspend _or_ prune??
+			    status=0 && continue
 			is-multi-writer-drive ||
 			   { suspend-jobs prune; status=0; }
 		fi
@@ -2653,7 +2655,14 @@ readonly -f run-backup-rsync
 # ----------------------------
 
 function is-copy-src() {
-	local prune_lock_path=$1
+	local resource=${1:-$drive_name}
+
+	if [[ $resource != */* ]]
+	   then local lock_path
+		set-lock_path prune || return 1
+		local prune_lock_path=$lock_path
+	   else local prune_lock_path=$resource
+	fi
 
 	local lock_PGID
 	  set-lock_PGID $prune_lock_path || return 1
