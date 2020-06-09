@@ -2052,6 +2052,7 @@ set-date_span_diff() {
 	[[ $default_date_span && ! $is_regression_test ]] || return
 
 	local -i custom_date_span=$date_span
+	local -i date_span
 	set-date_span--scaled $default_date_span
 	local -i default_date_span=$date_span
 	date_span_diff=$(( $default_date_span - $custom_date_span ))
