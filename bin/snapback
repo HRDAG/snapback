@@ -500,6 +500,7 @@ function lock-PID() {
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
 	fi >&2
+	print-call-stack ${drive_name}
 	$xtrace
 	return 1
 }
@@ -2730,22 +2731,21 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
+restore-lock() {
+	local lock_path=${1-} lock_PGID=${2-}
+
+	[[ $lock_path ]] || return
+	sudo-lockpid --pid=$lock_PGID $lock_path
+}
+readonly -f restore-lock
+
+# ----------------------
+
 prevent-pruning() {
-	local resource=${1-} lock_PGID=${2-}
+	local resource=$1
 
-	[[ $resource ]] || return
-
-	 _set-_drive_name $resource
-	local lock_path
-	set-lock_path prune $_drive_name
-
-	while true
-	    do	if [[ $lock_PGID ]]
-		   then sudo-lockpid --pid=$lock_PGID $lock_path
-		   else lock prune $resource
-		fi && break
-		is-copy-src $lock_path || return
-		kill-job-on-drives prune $resource
+	until lock prune $resource
+	    do	kill-job-on-drives prune $resource
 		$IfRun sleep 1
 	done
 }
@@ -2789,7 +2789,7 @@ function run-backup() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then # before continue a copy, disable the pruning of its source
-		prevent-pruning ${prune_lock_path-} ${copy_PGID-}
+		restore-lock ${prune_lock_path-} ${copy_PGID-}
 		$IfRun create-jobs prune # also manages (continues) a copy job
 	fi
 
@@ -4129,6 +4129,9 @@ readonly -f set-cron_cmds
 
 set-min_rows-min_rows_with_df-rows_left() {
 
+	declare -g -i \
+	rows_for_one_detailed_rsync=4+3	# details section + 1 rsync
+	rows_for_one_detailed_rsync+=2	# hack, to ensure we see one full rsync
 	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
 	#  run-backup (RB) includes 'rsync' only
@@ -4137,8 +4140,9 @@ set-min_rows-min_rows_with_df-rows_left() {
 	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
 	local -i RB=$(echo  "$bkp_rsync_cmds" | fgrep -c r); num_bkp_rsyncs=$RB
-	(( RB > 0 )) && let RB+=3+4+3	# default + (details section + 1 rsync)
-	(( RB > 0 )) && let RB+=2	# hack, to ensure we see one full rsync
+	(( RB > 0 )) && let RB+=3	# default
+	(( RB > 0 )) && let RB+=$rows_for_one_detailed_rsync ||
+				 rows_for_one_detailed_rsync=0
 	TraceV 1 PD CS RB && let rows_left-=3
 
 	# min overhead: 1 watch line, 1 blank line, 6 lines of section-1 stats,
@@ -4245,7 +4249,9 @@ show-df-and-lsblk-if-they-fit() {
 
 	if [[ $show_all ]]
 	   then filesystem-geometry $drive_dirs
-	   else	(( $rows_left >= $min_rows_with_df )) &&
+	   else	local -i extra=$rows_for_one_detailed_rsync
+		# df is more important than rsync details
+		(( $rows_left + $extra >= $min_rows_with_df )) && # see RB+=
 		run-df $drive_dirs &&
 		let rows_left-=$num_drives+2
 
