@@ -2657,11 +2657,11 @@ readonly -f run-backup-rsync
 function is-copy-src() {
 	local resource=${1:-$drive_name}
 
-	if [[ $resource != */* ]]
+	if ! [[ $resource == $lock_dir/* || $resource == *.pid ]]
 	   then local lock_path
 		set-lock_path prune || return 1
 		local prune_lock_path=$lock_path
-	   else local prune_lock_path=$resource
+	   else local prune_lock_path=$lock_dir/${resource#$lock_dir/}
 	fi
 
 	local lock_PGID
@@ -3282,6 +3282,7 @@ fill-in-unpruned-empty-snapshots() {
 			   did_skip_a_snapshot=$true
 		done < $copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
+		[[ $debug_opt ]] && abort "about to sleep"
 		sleep 5m		# wait for source(s) to become unbusy
 	done
 	$IfRun rm $copy_args_file
@@ -6108,6 +6109,18 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-drive_name ${1:-E}
+	set-drive_dir $drive_name
+	suspended-prune-as-drive-usage-response; echo $?; exit
+
+	# maybe call inner function with file containing just this:
+	args_file=$tmp_dir/snapback-update-X.args; [[ $UID == 0 ]] || abort rt
+	[[ -s $args_file ]] || abort "$args_file empty"
+	fill-in-unpruned-empty-snapshots $args_file; exit
+	ss=${1-2020-05-25,08}
+	echo E/$ss F/$ss J/$ss X/$ss > $tmp
+	fill-in-unpruned-empty-snapshots $tmp; exit
+
 	date "$log_date_format"
 	print-call-stack test
 	print-call-stack; exit
