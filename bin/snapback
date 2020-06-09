@@ -1304,6 +1304,8 @@ customize-config-variables() {
 		eval "$var_name=\$custom_value"
 		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
+	(( $backup_period_for_update > 0 )) && [[ $is_update ]] &&
+	    backup_period=$backup_period_for_update
 	restore-tracing custom_config_vars
 }
 readonly -f customize-config-variables
@@ -2153,7 +2155,6 @@ readonly -f prune-snapshots-not-matching-backup_period
 
 # for the goals of this function, see prune-variable comments in configure.sh
 function prune-drive() {
-	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	assert-not-option "${1-}"
 	local drive_name=$1 drive_dir
 
@@ -3241,7 +3242,12 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 # means we might not return anything (so caller has to do multiple passes, to
 # wait for a source drive to become "available")
 fastest-snapshots() {
-	[[ $1 == -f ]] && { shift; local do_force=$true; } || local do_force=$false
+	if [[ $1 == -f ]]
+	   then local do_force=$true; shift
+	elif [[ $is_regression_test ]]
+	   then local do_force=$true
+	   else local do_force=$false
+	fi
 
 	local drive_name drive_dir	# don't change caller's values
 
@@ -3297,7 +3303,7 @@ fill-in-unpruned-empty-snapshots() {
 			   did_skip_a_snapshot=$true
 		done < $copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
-		[[ $debug_opt ]] && abort "about to sleep"
+		[[ ! $debug_opt ]] || warn "no work to do" || break
 		sleep 5m		# wait for source(s) to become unbusy
 	done
 	$IfRun rm $copy_args_file
@@ -3307,10 +3313,14 @@ readonly -f fill-in-unpruned-empty-snapshots
 
 # ----------------------------------------------------------------------------
 
+declare is_update=$false
+
 function update-drive() {
 	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
+
+	is_update=$true
 	set-drive_name $1
 	set-drive_dir $drive_name
 
@@ -3332,7 +3342,7 @@ function update-drive() {
 	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
 	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
-	prune-drive -u $drive_name	# -u: just prune empty .partial dirs
+	prune-drive $drive_name
 
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
 	local status=$?
@@ -3535,8 +3545,9 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 			local -i total=${sum%+}
 			local -i avg_mins=$(( ($total+($#/2)) / $# ))
 			set-hours--from-minutes -1 $avg_mins # 1 decimal point
+			# drv_name2backup_period_for_update -> localize period
 			[[ $default_backup_period ]] &&
-			backup_period=${drv_name2backup_period[$drive_name]-$default_backup_period}
+			local backup_period=${drv_name2backup_period[$drive_name]-$default_backup_period}
 			local -i backup_period_mins=$backup_period*60
 			if (( avg_mins >= backup_period_mins ))
 			   then if (( avg_mins == backup_period_mins ))

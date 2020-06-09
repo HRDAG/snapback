@@ -176,6 +176,9 @@ declare -i backup_period=1		# need much RAM for small period
   drv_name2backup_period[Y]=24		# small drive, or drive with history
   drv_name2backup_period[Z]=2		# twice the period of the mk-Z output
 
+declare -i backup_period_for_update=0	# default to the same
+  drv_name2backup_period_for_update[X]=4 # bigger value, for tight drive space
+
 # ----------------------------------------------------------------------------
 # Variables that control prune-drives.  NOTE: backup_period, extra_excludes, #
 #    and excluded_backup_hours (above) are also used in pruning.	     #
