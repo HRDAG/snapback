@@ -1517,7 +1517,7 @@ function suspended-prune-as-drive-usage-response() {
 		have-job copy || { continue-jobs prune; continue; }
 
 		if is-drive-usage-too-high
-		   then  suspend-jobs copy
+		   then  suspend-jobs copy; is-copy-src ||
 			continue-jobs prune # may do nothing if backup running
 		   else continue-jobs copy  # may do nothing if backup running
 			is-copy-src  &&	    # don't suspend _or_ prune??
