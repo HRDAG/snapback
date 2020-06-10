@@ -2195,6 +2195,9 @@ function prune-drive() {
 
 	set-prune_types ${final_prune_type-}
 
+	local backup_period=$backup_period
+	(( $backup_period>$backup_period_for_update )) &&
+	    backup_period=$backup_period_for_update
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
 
@@ -3811,7 +3814,7 @@ set-max_drive_name_len() {
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
 	    do	_set-drive_name $drive_dir
-		(( max_drive_name_len < ${#drive_name} )) &&
+		(( max_drive_name_len<${#drive_name} )) &&
 		   max_drive_name_len=${#drive_name}
 	done
 }
