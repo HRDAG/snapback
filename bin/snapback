@@ -694,6 +694,16 @@ set-executables--in-process-groups() {
 }
 readonly -f set-executables--in-process-groups
 
+# ---------------------------------
+
+set-state--in-process-groups() {
+
+	executables=
+	set-PID_ps_fields--in-process-groups stat $* || return 1
+	state=$PID_ps_fields
+}
+readonly -f set-executables--in-process-groups
+
 # ----------------------------------------------------------------------------
 
 function set-lock_PGID() {
@@ -1540,16 +1550,29 @@ readonly -f count-rsyncs-using-resource
 
 # ---------------------------------
 
-function has-rsyncs() {
-	local job_type=$1 drive_name=${2:-$drive_name}
+function is-sleeping() {
+	local job_type=$1 drive_name=${2:-$drive_name} executables
 
 	_set-drive_name $drive_name
 	set-job_PGID $job_type || return 1
 	set-executables--in-process-groups $job_PGID || { warn "set-exe* -> $?"
 		print-call-stack $drive_name; ps www -$job_PGID; return 1; }
-	is-arg1-in-arg2 rsync $executables
+	is-arg1-in-arg2 sleep $executables
 }
-readonly -f has-rsyncs
+readonly -f is-sleeping
+
+# ---------------------------------
+
+function is-suspended() {
+	local job_type=$1 drive_name=${2:-$drive_name} state
+
+	_set-drive_name $drive_name
+	set-job_PGID $job_type || return 1
+	set-state--in-process-groups $job_PGID || { warn "set-exe* -> $?"
+		print-call-stack $drive_name; ps www -$job_PGID; return 1; }
+	[[ $state == *T* ]]
+}
+readonly -f is-suspended
 
 # ----------------------------------------------------------------------------
 
@@ -3261,9 +3284,10 @@ fastest-snapshots() {
 		fi
 
 		local -i writer_count=0
-		have-job backup && writer_count+=1
-		have-job copy	&& has-rsyncs copy && writer_count+=1 # sleeping?
-		have-job prune	&& is-drive-usage-too-high && writer_count+=1 #killable?
+		have-job backup &&			      writer_count+=1
+		have-job copy	&& ! is-sleeping copy && ! is-suspended copy &&
+							      writer_count+=1
+		have-job prune	&& is-drive-usage-too-high && writer_count+=1
 
 		[[ $writer_count -gt 0 && $not_multi_writer == 1 && ! $do_force ]] &&
 		    continue		# might need to skip this drive
@@ -3873,10 +3897,12 @@ function trim-copy-update-ps {
 	set -f; set -- $rsync_backup_opts; set +f # standardize whitespace
 
 	local cpss="$_our_name c"
+	local   ud="$_our_name u"
 	trim-ps |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	sed -e '/update-drive/s@ -s@ -s @' \
+	    -e "/     [^ ]*$ud/d" \
 	    -e "/$cpss/s@ -s@ @g" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
@@ -6141,6 +6167,22 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-drive_name $1
+	set-drive_dir $drive_name
+	is-suspended copy; echo "is-suspended -> $?"
+	is-sleeping  copy; echo "is-sleeping  -> $?"; exit
+
+	set-drive_name ${1:-X}
+	set-drive_dir $drive_name; d=$drive_name
+	arg_file=$tmp_dir/snapback-update-$d.args; [[ $UID == 0 ]] ||abort root
+	# maybe call inner function with file containing just this:
+	ss=${1-2020-05-25,08}
+	fgrep $ss $arg_file > $tmp
+	[[ -s $tmp ]] || abort $tmp is empty
+	fill-in-unpruned-empty-snapshots $tmp; exit
+	[[ -s $arg_file ]] || abort "$arg_file empty"
+	fill-in-unpruned-empty-snapshots $arg_file; exit
+
 	set-drive_name ${1:-F}
 	set-drive_dir $drive_name
 	is-drive-usage-too-high && (( $highest_drive_usage >= 98 )); exit $?
@@ -6148,14 +6190,6 @@ case $action in
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
 	suspended-prune-as-drive-usage-response; echo $?; exit
-
-	# maybe call inner function with file containing just this:
-	args_file=$tmp_dir/snapback-update-X.args; [[ $UID == 0 ]] || abort rt
-	[[ -s $args_file ]] || abort "$args_file empty"
-	fill-in-unpruned-empty-snapshots $args_file; exit
-	ss=${1-2020-05-25,08}
-	echo E/$ss F/$ss J/$ss X/$ss > $tmp
-	fill-in-unpruned-empty-snapshots $tmp; exit
 
 	date "$log_date_format"
 	print-call-stack test
@@ -6168,7 +6202,8 @@ case $action in
 	echo $executables; exit
 	set-PID_ps_fields--in-process-groups $* || exit 1
 	echo $PID_ps_fields; exit
-	has-rsyncs $*; exit $?
+	is-suspended $*; echo $?
+	is-sleeping  $*; echo $?; exit
 
 	set-drive_name ${1:-J}
 	suspend-tracing
