@@ -500,7 +500,7 @@ function lock-PID() {
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
 	fi >&2
-	print-call-stack ${drive_name}
+	print-call-stack ${drive_name-}
 	$xtrace
 	return 1
 }
@@ -1215,10 +1215,11 @@ readonly -f set-drive_name
 
 # ---------------------------------
 
-_set-drive_dir() {
+function _set-drive_dir() {
 	local name=${1:-$drive_name}
 
 	drive_dir=$drive_dir_prefix$name
+	[[ -d $drive_dir ]] || warn "'$drive_name' not mounted"
 }
 readonly -f _set-drive_dir
 
@@ -1251,7 +1252,7 @@ function set-drive_dir() {
 
 	if [[ ! $is_quiet ]]
 	   then warn "no filesystem mounted on $drive_dir"
-		# print-call-stack	# uncomment to debug
+		# print-call-stack $drive_name # uncomment to debug
 	fi
 	return 1
 }
@@ -3280,7 +3281,7 @@ fastest-snapshots() {
 	local snapshot
 	for snapshot
 	    do	_set-drive_name $snapshot
-		_set-drive_dir
+		_set-drive_dir || { print-call-stack; continue; }
 		if is-multi-writer-drive $snapshot
 		   then local not_multi_writer=0
 		   else local not_multi_writer=1
@@ -3905,7 +3906,7 @@ function trim-copy-update-ps {
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	sed -e '/update-drive/s@ -s@ -s @' \
-	    -e "/     [^ ]*$ud/d" \
+	    -e "/   [^ ]*$ud/d"   \
 	    -e "/$cpss/s@ -s@ @g" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
@@ -6170,6 +6171,8 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	_set-drive_name PID; _set-drive_dir; exit $?
+
 	set-drive_name $1
 	set-drive_dir $drive_name
 	is-suspended copy; echo "is-suspended -> $?"
