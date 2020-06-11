@@ -2200,9 +2200,12 @@ function prune-drive() {
 
 	set-prune_types ${final_prune_type-}
 
-	local backup_period=$backup_period
-	(( $backup_period>$backup_period_for_update )) &&
-	    backup_period=$backup_period_for_update
+	local -i \
+	    backup_period=$backup_period
+	(( $backup_period>$backup_period_for_update &&
+			  $backup_period_for_update > 0 )) &&
+	    backup_period=$backup_period_for_update # don't prune copy'ed dirs
+
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
 
@@ -3297,8 +3300,9 @@ fastest-snapshots() {
 							      writer_count+=1
 		have-job prune	&& is-drive-usage-too-high && writer_count+=1
 
-		[[ $writer_count -gt 0 && $not_multi_writer == 1 && ! $do_force ]] &&
-		    continue		# might need to skip this drive
+		[[ ! $do_force ]] &&
+		[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
+		    continue		# prefer a better snapshot?
 
 		count-rsyncs-using-resource " $drive_dir/"
 		local rsync_count=$?
@@ -3316,8 +3320,9 @@ readonly -f fastest-snapshots
 fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
 
+	local force_opt=
 	while true
-	    do	local args dst_snapshot=
+	    do	local args dst_snapshot= did_a_copy=$false
 		local did_skip_a_snapshot=$false
 		while read args
 		    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
@@ -3330,11 +3335,15 @@ fill-in-unpruned-empty-snapshots() {
 			# desired snapshot could be newly created, or pruned...
 			set -- $drive_dir_prefix*/${src_snapshot_1##*/}
 			[[ $# != 0 ]] || continue # sources pruned away?
-			set -- $(fastest-snapshots $*)
-			[[ $# != 0 ]] && copy-snapshot-rsync $1 $dst_snapshot||
-			   did_skip_a_snapshot=$true
+			set -- $(fastest-snapshots $force_opt $*)
+			if [[ $# != 0 ]] &&
+			   copy-snapshot-rsync $1 $dst_snapshot # maybe forced
+			   then did_a_copy=$true force_opt= # 1 force per pass
+			   else did_skip_a_snapshot=$true
+			fi
 		done < $copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
+		[[ ! $force_opt && ! $did_a_copy ]] && force_opt=-f && continue
 		[[ ! $debug_opt ]] || warn "no work to do" || break
 		sleep 5m		# wait for source(s) to become unbusy
 	done
@@ -5650,7 +5659,8 @@ _run-debug-cmds() {
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
 	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
 
-	echo -e "\nSince different results, we'll regenerate cached data ..."
+	echo "
+	Since different results, regenerate data cached from installed cmd ..."
 	PATH=${old_cmd%/*}:$PATH \
 	$old_cmd_ &> $tmp_o || abort old ; _show-test-results $tmp_o
 					   _show-test-results $tmp_t
