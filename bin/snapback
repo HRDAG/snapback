@@ -1415,10 +1415,14 @@ readonly -f is-multi-writer-drive
 declare -i highest_drive_usage
 
 function is-drive-usage-too-high() {
+	if [[ ${1-} == -e ]]		# want a little extra free space?
+	   then local -i extra=$2; shift 2
+	   else local -i extra=0
+	fi
 	local drive_dir=${1:-$drive_dir}
 
 	_set-_drive_name $drive_dir
-	[[ $_drive_name == $drive_name ]] ||
+	[[  $_drive_name == $drive_name ]] ||
 	local max_FS_usage_percent=${drv_name2max_FS_usage_percent[$_drive_name]-${custom_config_var2default_value[max_FS_usage_percent]-$max_FS_usage_percent}}
 
 	suspend-tracing
@@ -1435,8 +1439,8 @@ function is-drive-usage-too-high() {
 	   then highest_drive_usage=$block_percent
 	   else highest_drive_usage=$inode_percent
 	fi
-	(( $block_percent <= $max_FS_usage_percent )) || return 0
-	(( $inode_percent <= $max_FS_usage_percent )) || return 0
+	(( $block_percent + $extra <= $max_FS_usage_percent )) || return 0
+	(( $inode_percent + $extra <= $max_FS_usage_percent )) || return 0
 	return 1
 }
 readonly -f is-drive-usage-too-high
@@ -3036,8 +3040,8 @@ function copy-snapshot-rsync() {
 		suspend-jobs prune    # cron will swap jobs if drive space low
 	fi
 
-	if is-multi-writer-drive   $src_snapshot ||
-	   is-drive-usage-too-high $src_snapshot
+	if is-multi-writer-drive	$src_snapshot ||
+	   is-drive-usage-too-high -e 3 $src_snapshot # it's OK to prune source
 	   then local did_lock_src_prune=$false
 	   else local did_lock_src_prune=$true
 		prevent-pruning $src_snapshot
@@ -6171,6 +6175,11 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-drive_name ${1:-E}
+	set-drive_dir $drive_name
+	for (( n=0; ; n++ )) ; do
+	    is-drive-usage-too-high -e $n && echo $n && exit; done
+
 	_set-drive_name PID; _set-drive_dir; exit $?
 
 	set-drive_name $1
@@ -6188,10 +6197,6 @@ case $action in
 	fill-in-unpruned-empty-snapshots $tmp; exit
 	[[ -s $arg_file ]] || abort "$arg_file empty"
 	fill-in-unpruned-empty-snapshots $arg_file; exit
-
-	set-drive_name ${1:-F}
-	set-drive_dir $drive_name
-	is-drive-usage-too-high && (( $highest_drive_usage >= 98 )); exit $?
 
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
