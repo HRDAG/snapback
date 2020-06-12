@@ -571,7 +571,7 @@ readonly -f _set-wait_opt
 # creates a lock for each of those jobs ( see writer_types= ).  The
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
 # backup job is initiated).  When no backup job is running, and copy and prune
-# jobs both exist, reset-priority aka suspended-prune-as-drive-usage-response
+# jobs both exist, reset-priority aka is-copy-higher-priority-than-prune
 # decides which one should be suspended.
 #
 # An hourly cron job calls action run-backups (with argument 'all'), which
@@ -1510,7 +1510,7 @@ readonly -f reset-drive-jobs-priorities
 
 # ------------------------------------------
 
-function suspended-prune-as-drive-usage-response() {
+function is-copy-higher-priority-than-prune() {
 	local drive_names=${*:-$drive_name}
 
 	local status=1			# assume won't suspend
@@ -1533,10 +1533,10 @@ function suspended-prune-as-drive-usage-response() {
 	done
 	return $status
 }
-readonly -f suspended-prune-as-drive-usage-response
+readonly -f is-copy-higher-priority-than-prune
 
 # users besides prune just need a simple/clear name
-reset-priority() { suspended-prune-as-drive-usage-response "$@"; }
+reset-priority() { is-copy-higher-priority-than-prune "$@"; }
 readonly -f reset-priority
 
 ##############################################################################
@@ -1624,19 +1624,19 @@ function _should-run-prune {
 	# the following logic is odd, it ensures real-user's request is honored
 
 	if [[ $is_cron ]]
-	   then suspended-prune-as-drive-usage-response && return 1
+	   then is-copy-higher-priority-than-prune && return 1
 	   else # if user changed backup_period or prune-rate, need to rescan
 		kill-job-on-drives prune # kill old job, we'll be new job
 	fi
 
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
 	lock $lock_opt prune ||
-	    { suspended-prune-as-drive-usage-response; return 1; }
+	    { is-copy-higher-priority-than-prune; return 1; }
 
 	if [[ $is_cron ]]
 	   then _is-time-to-prune-drive || { unlock prune; return 1; }
 	   else # this could suspend ourself, which is OK ...
-		suspended-prune-as-drive-usage-response # real person, can wait
+		is-copy-higher-priority-than-prune # real person, can wait
 	fi
 
 	return 0
@@ -6213,7 +6213,7 @@ case $action in
 
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
-	suspended-prune-as-drive-usage-response; echo $?; exit
+	is-copy-higher-priority-than-prune; echo $?; exit
 
 	date "$log_date_format"
 	print-call-stack test
