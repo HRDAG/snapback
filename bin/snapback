@@ -527,9 +527,9 @@ _set-wait_opt() {
 	[[ $do_wait ]] || { wait_opt= ; return; }
 	wait_opt=--wait
 	[[ ! $is_cron ]] && return	# interactive user waits for lock
-	[[ $type == backup && ! $is_copy ]] || return # only run-backup special
+	[[ $type == backup && ! $is_copy ]] || return # we're for run-backup
 
-	[[ $is_cron ]] && continue-jobs $type # maybe suspended
+	[[ $is_cron ]] && continue-jobs $type # user suspended earlier backup?
 
 	declare -i half_backup_period_mins=$backup_period*60/2
 	[[ ${date_time-} ]] || set-date_time
@@ -1357,7 +1357,7 @@ validate-config-variables() {
 	declare -i backup_period
 
 	(( $max_FS_usage_percent >  0 )) &&
-	(( $max_FS_usage_percent < 99 )) || # 99% could be 99.999%
+	(( $max_FS_usage_percent < 99 )) || # 99% could be 99.5% (or higher?)
 	    abort "invalid: max_FS_usage_percent=$max_FS_usage_percent'"
 
 	[[ -s $exclude_file ]] ||
@@ -1524,9 +1524,9 @@ function suspended-prune-as-drive-usage-response() {
 		if is-drive-usage-too-high
 		   then  suspend-jobs copy; is-copy-src ||
 			continue-jobs prune # may do nothing if backup running
-		   else continue-jobs copy  # may do nothing if backup running
-			is-copy-src  &&	    # don't suspend _or_ prune??
-			    status=0 && continue
+		   else is-copy-src  &&	    # is this a copy job's source?
+			    status=0 && continue # don't suspend _or_ prune
+			continue-jobs copy  # may do nothing if backup running
 			is-multi-writer-drive ||
 			   { suspend-jobs prune; status=0; }
 		fi
@@ -3043,8 +3043,8 @@ function copy-snapshot-rsync() {
 		suspend-jobs prune    # cron will swap jobs if drive space low
 	fi
 
-	if is-multi-writer-drive	$src_snapshot ||
-	   is-drive-usage-too-high -e 3 $src_snapshot # it's OK to prune source
+	if is-multi-writer-drive   $src_snapshot ||
+	   is-drive-usage-too-high $src_snapshot
 	   then local did_lock_src_prune=$false
 	   else local did_lock_src_prune=$true
 		prevent-pruning $src_snapshot
@@ -3320,7 +3320,7 @@ readonly -f fastest-snapshots
 fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
 
-	local force_opt=
+	local force_opt= # to force one copy per pass (if all sources are busy)
 	while true
 	    do	local args dst_snapshot= did_a_copy=$false
 		local did_skip_a_snapshot=$false
@@ -6185,6 +6185,9 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-drive_name ${1:-F}; set-drive_dir $drive_name
+	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) ; exit $?
+
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
 	for (( n=0; ; n++ )) ; do
