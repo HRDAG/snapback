@@ -598,8 +598,9 @@ declare -A _lock_type_name2lock_path
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 #	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ ${1-} == -w ]] && { shift; local do_wait=$true; } || local do_wait=
-	[[ ${1-} == -c ]] && { shift; local is_copy=$true; } || local is_copy=
+	[[ ${1-} == -w ]] && { shift; local  do_wait=$true;} || local  do_wait=
+	[[ ${1-} == -c ]] && { shift; local  is_copy=$true;} || local  is_copy=
+	[[ ${1-} == -P ]] && { shift; local no_prune=$true;} || local no_prune=
 	assert-not-option "${1-}"
 	[[ $# == [12] ]] || abort-function "[-w [-c]] type resource"
 	local type name
@@ -622,7 +623,7 @@ function lock() {
 
 	! [[ $action == update* && $debug_opt ]] && # not regression-test?
 	# this 'if' logic is similar to the logic in _signal-job()
-	if is-multi-writer-drive || [[ $type == backup ]]
+	if is-multi-writer-drive || [[ $type == backup || $no_prune ]]
 	   then true
 	   else lock-PID $wait_opt backup "$extra_lock_msg" &&
 		lock-PID --release backup "$extra_lock_msg" ||
@@ -2777,13 +2778,20 @@ readonly -f restore-lock
 
 # ----------------------
 
+did_prevent_pruning_print_stack=$false
+
 prevent-pruning() {
 	local resource=$1
 
-	until lock prune $resource
+	until lock -P prune $resource
 	    do	kill-job-on-drives prune $resource
+		if [[ ! $did_prevent_pruning_print_stack ]]
+		   then  did_prevent_pruning_print_stack=$true
+			print-call-stack $drive_name | tee -a $file_for_logging
+		fi
 		$IfRun sleep 1
 	done
+	did_prevent_pruning_print_stack=$false # for future call
 }
 readonly -f prevent-pruning
 
