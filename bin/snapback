@@ -594,6 +594,7 @@ declare -A _lock_type_name2lock_path
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed;
 #    if -c also, it's copy (or update) not backup, so no trickiness.
+#    If -P, called by prevent-pruning, doesn't matter if backup running.
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
@@ -3351,7 +3352,8 @@ fill-in-unpruned-empty-snapshots() {
 			fi
 		done < $copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
-		[[ ! $force_opt && ! $did_a_copy ]] && force_opt=-f && continue
+		[[   $force_opt || $did_a_copy || ${do_not_force-} ]] ||
+		    { force_opt=-f; continue; }
 		[[ ! $debug_opt ]] || warn "no work to do" || break
 		sleep 5m		# wait for source(s) to become unbusy
 	done
@@ -3365,6 +3367,7 @@ readonly -f fill-in-unpruned-empty-snapshots
 declare is_update=$false
 
 function update-drive() {
+	[[ $1 == -m  ]] && { local do_not_force=$true; shift; }
 	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
@@ -5818,10 +5821,11 @@ case $action in
 	;;
    # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
+	[[ $1 == -m  ]] && {    multi_writer_opt=$1    ; shift  ; }
 	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
-	create-jobs update ${src_names_regex_opt-} "$@"
+	create-jobs update ${multi_writer_opt-} ${src_names_regex_opt-} "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
