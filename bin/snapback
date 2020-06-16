@@ -3329,6 +3329,7 @@ readonly -f fastest-snapshots
 fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
 
+	local skipped_copy_args_file=$tmp_5
 	local force_opt= # to force one copy per pass (if all sources are busy)
 	while true
 	    do	local args dst_snapshot= did_a_copy=$false
@@ -3345,19 +3346,21 @@ fill-in-unpruned-empty-snapshots() {
 			set -- $drive_dir_prefix*/${src_snapshot_1##*/}
 			[[ $# != 0 ]] || continue # sources pruned away?
 			set -- $(fastest-snapshots $force_opt $*)
-			if [[ $# != 0 ]] &&
-			   copy-snapshot-rsync $1 $dst_snapshot # maybe forced
-			   then did_a_copy=$true force_opt= # 1 force per pass
+			if [[ $# != 0 ]]
+			   then copy-snapshot-rsync $1 $dst_snapshot
+				did_a_copy=$true force_opt= # 1 force per pass
 			   else did_skip_a_snapshot=$true
+				echo $args # save for next pass
 			fi
-		done < $copy_args_file
+		done < $copy_args_file > $skipped_copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
+		$IfRun cp $skipped_copy_args_file $copy_args_file # less work
 		[[   $force_opt || $did_a_copy || ${do_not_force-} ]] ||
 		    { force_opt=-f; continue; }
 		[[ ! $debug_opt ]] || warn "no work to do" || break
 		sleep 5m		# wait for source(s) to become unbusy
 	done
-	$IfRun rm $copy_args_file
+	$IfRun rm $copy_args_file $skipped_copy_args_file
 	return 0
 }
 readonly -f fill-in-unpruned-empty-snapshots
