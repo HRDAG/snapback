@@ -1520,15 +1520,16 @@ function is-copy-higher-priority-than-prune() {
 
 	have-job copy || { continue-jobs prune; return 1; }
 
+	local copy_PGID
 	if is-drive-usage-too-high
-	   then  suspend-jobs copy
-		if is-copy-src	    # 2 drives copying to each other?
+	   then suspend-jobs copy
+		if set-copy_PGID--if-copy-src #2 drives copying to each other?
 		   then local lock_paths
-			set-lock_paths prune # release copy's lock ...
-			sudo-lockpid --release $lock_paths >& /dev/null
+			set-lock_paths prune
+			sudo lockpid -r -p $copy_PGID $lock_paths &> /dev/null
 		fi
 		continue-jobs prune # may do nothing if backup running
-	   else is-copy-src &&	    # is this a copy job's source?
+	   else set-copy_PGID--if-copy-src && # is this a copy job's source?
 		   return 0	    # don't suspend _or_ prune
 		continue-jobs copy  # may do nothing if backup running
 		is-multi-writer-drive || { suspend-jobs prune; return 0; }
@@ -2708,8 +2709,10 @@ readonly -f run-backup-rsync
 
 # ----------------------------
 
-function is-copy-src() {
+function set-copy_PGID--if-copy-src() {
 	local resource=${1:-$drive_name}
+
+	copy_PGID=
 
 	if ! [[ $resource == $lock_dir/* || $resource == *.pid ]]
 	   then local lock_path
@@ -2726,12 +2729,14 @@ function is-copy-src() {
 	local lock_path
 	for lock_path in $lock_paths
 	    do	set-lock_PGID $lock_path
-		(( $lock_PGID == $prune_lock_PGID )) && return 0
+		(( $lock_PGID == $prune_lock_PGID )) || continue
+		copy_PGID=$lock_PGID
+		return 0
 	done
 
 	return 1
 }
-readonly -f is-copy-src
+readonly -f set-copy_PGID--if-copy-src
 
 # ----------------------
 
@@ -3050,7 +3055,7 @@ function copy-snapshot-rsync() {
 	   then   lock -w -c backup || return 1 # wait for any backup to finish
 		unlock	     backup
 
-		is-copy-src ||	      # 2 drives copying to each other (??)
+		set-copy_PGID--if-copy-src || # 2 drives copying to each other?
 		suspend-jobs prune    # cron will swap jobs if drive space low
 	fi
 
