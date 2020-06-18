@@ -217,17 +217,17 @@ declare -i days_per_span_for_hour_prune=7	# prune-drive* can change this
 #
 # At date where hour_prune rm's all but *,00, repeat algorithm for months,
 # until all the oldest snapshots are only *-01,00 (i.e. one per month).
-declare -i months_per_span_for_day_prune=12	# prune-drive* can change this
+declare -i months_per_span_for_day_prune=3	# prune-drive* can change this
   drv_name2months_per_span_for_day_prune[Z]=1	# for action test-prune
 #
 # At date where the day_prune rm's all but *-01,00, repeat algorithm for years,
 # until all the oldest snapshots are only *-01-01,00 (i.e. one per year).
-declare -i years_per_span_for_month_prune=10	# prune-drive* can change
+declare -i years_per_span_for_month_prune=5	# prune-drive* can change
   drv_name2years_per_span_for_month_prune[Z]=1	# for action test-prune
 
 # At date where month_prune rm's all but *-01-01,00, do algorithm for decades,
 # until all the oldest snapshots are only ?0-01-01,00 (i.e. one per decade).
-declare -i decades_per_span_for_year_prune=10	# prune-drive* can change
+declare -i decades_per_span_for_year_prune=5	# prune-drive* can change
   drv_name2decades_per_span_for_year_prune[Z]=1	# for action test-prune
 
 # You can use this variable to change all 4 of the previous variables at once,
