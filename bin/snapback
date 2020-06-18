@@ -1515,7 +1515,7 @@ readonly -f reset-drive-jobs-priorities
 function is-copy-higher-priority-than-prune() {
 	local drive_names=${*:-$drive_name}
 
-	local status=1			# assume won't suspend
+	local status=1			# assume prune is higher priority
 	local drive_name
 	for drive_name in $drive_names
 	    do	_set-drive_name $drive_name
@@ -3049,6 +3049,7 @@ function copy-snapshot-rsync() {
 	   then   lock -w -c backup || return 1 # wait for any backup to finish
 		unlock	     backup
 
+		is-copy-src ||	      # 2 drives copying to each other (??)
 		suspend-jobs prune    # cron will swap jobs if drive space low
 	fi
 

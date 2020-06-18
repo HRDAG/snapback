@@ -279,7 +279,45 @@ from etc/cron.d/snapback into a file in /etc/cron.hourly/ . If you don't have
 etc/cron.d/snapback to your /etc/crontab file.
 
 
-H. Tuning
+H. OS tuning
+
+To devote more RAM to inode and directory caches with the linux kernel,
+decrease the value of vm.vfs_cache_pressure.  serverfault commenters suggest
+values from 1 to 10; if your filesytem drives are SSD but your backup drives
+are rotational disks, then a value close to 1 might be safe for regular work
+while being optimal for backups.  Here's the (very old) linux kernel
+documentation on vm.vfs_cache_pressure:
+
+    vfs_cache_pressure
+    ------------------
+
+    This percentage value controls the tendency of the kernel to reclaim
+    the memory which is used for caching of directory and inode objects.
+
+    At the default value of vfs_cache_pressure=100 the kernel will attempt to
+    reclaim dentries and inodes at a "fair" rate with respect to pagecache and
+    swapcache reclaim.  Decreasing vfs_cache_pressure causes the kernel to
+    prefer to retain dentry and inode caches. When vfs_cache_pressure=0, the
+    kernel will never reclaim dentries and inodes due to memory pressure and
+    this can easily lead to out-of-memory conditions. Increasing
+    vfs_cache_pressure beyond 100 causes the kernel to prefer to reclaim
+    dentries and inodes.
+
+    Increasing vfs_cache_pressure significantly beyond 100 may have negative
+    performance impact. Reclaim code needs to take various locks to find
+    freeable directory and inode objects. With vfs_cache_pressure=1000, it
+    will look for ten times more freeable objects than there are.
+
+On linux, you can experiment with the sysctl comman, e.g:
+
+    sudo sysctl -w vm.vfs_cache_pressure=10
+
+and you can set a permanent value in /etc/sysctl.conf. e.g.:
+
+    vm.vfs_cache_pressure=10
+
+
+I. snapback Tuning
 
 There's two kinds of problems that will require tuning: you're running out
 of drive space or inodes, or you're getting "Too many links" errors.  If you
@@ -290,13 +328,11 @@ get these errors when "snapback watch" reports e.g.
 then you'll need to edit configure.sh and either increase
 'backup_period' or decrease one of the four '*_per_span_for_*_prune'
 variables; carefully read the comments to figure out what these do.  It's best
-to just change one variable at a time.  Then wait for the next backup: It will
+to just change one variable at a time.  Then wait 5 minutes: cron will
 kick off a prune, which will rename the now-unneeded snapshots to
 Date,Hour.rm, and then start deleting them (but if you set
 'suspend_prune_when_backup=$true' because you're using disk drives not SSDs,
-then the prune won't be started until the backup finishes).  [Note that a
-prune will still be started at the next hour even if your 'backup_period' and
-'excluded_backup_hours' values prevent a backup that hour.]  As soon as the
+then the prune won't be started until the backup finishes).  As soon as the
 prune job finishes, "snapback watch" will show that your drive now has non-0
 "Number pruned snapshots awaiting 'rm'"; you'll need to wait until this value
 goes to 0, then decide if your tuning-change freed up enough disk space.  See
