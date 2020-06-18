@@ -3336,7 +3336,7 @@ fill-in-unpruned-empty-snapshots() {
 	local skipped_copy_args_file=$tmp_5
 	local force_opt= # to force one copy per pass (if all sources are busy)
 	while true
-	    do	local args dst_snapshot= did_a_copy=$false
+	    do	local args dst_snapshot=
 		local did_skip_a_snapshot=$false
 		while read args
 		    do	[[ $args ]] || abort "blank line in $srcs_dst_file"
@@ -3352,19 +3352,20 @@ fill-in-unpruned-empty-snapshots() {
 			set -- $(fastest-snapshots $force_opt $*)
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync $1 $dst_snapshot >&2
-				did_a_copy=$true force_opt= # 1 force per pass
+				force_opt= # do 1 force per pass
 			   else did_skip_a_snapshot=$true
 				echo $args # save for next pass
 			fi
 		done < $copy_args_file > $skipped_copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
 		$IfRun cp $skipped_copy_args_file $copy_args_file # less work
-		[[   $force_opt || $did_a_copy || $ignore_slow_sources ]] ||
+		[[   $force_opt || $ignore_slow_sources ]] ||
 		    { force_opt=-f; continue; }
 		[[ ! $debug_opt ]] || warn "no work to do" || break
 		sleep 5m		# wait for source(s) to become unbusy
 	done
-	$IfRun rm $copy_args_file $skipped_copy_args_file
+	$IfRun rm $copy_args_file $skipped_copy_args_file |
+	    qsed 's/-[0-9]*$/-PID/'
 	return 0
 }
 readonly -f fill-in-unpruned-empty-snapshots
