@@ -2197,11 +2197,6 @@ function prune-drive() {
 
 	_should-run-prune || return 1
 
-	if [[ $is_cron ]]		# not a real person?
-	   then set-priority prune
-	   else reset-priority		# this might suspend us
-	fi
-
 	set-prune_types ${final_prune_type-}
 
 	local -i \
