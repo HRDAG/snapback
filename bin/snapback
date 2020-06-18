@@ -3316,6 +3316,8 @@ fastest-snapshots() {
 
 		count-rsyncs-using-resource " $drive_dir/"
 		local rsync_count=$?
+		[[ ( $rsync_count -gt 0 || $writer_count -gt 0 ) &&
+		   $ignore_slow_sources && ! $do_force ]] && continue
 
 		local ss=$snapshot
 		echo "$not_multi_writer|$writer_count|$rsync_count|$ss"
@@ -3348,7 +3350,7 @@ fill-in-unpruned-empty-snapshots() {
 			[[ $# != 0 ]] || continue # sources pruned away?
 			set -- $(fastest-snapshots $force_opt $*)
 			if [[ $# != 0 ]]
-			   then copy-snapshot-rsync $1 $dst_snapshot
+			   then copy-snapshot-rsync $1 $dst_snapshot >&2
 				did_a_copy=$true force_opt= # 1 force per pass
 			   else did_skip_a_snapshot=$true
 				echo $args # save for next pass
@@ -3356,7 +3358,7 @@ fill-in-unpruned-empty-snapshots() {
 		done < $copy_args_file > $skipped_copy_args_file
 		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
 		$IfRun cp $skipped_copy_args_file $copy_args_file # less work
-		[[   $force_opt || $did_a_copy || ${do_not_force-} ]] ||
+		[[   $force_opt || $did_a_copy || $ignore_slow_sources ]] ||
 		    { force_opt=-f; continue; }
 		[[ ! $debug_opt ]] || warn "no work to do" || break
 		sleep 5m		# wait for source(s) to become unbusy
@@ -3371,7 +3373,8 @@ readonly -f fill-in-unpruned-empty-snapshots
 declare is_update=$false
 
 function update-drive() {
-	[[ $1 == -m  ]] && { local do_not_force=$true; shift; }
+	local ignore_slow_sources=$false
+	[[ $1 == -S  ]] && {   ignore_slow_sources=$true  ; shift; }
 	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
@@ -5825,11 +5828,12 @@ case $action in
 	;;
    # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
-	[[ $1 == -m  ]] && {    multi_writer_opt=$1    ; shift  ; }
-	[[ $1 == -s  ]] && { src_names_regex_opt="$1$2"; shift 2; }
+	[[ $1 == -S  ]] && { ignore_slow_sources_opt=$1    ; shift  ; }
+	[[ $1 == -s  ]] && {     src_names_regex_opt="$1$2"; shift 2; }
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
-	create-jobs update ${multi_writer_opt-} ${src_names_regex_opt-} "$@"
+	opts="${ignore_slow_sources_opt-} ${src_names_regex_opt-}"
+	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
