@@ -4325,7 +4325,7 @@ show-df-and-lsblk-if-they-fit() {
 	   then filesystem-geometry $drive_dirs
 	   else	local -i extra=$rows_for_one_detailed_rsync
 		# df is more important than rsync details
-		(( $rows_left + $extra >= $min_rows_with_df )) && # see RB+=
+		(( $rows_left + $extra > $min_rows_with_df )) && # see RB+=
 		run-df $drive_dirs &&
 		let rows_left-=$num_drives+2
 
