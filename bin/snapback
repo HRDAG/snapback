@@ -1513,32 +1513,28 @@ readonly -f reset-drive-jobs-priorities
 # ------------------------------------------
 
 function is-copy-higher-priority-than-prune() {
-	local drive_names=${*:-$drive_name}
+	local drive_name=${*:-$drive_name}
 
-	local status=1			# assume prune is higher priority
-	local drive_name
-	for drive_name in $drive_names
-	    do	_set-drive_name $drive_name
-		reset-drive-jobs-priorities || continue
+	_set-drive_name $drive_name
+	reset-drive-jobs-priorities || return 1
 
-		have-job copy || { continue-jobs prune; continue; }
+	have-job copy || { continue-jobs prune; return 1; }
 
-		if is-drive-usage-too-high
-		   then  suspend-jobs copy
-			if is-copy-src	    # 2 drives copying to each other?
-			   then local lock_paths
-				set-lock_paths prune # release copy's lock ...
-				sudo-lockpid --release $lock_paths >& /dev/null
-			fi
-			continue-jobs prune # may do nothing if backup running
-		   else is-copy-src  &&	    # is this a copy job's source?
-			    status=0 && continue # don't suspend _or_ prune
-			continue-jobs copy  # may do nothing if backup running
-			is-multi-writer-drive ||
-			   { suspend-jobs prune; status=0; }
+	if is-drive-usage-too-high
+	   then  suspend-jobs copy
+		if is-copy-src	    # 2 drives copying to each other?
+		   then local lock_paths
+			set-lock_paths prune # release copy's lock ...
+			sudo-lockpid --release $lock_paths >& /dev/null
 		fi
-	done
-	return $status
+		continue-jobs prune # may do nothing if backup running
+	   else is-copy-src &&	    # is this a copy job's source?
+		   return 0	    # don't suspend _or_ prune
+		continue-jobs copy  # may do nothing if backup running
+		is-multi-writer-drive || { suspend-jobs prune; return 0; }
+	fi
+
+	return 1
 }
 readonly -f is-copy-higher-priority-than-prune
 
@@ -4074,7 +4070,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $lock_PGIDs 2>/dev/null  |
-		      fgrep -e ' prune' -e ' lockpid ' -e ' sleep ' -e ' rm ')
+	  egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_H_opt ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
