@@ -1524,7 +1524,12 @@ function is-copy-higher-priority-than-prune() {
 		have-job copy || { continue-jobs prune; continue; }
 
 		if is-drive-usage-too-high
-		   then  suspend-jobs copy; is-copy-src ||
+		   then  suspend-jobs copy
+			if is-copy-src	    # 2 drives copying to each other?
+			   then local lock_paths
+				set-lock_paths prune # release copy's lock ...
+				sudo-lockpid --release $lock_paths >& /dev/null
+			fi
 			continue-jobs prune # may do nothing if backup running
 		   else is-copy-src  &&	    # is this a copy job's source?
 			    status=0 && continue # don't suspend _or_ prune
