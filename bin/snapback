@@ -2020,6 +2020,16 @@ readonly -f set-type2date_span
 # end of: vars & funcs that implement snapshot date-time format, and pruning #
 # ----------------------------------------------------------------------------
 
+# optional $backup_period_for_update could be smaller than $backup_period
+_set-backup_period--for-prune() {
+
+	(( $backup_period>$backup_period_for_update &&
+			  $backup_period_for_update > 0 )) &&
+	    backup_period=$backup_period_for_update # don't prune copy'ed dirs
+}
+
+# -----------------------------------------------------------------------------
+
 declare -A backup_period2minimal_snapshot_regex
 #
 for _period in ${!backup_period2minimal_snapshot_glob[*]}
@@ -2197,16 +2207,12 @@ function prune-drive() {
 
 	_should-run-prune || return 1
 
-	set-prune_types ${final_prune_type-}
-
-	local -i \
-	    backup_period=$backup_period
-	(( $backup_period>$backup_period_for_update &&
-			  $backup_period_for_update > 0 )) &&
-	    backup_period=$backup_period_for_update # don't prune copy'ed dirs
-
+	local -i backup_period=$backup_period
+	    _set-backup_period--for-prune
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f $snapshots_to_prune_file
+
+	set-prune_types ${final_prune_type-}
 
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
@@ -3365,7 +3371,7 @@ fill-in-unpruned-empty-snapshots() {
 		sleep 5m		# wait for source(s) to become unbusy
 	done
 	$IfRun rm $copy_args_file $skipped_copy_args_file |
-	    qsed 's/-[0-9]*$/-PID/'
+	    sed 's/-[0-9]*$/-PID/'
 	return 0
 }
 readonly -f fill-in-unpruned-empty-snapshots
