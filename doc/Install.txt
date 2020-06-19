@@ -282,11 +282,12 @@ etc/cron.d/snapback to your /etc/crontab file.
 H. OS tuning
 
 To devote more RAM to inode and directory caches with the linux kernel,
-decrease the value of vm.vfs_cache_pressure.  serverfault commenters suggest
-values from 1 to 10; if your filesytem drives are SSD but your backup drives
-are rotational disks, then a value close to 1 might be safe for regular work
-while being optimal for backups.  Here's the (very old) linux kernel
-documentation on vm.vfs_cache_pressure:
+decrease the value of vm.vfs_cache_pressure.  You might start with a value
+near 75; if your filesytem drives are SSD but your backup drives are
+rotational disks, a lower value might be safe for regular work while being
+good for backups.  But there are some details ...
+
+Here's the (very old) linux kernel documentation on vm.vfs_cache_pressure:
 
     vfs_cache_pressure
     ------------------
@@ -308,13 +309,33 @@ documentation on vm.vfs_cache_pressure:
     freeable directory and inode objects. With vfs_cache_pressure=1000, it
     will look for ten times more freeable objects than there are.
 
-On linux, you can experiment with the sysctl comman, e.g:
+The snapback repo includes a file to change the default:
 
-    sudo sysctl -w vm.vfs_cache_pressure=10
+    etc/sysctl.d/60-snapback.conf
 
-and you can set a permanent value in /etc/sysctl.conf. e.g.:
+If you make vm.vfs_cache_pressure too low, and you're running 'pmie', you'll
+get a message (on ubuntu-18.04) that looks like:
 
-    vm.vfs_cache_pressure=10
+    pcp-pmie[PID]: Severe demand for real memory N.Mpgsout/s@HOST
+
+So, first assess how often this happens with the default value of
+vm.vfs_cache_pressure, e.g. check all the older logs:
+
+    for log in /var/log/syslog?*; do echo -n "${log##*/}: "
+	zcat -f $log | fgrep -c 'Severe demand for real memory' ; done
+
+Now you can experiment with the sysctl command, e.g:
+
+    sudo sysctl -w vm.vfs_cache_pressure=70
+
+but you should make sure you don't run out of real memory, e.g.:
+
+    watch fgrep -c 'Severe demand for real memory' /var/log/syslog
+
+Once you've decided on a value, you can set a permanent value in
+/etc/sysctl.d/60-snapback.conf (or /etc/sysctl.conf). e.g.:
+
+    vm.vfs_cache_pressure=70
 
 
 I. snapback Tuning
