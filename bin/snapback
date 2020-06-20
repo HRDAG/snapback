@@ -138,15 +138,14 @@ Usage: $our_name [options] action [options] [args]
       run: $our_name watch
 
   Current actions are (you can specify their acronym, see process-action):
-    list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     run-backups   names: backup names ('all' for every mounted backup drive)
     prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
     update-drives  [-s src-names-regex] dst-names: copy missing snapshots
     copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
 
-    snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
+    list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
 
     # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
     # a glob can be a comma-separated list, a shell glob pattern, or 'all'.
@@ -162,6 +161,7 @@ Usage: $our_name [options] action [options] [args]
     mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
     filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
+    snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
 
     check-snapshot-hard-links names: find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
@@ -5811,10 +5811,10 @@ undo-action-abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
 process-action() {
 
 case $action in
-  # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
-   ( l*s*dr*v* | ld | ls | df ) undo-action-abbrev list-drives
-	list-drive-dirs "$@"
-	;;
+   ###########################################################################
+   # main actions, to create new jobs
+   ###########################################################################
+
    # run-backups   names: backup names ('all' for every mounted backup drive)
    ( r*b*k*p* | rb* ) undo-action-abbrev run-backups
 	[[ $1 != -r  ]] && assert-not-option $1
@@ -5871,25 +5871,24 @@ case $action in
 	create-jobs copy -s${src_snapshots// / -s} $opts $drive_name
 	;;
 
-  # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
-   ( snapshot*size | ss ) undo-action-abbrev snapshot-size
-	[[ $# == 1 ]] || abort-with-action-Usage
-	dir=$1
-	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
-	warn "this could take hours"
-	$Trace
-	KB=$(sudo find $dir -links 1 -printf '%k\n' |
-		awk '{ total += $1 } ; END { print total }')
-	set-readable_du_size $KB
-	du_size=$readable_du_size
-	echo "$dir contains >= $du_size of files in no other directories"
-	;;
+   ###########################################################################
+   # actions to study existing jobs and drives
+   ###########################################################################
 
    # w: show full details on all jobs and drives
    # watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
    ( watch | wa* | wt* | w ) [[ $action != w ]] && undo-action-abbrev watch
 	watch "$@"
 	;;
+
+   # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
+   ( l*s*dr*v* | ld | ls | df ) undo-action-abbrev list-drives
+	list-drive-dirs "$@"
+	;;
+
+   ###########################################################################
+   # actions to manage existing jobs
+   ###########################################################################
 
    # kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
    ( kil* | k ) undo-action-abbrev kill
@@ -5949,11 +5948,6 @@ case $action in
      dir-sizes "$@"
 	;;
 
-   # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
-   ( filesystem*geometry | f*g ) undo-action-abbrev filesystem-geometry
-     filesystem-geometry "$@"
-	;;
-
    # mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
    ( mkfs | mf* ) undo-action-abbrev mkfs
      mkfs-backup-drive "$@"
@@ -5965,6 +5959,25 @@ case $action in
    # finish-copy-drive: only used internally
    ( f*c*p*dr*v* | f*c*p*d* | fcd ) undo-action-abbrev finish-copy-drive
      finish-copy-backup-drive "$@"
+	;;
+
+   # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
+   ( filesystem*geometry | f*g ) undo-action-abbrev filesystem-geometry
+     filesystem-geometry "$@"
+	;;
+
+  # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
+   ( snapshot*size | ss ) undo-action-abbrev snapshot-size
+	[[ $# == 1 ]] || abort-with-action-Usage
+	dir=$1
+	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
+	warn "this could take hours"
+	$Trace
+	KB=$(sudo find $dir -links 1 -printf '%k\n' |
+		awk '{ total += $1 } ; END { print total }')
+	set-readable_du_size $KB
+	du_size=$readable_du_size
+	echo "$dir contains >= $du_size of files in no other directories"
 	;;
 
    ###########################################################################
