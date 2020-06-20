@@ -138,8 +138,8 @@ Usage: $our_name [options] action [options] [args]
       run: $our_name watch
 
   Current actions are (you can specify their acronym, see process-action):
-    run-backups   names: backup names ('all' for every mounted backup drive)
-    prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
+    backup-drive  names: backup names ('all' for every mounted backup drive)
+     prune-drives names: prune  names ('all' for every "" ""); see configure.sh
     update-drives  [-s src-names-regex] dst-names: copy missing snapshots
     copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
 
@@ -255,8 +255,8 @@ readonly pruned_timestamp=.pruned.ts
 
 readonly our_opts=${our_opts% }
 # need to fork and exec ourselves for session control with 'setsid'
-readonly    run_backup_exe="$our_path $our_opts run-backup"
-readonly   prune_drive_exe="$our_path $our_opts prune-drive"
+readonly  backup_drive_exe="$our_path $our_opts backup-drive"
+readonly   prune_drive_exe="$our_path $our_opts  prune-drive"
 readonly  update_drive_exe="$our_path $our_opts update-drive"
 readonly copy_snapshot_exe="$our_path $our_opts copy-snapshot"
 
@@ -527,7 +527,7 @@ _set-wait_opt() {
 	[[ $do_wait ]] || { wait_opt= ; return; }
 	wait_opt=--wait
 	[[ ! $is_cron ]] && return	# interactive user waits for lock
-	[[ $type == backup && ! $is_copy ]] || return # we're for run-backup
+	[[ $type == backup && ! $is_copy ]] || return # we're for backup-drive
 
 	[[ $is_cron ]] && continue-jobs $type # user suspended earlier backup?
 
@@ -574,9 +574,9 @@ readonly -f _set-wait_opt
 # jobs both exist, reset-priority aka is-copy-higher-priority-than-prune
 # decides which one should be suspended.
 #
-# An hourly cron job calls action run-backups (with argument 'all'), which
-# calls create-jobs() to create a run-backup() job for each drive;
-# each run-backup() job starts a prune-drive() job, and prune-drive() may
+# An hourly cron job calls action backup-drives (with argument 'all'), which
+# calls create-jobs() to create a backup-drive() job for each drive;
+# each backup-drive() job starts a prune-drive() job, and prune-drive() may
 # start an update-drive() job.  If the cron job is called more frequently
 # than hourly, the off-hour jobs just call reset-priority and prune-drive
 # (for drives with too-high usage, suspend any copy and start a prune).
@@ -2328,13 +2328,13 @@ readonly -f set-sorted_snapshots
 
 # --------------------------------------------
 
-set-link_dest_opts--for-run-backup() {
+set-link_dest_opts--for-backup-drive() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
 	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
 	set-link_dest_opts $new_snapshot $useful_snapshots
 }
-readonly -f set-link_dest_opts--for-run-backup
+readonly -f set-link_dest_opts--for-backup-drive
 
 # --------------------------------------------------------
 
@@ -2391,7 +2391,7 @@ readonly -f set-excluded_hours
 
 # ---------------------------------
 
-function _is-time-to-run-backup {
+function _is-time-to-backup-drive {
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
@@ -2415,7 +2415,7 @@ function _is-time-to-run-backup {
 
 	return 0
 }
-readonly -f _is-time-to-run-backup
+readonly -f _is-time-to-backup-drive
 
 # -----------------------------------------------------
 # the following functions support _handle-rsync-results
@@ -2672,7 +2672,7 @@ function run-rsync() {
 	suspend-tracing
 	local link_dest_opts=
 	if [[ ! $is_copy_snapshot ]]
-	   then set-link_dest_opts--for-run-backup    $dst_snapshot
+	   then set-link_dest_opts--for-backup-drive  $dst_snapshot
 	   else set-link_dest_opts--for-copy-snapshot $dst_snapshot
 	fi
 	restore-tracing link_dest_opts
@@ -2693,7 +2693,7 @@ readonly -f run-rsync
 
 # -------------------------------------------------------
 
-function run-backup-rsync() {
+function backup-drive-rsync() {
 	local date_time=$1
 
 	set-priority backup
@@ -2706,7 +2706,7 @@ function run-backup-rsync() {
 	eval "run-rsync $dirs_to_backup $new_snapshot" # might need globbing
 	restore-tracing				       # this preserves $?
 }
-readonly -f run-backup-rsync
+readonly -f backup-drive-rsync
 
 # ----------------------------
 
@@ -2807,7 +2807,7 @@ readonly -f prevent-pruning
 
 # The locking & job-management policy is documented in front of function lock()
 
-function run-backup() {
+function backup-drive() {
 	local drive_name=$1 drive_dir
 
 	set-drive_name $drive_name
@@ -2816,7 +2816,7 @@ function run-backup() {
 	local date_time
 	set-date_time
 
-	if ! _is-time-to-run-backup	# must call within 1 minute of startup
+	if ! _is-time-to-backup-drive	# must call within 1 minute of startup
 	   then $IfRun create-jobs prune
 		return
 	fi
@@ -2834,7 +2834,7 @@ function run-backup() {
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
-	run-backup-rsync $date_time
+	backup-drive-rsync $date_time
 	local status=$?
 
 	unlock backup
@@ -2847,7 +2847,7 @@ function run-backup() {
 
 	return $status
 }
-readonly -f run-backup
+readonly -f backup-drive
 
 ##############################################################################
 ##############################################################################
@@ -3047,7 +3047,7 @@ readonly -f copy-snapshots
 
 # The locking & job-management policy is documented in front of function lock()
 
-# The following is similar to the second half of run-backup-rsync;
+# The following is similar to the second half of backup-drive-rsync;
 # it's called by copy-snapshot and update-drive, to do the real work.
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
@@ -3478,10 +3478,10 @@ _set-function-exe() {
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
-	   ( backup ) function=run-backup     exe=$run_backup_exe    ;;
-	   ( copy   ) function=copy-snapshots exe=$copy_snapshot_exe ;;
-	   ( prune  ) function=prune-drive    exe=$prune_drive_exe   ;;
+	   ( backup ) function=backup-drive   exe=$backup_drive_exe  ;;
+	   ( prune  ) function=prune-drive     exe=$prune_drive_exe  ;;
 	   ( update ) function=update-drive   exe=$update_drive_exe  ;;
+	   ( copy   ) function=copy-snapshots exe=$copy_snapshot_exe ;;
 	   (   *    ) abort "action '$type' is not supported" ;;
 	esac
 }
@@ -4109,7 +4109,7 @@ function _set-cron_PGIDs() {
 	ps -u root -o pgid,command |
 	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
 	       $rsync_or_rm_cmd_PGIDs_file
-	cron_job_regex=' -C run-backups? ' # put into configure.sh ??
+	cron_job_regex=' -C backup-drives? ' # put into configure.sh ??
 	set -- $(ps -u root -o pgid,command |
 			egrep "$cron_job_regex" |
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
@@ -4213,24 +4213,24 @@ set-min_rows-min_rows_with_df-rows_left() {
 	declare -g -i \
 	rows_for_one_detailed_rsync=4+3	# details section + 1 rsync
 	rows_for_one_detailed_rsync+=2	# hack, to ensure we see one full rsync
-	# prune-drive (PD) includes parent of  'rm'   process (also in -C)
-	#  copy-snap  (CS) includes parent of 'rsync' process (also in -C)
-	#  run-backup (RB) includes 'rsync' only
+	#  prune-drive (PD) includes parent of  'rm'   process (also in -C)
+	#   copy-snap  (CS) includes parent of 'rsync' process (also in -C)
+	# backup-drive (BD) includes 'rsync' only
 	local -i PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
 	(( PD > 0 )) && PD=$((PD*2 + 4)) # add in 'rm' plus section-overhead
 	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
-	local -i RB=$(echo  "$bkp_rsync_cmds" | fgrep -c r); num_bkp_rsyncs=$RB
-	(( RB > 0 )) && let RB+=3	# default
-	(( RB > 0 )) && let RB+=$rows_for_one_detailed_rsync ||
+	local -i BD=$(echo  "$bkp_rsync_cmds" | fgrep -c r); num_bkp_rsyncs=$BD
+	(( BD > 0 )) && let BD+=3	# default
+	(( BD > 0 )) && let BD+=$rows_for_one_detailed_rsync ||
 				 rows_for_one_detailed_rsync=0
-	TraceV 1 PD CS RB && let rows_left-=3
+	TraceV 1 PD CS BD && let rows_left-=3
 
 	# min overhead: 1 watch line, 1 blank line, 6 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	declare -g -i \
-	min_rows=$(( 8 + 4 + PD + CS + RB )); [[ $cron_cmds ]] &&
+	min_rows=$(( 8 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
 	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
@@ -4333,7 +4333,7 @@ show-df-and-lsblk-if-they-fit() {
 	   then filesystem-geometry $drive_dirs
 	   else	local -i extra=$rows_for_one_detailed_rsync
 		# df is more important than rsync details
-		(( $rows_left + $extra > $min_rows_with_df )) && # see RB+=
+		(( $rows_left + $extra > $min_rows_with_df )) && # see BD+=
 		run-df $drive_dirs &&
 		let rows_left-=$num_drives+2
 
@@ -4396,7 +4396,7 @@ readonly -f set-rsync_abbrev_msg
 
 show-backup-cmds() {
 
-	header "run-backup's most-CPU-intensive rsync processes (abbreviated)"
+       header "backup-drive's most-CPU-intensive rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
@@ -4428,7 +4428,7 @@ show-backup-cmds-with-full-details() {
 
 	[[ $bkp_rsync_cmds ]] || return
 
-	header "run-backup's most-CPU-intensive rsync processes (full details)"
+      header "backup-drive's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
 	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g" | sort -ty -k2 # rs(y)nc
@@ -5215,7 +5215,7 @@ function mkfs-backup-drive() {
 	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
 	local _our_path=$1
 	echo -e "\nTo populate newly-created drive, run:\n
-	nohup $_our_path run-backups  $drive_name	# creates new job
+	nohup $_our_path backup-drive $drive_name	# creates new job
 	nohup $_our_path update-drive $drive_name	# creates new job"
 
        warn "REMEMBER: add \`$drive_name' to drive_name_regex= in $config_file"
@@ -5726,7 +5726,7 @@ function regression-test() {
 
 	is-arg1-in-arg2 b $tests && {
 	_show-test-header backup all
-	_run-debug-cmds b run-backups all
+	_run-debug-cmds b backup-run all
 	}
 
 	# --------------------------------------------
@@ -5815,8 +5815,8 @@ case $action in
    # main actions, to create new jobs
    ###########################################################################
 
-   # run-backups   names: backup names ('all' for every mounted backup drive)
-   ( r*b*k*p* | rb* ) undo-action-abbrev run-backups
+   # backup-drives   names: backup names ('all' for every mounted backup drive)
+   ( b*k*p*dr*v* | bd* | r*b* ) undo-action-abbrev backup-drives
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
 	[[ $1 == all ]] && rm-stale-locks

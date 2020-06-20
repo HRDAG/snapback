@@ -283,7 +283,7 @@ H. OS tuning
 
 To devote more RAM to inode and directory caches with the linux kernel,
 decrease the value of vm.vfs_cache_pressure.  You might start with a value
-near 75; if your filesytem drives are SSD but your backup drives are
+near 80; if your filesytem drives are SSD but your backup drives are
 rotational disks, a lower value might be safe for regular work while being
 good for backups.  But there are some details ...
 
@@ -326,7 +326,7 @@ vm.vfs_cache_pressure, e.g. check all the older logs:
 
 Now you can experiment with the sysctl command, e.g:
 
-    sudo sysctl -w vm.vfs_cache_pressure=70
+    sudo sysctl -w vm.vfs_cache_pressure=75
 
 but you should make sure you don't run out of real memory, e.g.:
 
@@ -335,7 +335,7 @@ but you should make sure you don't run out of real memory, e.g.:
 Once you've decided on a value, you can set a permanent value in
 /etc/sysctl.d/60-snapback.conf (or /etc/sysctl.conf). e.g.:
 
-    vm.vfs_cache_pressure=70
+    vm.vfs_cache_pressure=75
 
 
 I. snapback Tuning
