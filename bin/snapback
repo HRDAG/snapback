@@ -4326,7 +4326,7 @@ readonly -f show-stats-section-3-if-it-fits
 
 # --------------------------------------------
 
-show-df-and-lsblk-if-they-fit() {
+show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
 	if [[ $show_all ]]
@@ -4345,7 +4345,7 @@ show-df-and-lsblk-if-they-fit() {
 		let rows_left-=$num_drives+2
 	fi
 }
-readonly -f show-df-and-lsblk-if-they-fit
+readonly -f show-filesystem-info-that-fits
 
 # --------------------------------------------
 
@@ -4499,7 +4499,7 @@ watch() {
 	show-stats-section-2-if-it-fits
 	show-stats-section-3-if-it-fits
 
-	show-df-and-lsblk-if-they-fit $drive_dirs
+	show-filesystem-info-that-fits $drive_dirs
 
 	[[ ! $cron_cmds || $show_all ]] &&
 	show-prune-cmds
@@ -4524,7 +4524,7 @@ readonly -f watch
 ##############################################################################
 ##############################################################################
 
-readonly status_dir=/run/$our_name
+readonly status_dir=/var/run/$our_name
 
 # if make check_period_msecs smaller, we'll check each drive more frequently
 # (but also consume more CPU, because 1 fork per drive per check-period)
@@ -5882,8 +5882,9 @@ case $action in
 	;;
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
-   ( l*s*dr*v* | ld | ls | df ) undo-action-abbrev list-drives
-	list-drive-dirs "$@"
+   ( l*s*dr*v* | ld | ll | ls | lw | df )
+	[[ $action == lw ]] || { list-drive-dirs "$@"; exit; }
+	show-filesystem-info-that-fits "$@" # for -a (??)
 	;;
 
    ###########################################################################
