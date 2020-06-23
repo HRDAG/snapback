@@ -4520,7 +4520,7 @@ readonly -f watch
 
 ##############################################################################
 ##############################################################################
-# Functions for monitoring/creating/altering filesystems.
+# Functions for monitoring/creating/altering filesystems and VFS.
 ##############################################################################
 ##############################################################################
 
@@ -4544,6 +4544,7 @@ readonly         sec_increment=$division
 
 _monitor-drives() {
 
+	create-status_dir
 	local response_dir=$status_dir/response-msecs
 
 	for dir
@@ -5526,6 +5527,54 @@ function finish-copy-backup-drive() {
 }
 readonly -f finish-copy-backup-drive
 
+# -----------------------------------------------------------------------------
+
+is-set   vfs_pressure_regex ||		# can set custom value in $config_file
+readonly vfs_pressure_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
+
+_set-record--from-syslog() {
+	local log=${1:-/var/log/syslog}
+
+	local regex=$vfs_pressure_regex
+	set -- $(bzcat -f $log | sed -n -r "s/$regex/\1/p" | sort -nr)
+
+	record=
+	while (( $# > 0 ))
+	   do	local pages_per_sec=$1; shift
+		while [[ $pages_per_sec == *.??* ]]
+		    do	  pages_per_sec=${pages_per_sec%?}
+		done
+		record+=" $pages_per_sec"
+	done
+}
+
+# -------------------------------------------------------
+
+create-status_dir() {
+
+	[[ -d $status_dir ]] && return
+
+	sudo mkdir $status_dir &&
+	set-admin_group &&
+	sudo chgrp $admin_group $status_dir &&
+	sudo chmod g+w,g+s $status_dir || abort-function " -> $?"
+}
+
+# -------------------------------------------------------
+
+readonly vfs_pressure_file=$status_dir/vfs-pressure.txt
+
+check-logs() {
+
+	[[ ! $is_regression_test ]] || return
+
+	_set-record--from-syslog
+
+	create-status_dir
+	mkdir -p $(dirname $vfs_pressure_file)
+	echo $record > $vfs_pressure_file
+}
+
 ##############################################################################
 ##############################################################################
 # Random maintenance functions.
@@ -5726,7 +5775,7 @@ function regression-test() {
 
 	is-arg1-in-arg2 b $tests && {
 	_show-test-header backup all
-	_run-debug-cmds b backup-run all
+	_run-debug-cmds b backup-drive all
 	}
 
 	# --------------------------------------------
@@ -5822,7 +5871,8 @@ case $action in
 	[[ $1 == all ]] && rm-stale-locks
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
-	   then wait			# want to stay in 'ps'; but ...
+	   then check-logs		# create data for watch
+		wait			# want to stay in 'ps'; but ...
 #		$IfRun $our_path monitor-drives & # ... not for monitor
 	   else true
 	fi
@@ -6228,6 +6278,8 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	check-logs; exit
+
 	set-drive_name ${1:-F}; set-drive_dir $drive_name
 	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) ; exit $?
 

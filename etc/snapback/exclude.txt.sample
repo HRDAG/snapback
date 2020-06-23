@@ -16,13 +16,15 @@
 /mnt/*
 /proc/*
 /run/*
+/snap/*
 /sys/*
 
 /tmp/*
 
 # you can uncomment the following section if you're tight on backup drive space
 #
-# kernels come and go, and are large
+# kernels come and go, and are large; don't uncomment if boot VM from snapshots
+# /boot/initrd.img-*
 # /lib/modules/*
 #
 # /usr/lib/jvm
@@ -41,23 +43,39 @@
 /var/backups/dpkg.status.[3-9].gz
 
 /var/cache/*
+/var/lib/apt/lists/*
 /var/lib/mlocate/*
+/var/lib/snapd/*
 
 # from default /etc/updatedb.conf
 /var/lib/schroot/*
 
 # This is needed for small backup-drives or slow pruning.
-/var/log/*
+# ... but save snapback, auth, and syslog files, for forensics/debugging.
+/var/log/[^s]*
+/var/log/s[^ny]*
+/var/log/sn**/cron.log*
+/var/log/sn**/messages.log*
+/var/log/sn**/.cache.sh*
+/var/log/sn*/monitor/vfs-pressure/today.txt
+# only backup logs that are dated and compressed, since they don't change
+/var/log/auth
+/var/log/auth-????????
+/var/log/syslog
+/var/log/syslog-????????
 # If you're security-sensitive and comment-out the above for forensics,
 # you should add 'dateext' and 'compress' and etc to /etc/logrotate.conf
 # (see etc/logrotate.conf.sample for a way to keep months of old logs),
-# then leave the following records so the old rolled-logs get deleted.
+# then leave the following five records so the old rolled-logs get deleted.
 /var/log/**.[0-9]
 /var/log/**.[0-9].*[zZ]*
 /var/log/**.[1-9][0-9].*[zZ]*
 /var/log/**.[1-9][0-9][0-9].*[zZ]*
 /var/log/journal/*
 
+/var/lock/*
+/var/run/*
+/var/snap/*
 /var/staging/*
 /var/tmp/*cache*
 
