@@ -5572,7 +5572,8 @@ check-logs() {
 
 	create-status_dir
 	mkdir -p $(dirname $vfs_pressure_file)
-	echo $record > $vfs_pressure_file
+	echo $record > $vfs_pressure_file.new &&
+	mv $vfs_pressure_file.new $vfs_pressure_file
 }
 
 ##############################################################################
