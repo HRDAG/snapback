@@ -5532,7 +5532,7 @@ readonly -f finish-copy-backup-drive
 is-set   vfs_pressure_regex ||		# can set custom value in $config_file
 readonly vfs_pressure_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
 
-_set-record--from-syslog() {
+_set-record--from-syslog-file() {
 	local log=${1:-/var/log/syslog}
 
 	local regex=$vfs_pressure_regex
@@ -5568,7 +5568,7 @@ check-logs() {
 
 	[[ ! $is_regression_test ]] || return
 
-	_set-record--from-syslog
+	_set-record--from-syslog-file
 
 	create-status_dir
 	mkdir -p $(dirname $vfs_pressure_file)
