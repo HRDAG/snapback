@@ -145,6 +145,7 @@ Usage: $our_name [options] action [options] [args]
 
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
+    big-swapouts: search syslog files for warnings about high swapout rates
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
 
     # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
@@ -5590,9 +5591,7 @@ function print-big-swapouts-file() {
 	[[ -s $file ]] || return 1
 
 	if [[ ${is_action-} ]]
-	   then	local date=${file##*-}; date=${date%.*}
-		[[ $date == /* ]] && date=today
-		local prefix=$date
+	   then	local prefix=$(basename $file); prefix=${prefix%.txt}
 	   else local prefix="big swapouts"
 	fi
 
@@ -5614,6 +5613,33 @@ function print-big-swapouts-file() {
 	return 0
 }
 readonly -f print-big-swapouts-file
+
+# --------------------------------------------
+
+readonly monitor_dir=$log_dir/monitor
+readonly big_swapouts_dir=$monitor_dir/big-swapouts
+
+is-set   big_swapouts_regex ||		# can set custom value in $config_file
+readonly big_swapouts_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
+
+find-and-print-big-swapouts() {
+
+	local log regex=$big_swapouts_regex
+	for log in /var/log/syslog-* /var/log/syslog
+	    do	local date=${log##*-}; date=${date%.*}
+		[[ $date == /* ]] && date=today
+
+		local  cache_file=$big_swapouts_dir/$date.txt
+		[[ -f $cache_file && $cache_file -nt $log ]] || {
+		set-cat_cmd $log
+		set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
+		echo $* > $cache_file
+		}
+
+		cat $cache_file
+	done
+}
+readonly -f find-and-print-big-swapouts
 
 ##############################################################################
 ##############################################################################
@@ -5969,6 +5995,11 @@ case $action in
    # watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
    ( watch | wa* | wt* | w ) [[ $action != w ]] && undo-action-abbrev watch
 	watch "$@"
+	;;
+
+   # big-swapouts: search syslog files for warnings about high swapout rates
+   ( big*swapouts | bs | so ) undo-action-abbrev big-swapouts
+	find-and-print-big-swapouts
 	;;
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
