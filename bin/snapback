@@ -5562,6 +5562,7 @@ create-status_dir() {
 	sudo chgrp $admin_group $status_dir &&
 	sudo chmod g+w,g+s $status_dir || abort-function " -> $?"
 }
+readonly -f create-status_dir
 
 # -------------------------------------------------------
 
@@ -5579,6 +5580,7 @@ check-logs() {
 	echo $record > $big_swapouts_file.new &&
 	mv $big_swapouts_file.new $big_swapouts_file
 }
+readonly -f check-logs
 
 # ------------------------------------------------------------------
 
@@ -5611,6 +5613,7 @@ function print-big-swapouts-file() {
 
 	return 0
 }
+readonly -f print-big-swapouts-file
 
 ##############################################################################
 ##############################################################################
