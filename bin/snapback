@@ -4233,6 +4233,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	min_rows=$(( 8 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
+	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
 	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
 	TraceV 1 rows_left
 }
@@ -4328,6 +4329,8 @@ readonly -f show-stats-section-3-if-it-fits
 
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
+
+	print-big-swapouts-file && let rows_left-=2
 
 	if [[ $show_all ]]
 	   then filesystem-geometry $drive_dirs
@@ -5575,6 +5578,38 @@ check-logs() {
 	[[ ! $record ]] && > $big_swapouts_file && return
 	echo $record > $big_swapouts_file.new &&
 	mv $big_swapouts_file.new $big_swapouts_file
+}
+
+# ------------------------------------------------------------------
+
+function print-big-swapouts-file() {
+	[[ ${1-} == -a ]] && { shift; local is_action=$true; }
+	local  file=${1:-$big_swapouts_file}
+	[[ -s $file ]] || return 1
+
+	if [[ ${is_action-} ]]
+	   then	local date=${file##*-}; date=${date%.*}
+		[[ $date == /* ]] && date=today
+		local prefix=$date
+	   else local prefix="big swapouts"
+	fi
+
+	set -- $(< $file)
+	local record
+	printf -v record "%8s:%3s:" "$prefix" $#
+
+	while (( $# > 0 ))
+	   do	local pages_per_sec=$1
+		[[ $pages_per_sec == *.?? ]] &&
+		    pages_per_sec=${pages_per_sec%?}
+		record+=" $pages_per_sec,"
+		shift
+	done
+
+	[[ ! ${is_action-} ]] && echo
+	echo "${record%,} pages/sec"
+
+	return 0
 }
 
 ##############################################################################
