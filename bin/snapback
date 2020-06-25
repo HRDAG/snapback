@@ -5529,13 +5529,13 @@ readonly -f finish-copy-backup-drive
 
 # -----------------------------------------------------------------------------
 
-is-set   vfs_pressure_regex ||		# can set custom value in $config_file
-readonly vfs_pressure_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
+is-set   big_swapouts_regex ||		# can set custom value in $config_file
+readonly big_swapouts_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
 
 _set-record--from-syslog-file() {
 	local log=${1:-/var/log/syslog}
 
-	local regex=$vfs_pressure_regex
+	local regex=$big_swapouts_regex
 	set -- $(bzcat -f $log | sed -n -r "s/$regex/\1/p" | sort -nr)
 
 	record=
@@ -5562,7 +5562,7 @@ create-status_dir() {
 
 # -------------------------------------------------------
 
-readonly vfs_pressure_file=$status_dir/vfs-pressure.txt
+readonly big_swapouts_file=$status_dir/big-swapouts.txt
 
 check-logs() {
 
@@ -5571,9 +5571,10 @@ check-logs() {
 	_set-record--from-syslog-file
 
 	create-status_dir
-	mkdir -p $(dirname $vfs_pressure_file)
-	echo $record > $vfs_pressure_file.new &&
-	mv $vfs_pressure_file.new $vfs_pressure_file
+	mkdir  -p  $(dirname $big_swapouts_file)
+	[[ ! $record ]] && > $big_swapouts_file && return
+	echo $record > $big_swapouts_file.new &&
+	mv $big_swapouts_file.new $big_swapouts_file
 }
 
 ##############################################################################
@@ -6014,7 +6015,7 @@ case $action in
 	;;
 
    # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
-   ( filesystem*geometry | f*g ) undo-action-abbrev filesystem-geometry
+   ( f*g* | f*s* | *geo* ) undo-action-abbrev filesystem-geometry
      filesystem-geometry "$@"
 	;;
 
