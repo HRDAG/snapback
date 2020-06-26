@@ -141,7 +141,7 @@ Usage: $our_name [options] action [options] [args]
     backup-drive  names: backup names ('all' for every mounted backup drive)
      prune-drives names: prune  names ('all' for every "" ""); see configure.sh
     update-drives  [-s src-names-regex] dst-names: copy missing snapshots
-    copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
+    copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
 
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
@@ -2933,7 +2933,7 @@ function is-src_snapshot-useful() {
 	   $src_basename == $snapshot_glob.links ]] ||
 	   bad-copy "$src_snapshot is not a reliable snapshot" || return 1
 	[[ $src_basename =~ $dst_minimal_snapshot_regex(|\..*) ]] ||
-	   bad-copy "$src_snapshot doesn't fit $dst_name's backup_period=" ||
+	   bad-copy "$src_snapshot doesn't fit $dst_drive_name backup_period"||
 	   return 1
 
 	matches-dst_backup_type ${src_snapshot%/*} && return 0
@@ -3025,6 +3025,7 @@ function copy-snapshots() {
 		src_snapshots+="${src_snapshot%/.keep} "
 		shift
 	done
+	[[ $1 == -B ]] && { local  lock_bkp=$true ; shift; } || local lock_bkp=
 	[[ $1 == -q ]] && { local quiet_opt=$1 ; shift; } || local quiet_opt=
 	assert-not-option -o "${1-}"
 	[[ $src_snapshots && $# == 1 ]] ||
@@ -3055,6 +3056,7 @@ function copy-snapshot-rsync() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then   lock -w -c backup || return 1 # wait for any backup to finish
+		[[ ${lock_bkp-} ]]  ||
 		unlock	     backup
 
 		set-copy_PGID--if-copy-src || # 2 drives copying to each other?
@@ -3077,6 +3079,7 @@ function copy-snapshot-rsync() {
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
 
+	[[    ${lock_bkp-}     ]] && unlock backup
 	[[ $did_lock_src_prune ]] && unlock prune $src_snapshot
 
 	return $status
@@ -5974,7 +5977,7 @@ case $action in
 	done
 	exit $status
 	;;
-   # copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
+   # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
 	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit $?; }
 
