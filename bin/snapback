@@ -3948,13 +3948,15 @@ function trim-copy-update-ps {
 	trim-ps |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
-	sed -e '/update-drive/s@ -s@ -s @' \
+	sed -r \
+	    -e '/update-drive/s@ -s@ -s @' \
 	    -e "/   [^ ]*$ud/d"   \
-	    -e "/$cpss/s@ -s@ @g" \
+	    -e   "/$cpss/s@ -s@ @g" \
+	    -e   "/$cpss/s@ -B @ @g" \
+	    -e "s@($cpss[^ ]+ +[^ ]+) +[^ ]+.* ([^ ]+) *\$@\1 ... \2@" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $_our_name/d" \
 	    -e "s@ $* /@ /@" \
-	    -e "/$cpss/s@\($_our_name[^0-9]*[^ ]*\)..*\(.\) *\$@\1 ... \2@" \
 	    -e 's@/[^/]*/\. /@/$snap/. /@' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
