@@ -2,13 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+	<string>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+    </dict>
     <key>Label</key>
     <string>org.hrdag.snapback</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/snapback</string>
         <string>-C</string>
-        <string>run-backups</string>
+        <string>backup-drives</string>
         <string>all</string>
     </array>
     <key>StandardOutPath</key>
