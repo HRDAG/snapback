@@ -100,8 +100,9 @@
 /home/*/.config/google-chrome/Default/Extensions/*
 /home/*/.config/google-chrome/Default/File?System/*
 # GCM has been deprecated, replaced with FCM
-/home/*/.config/google-chrome/Default/GCM?Store/*
+/home/*/.config/google-chrome/Default/[FG]CM?Store/*
 # this can be GB, and changes constantly as you browse
+/home/*/.config/google-chrome/Default/GPUCache/*
 /home/*/.config/google-chrome/Default/History
 /home/*/.config/google-chrome/Default/IndexedDB/*
 /home/*/.config/google-chrome/Default/Local?Storage/*
@@ -109,19 +110,28 @@
 /home/*/.config/google-chrome/Default/Pepper?Data/Shockwave?Flash/WritableRoot
 /home/*/.config/google-chrome/Default/Service?Worker/Database/*
 /home/*/.config/google-chrome/Default/Session?Storage/*
+/home/*/.config/google-chrome/Default/Storage/*
 # large, holds passwords and credit card data
 /home/*/.config/google-chrome/Default/Sync?Data/*
 /home/*/.config/google-chrome/Default/Top?Sites
 # transient and large
 /home/*/.config/google-chrome/Default/Web?Data
 /home/*/.config/google-chrome/EVWhitelist/?/_platform_specific/*/ev_hashes_*
+/home/*/.config/google-chrome/PepperFlash/*
+/home/*/.config/google-chrome/Pepper?Data/Shockwave?Flash/WritableRoot
+/home/*/.config/google-chrome/pnacl/*
 /home/*/.config/google-chrome/Safe?Browsing*
+/home/*/.config/google-chrome/*ShaderCache/*
 #
 # chromium files that can disappear, or are very large and change often
-/home/*/.cache/chromium/Profile ?/Cache
-/home/*/.cache/chromium/Profile ?/Code?Cache
-/home/*/.config/chromium/Profile ?/Sync?Data
-/home/*/.config/chromium/Profile ?/Top?Sites
+/home/*/.cache/chromium/Profile ?/Cache/*
+/home/*/.cache/chromium/Profile ?/Code?Cache/*
+/home/*/.config/chromium/Profile ?/Extensions/*
+/home/*/.config/chromium/Profile ?/Local Storage/*
+/home/*/.config/chromium/Profile ?/IndexedDB/*
+/home/*/.config/chromium/Profile ?/Session Storage/*
+/home/*/.config/chromium/Profile ?/Sync?Data/*
+/home/*/.config/chromium/Profile ?/Top?Sites/*
 
 # mostly browser/mailer stuff
 /home/*/.claws-mail/imapcache
