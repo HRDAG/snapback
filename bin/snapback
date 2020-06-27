@@ -5553,7 +5553,7 @@ readonly -f finish-copy-backup-drive
 # -----------------------------------------------------------------------------
 
 is-set   big_swapouts_regex ||		# can set custom value in $config_file
-readonly big_swapouts_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
+readonly big_swapouts_regex='.* Severe demand for real memory ([0-9]+)[^0-9].*'
 
 _set-record--from-syslog-file() {
 	local log=${1:-/var/log/syslog}
@@ -5652,9 +5652,8 @@ find-and-print-big-swapouts() {
 		[[ -f $cache_file && $cache_file -nt $log ]] || {
 		set-cat_cmd $log
 		set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
-		echo $* > $cache_file
-		}
-
+		[[ $# != 0 ]] && echo $*
+		} > $cache_file
 		cat $cache_file
 	done
 }
