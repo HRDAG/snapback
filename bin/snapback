@@ -5632,7 +5632,6 @@ check-logs-for-big-swapouts() {
 	_set-record--from-syslog-file $log
 
 	create-status_dir
-	mkdir  -p  $(dirname $big_swapouts_file)
 	[[ ! $record ]] && > $big_swapouts_file && return
 	echo $record > $big_swapouts_file.new &&
 	mv $big_swapouts_file.new $big_swapouts_file
@@ -5744,7 +5743,8 @@ check-logs-for-errors() {
 
 	sed 's/.*[0-9]\][: ] *//' $syslog_search_results_file |
 	    fgrep -v "$big_swapout_string" |
-	    sort | uniq -c > $syslog_errors_count_msg_file
+	    sort | uniq -c > $syslog_errors_count_msg_file.new &&
+	    mv $syslog_errors_count_msg_file.new $syslog_errors_count_msg_file
 }
 readonly -f check-logs-for-errors
 
