@@ -5593,15 +5593,7 @@ _set-record--from-syslog-file() {
 	local cat_cmd regex=$big_swapouts_regex
 	  set-cat_cmd $log
 	set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
-
-	record=
-	while (( $# > 0 ))
-	   do	local pages_per_sec=$1; shift
-		while [[ $pages_per_sec == *.??* ]]
-		    do	  pages_per_sec=${pages_per_sec%?}
-		done
-		record+=" $pages_per_sec"
-	done
+	record=$*
 }
 readonly -f _set-record--from-syslog-file
 
