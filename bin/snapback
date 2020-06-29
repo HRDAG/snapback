@@ -4265,17 +4265,18 @@ readonly -f set-min_rows-min_rows_with_df-rows_left
 
 # --------------------------------------------
 
-readonly syslog_error_count_msg_file=$status_dir/syslog-count-msg.txt
+readonly syslog_errors_dir=$status_dir/syslog-errors
+readonly syslog_errors_count_msg_file=$syslog_errors_dir/count-msg.txt
 
 show-errors-in-syslog() {
 
-	[[ -s $syslog_error_count_msg_file ]] || return
+	[[ -s $syslog_errors_count_msg_file ]] || return
 
 	while read count msg
 	   do	set-warning_string error "$msg"
 		printf "%3d: %s\n" $count "$warning_string"
 		let rows_left-=1
-	done < $syslog_error_count_msg_file
+	done < $syslog_errors_count_msg_file
 
 	echo
 	let rows_left-=1
@@ -4588,10 +4589,12 @@ declare -r -i   msec_increment=10
 set-division 3 $msec_increment 1000
 readonly         sec_increment=$division
 
+readonly _monitor_dir=$status_dir/drives
+
 _monitor-drives() {
 
 	create-status_dir
-	local response_dir=$status_dir/response-msecs
+	local response_dir=$_monitor_dir/response-msecs
 
 	for dir
 	    do	 _set-drive_name $dir || abort "bad $dir"
@@ -4599,7 +4602,7 @@ _monitor-drives() {
 		[[ ${name2PID[$name]-} ]] && continue	   # hung drive?
 		( set -- $dir/*.nul ) & name2PID[$name]=$! # not, test it
 		name2msecs[$name]=0	# we just started the test
-		for file in $status_dir/{hung,slow}/$name
+		for file in $_monitor_dir/{hung,slow}/$name
 		    do	echo $false > $file
 		done
 		echo 0 > $response_dir/test-run/$name
@@ -4629,13 +4632,13 @@ _monitor-drives() {
 			echo $hung_msecs > $response_dir/test-run/$name
 
 			  if (( $hung_msecs >= $min_hung_msecs ))
-			   then echo $true  > $status_dir/hung
-				echo $true  > $status_dir/slow
+			   then echo $true  > $_monitor_dir/hung
+				echo $true  > $_monitor_dir/slow
 			elif (( $hung_msecs >= $min_slow_msecs ))
-			   then echo $false > $status_dir/hung
-				echo $true  > $status_dir/slow
-			   else echo $false > $status_dir/hung
-				echo $false > $status_dir/slow
+			   then echo $false > $_monitor_dir/hung
+				echo $true  > $_monitor_dir/slow
+			   else echo $false > $_monitor_dir/hung
+				echo $false > $_monitor_dir/slow
 			fi
 		done
 
@@ -4656,8 +4659,9 @@ monitor-drives() {
 
 	trap '' HUP			# we want to run forever
 
+	create-status_dir
 	for sub_dir in slow hung response-msecs/{average,counter,test-run}
-	    do	mkdir -p $status_dir/$sub_dir
+	    do	mkdir -p $_monitor_dir/$sub_dir
 	done
 
 	SECONDS=0
@@ -5586,8 +5590,9 @@ readonly big_swapouts_regex=".* $big_swapout_string ([0-9]+)(\.[0-9]*)?pgs.*"
 _set-record--from-syslog-file() {
 	local log=${1:-$syslog_path}
 
-	local regex=$big_swapouts_regex
-	set -- $(bzcat -f $log | sed -n -r "s/$regex/\1/p" | sort -nr)
+	local cat_cmd regex=$big_swapouts_regex
+	  set-cat_cmd $log
+	set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
 
 	record=
 	while (( $# > 0 ))
@@ -5610,18 +5615,21 @@ create-status_dir() {
 	set-admin_group &&
 	sudo chgrp $admin_group $status_dir &&
 	sudo chmod g+w,g+s $status_dir || abort-function " -> $?"
+
+	sudo mkdir $syslog_errors_dir
 }
 readonly -f create-status_dir
 
 # -------------------------------------------------------
 
-readonly big_swapouts_file=$status_dir/big-swapouts.txt
+readonly big_swapouts_file=$syslog_errors_dir/big-swapouts.txt
 
 check-logs-for-big-swapouts() {
+	local log=${1:-$syslog_search_results_file}
 
 	[[ ! $is_regression_test ]] || return
 
-	_set-record--from-syslog-file
+	_set-record--from-syslog-file $log
 
 	create-status_dir
 	mkdir  -p  $(dirname $big_swapouts_file)
@@ -5720,21 +5728,23 @@ readonly syslog_search_string_varnames="
   big_swapout_string
     "
 
+readonly syslog_search_results_file=$syslog_errors_dir/errors.txt
+
 check-logs-for-errors() {
 
-	local search_string_file=$tmp_1
+	local search_str_file=$tmp_1
 	local varname
 	for varname in $syslog_search_string_varnames
 	    do	echo "${!varname}"
-	done > $search_string_file
+	done > $search_str_file
 
 	create-status_dir
-	local search_results_file=$status_dir/syslog-errors.txt
-	fgrep -f $search_string_file $syslog_path > $search_results_file &&
-	      rm $search_string_file
+	fgrep -f $search_str_file $syslog_path > $syslog_search_results_file &&
+	      rm $search_str_file
 
-	sed 's/.*[0-9]\][: ] *//' $search_results_file |
-	    sort | uniq -c > $syslog_error_count_msg_file
+	sed 's/.*[0-9]\][: ] *//' $syslog_search_results_file |
+	    fgrep -v "$big_swapout_string" |
+	    sort | uniq -c > $syslog_errors_count_msg_file
 }
 readonly -f check-logs-for-errors
 
