@@ -266,6 +266,9 @@ readonly copy_snapshot_exe="$our_path $our_opts copy-snapshot"
 
 readonly hostname=${HOSTNAME%%.*}
 
+is-set   syslog_path ||			# can set custom value in $config_file
+readonly syslog_path=/var/log/syslog
+
 readonly log_dir=/var/log/$our_name
 
 # these are used by log(), besides $log_level
@@ -5555,11 +5558,11 @@ readonly -f finish-copy-backup-drive
 # check syslog for big swapout rates (reported by pmie on linux)
 # -----------------------------------------------------------------------------
 
-is-set   syslog_path ||			# can set custom value in $config_file
-readonly syslog_path=/var/log/syslog
+is-set   big_swapout_string ||		# can set custom value in $config_file
+readonly big_swapout_string="Severe demand for real memory"
 
 is-set   big_swapouts_regex ||		# can set custom value in $config_file
-readonly big_swapouts_regex='.* Severe demand for real memory ([0-9]+)[^0-9].*'
+readonly big_swapouts_regex=".* $big_swapout_string ([0-9]+)(\.[0-9]*)?pgs.*"
 
 _set-record--from-syslog-file() {
 	local log=${1:-$syslog_path}
@@ -5644,12 +5647,6 @@ readonly -f print-big-swapouts-file
 
 readonly monitor_dir=$log_dir/monitor
 readonly big_swapouts_dir=$monitor_dir/big-swapouts
-
-is-set   big_swapout_string ||		# can set custom value in $config_file
-readonly big_swapout_string="Severe demand for real memory"
-
-is-set   big_swapouts_regex ||		# can set custom value in $config_file
-readonly big_swapouts_regex=".* $big_swapout_string ([0-9]+)(\.[0-9]*)?pgs.*"
 
 find-and-print-big-swapouts() {
 
