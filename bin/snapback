@@ -5653,6 +5653,8 @@ readonly big_swapouts_regex=".* $big_swapout_string ([0-9]+)(\.[0-9]*)?pgs.*"
 
 find-and-print-big-swapouts() {
 
+	[[ -d $big_swapouts_dir ]] || mkdir -p $big_swapouts_dir
+
 	local log regex=$big_swapouts_regex
 	for log in $syslog_path-* $syslog_path
 	    do	local date=${log##*-}; date=${date%.*}
