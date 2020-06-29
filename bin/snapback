@@ -5616,7 +5616,7 @@ readonly -f create-status_dir
 
 readonly big_swapouts_file=$syslog_errors_dir/big-swapouts.txt
 
-check-logs-for-big-swapouts() {
+search-syslog-for-big-swapouts() {
 	local log=${1:-$syslog_search_results_file}
 
 	[[ ! $is_regression_test ]] || return
@@ -5628,7 +5628,7 @@ check-logs-for-big-swapouts() {
 	echo $record > $big_swapouts_file.new &&
 	mv $big_swapouts_file.new $big_swapouts_file
 }
-readonly -f check-logs-for-big-swapouts
+readonly -f search-syslog-for-big-swapouts
 
 # ------------------------------------------------------------------
 
@@ -5717,11 +5717,11 @@ readonly syslog_search_string_varnames="
     XFS_error_strings
    ext4_error_strings
   big_swapout_string
-    "
+"
 
-readonly syslog_search_results_file=$syslog_errors_dir/errors.txt
+readonly syslog_search_results_file=$syslog_errors_dir/_errors.txt
 
-check-logs-for-errors() {
+search-syslog-for-errors() {
 
 	local search_str_file=$tmp_1
 	local varname
@@ -5738,14 +5738,14 @@ check-logs-for-errors() {
 	    sort | uniq -c > $syslog_errors_count_msg_file.new &&
 	    mv $syslog_errors_count_msg_file.new $syslog_errors_count_msg_file
 }
-readonly -f check-logs-for-errors
+readonly -f search-syslog-for-errors
 
 # -------------------------------------------------------
 
 check-logs() {
 
-	check-logs-for-errors
-	check-logs-for-big-swapouts
+	search-syslog-for-errors
+	search-syslog-for-big-swapouts
 }
 readonly -f check-logs
 
