@@ -268,8 +268,8 @@ readonly hostname=${HOSTNAME%%.*}
 
 is-set   syslog_path ||			# can set custom value in $config_file
 readonly syslog_path=/var/log/syslog
-
-readonly log_dir=/var/log/$our_name
+readonly     log_dir=/var/log/$our_name
+readonly  status_dir=/var/run/$our_name
 
 # these are used by log(), besides $log_level
 file_for_logging=$log_dir/messages.log	     # set-drive_log_dir-* sets it
@@ -4265,6 +4265,25 @@ readonly -f set-min_rows-min_rows_with_df-rows_left
 
 # --------------------------------------------
 
+readonly syslog_error_count_msg_file=$status_dir/syslog-count-msg.txt
+
+show-errors-in-syslog() {
+
+	[[ -s $syslog_error_count_msg_file ]] || return
+
+	while read count msg
+	   do	set-warning_string error "$msg"
+		printf "%3d: %s\n" $count "$warning_string"
+		let rows_left-=1
+	done < $syslog_error_count_msg_file
+
+	echo
+	let rows_left-=1
+}
+readonly -f show-errors-in-syslog
+
+# --------------------------------------------
+
 show-sudo-config-warning-if-it-fits() {
 
 	local -i min_for_rare=$(( min_rows_with_df + 6 + 7 + 6 ))
@@ -4520,6 +4539,8 @@ watch() {
 	# now we're ready to start showing stuff to the user
 	# --------------------------------------------------
 
+	show-errors-in-syslog		# do before access disk
+
 	show-sudo-config-warning-if-it-fits
 
 	show-stats-section-1
@@ -4550,8 +4571,6 @@ readonly -f watch
 # Functions for monitoring/creating/altering filesystems and VFS.
 ##############################################################################
 ##############################################################################
-
-readonly status_dir=/var/run/$our_name
 
 # if make check_period_msecs smaller, we'll check each drive more frequently
 # (but also consume more CPU, because 1 fork per drive per check-period)
@@ -5674,7 +5693,6 @@ readonly -f find-and-print-big-swapouts
 
 is-set   OS_error_strings || 		# can set custom value in $config_file
 readonly OS_error_strings="\
-Dependency failed for
 systemd can't connect to socket for service"
 
 is-set   USB_error_strings || 		# can set custom value in $config_file
@@ -5715,9 +5733,8 @@ check-logs-for-errors() {
 	fgrep -f $search_string_file $syslog_path > $search_results_file &&
 	      rm $search_string_file
 
-	local error_msg_counts_file=$status_dir/syslog-msg-count.txt
 	sed 's/.*[0-9]\][: ] *//' $search_results_file |
-	    sort | uniq -c > $error_msg_counts_file
+	    sort | uniq -c > $syslog_error_count_msg_file
 }
 readonly -f check-logs-for-errors
 
