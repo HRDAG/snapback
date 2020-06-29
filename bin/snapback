@@ -5576,6 +5576,7 @@ _set-record--from-syslog-file() {
 		record+=" $pages_per_sec"
 	done
 }
+readonly -f _set-record--from-syslog-file
 
 # -------------------------------------------------------
 
