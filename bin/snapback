@@ -142,7 +142,7 @@ Usage: $our_name [options] action [options] [args]
   Current actions are (you can specify their acronym, see process-action):
     backup-drive  names: backup names ('all' for every mounted backup drive)
      prune-drives names: prune  names ('all' for every "" ""); see configure.sh
-    update-drives  [-s src-names-regex] dst-names: copy missing snapshots
+    update-drives  [-s src-names-glob] dst-names: copy missing snapshots
     copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
 
     w: show full details on all jobs and drives
@@ -398,7 +398,7 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
-# turn comma-separated lists and/or ranges into a single glob
+# turn comma-separated list or sequence-expression or range into a single glob
 function set-glob() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
@@ -406,12 +406,9 @@ function set-glob() {
 	local arg
 	for arg
 	    do	set -f
-		[[ $arg == *,*  && $arg !=  '{'* ]] && arg="{$arg"
-		[[ $arg == *,*  && $arg != *'}'  ]] && arg="$arg}"
-		[[ $arg == *..* && $arg !=  '{'* ]] && arg="{$arg"
-		[[ $arg == *..* && $arg != *'}'  ]] && arg="$arg}"
-		[[ $arg == *-*  && $arg !=  '['* ]] && arg="[$arg"
-		[[ $arg == *-*  && $arg != *']'  ]] && arg="$arg]"
+		[[ $arg == *,*  && $arg != *'{'* ]] && arg="{$arg}"
+		[[ $arg == *..* && $arg != *'{'* ]] && arg="{$arg}"
+		[[ $arg == *-*  && $arg != *'['* ]] && arg="[$arg]"
 		set +f
 		glob+="$arg,"		# append ','. we'll wrap in {}
 	done
@@ -3178,15 +3175,37 @@ readonly -f set-excluded_drive_dirs_regex
 # functions for src_dirs-for-update
 # ---------------------------------
 
+set-regex--from-glob() {
+	local glob=$1
+
+	set-glob "$glob"
+	[[ $glob != *..* ]] || abort-function "can't handle '..'"
+
+	glob=${glob//\*/.*}
+	glob=${glob//\?/.}
+	glob=${glob//\{/(}
+	glob=${glob//\}/)}
+	glob=${glob//\,/|}
+
+	regex=$glob
+}
+readonly -f set-regex--from-glob
+
+# ----------------------
+
 _set-src_names_regex() {
 
-	[[ ${src_names_regex-} ]] || { src_names_regex=. ; return ; }
+	[[ ${src_names_glob-} ]] || { src_names_regex=. ; return ; }
 
-	if [[ $is_drive_name_upper_cased ]]
-	   then src_names_regex=${src_names_regex^^}
-	elif  [[ $is_drive_name_capitalized ]]
-	   then src_names_regex=${src_names_regex^} # fails if regex
+	if   [[ $is_drive_name_upper_cased ]]
+	   then src_names_glob=${src_names_glob^^}
+	elif [[ $is_drive_name_capitalized ]]
+	   then src_names_glob=${src_names_glob^} # fails if {} or leading []
 	fi
+
+	local regex
+	set-regex--from-glob "$src_names_glob"
+	src_names_regex=$regex
 }
 readonly -f _set-src_names_regex
 
@@ -3210,7 +3229,7 @@ _set-drive_dirs--for-update-srcs() {
 		local exclude_regex=$drive_dir_prefix$excluded_drive_dirs_regex
 		[[ $src_drive_dir =~ $exclude_regex ]] && continue
 
-		local include_regex=$drive_dir_prefix$src_names_regex
+		local include_regex=$drive_dir_prefix$src_names_regex$
 		[[ $src_drive_dir =~ $include_regex ]] || continue
 
 		matches-dst_backup_type $src_drive_dir &&
@@ -3400,8 +3419,8 @@ declare is_update=$false
 
 function update-drive() {
 	local ignore_slow_sources=$false
-	[[ $1 == -S  ]] && {   ignore_slow_sources=$true  ; shift; }
-	[[ $1 == -s* ]] && { local src_names_regex=${1#-s}; shift; }
+	[[ $1 == -S  ]] && {  ignore_slow_sources=$true  ; shift; }
+	[[ $1 == -s* ]] && { local src_names_glob=${1#-s}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
 
@@ -6059,13 +6078,13 @@ case $action in
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
-   # update-drives  [-s src-names-regex] dst-names: copy missing snapshots
+   # update-drives  [-s src-names-glob] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
 	[[ $1 == -S  ]] && { ignore_slow_sources_opt=$1    ; shift  ; }
-	[[ $1 == -s  ]] && {     src_names_regex_opt="$1$2"; shift 2; }
+	[[ $1 == -s  ]] && {      src_names_glob_opt="$1$2"; shift 2; }
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
-	opts="${ignore_slow_sources_opt-} ${src_names_regex_opt-}"
+	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}"
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
@@ -6462,6 +6481,9 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	for glob in "a*{b,c,{d,e},[fg]}?z"
+	   do  set-regex--from-glob "$glob"; echo "$glob -> $regex"; done; exit
+
 	check-logs; exit
 
 	set-drive_name ${1:-F}; set-drive_dir $drive_name
