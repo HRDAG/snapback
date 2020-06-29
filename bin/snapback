@@ -148,6 +148,7 @@ Usage: $our_name [options] action [options] [args]
     w: show full details on all jobs and drives
     watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
     big-swapouts: search syslog files for warnings about high swapout rates
+    check-logs: update error cache: run this if dashboard fails with I/O error
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
 
     # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
@@ -5551,12 +5552,17 @@ function finish-copy-backup-drive() {
 readonly -f finish-copy-backup-drive
 
 # -----------------------------------------------------------------------------
+# check syslog for big swapout rates (reported by pmie on linux)
+# -----------------------------------------------------------------------------
+
+is-set   syslog_path ||			# can set custom value in $config_file
+readonly syslog_path=/var/log/syslog
 
 is-set   big_swapouts_regex ||		# can set custom value in $config_file
 readonly big_swapouts_regex='.* Severe demand for real memory ([0-9]+)[^0-9].*'
 
 _set-record--from-syslog-file() {
-	local log=${1:-/var/log/syslog}
+	local log=${1:-$syslog_path}
 
 	local regex=$big_swapouts_regex
 	set -- $(bzcat -f $log | sed -n -r "s/$regex/\1/p" | sort -nr)
@@ -5588,7 +5594,7 @@ readonly -f create-status_dir
 
 readonly big_swapouts_file=$status_dir/big-swapouts.txt
 
-check-logs() {
+check-logs-for-big-swapouts() {
 
 	[[ ! $is_regression_test ]] || return
 
@@ -5600,7 +5606,7 @@ check-logs() {
 	echo $record > $big_swapouts_file.new &&
 	mv $big_swapouts_file.new $big_swapouts_file
 }
-readonly -f check-logs
+readonly -f check-logs-for-big-swapouts
 
 # ------------------------------------------------------------------
 
@@ -5638,13 +5644,16 @@ readonly -f print-big-swapouts-file
 readonly monitor_dir=$log_dir/monitor
 readonly big_swapouts_dir=$monitor_dir/big-swapouts
 
+is-set   big_swapout_string ||		# can set custom value in $config_file
+readonly big_swapout_string="Severe demand for real memory"
+
 is-set   big_swapouts_regex ||		# can set custom value in $config_file
-readonly big_swapouts_regex='.* Severe demand for real memory ([0-9.]*)pgs.*'
+readonly big_swapouts_regex=".* $big_swapout_string ([0-9]+)(\.[0-9]*)?pgs.*"
 
 find-and-print-big-swapouts() {
 
 	local log regex=$big_swapouts_regex
-	for log in /var/log/syslog-* /var/log/syslog
+	for log in $syslog_path-* $syslog_path
 	    do	local date=${log##*-}; date=${date%.*}
 		[[ $date == /* ]] && date=today
 
@@ -5658,6 +5667,68 @@ find-and-print-big-swapouts() {
 	done
 }
 readonly -f find-and-print-big-swapouts
+
+# -----------------------------------------------------------------------------
+# check syslog for FS and OS errors
+# -----------------------------------------------------------------------------
+
+is-set   OS_error_strings || 		# can set custom value in $config_file
+readonly OS_error_strings="\
+Dependency failed for
+systemd can't connect to socket for service"
+
+is-set   USB_error_strings || 		# can set custom value in $config_file
+readonly USB_error_strings="\
+uas_eh_abort_handler"
+
+is-set   XFS_error_strings || 		# can set custom value in $config_file
+readonly XFS_error_strings="\
+Internal error
+xfs_do_force_shutdown
+Shutting down filesystem"
+
+is-set   ext4_error_strings || 		# can set custom value in $config_file
+readonly ext4_error_strings="\
+Corrupted index cache file
+EXT4-fs error
+group descriptors corrupted!"
+
+is-set syslog_search_string_varnames ||	# can set custom value in $config_file
+readonly syslog_search_string_varnames="
+     OS_error_strings
+    USB_error_strings
+    XFS_error_strings
+   ext4_error_strings
+  big_swapout_string
+    "
+
+check-logs-for-errors() {
+
+	local search_string_file=$tmp_1
+	local varname
+	for varname in $syslog_search_string_varnames
+	    do	echo "${!varname}"
+	done > $search_string_file
+
+	create-status_dir
+	local search_results_file=$status_dir/syslog-errors.txt
+	fgrep -f $search_string_file $syslog_path > $search_results_file &&
+	      rm $search_string_file
+
+	local error_msg_counts_file=$status_dir/syslog-msg-count.txt
+	sed 's/.*[0-9]\][: ] *//' $search_results_file |
+	    sort | uniq -c > $error_msg_counts_file
+}
+readonly -f check-logs-for-errors
+
+# -------------------------------------------------------
+
+check-logs() {
+
+	check-logs-for-errors
+	check-logs-for-big-swapouts
+}
+readonly -f check-logs
 
 ##############################################################################
 ##############################################################################
@@ -6018,6 +6089,11 @@ case $action in
    # big-swapouts: search syslog files for warnings about high swapout rates
    ( big*swapouts | bs | so ) undo-action-abbrev big-swapouts
 	find-and-print-big-swapouts
+	;;
+
+   # check-logs: update error cache: run this if dashboard fails with I/O error
+   ( check*logs | cl ) undo-action-abbrev check-logs
+	check-logs
 	;;
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
