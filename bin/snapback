@@ -4403,6 +4403,8 @@ show-stats-section-1() {
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
 	set-drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
+	setup-snapshot-stats ''	      # was in show-stats-section-2-if-it-fits
+	echo "  Number complete/successful snapshots:  $stats_number"
 	setup-snapshot-stats .rm
 	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
 	setup-snapshot-stats .partial
@@ -4430,8 +4432,8 @@ show-stats-section-2-if-it-fits() {
 	echo "    Days since newest snapshot.partial:  $stats_newest_age"
 	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
 	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
-	setup-snapshot-stats ''
-	echo "  Number complete/successful snapshots:  $stats_number"
+#	setup-snapshot-stats ''		# moved to show-stats-section-1
+#	echo "  Number complete/successful snapshots:  $stats_number"
 
 	let rows_left-=$rows_used
 }
