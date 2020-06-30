@@ -2703,7 +2703,6 @@ function run-rsync() {
 	} &
 
 	suspend-tracing
-	local link_dest_opts=
 	if [[ ! $is_copy_snapshot ]]
 	   then set-link_dest_opts--for-backup-drive  $dst_snapshot
 	   else set-link_dest_opts--for-copy-snapshot $dst_snapshot
