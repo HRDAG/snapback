@@ -1,0 +1,90 @@
+# https://bombich.com/kb/ccc5/some-files-and-folders-are-automatically-excluded-from-backup-task
+
+# Filesystem implementation details
+/.journal
+/.journal_info_block
+/lost+found
+.AppleDB
+.AppleDouble
+.HFS+?Private?Directory?Data*
+.TemporaryItems
+._*
+.afpDeleted*
+Network?Trash?Folder
+
+# Volume-specific preferences
+.VolumeIcon.icns
+.metadata_never_index
+.metadata_never_index_unless_rootfs
+/.com.apple.timemachine.donotpresent
+/System/Library/CoreServices/.disk_label*
+/TheVolumeSettingsFolder
+
+# Apple-proprietary data stores
+.DocumentRevisions-V100*
+.Spotlight-V100
+/.fseventsd
+/.hotfiles.btree
+/private/var/db/systemstats
+
+# Volume-specific cache files
+/System/Library/Caches/com.apple.bootstamps/*
+/System/Library/Caches/com.apple.corestorage/*
+/private/var/db/dyld/dyld_*
+
+# NetBoot local data store
+/.com.apple.NetBootX
+
+# Dynamically-generated devices
+/.vol/*
+/Network
+/Volumes/*
+/automount
+/dev/*
+/net
+
+# Quota real-time data files
+/.quota.group
+/.quota.user
+
+# Large datastores that are (or should be) erased on startup
+/cores
+/macOS?Install?Data
+/private/tmp/*
+/private/var/vm/*
+
+# Trash
+.Trash
+.Trashes
+
+# Time Machine backups
+/.MobileBackups
+/.MobileBackups.trash
+/Backups.backupdb
+/private/var/db/com.apple.backupd.backupVerification
+
+# Corrupted iCloud Local Storage
+Library/Mobile Documents.*
+.webtmp
+
+# Special files
+$Recycle.Bin
+.dropbox.cache
+/.bzvol
+/.cleverfiles
+/Library/Application?Support/Comodo/AntiVirus/Quarantine
+/Library/Caches/CrashPlan
+/PGPWDE0[12]
+/private/tmp/kact[ad].txt
+/private/var/audit/*.crash_recovery
+/private/var/audit/current
+/private/var/db/atpstatdb*
+/private/var/spool/qmaster
+Library/Preferences/ByHost/com.apple.loginwindow*
+
+# application caches
+/Library/Caches
+/Library/Calendars/Calendar?Cache
+/Library/Containers/com.apple.CalendarAgent/Data/Library/Caches
+/Library/Containers/com.apple.Safari/Data/Library/Caches
+/anaconda?/pkgs/cache
