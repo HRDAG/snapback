@@ -2375,6 +2375,7 @@ set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
 	link_dest_opts=
+	set-latest_snapshot
 
 	set-sorted_snapshots -r
 	suspend-tracing
@@ -2399,6 +2400,23 @@ set-link_dest_opts--for-copy-snapshot() {
 	update-link_dest_opts
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
+
+# -----------------------------------------------------------------------------
+
+latest_snapshot=
+
+function set-latest_snapshot() {
+	local drive_dir=${1:-$drive_dir}
+
+	[[ $latest_snapshot ]] && return 0
+
+	latest_snapshot=$drive_dir/latest
+	[[ -d $latest_snapshot ]] && return 0
+
+	latest_snapshot=
+	return 1
+}
+readonly -f set-latest_snapshot
 
 # ----------------------------------------------------------------------------
 # misc functions to support run-rsync
@@ -3109,6 +3127,7 @@ function copy-snapshot-rsync() {
 	cd_ ${dst_snapshot%/*}	     # can kill job with: fuser -k -M $dst_dir
 	run-rsync -c $src_snapshot/. $dst_snapshot; local status=$?
 	cd_ $OLDPWD
+	declare -g previously_copied_snapshot=$dst_snapshot
 
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
@@ -6510,6 +6529,10 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	for name in E I Q; do latest_snapshot=
+	    drive_dir=$drive_dir_prefix$name; echo -n "$drive_dir: "
+	    set-latest_snapshot && echo $latest_snapshot || echo $? ; done;exit
+
 	for glob in "a*{b,c,{d,e},[fg]}?z"
 	   do  set-regex--from-glob "$glob"; echo "$glob -> $regex"; done; exit
 
