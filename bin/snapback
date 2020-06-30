@@ -398,7 +398,9 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
-# turn comma-separated list or sequence-expression or range into a single glob
+# Turn comma-separated lists or sequence-expressions without surrounding (),
+# or ranges without surrounding [], into a single syntactically-correct glob.
+# Return 0 if the final glob has metadata characters (i.e. not simple string).
 function set-glob() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
