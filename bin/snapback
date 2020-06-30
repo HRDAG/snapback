@@ -4324,11 +4324,11 @@ set-min_rows-min_rows_with_df-rows_left() {
 				 rows_for_one_detailed_rsync=0
 	TraceV 1 PD CS BD && let rows_left-=3
 
-	# min overhead: 1 watch line, 1 blank line, 6 lines of section-1 stats,
+	# min overhead: 1 watch line, 1 blank line, 7 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	declare -g -i \
-	min_rows=$(( 8 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
+	min_rows=$(( 9 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
@@ -4418,7 +4418,7 @@ readonly -f show-stats-section-1
 
 show-stats-section-2-if-it-fits() {
 
-	local -i rows_used=7		# stats plus 1 blank line
+	local -i rows_used=6		# stats plus 1 blank line
 	local -i extra=$min_rows_with_df-$rows_for_one_detailed_rsync
 	(( $rows_left >= ($min_rows + $rows_used + $extra) )) || return
 
