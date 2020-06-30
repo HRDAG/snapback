@@ -6010,6 +6010,7 @@ readonly regression_tests="b c z p u"
 function regression-test() {
 	[[ ${1-} == -t ]] && { _trace_opt=-t; shift; } || _trace_opt=
 	local tests=${*:-$regression_tests}
+	# can exclude one test (especially useful to exclude the slow 'u' test)
 	[[ $tests == [A-Z] ]] && tests=${regression_tests/${tests,}/}
 
 	validate-prune_globs
@@ -6060,8 +6061,10 @@ function regression-test() {
 	# --------------------------------------------
 
 	is-arg1-in-arg2 u $tests && [[ $drive_dirs == *' '* ]] && {
-	local dst=${update_test_dst_drive-}
-	[[ $dst ]] || abort "$config_file needs update_test_dst_drive for 'u'"
+	local args=${update_test_args-}
+	[[ $args ]] || abort "$config_file needs update_test_args= for 'u'"
+	set -- $args
+	local dst=${!#}
 	_show-test-header update $dst
 
 	_set-drive_name $dst
@@ -6075,7 +6078,7 @@ function regression-test() {
 	    $IfRun sudo rmdir *.partial &> /dev/null
 	}
 
-	_run-debug-cmds u update-drive $dst
+	_run-debug-cmds u update-drive $args
 
 	reset-priority			# will continue only one job
 	continue-jobs backup

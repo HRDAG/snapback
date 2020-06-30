@@ -73,9 +73,9 @@ drv_name2do_want_external_log[A]=$false	 # value for SSD / flash memory stick
 	 is_multi_writer_drive=$false	# non-striped rotational disk drive
 drv_name2is_multi_writer_drive[A]=$true	# no (or little) seek penalty
 
-# ------------------------------------------------
-# Variables used by run-backup* and prune-drive* #
-# ------------------------------------------------
+# --------------------------------------------------
+# Variables used by backup-drive* and prune-drive* #
+# --------------------------------------------------
 
 # We append the drive name to this variable to get the mount point.
 # If change this, change comment at top of "snapback mkfs" action.
@@ -127,9 +127,9 @@ declare -r -A level2IO_priority_cmd=(
 # replace this if you have a command to set I/O priority
 declare -r -A level2IO_priority_cmd=([lower]= [medium]= [higher]=)
 
-# ------------------------------------
-# variables that control run-backup* #
-# ------------------------------------
+# --------------------------------------
+# variables that control backup-drive* #
+# --------------------------------------
 
 # The directories we back up, *must* be absolute paths; can use bash globbing.
 	 dirs_to_backup="/"
@@ -248,9 +248,8 @@ flakey_drive_names_regex=
 readonly old_cmd=/usr/local/bin/$our_name # installed version
 readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 
-# The regression-test action won't test update-drives unless this is defined;
-# have to specify a drive that has all the snapshots containing /.keep .
-# readonly update_test_dst_drive=
+# The regression-test action won't test update-drives unless this is defined.
+# readonly update_test_args=
 
 # -----------------------------------------------------------------------------
 
