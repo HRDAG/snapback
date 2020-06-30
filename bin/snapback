@@ -2272,6 +2272,23 @@ readonly -f prune-drive
 # functions to setup --link-dest args to rsync
 # ----------------------------------------------------------------------------
 
+latest_snapshot=
+
+function set-latest_snapshot() {
+	local drive_dir=${1:-$drive_dir}
+
+	[[ $latest_snapshot ]] && return 0
+
+	latest_snapshot=$drive_dir/latest
+	[[ -d $latest_snapshot ]] && return 0
+
+	latest_snapshot=
+	return 1
+}
+readonly -f set-latest_snapshot
+
+# ----------------------------------------------------------------------------
+
 function _have-full-snapshot {
 
 	set -- ${new_snapshot%/$snapshot_glob*}/$snapshot_glob
@@ -2402,23 +2419,6 @@ set-link_dest_opts--for-copy-snapshot() {
 readonly -f set-link_dest_opts--for-copy-snapshot
 
 # -----------------------------------------------------------------------------
-
-latest_snapshot=
-
-function set-latest_snapshot() {
-	local drive_dir=${1:-$drive_dir}
-
-	[[ $latest_snapshot ]] && return 0
-
-	latest_snapshot=$drive_dir/latest
-	[[ -d $latest_snapshot ]] && return 0
-
-	latest_snapshot=
-	return 1
-}
-readonly -f set-latest_snapshot
-
-# ----------------------------------------------------------------------------
 # misc functions to support run-rsync
 # ----------------------------------------------------------------------------
 
