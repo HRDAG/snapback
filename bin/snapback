@@ -433,14 +433,11 @@ function set-lock_paths() {
 	set-glob "$type_glob" && type_glob=$glob
 	set-glob "$name_glob" && name_glob=$glob
 
-	[[    $type_glob == a*  ]] && type_glob=*
-	[[    $type_glob == u*  ]] && type_glob=c
-	if [[ $name_glob == all ]]
+	[[     $type_glob == a*  ]] && type_glob=*
+	[[     $type_glob == u*  ]] && type_glob=c
+	if [[  $name_glob == all ]]
 	   then name_glob=*
-	elif [[ ${is_drive_name_upper_cased-} ]]
-	   then name_glob=${name_glob^^}
-	elif [[ ${is_drive_name_capitalized-} && $name_glob != *[\[,]* ]]
-	   then name_glob=${name_glob^} # only capitalize a single name
+	   else set-name_glob "$name_glob"
 	fi
 
 	eval "set -- $lock_dir/$type_glob*-$name_glob.pid"
@@ -1144,6 +1141,19 @@ readonly -f source-drive-specific-config-file
 
 # ---------------------------------
 
+set-name_glob() {
+	name_glob=$1
+
+	if   [[ $is_drive_name_upper_cased ]]
+	   then name_glob=${name_glob^^}
+	elif [[ $is_drive_name_capitalized ]]
+	   then name_glob=${name_glob^} # fails if {} or leading []
+	fi
+}
+readonly -f set-name_glob
+
+# ----------------------
+
 readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9'
 
 have-cmd \
@@ -1168,12 +1178,8 @@ _set-drive_name() {
 	    [[ $is_quiet ]] && { $xtrace; return 1; }
 	    abort "'$name' is not a valid drive-name"	; }
 
-	  if [[ $is_drive_name_upper_cased ]]
-	   then drive_name=${name^^}
-	elif [[ $is_drive_name_capitalized ]]
-	   then drive_name=${name^}
-	   else drive_name=$name
-	fi
+	set-name_glob $name
+	drive_name=$name_glob
 	_last_fully_initialized_drive_name= # prevent weird bugs
 	$xtrace
 }
@@ -3197,14 +3203,9 @@ _set-src_names_regex() {
 
 	[[ ${src_names_glob-} ]] || { src_names_regex=. ; return ; }
 
-	if   [[ $is_drive_name_upper_cased ]]
-	   then src_names_glob=${src_names_glob^^}
-	elif [[ $is_drive_name_capitalized ]]
-	   then src_names_glob=${src_names_glob^} # fails if {} or leading []
-	fi
-
-	local regex
-	set-regex--from-glob "$src_names_glob"
+	local name_glob regex
+	set-name_glob "$src_names_glob"
+	set-regex--from-glob "$name_glob"
 	src_names_regex=$regex
 }
 readonly -f _set-src_names_regex
@@ -3272,13 +3273,21 @@ set-basename2dirs-basename2is_keep() {
 
 	declare -g -A basename2dirs basename2is_keep
 
+	local name_glob
+	set-name_glob "${excluded_src_names_glob-}"
+	local excluded_names_glob=$name_glob
+
 	local dir basename
 	while read dir
-	   do	if [[ $dir != */.keep ]]
-		   then basename=${dir##*/}
-		   else dir=${dir%/.keep}
-			basename=${dir##*/}
-			basename2is_keep[$basename]=$true
+	   do	basename=${dir%/.keep}
+		basename=${basename##*/}
+
+		[[ $excluded_names_glob ]] &&
+		   set -- $drive_dir_prefix$excluded_names_glob/$basename &&
+		   [[ $# != 0 && -d $1 ]] && continue
+
+		if [[ $dir == */.keep ]]
+		   then basename2is_keep[$basename]=$true
 			is-arg1-in-arg2  $dir \
 			 ${basename2dirs[$basename]-} && continue # duplicate?
 		fi
@@ -3419,8 +3428,9 @@ declare is_update=$false
 
 function update-drive() {
 	local ignore_slow_sources=$false
-	[[ $1 == -S  ]] && {  ignore_slow_sources=$true  ; shift; }
-	[[ $1 == -s* ]] && { local src_names_glob=${1#-s}; shift; }
+	[[ $1 == -S  ]] && {  ignore_slow_sources=$true; shift; }
+	[[ $1 == -s* ]] && { local          src_names_glob=${1#-?}; shift; }
+	[[ $1 == -e* ]] && { local excluded_src_names_glob=${1#-?}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
 	assert-not-option $1
 
@@ -3442,7 +3452,6 @@ function update-drive() {
 	    wait-for-full-snapshots $num_full_link_dests
 
 	set-srcs_dst_file
-
 	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
 	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
 
@@ -4282,10 +4291,26 @@ set-min_rows-min_rows_with_df-rows_left() {
 }
 readonly -f set-min_rows-min_rows_with_df-rows_left
 
-# --------------------------------------------
+# -------------------------------------------------------
 
 readonly syslog_errors_dir=$status_dir/syslog-errors
 readonly syslog_errors_count_msg_file=$syslog_errors_dir/count-msg.txt
+
+create-status_dir() {
+
+	[[ -d $status_dir ]] && return
+
+	sudo mkdir $status_dir &&
+	set-admin_group &&
+	sudo chgrp $admin_group $status_dir &&
+	sudo chmod g+w,g+s $status_dir ||
+	    { local s=$?; rmdir $status_dir; abort-function " -> $s"; }
+
+	sudo mkdir $syslog_errors_dir
+}
+readonly -f create-status_dir
+
+# --------------------------------------------
 
 show-errors-in-syslog() {
 
@@ -5618,21 +5643,6 @@ readonly -f _set-record--from-syslog-file
 
 # -------------------------------------------------------
 
-create-status_dir() {
-
-	[[ -d $status_dir ]] && return
-
-	sudo mkdir $status_dir &&
-	set-admin_group &&
-	sudo chgrp $admin_group $status_dir &&
-	sudo chmod g+w,g+s $status_dir || abort-function " -> $?"
-
-	sudo mkdir $syslog_errors_dir
-}
-readonly -f create-status_dir
-
-# -------------------------------------------------------
-
 readonly big_swapouts_file=$syslog_errors_dir/big-swapouts.txt
 
 search-syslog-for-big-swapouts() {
@@ -6080,11 +6090,13 @@ case $action in
 	;;
    # update-drives  [-s src-names-glob] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
-	[[ $1 == -S  ]] && { ignore_slow_sources_opt=$1    ; shift  ; }
-	[[ $1 == -s  ]] && {      src_names_glob_opt="$1$2"; shift 2; }
+	[[ $1 == -S  ]] && {     ignore_slow_sources_opt=$1    ; shift  ; }
+	[[ $1 == -s  ]] && {          src_names_glob_opt="$1$2"; shift 2; }
+	[[ $1 == -e  ]] && { excluded_src_names_glob_opt="$1$2"; shift 2; }
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
-	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}"
+	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}
+				 ${excluded_src_names_glob_opt-}"
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
