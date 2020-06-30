@@ -2350,7 +2350,7 @@ readonly -f append-to-link_dest_dirs
 # ----------------------
 
 set-link_dest_opts() {
-	local link_dest_dirs=${1:-$link_dest_dirs}
+	local link_dest_dirs=" $*"	# leading SPACE for next command ...
 
 	link_dest_opts=${link_dest_dirs// / --link-dest=}
 }
@@ -2380,7 +2380,7 @@ set-link_dest_opts--for-backup-drive() {
 	link_dest_dirs=
 	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
 	append-to-link_dest_dirs $new_snapshot $useful_snapshots
-	      set-link_dest_opts
+	      set-link_dest_opts $link_dest_dirs
 }
 readonly -f set-link_dest_opts--for-backup-drive
 
@@ -2412,7 +2412,8 @@ set-link_dest_opts--for-copy-snapshot() {
 	done
 	restore-tracing
 	append-to-link_dest_dirs $new_snapshot $newer_snapshots # old to new
-	      set-link_dest_opts
+
+	      set-link_dest_opts $link_dest_dirs
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
 
