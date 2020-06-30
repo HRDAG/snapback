@@ -225,7 +225,12 @@ unset arg
 
 [[ $Trace && $debug_opt ]] && IfRun=:
 
-trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
+trap print-call-stack EXIT
+normal_exit() {
+	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
+	exit ${1-}
+}
+_exit() { normal_exit "$@"; }		# short form, for test action
 
 readonly tmp_1=$tmp_dir/$our_name-1-$$	; tmp=$tmp_1
 readonly tmp_2=$tmp_dir/$our_name-2-$$
@@ -3089,7 +3094,7 @@ function copy-snapshots() {
 	    abort-function "src_option(s) [-q] dst_drive_name"
 	set-drive_name $1
 
-	lock -w copy || exit 1
+	lock -w copy || normal_exit 1
 
 	local status=0
 	for src_snapshot in $src_snapshots
@@ -3481,7 +3486,7 @@ function update-drive() {
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	IfRun= lock $lock_opt copy > /dev/null || exit 1
+	IfRun= lock $lock_opt copy > /dev/null || normal_exit 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir-empty-partial-snapshots $drive_dir # in case previously crashed
@@ -3605,7 +3610,7 @@ create-jobs() {
 		fi
 	fi
 	if [[ $# == 0 ]]
-	   then [[ $is_cron ]] && exit 0
+	   then [[ $is_cron ]] && normal_exit 0
 		abort-function "$type: pass a (non-excluded) drive name"
 	fi
 
@@ -3617,7 +3622,7 @@ create-jobs() {
 	if [[ $are_recursing ]]
 	   then $Trace
 		$function $opts $1
-		exit $?
+		normal_exit $?
 	fi
 
 	[[ $UID == 0 || $* == [zZ] ]] || $IfRun abort "run with sudo"
@@ -4595,7 +4600,8 @@ watch() {
 	[[ $action == watch ]] && exec-watch-snapback-w
 
 	set -- $(list-drive-dirs -a)
-	[[ $# != 0 ]] || { echo "No mounted backup drives found."; exit; }
+	[[ $# != 0 ]] || 
+	    { echo "No mounted backup drives found."; normal_exit; }
 	local all_drive_dirs=$* drive_dirs=
 
 	local do_tput=$true show_all=$false
@@ -4740,7 +4746,7 @@ readonly drive_monitor_lock_path=$lock_dir/monitor.pid
 monitor-drives() {
 	local dirs=${*-}		# only for testing
 
-	lockpid -q $drive_monitor_lock_path || exit 0 # probably running
+	lockpid -q $drive_monitor_lock_path || normal_exit 0 # probably running
 
 	trap '' HUP			# we want to run forever
 
@@ -4915,7 +4921,7 @@ dir-sizes() {
 			printf "%46s: %s\n" "$space ($avg)" ${file%%.*}
 		done | sort -k4n	# sort by total size
 		echo
-		exit
+		normal_exit
 	fi
 
 	if [[ $1 == -f ]]
@@ -4924,7 +4930,7 @@ dir-sizes() {
 		PS3="specify file number: "
 		select file
 		   do	[[ $file ]] && break
-		done || exit 1
+		done || normal_exit 1
 	   else file=  name=${1-}
 		[[ $# == 1 && $name && $name != -* ]] ||
 		   abort-with-action-Usage
@@ -6152,11 +6158,11 @@ case $action in
 	for name in $drive_names
 	    do	check-snapshot-hard-links $name || status=$?
 	done
-	exit $status
+	normal_exit $status
 	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
-	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit $?; }
+	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; normal_exit $?; }
 
 	local opts=
 	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
@@ -6189,7 +6195,7 @@ case $action in
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
    ( l*s*dr*v* | ld | ll | ls | lw | df )
-	[[ $action == lw ]] || { list-drive-dirs "$@"; exit; }
+	[[ $action == lw ]] || { list-drive-dirs "$@"; normal_exit; }
 	show-filesystem-info-that-fits "$@" # for -a (??)
 	;;
 
@@ -6447,10 +6453,10 @@ case $action in
    # for "snapcrypt close": don't eject if didn't get any backups today
    ( has*new*snapshots | hsn ) undo-action-abbrev has-new-snapshots
 	drive=$1
-	[[ $drive == *[zZ] ]] && exit 0	# for debugging
+	[[ $drive == *[zZ] ]] && normal_exit 0	# for debugging
 
 	$Trace
-	is-drive-mounted $drive || exit 0
+	is-drive-mounted $drive || normal_exit 0
 	suspend-tracing
 	set -- $drive/$snapshot_glob	# all the _successful_ snapshots
 	restore-tracing
@@ -6470,7 +6476,7 @@ case $action in
 	if [[ $# == 1 ]]
 	   then  _set-drive_name $1 &&
 		 _set-drive_dir &&
-		echo $drive_dir && exit 0
+		echo $drive_dir && normal_exit 0
 	fi
 
 	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
@@ -6516,7 +6522,7 @@ case $action in
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo status=$?
 	set +x
-	[[ $cmd =~ ^_?set- ]] || exit
+	[[ $cmd =~ ^_?set- ]] || normal_exit
 
 	header "variables set by $cmd"
 	var_names=${cmd#*set-} ; var_names=${var_names%%--*}
@@ -6536,27 +6542,27 @@ case $action in
    ( test | t ) undo-action-abbrev test; $Trace
 	for name in E I Q; do latest_snapshot=
 	    drive_dir=$drive_dir_prefix$name; echo -n "$drive_dir: "
-	    set-latest_snapshot && echo $latest_snapshot || echo $? ; done;exit
+	    set-latest_snapshot && echo $latest_snapshot || echo $? ;done;_exit
 
 	for glob in "a*{b,c,{d,e},[fg]}?z"
-	   do  set-regex--from-glob "$glob"; echo "$glob -> $regex"; done; exit
+	   do  set-regex--from-glob "$glob"; echo "$glob -> $regex"; done;_exit
 
-	check-logs; exit
+	check-logs; _exit
 
 	set-drive_name ${1:-F}; set-drive_dir $drive_name
-	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) ; exit $?
+	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) ; _exit $?
 
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
 	for (( n=0; ; n++ )) ; do
-	    is-drive-usage-too-high -e $n && echo $n && exit; done
+	    is-drive-usage-too-high -e $n && echo $n && _exit; done
 
-	_set-drive_name PID; _set-drive_dir; exit $?
+	_set-drive_name PID; _set-drive_dir; _exit $?
 
 	set-drive_name $1
 	set-drive_dir $drive_name
 	is-suspended copy; echo "is-suspended -> $?"
-	is-sleeping  copy; echo "is-sleeping  -> $?"; exit
+	is-sleeping  copy; echo "is-sleeping  -> $?"; _exit
 
 	set-drive_name ${1:-X}
 	set-drive_dir $drive_name; d=$drive_name
@@ -6565,50 +6571,50 @@ case $action in
 	ss=${1-2020-05-25,08}
 	fgrep $ss $arg_file > $tmp
 	[[ -s $tmp ]] || abort $tmp is empty
-	fill-in-unpruned-empty-snapshots $tmp; exit
+	fill-in-unpruned-empty-snapshots $tmp; _exit
 	[[ -s $arg_file ]] || abort "$arg_file empty"
-	fill-in-unpruned-empty-snapshots $arg_file; exit
+	fill-in-unpruned-empty-snapshots $arg_file; _exit
 
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
-	is-copy-higher-priority-than-prune; echo $?; exit
+	is-copy-higher-priority-than-prune; echo $?; _exit
 
 	date "$log_date_format"
 	print-call-stack test
-	print-call-stack; exit
+	print-call-stack; _exit
 
 	set-drive_name ${1:-E}
-	fastest-snapshots /backup/E/2020-05-17,08 /backup/F/2020-05-17,08; exit
+	fastest-snapshots /backup/E/2020-05-17,08 /backup/F/2020-05-17,08;_exit
 
-	set-executables--in-process-groups   $* || exit 1
-	echo $executables; exit
-	set-PID_ps_fields--in-process-groups $* || exit 1
-	echo $PID_ps_fields; exit
+	set-executables--in-process-groups   $* || _exit 1
+	echo $executables; _exit
+	set-PID_ps_fields--in-process-groups $* || _exit 1
+	echo $PID_ps_fields; _exit
 	is-suspended $*; echo $?
-	is-sleeping  $*; echo $?; exit
+	is-sleeping  $*; echo $?; _exit
 
 	set-drive_name ${1:-J}
 	suspend-tracing
 	set -- $drive_dir_prefix$drive_name/$snapshot_day_glob,00
 	restore-tracing
 	fastest-snapshots $drive_dir_prefix*/${1##*/} # oldest snapshot
-	exit
+	_exit
 
 	set-drive_name $1; set-type2date_span; type=${2-hour}
 	date_span=${type2date_span[$type]}; set-date_span--scaled
-	set-date_span_diff $type; echo $date_span_diff; exit
+	set-date_span_diff $type; echo $date_span_diff; _exit
 
 	for final in "" hour da m y
-	    do	set-prune_types $final; echo $prune_types; done; exit
+	    do	set-prune_types $final; echo $prune_types; done; _exit
 
-	set-lock_paths prune /backup/E/2020-05-08,08; echo $lock_paths; exit
+	set-lock_paths prune /backup/E/2020-05-08,08; echo $lock_paths; _exit
 
-	set -x; set-type2date_span; TraceV exit
-	set -x; validate-prune_globs; exit
+	set -x; set-type2date_span; TraceV _exit
+	set -x; validate-prune_globs; _exit
 
 	for l in ${!warning_level2tput_args[*]}
 	    do set-warning_string $l $l; echo -n "$warning_string  "; done;echo
-	print-string-colors; exit
+	print-string-colors; _exit
 
 	for str in 1 22 333 4444 55555 666666
 	   do	set-warning_string error $str
@@ -6616,59 +6622,55 @@ case $action in
 		printf -v foo ".%4s." $padded_colorized_string
 		fix-padded-colorized-string-vars foo
 		echo "$foo"
-	done; exit
+	done; _exit
 
 	set-hours() { set-hours--from-minutes "$@"; }
 	ml="0 1 2 4 6 10 20 30 50 54 56 58 59 60 90 120 125 150"
 	for m in $ml; do set-hours    $m; printf "%3s -> %s\n" $m $hours; done
 	for m in $ml; do set-hours -1 $m; printf "%3s -> %s\n" $m $hours; done
-	exit
+	_exit
 
 	set -- $drive_dir_prefix${1^^}/$snapshot_glob*
 	new_snapshot=$1
 	TraceV 0 new_snapshot
 	_have-full-snapshot
-	echo "status=$?"
-	exit
+	echo "status=$?"; _exit
 
 	_set-type-name prune /backup/J/2019-11-27,12
-	TraceV 0 type name; exit
+	TraceV 0 type name; _exit
 
 	print-call-stack test
-	print-call-stack; exit
+	print-call-stack; _exit
 
 	lock backup x
 	lock backup x || abort badness 1
 	unlock backup
-	unlock backup && abort badness 2
-	exit
+	unlock backup && abort badness 2; _exit
 
 	lock backup x
 	lock backup x || abort badness 1
-	lock backup y && abort badness 2
-	exit
+	lock backup y && abort badness 2; _exit
 
 	local -a digit2name=(zero one two three)
-	echoEV action digit2name[2]; exit
+	echoEV action digit2name[2]; _exit
 
 	for dev in $(df | cut -d' ' -f1)
 	    do	[[ -b $dev ]] || continue
 		set-FS_label--from-FS-device $dev
 		echo "$dev -> $FS_label"
-	done; exit
+	done; _exit
 
 	for path in ${drive_dir_prefix}A ${drive_dir_prefix}A/latest /dev/sdb5
 	    do	set-FS_type--from-path $path
 		echo "$path -> $FS_type"
-	done; exit
+	done; _exit
 
 	set-drive_name ${1:-a}
 	TraceV 0 drive_name file_for_logging log_msg_prefix
 	echo  test1
 	echoE test2
 	log 0 test3
-	abort test4
-	exit
+	abort test4; _exit
 
 	echoE test
 	foo() {
@@ -6680,20 +6682,21 @@ case $action in
 		TraceV 0 i i
 		abort "aborting test"
 	}
-	foo; exit
+	foo; _exit
 
 	for size in 1023 1024 2123123 3123123123 4123123123123 5123123123123123
 	    do	set-readable_du_size $size; echo "$readable_du_size from $size"
-	done; exit
+	done; _exit
 
 	drive_dir=${drive_dir_prefix}F
 	cd $drive_dir
 	log=/tmp/root/F-190126-15.bz2
-	_links-error-msg "nnn 'Too many links'"; exit
+	_links-error-msg "nnn 'Too many links'"; _exit
 	;;
 
    ( * )
-	warn "'$action' is not a recognized action, run: $_our_name -h"; exit 1
+	warn "'$action' is not a recognized action, run: $_our_name -h"
+	normal_exit 1
 	;;
 esac
 
@@ -6703,3 +6706,4 @@ readonly -f process-action
 # ----------------------
 
 process-action "$@"
+normal_exit $?
