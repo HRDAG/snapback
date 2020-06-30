@@ -2333,12 +2333,12 @@ readonly -f set-link_dest_dirs
 
 # ----------------------
 
-set-link_dest_opts() {
+update-link_dest_opts() {
 	local link_dest_dirs=${1:-$link_dest_dirs}
 
-	link_dest_opts=${link_dest_dirs// / --link-dest=}
+	link_dest_opts+=${link_dest_dirs// / --link-dest=}
 }
-readonly -f set-link_dest_opts
+readonly -f update-link_dest_opts
 
 # ------------------------------------------------------------------
 
@@ -2361,9 +2361,10 @@ readonly -f set-sorted_snapshots
 set-link_dest_opts--for-backup-drive() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
+	link_dest_opts=
 	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
 	set-link_dest_dirs $new_snapshot $useful_snapshots
-	set-link_dest_opts
+	update-link_dest_opts
 }
 readonly -f set-link_dest_opts--for-backup-drive
 
@@ -2372,6 +2373,8 @@ readonly -f set-link_dest_opts--for-backup-drive
 # need to link to snapshots that are earlier and later than $new_snapshot
 set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}   useful_snapshots
+
+	link_dest_opts=
 
 	set-sorted_snapshots -r
 	suspend-tracing
@@ -2382,7 +2385,7 @@ set-link_dest_opts--for-copy-snapshot() {
 	done
 	restore-tracing
 	set-link_dest_dirs $new_snapshot $older_snapshots # newest to oldest
-	set-link_dest_opts
+	update-link_dest_opts
 
 	set-sorted_snapshots
 	suspend-tracing
@@ -2393,7 +2396,7 @@ set-link_dest_opts--for-copy-snapshot() {
 	done
 	restore-tracing
 	set-link_dest_dirs $new_snapshot $newer_snapshots # oldest to newest
-	set-link_dest_opts
+	update-link_dest_opts
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
 
