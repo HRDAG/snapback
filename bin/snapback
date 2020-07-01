@@ -3142,7 +3142,7 @@ function copy-snapshot-rsync() {
 	cd_ ${dst_snapshot%/*}	     # can kill job with: fuser -k -M $dst_dir
 	run-rsync -c $src_snapshot/. $dst_snapshot; local status=$?
 	cd_ $OLDPWD
-	declare -g previously_copied_snapshot=$dst_snapshot
+	previously_copied_snapshot=$dst_snapshot
 
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
