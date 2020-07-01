@@ -2322,13 +2322,13 @@ set-num_full_link_dests() {
 	   then declare -g -i num_full_link_dests=4
 	   else declare -g -i num_full_link_dests=2
 	fi
-return # old policy, for regression test
+
 	# if a file is new or modified,  we'll  check $num_full_link_dests
 	# drives to (hopelessly) look for a match; if $num_full_link_dests
 	# is 4 instead of 2, that's 4 extra dir-cache accesses (which
 	# require disk accesses on a cache miss) for no good reason, which
 	# can flush more useful entries from the cache: not worth it
-	num_full_link_dests=2
+	declare -g -i num_full_link_dests=2
 }
 readonly -f set-num_full_link_dests
 
@@ -5838,6 +5838,7 @@ search-syslog-for-errors() {
 
 	sed 's/.*[0-9]\][: ] *//' $syslog_search_results_file |
 	    fgrep -v "$big_swapout_string" |
+	    sed -r 's/ tag#[0-9]+/ tag#M/; s/-tag [0-9]+/-tag N/' |
 	    sort | uniq -c > $syslog_errors_count_msg_file.new &&
 	    mv $syslog_errors_count_msg_file.new $syslog_errors_count_msg_file
 }
