@@ -2374,6 +2374,8 @@ readonly -f append-to-link_dest_dirs
 
 set-link_dest_opts() {
 	local link_dest_dirs=" $*"	# leading SPACE for next command ...
+	(( $# <= 20 )) || 
+	    abort-function "$# is too many --link-dest opts for rsync (20 max)"
 
 	link_dest_opts=${link_dest_dirs// / --link-dest=}
 }
