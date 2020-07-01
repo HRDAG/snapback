@@ -2057,6 +2057,11 @@ _set-backup_period--for-prune() {
 	(( $backup_period>$backup_period_for_update &&
 			  $backup_period_for_update > 0 )) &&
 	    backup_period=$backup_period_for_update # don't prune copy'ed dirs
+
+	# sometimes backup_period or (update version) set higher for speed
+	(( $backup_period>$max_backup_period_for_pruning &&
+			  $max_backup_period_for_pruning > 0 )) &&
+	    backup_period=$max_backup_period_for_pruning
 }
 
 # -----------------------------------------------------------------------------
