@@ -2339,6 +2339,8 @@ set-link_dest_dirs() {
 	local new_snapshot=$1; shift
 	# $* is now snapshots for --link-dest, ones closet to $new_snapshot 1st
 
+	link_dest_dirs=
+
 	while [[ ! -d ${1-} || ${1-} == $new_snapshot* ]]
 	   do	[[ $# != 0 ]] || return	# we might not have any snapshots
 		shift
@@ -2350,7 +2352,7 @@ set-link_dest_dirs() {
 	remember-tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
-	local snapshot link_dest_dirs=
+	local snapshot
 	for snapshot in $*
 	    do	[[ -d  $snapshot ]] || continue
 		set -- $snapshot/*
