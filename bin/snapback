@@ -6437,8 +6437,8 @@ case $action in
 			ls > $stash.$which.ls
 		done
 		set-reversed_words $stash.*.ls; set -- $reversed_words
-		diff -q $*  &&  mv $stash.new.ls $stash.pruned.ls &&
-				rm $stash.old.ls &&
+		diff -d -q $*  &&  mv $stash.new.ls $stash.pruned.ls &&
+				   rm $stash.old.ls &&
 		   echo -e "\nSame results, see $stash*" && continue
 		warn "regression, see: diff -u $*"
 	done
