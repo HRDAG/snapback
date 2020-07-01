@@ -4444,8 +4444,7 @@ readonly -f show-stats-section-1
 show-stats-section-2-if-it-fits() {
 
 	local -i rows_used=6		# stats plus 1 blank line
-	local -i extra=$min_rows_with_df-$rows_for_one_detailed_rsync
-	(( $rows_left >= ($min_rows + $rows_used + $extra) )) || return
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
 
 	echo				# first row used
 	setup-snapshot-stats .rm
