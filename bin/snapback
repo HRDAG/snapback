@@ -2444,11 +2444,12 @@ readonly -f set-older_link_dest_dirs-newer_link_dest_dirs
 set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}
 
-	set-latest_snapshot
-
 	set-older_link_dest_dirs-newer_link_dest_dirs $new_snapshot
 
-	set-link_dest_opts $older_link_dest_dirs $newer_link_dest_dirs
+# old policy, for regression test
+set-link_dest_opts $older_link_dest_dirs $newer_link_dest_dirs
+return
+	set-latest_snapshot
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
 
