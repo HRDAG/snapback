@@ -60,15 +60,14 @@ readonly -f set-popped_word-is_last_word--from-list
 readonly -f set-division set-warning_string
 readonly -f confirm run-function set-backup_suffix
 
-is-set \
-coder ||				# can set custom value in $config_file
-coder=sweikart@gmail.com
+is-set coder ||				# can set custom value in $config_file
+       coder=sweikart@gmail.com
 
-if   is-arg1-in-arg2 -E $* # regression-test wants alternative config_dir?
+if   is-arg1-in-arg2 -E $1 # regression-test wants alternative config_dir?
    then _args=" $*"
 	config_dir=${_args/* -E /}
 	config_dir=${config_dir%% *}
-elif is-arg1-in-arg2 -e $* # regression-test wants config_file inside snapshot?
+elif is-arg1-in-arg2 -e $1 # regression-test wants config_file inside snapshot?
    then _root=$our_path
 	if [[  $_root =~ .*/([0-9]{4}-[^/]+|latest)/ ]]
 	   then _root=${BASH_REMATCH[0]}
