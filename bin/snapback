@@ -438,8 +438,8 @@ set-name_glob() {
 	if   [[ $is_drive_name_upper_cased ]]
 	   then name_glob=${name_glob^^}
 	elif [[ $is_drive_name_capitalized ]]
-	   then [[ $name_glob == [$allowed_drive_name_dir_chars]* ]] ||
-		    abort-function "ask $coder to support fancy glob"
+	   then [[ $name_glob != [[{]* ]] ||
+		    abort-function "ask $coder to support this glob: $glob"
 		name_glob=${name_glob^}
 	fi
 }
