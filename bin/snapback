@@ -426,6 +426,25 @@ function set-glob() {
 }
 readonly -f set-glob
 
+# ----------------------
+
+set-name_glob() {
+	name_glob=$*
+
+	local glob
+	  set-glob $name_glob
+	 name_glob=$glob
+
+	if   [[ $is_drive_name_upper_cased ]]
+	   then name_glob=${name_glob^^}
+	elif [[ $is_drive_name_capitalized ]]
+	   then [[ $name_glob == [$allowed_drive_name_dir_chars]* ]] ||
+		    abort-function "ask $coder to support fancy glob"
+		name_glob=${name_glob^}
+	fi
+}
+readonly -f set-name_glob
+
 # ---------------------------------
 
 function set-lock_paths() {
@@ -1149,25 +1168,6 @@ readonly -f source-drive-specific-config-file
 # ---------------------------------
 
 readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
-
-set-name_glob() {
-	name_glob=$*
-
-	local glob
-	  set-glob $name_glob
-	 name_glob=$glob
-
-	if   [[ $is_drive_name_upper_cased ]]
-	   then name_glob=${name_glob^^}
-	elif [[ $is_drive_name_capitalized ]]
-	   then [[ $name_glob == [$allowed_drive_name_dir_chars]* ]] ||
-		    abort-function "ask $coder to support fancy glob"
-		name_glob=${name_glob^}
-	fi
-}
-readonly -f set-name_glob
-
-# ----------------------
 
 have-cmd \
 _set-drive_name ||	   # can define custom version in $config_file
