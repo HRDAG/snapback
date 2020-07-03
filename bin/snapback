@@ -2403,6 +2403,7 @@ readonly -f set-sorted_snapshots
 set-link_dest_opts--for-backup-drive() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
+	set-num_full_link_dests
 	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
 	set-link_dest_dirs $new_snapshot $useful_snapshots
 	set-link_dest_opts $link_dest_dirs
@@ -2917,7 +2918,8 @@ prevent-pruning() {
 	    do	kill-job-on-drives prune $resource
 		if [[ ! $did_prevent_pruning_print_stack ]]
 		   then  did_prevent_pruning_print_stack=$true
-			print-call-stack $drive_name | tee -a $file_for_logging
+			print-call-stack "warning: awaiting $drive_name lock" |
+			    tee -a $file_for_logging
 		fi
 		$IfRun sleep 1
 	done
