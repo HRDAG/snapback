@@ -20,7 +20,9 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
    Manages rsync's "Too many links" error (admin solves by adjusting pruning);
      such errors are emailed to (per-drive) sysadmin(s).
    Built-in statistical tool to optimize filesystem inode-size and block-size.
-   Has adaptable, comprehensive, real-time dashboard (can dump full snapshot).
+   Efficiently uses directory and inode VFS caches, without abusing them.
+   Has adaptable, comprehensive, real-time dashboard (can dump full snapshot);
+      dashboard shows big swapout rates (for VFS tuning), and OS/drive errors.
    Can safely/easily kill/suspend backup, copy, prune job, e.g. to eject drive.
    Maintains history of snapshots on each ejected drive (for offsite requests).
    Built-in regression tests to ensure reliable development.
