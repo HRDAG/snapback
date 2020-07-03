@@ -225,11 +225,11 @@ unset arg
 [[ $Trace && $debug_opt ]] && IfRun=:
 
 trap print-call-stack EXIT
-normal_exit() {
+exit_normally() {
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
 	exit ${1-}
 }
-_exit() { normal_exit "$@"; }		# short form, for test action
+_exit() { exit_normally "$@"; }		# short form, for test action
 
 readonly tmp_1=$tmp_dir/$our_name-1-$$	; tmp=$tmp_1
 readonly tmp_2=$tmp_dir/$our_name-2-$$
@@ -3153,7 +3153,7 @@ function copy-snapshots() {
 	    abort-function "src_option(s) [-q] dst_drive_name"
 	set-drive_name $1
 
-	lock -w copy || normal_exit 1
+	lock -w copy || exit_normally 1
 
 	local status=0
 	for src_snapshot in $src_snapshots
@@ -3545,7 +3545,7 @@ function update-drive() {
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	IfRun= lock $lock_opt copy > /dev/null || normal_exit 1
+	IfRun= lock $lock_opt copy > /dev/null || exit_normally 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir-empty-partial-snapshots $drive_dir # in case previously crashed
@@ -3669,7 +3669,7 @@ create-jobs() {
 		fi
 	fi
 	if [[ $# == 0 ]]
-	   then [[ $is_cron ]] && normal_exit 0
+	   then [[ $is_cron ]] && exit_normally 0
 		abort-function "$type: pass a (non-excluded) drive name"
 	fi
 
@@ -3681,7 +3681,7 @@ create-jobs() {
 	if [[ $are_recursing ]]
 	   then $Trace
 		$function $opts $1
-		normal_exit $?
+		exit_normally $?
 	fi
 
 	[[ $UID == 0 || $* == [zZ] ]] || $IfRun abort "run with sudo"
@@ -4661,7 +4661,7 @@ watch() {
 
 	set -- $(list-drive-dirs -a)
 	[[ $# != 0 ]] || 
-	    { echo "No mounted backup drives found."; normal_exit; }
+	    { echo "No mounted backup drives found."; exit_normally; }
 	local all_drive_dirs=$* drive_dirs=
 
 	local do_tput=$true show_all=$false
@@ -4806,7 +4806,7 @@ readonly drive_monitor_lock_path=$lock_dir/monitor.pid
 monitor-drives() {
 	local dirs=${*-}		# only for testing
 
-	lockpid -q $drive_monitor_lock_path || normal_exit 0 # probably running
+	lockpid -q $drive_monitor_lock_path || exit_normally 0 # probably running
 
 	trap '' HUP			# we want to run forever
 
@@ -4981,7 +4981,7 @@ dir-sizes() {
 			printf "%46s: %s\n" "$space ($avg)" ${file%%.*}
 		done | sort -k4n	# sort by total size
 		echo
-		normal_exit
+		exit_normally
 	fi
 
 	if [[ $1 == -f ]]
@@ -4990,7 +4990,7 @@ dir-sizes() {
 		PS3="specify file number: "
 		select file
 		   do	[[ $file ]] && break
-		done || normal_exit 1
+		done || exit_normally 1
 	   else file=  name=${1-}
 		[[ $# == 1 && $name && $name != -* ]] ||
 		   abort-with-action-Usage
@@ -6222,11 +6222,11 @@ case $action in
 	for name in $drive_names
 	    do	check-snapshot-hard-links $name || status=$?
 	done
-	normal_exit $status
+	exit_normally $status
 	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
-	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; normal_exit $?; }
+	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit_normally $?; }
 
 	local opts=
 	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
@@ -6259,7 +6259,7 @@ case $action in
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
    ( l*s*dr*v* | ld | ll | ls | lw | df )
-	[[ $action == lw ]] || { list-drive-dirs "$@"; normal_exit; }
+	[[ $action == lw ]] || { list-drive-dirs "$@"; exit_normally; }
 	show-filesystem-info-that-fits "$@" # for -a (??)
 	;;
 
@@ -6517,10 +6517,10 @@ case $action in
    # for "snapcrypt close": don't eject if didn't get any backups today
    ( has*new*snapshots | hsn ) undo-action-abbrev has-new-snapshots
 	drive=$1
-	[[ $drive == *[zZ] ]] && normal_exit 0	# for debugging
+	[[ $drive == *[zZ] ]] && exit_normally 0	# for debugging
 
 	$Trace
-	is-drive-mounted $drive || normal_exit 0
+	is-drive-mounted $drive || exit_normally 0
 	suspend-tracing
 	set -- $drive/$snapshot_glob	# all the _successful_ snapshots
 	restore-tracing
@@ -6540,7 +6540,7 @@ case $action in
 	if [[ $# == 1 ]]
 	   then  _set-drive_name $1 &&
 		 _set-drive_dir &&
-		echo $drive_dir && normal_exit 0
+		echo $drive_dir && exit_normally 0
 	fi
 
 	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
@@ -6586,7 +6586,7 @@ case $action in
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo status=$?
 	set +x
-	[[ $cmd =~ ^_?set- ]] || normal_exit
+	[[ $cmd =~ ^_?set- ]] || exit_normally
 
 	header "variables set by $cmd"
 	var_names=${cmd#*set-} ; var_names=${var_names%%--*}
@@ -6760,7 +6760,7 @@ case $action in
 
    ( * )
 	warn "'$action' is not a recognized action, run: $_our_name -h"
-	normal_exit 1
+	exit_normally 1
 	;;
 esac
 
@@ -6770,4 +6770,4 @@ readonly -f process-action
 # ----------------------
 
 process-action "$@"
-normal_exit $?
+exit_normally $?
