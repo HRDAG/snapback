@@ -2295,10 +2295,12 @@ function set-latest_snapshot() {
 	[[ $latest_snapshot ]] && return 0
 
 	latest_snapshot=$drive_dir/latest
-	[[ -d $latest_snapshot ]] && return 0
+	[[ -d $latest_snapshot ]] || { latest_snapshot= ; return 1; }
 
-	latest_snapshot=
-	return 1
+	local absolute_dir
+	set-absolute_dir $latest_snapshot
+	latest_snapshot=$absolute_dir
+	return 0
 }
 readonly -f set-latest_snapshot
 
@@ -2326,8 +2328,8 @@ set-num_full_link_dests() {
 	# if a file is new or modified,  we'll  check $num_full_link_dests
 	# drives to (hopelessly) look for a match; if $num_full_link_dests
 	# is 4 instead of 2, that's 4 extra dir-cache accesses (which
-	# require disk accesses on a cache miss) for no good reason, which
-	# can flush more useful entries from the cache: not worth it
+	# require disk accesses on a cache miss) for no good reason,
+	# which can flush more useful entries from the cache: not worth it
 	declare -g -i num_full_link_dests=2
 }
 readonly -f set-num_full_link_dests
@@ -2346,8 +2348,6 @@ set-link_dest_dirs() {
 	done
 	[[ -d ${1-} ]] || return
 
-	set-num_full_link_dests
-
 	remember-tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
@@ -2361,8 +2361,8 @@ set-link_dest_dirs() {
 		case $snapshot in
 		    (*.links) (( ++links_snapshots > 3 )) && continue ;;
 		    (*.*    ) (( ++junky_snapshots > 2 )) && continue ;;
-		    ( *     ) (( ++goody_snapshots > $num_full_link_dests )) &&
-				 break ;;
+		    ( *     ) (( ++goody_snapshots >=$num_full_link_dests )) &&
+				 link_dest_dirs+=" $PWD/$snapshot" && break ;;
 		esac
 		link_dest_dirs+=" $PWD/$snapshot"
 		suspend-tracing
@@ -2413,44 +2413,77 @@ readonly -f set-link_dest_opts--for-backup-drive
 
 # need to link to snapshots that are earlier and later than $new_snapshot
 set-older_link_dest_dirs-newer_link_dest_dirs() {
-	local new_snapshot=$1   useful_snapshots
+	local new_snapshot=$1; shift; local excluded_dirs=$*   useful_snapshots
+	TraceV 5 new_snapshot excluded_dirs
 
 	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
 	suspend-tracing
 	local older_snapshots=
 	for snapshot in $useful_snapshots
 	   do	[[ $snapshot < $new_snapshot ]] || continue
-		older_snapshots+="$snapshot "
+		is-arg1-in-arg2 $PWD/$snapshot $excluded_dirs && continue
+		older_snapshots+=" $snapshot"
 	done
 	restore-tracing
 	set-link_dest_dirs $new_snapshot $older_snapshots # newest to older
 	older_link_dest_dirs=$link_dest_dirs
+	TraceV 5 older_link_dest_dirs
 
 	set-sorted_snapshots
 	suspend-tracing
 	local newer_snapshots=
 	for snapshot in $useful_snapshots
 	   do	[[ $snapshot > $new_snapshot ]] || continue
-	       newer_snapshots+="$snapshot "
+		is-arg1-in-arg2 $PWD/$snapshot $excluded_dirs && continue
+		newer_snapshots+=" $snapshot"
 	done
 	restore-tracing
 	set-link_dest_dirs $new_snapshot $newer_snapshots # oldest to newer
 	newer_link_dest_dirs=$link_dest_dirs
+	TraceV 5 newer_link_dest_dirs
 }
 readonly -f set-older_link_dest_dirs-newer_link_dest_dirs
 
 # ---------------------------------
 
-# need to link to snapshots that are earlier and later than $new_snapshot
+# Need to link to snapshots that are earlier and later than $new_snapshot.
+# See doc/Install.txt for tuning the VFS cache (directory and inode caches).
 set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}
 
-	set-older_link_dest_dirs-newer_link_dest_dirs $new_snapshot
+	# Optimize the order in which snapshots are chosen for the
+	# --link-dest= options: The first snapshot should be the one that was
+	# most-recently scanned, so it's in the VFS cache (directory and inode
+	# caches), even if it's not the "nearest neighbor" (and thus less
+	# likely to have what's needed): the most-recently-scanned snapshot is
+	# $previously_copied_snapshot, the one we just created.  Since this
+	# first snapshot is older than $new_snapshot, the next snapshot should
+	# be newer: the 'latest' snapshot should be in the VFS cache, because
+	# it's the most recent backup (if it's not in the cache, it needs to
+	# be in the cache, for the next backup). For subsequent snapshots, do:
+	# older, then newer, then even-older, then even-newer, ...
 
-# old policy, for regression test
-set-link_dest_opts $older_link_dest_dirs $newer_link_dest_dirs
-return
-	set-latest_snapshot
+	local link_dest_fast_dirs=${previously_copied_snapshot-}
+	set-latest_snapshot && link_dest_fast_dirs+=" $latest_snapshot"
+
+	# $link_dest_fast_dirs usually has 2 dirs && num_full_link_dests == 2,
+	# so we only need 1 (full) snapshot from $older_link_dest_dirs and from
+	# $newer_link_dest_dirs, so we won't bother to alternate between them.
+
+	set-num_full_link_dests
+	[[ ${previously_copied_snapshot-} && $latest_snapshot ]] &&
+	    let num_full_link_dests-=1
+	TraceV 5  link_dest_fast_dirs num_full_link_dests
+	set-older_link_dest_dirs-newer_link_dest_dirs $new_snapshot \
+						      $link_dest_fast_dirs
+
+	# For a server that has continually-added and never-deleted files
+	# (like a git or snap server), $latest_snapshot is almost as
+	# effective as $newer_link_dest_dirs; otherwise, you might want
+	# $newer_link_dest_dirs to precede $older_link_dest_dirs
+	set-link_dest_opts \
+	    $link_dest_fast_dirs $older_link_dest_dirs $newer_link_dest_dirs
+	TraceV 5 link_dest_opts
 }
 readonly -f set-link_dest_opts--for-copy-snapshot
 
