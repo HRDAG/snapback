@@ -2479,7 +2479,7 @@ set-link_dest_opts--for-copy-snapshot() {
 						      $link_dest_fast_dirs
 
 	# For a server that has continually-added and never-deleted files
-	# (like a git or snap server), $latest_snapshot is almost as
+	# (like a git or snapshot server), $latest_snapshot is almost as
 	# effective as $newer_link_dest_dirs; otherwise, you might want
 	# $newer_link_dest_dirs to precede $older_link_dest_dirs
 	set-link_dest_opts \
@@ -4424,8 +4424,10 @@ show-errors-in-syslog() {
 	[[ -s $syslog_errors_count_msg_file ]] || return
 
 	while read count msg
-	   do	set-warning_string error "$msg"
-		printf "%3d: %s\n" $count "$warning_string"
+	   do	local -i msg_len=${#msg}
+		(( $msg_len > $columns - 7 )) && msg="${msg:0:$columns-11} ..."
+		set-warning_string error "$msg"
+		printf "%4d: %s\n" $count "$warning_string"
 		let rows_left-=1
 	done < $syslog_errors_count_msg_file
 
@@ -5781,16 +5783,12 @@ function print-big-swapouts-file() {
 	fi
 
 	set -- $(< $file)
+	local values=$*
 	local record
-	printf -v record "%8s:%3s:" "$prefix" $#
-
-	while (( $# > 0 ))
-	   do	local pages_per_sec=$1
-		[[ $pages_per_sec == *.?? ]] &&
-		    pages_per_sec=${pages_per_sec%?}
-		record+=" $pages_per_sec,"
-		shift
-	done
+	printf -v record "%8s:%3s: %s" "$prefix" $# "${values// /, }"
+	local -i record_len=${#record}
+	(( $record_len > $columns - 11 )) &&
+	    record="${record:0:$columns-15} ..."
 
 	[[ ! ${is_action-} ]] && echo
 	echo "${record%,} pages/sec"
