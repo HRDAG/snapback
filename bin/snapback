@@ -4537,7 +4537,11 @@ show-FS-repair-cmds() {
 	(( $ps_lines > 1 )) || { rm $ps_file; return 1; }
 	set-warning_string warning "FS repair commands, e.g. fsck"
 	header "$warning_string"
-	echo; sed -r 's@ -.* (/dev/)@ ... \1@' $ps_file
+	echo
+	if [[ $watch_opt ]]
+	   then sed -r 's@ -.* (/dev/)@ ... \1@' $ps_file
+	   else cat $ps_file
+	fi
 	let rows_left-=$(( 3 + $ps_lines ))
 	rm $ps_file
 }
