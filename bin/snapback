@@ -5828,6 +5828,7 @@ readonly -f find-and-print-big-swapouts
 
 is-set   OS_error_strings || 		# can set custom value in $config_file
 readonly OS_error_strings="\
+I/O error
 systemd can't connect to socket for service"
 
 is-set   USB_error_strings || 		# can set custom value in $config_file
@@ -5869,9 +5870,14 @@ search-syslog-for-errors() {
 	fgrep -f $search_str_file $syslog_path > $syslog_search_results_file &&
 	      rm $search_str_file
 
+	local file=$syslog_search_results_file
+	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
+	local sectors="<$#: $*>"
 	sed 's/.*[0-9]\][: ] *//' $syslog_search_results_file |
 	    fgrep -v "$big_swapout_string" |
-	    sed -r 's/ tag#[0-9]+/ tag#M/; s/-tag [0-9]+/-tag N/' |
+	    sed -r -e 's/ tag#[0-9]+/ tag#M/; s/-tag [0-9]+/-tag N/' \
+		   -e  's/(blocks? +)[xa-f0-9]+/\1N/' \
+		   -e "s/(sectors? +)[0-9]+.*/\1$sectors/" |
 	    sort | uniq -c > $syslog_errors_count_msg_file.new &&
 	    mv $syslog_errors_count_msg_file.new $syslog_errors_count_msg_file
 }
