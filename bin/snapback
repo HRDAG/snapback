@@ -4525,10 +4525,32 @@ readonly -f show-stats-section-3-if-it-fits
 
 # --------------------------------------------
 
+is-set   FS_repair_cmd_regex ||		# can set custom value in $config_file
+readonly FS_repair_cmd_regex='xfs_repair|fsck(\.[^ ]+)?'
+
+show-FS-repair-cmds() {
+
+	local ps_file=$tmp_1
+	ps -o $ps_keywords -U root |
+	    egrep -e %MEM -e "\b($FS_repair_cmd_regex)\b" > $ps_file
+	local -i ps_lines=$(wc -l < $ps_file)
+	(( $ps_lines > 1 )) || { rm $ps_file; return 1; }
+	set-warning_string warning "FS repair commands, e.g. fsck"
+	header "$warning_string"
+	echo; sed -r 's@ -.* (/dev/)@ ... \1@' $ps_file
+	let rows_left-=$(( 3 + $ps_lines ))
+	rm $ps_file
+}
+readonly -f show-FS-repair-cmds
+
+# --------------------------------------------
+
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
 	print-big-swapouts-file && let rows_left-=2
+
+	show-FS-repair-cmds
 
 	if [[ $show_all ]]
 	   then filesystem-geometry $drive_dirs
