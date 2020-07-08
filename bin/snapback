@@ -4162,7 +4162,7 @@ readonly -f set-drive_dirs-names_msg-names_glob
 
 set-rows-columns-COLUMNS() {
 
-	if [[ $watch_opt ]]
+	if [[ ${watch_opt-} || -t 1 ]]
 	   then set -f; set -- $(stty -a); set +f
 		declare -g -i rows=${5%;} columns=${7%;}
 	   else declare -g -i rows=9999   columns=9999
@@ -4423,6 +4423,9 @@ show-errors-in-syslog() {
 
 	[[ -s $syslog_errors_count_msg_file ]] || return
 
+	set-warning_string warning \
+			   "count subset of $(basename $syslog_path) record"
+	echo "$warning_string"
 	while read count msg
 	   do	local -i msg_len=${#msg}
 		(( $msg_len > $columns - 7 )) && msg="${msg:0:$columns-11} ..."
@@ -4432,7 +4435,7 @@ show-errors-in-syslog() {
 	done < $syslog_errors_count_msg_file
 
 	echo
-	let rows_left-=1
+	let rows_left-=2
 }
 readonly -f show-errors-in-syslog
 
@@ -5811,7 +5814,10 @@ function print-big-swapouts-file() {
 	set -- $(< $file)
 	local values=$*
 	local record
-	printf -v record "%8s:%3s: %s" "$prefix" $# "${values// /, }"
+	if [[ ${is_action-} ]]
+	   then printf -v record "%8s:%3s: %s" "$prefix" $# "${values// /, }"
+	   else printf -v record   "%s %s: %s" $# "$prefix" "${values// /, }"
+	fi
 	local -i record_len=${#record}
 	(( $record_len > $columns - 11 )) &&
 	    record="${record:0:$columns-15} ..."
@@ -5832,6 +5838,8 @@ find-and-print-big-swapouts() {
 
 	[[ -d $big_swapouts_dir ]] || mkdir -p $big_swapouts_dir
 
+	set-rows-columns-COLUMNS
+
 	local log regex=$big_swapouts_regex
 	for log in $syslog_path-* $syslog_path
 	    do	local date=${log##*-}; date=${date%.*}
@@ -5843,7 +5851,7 @@ find-and-print-big-swapouts() {
 		set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
 		[[ $# != 0 ]] && echo $*
 		} > $cache_file
-		cat $cache_file
+		print-big-swapouts-file -a $cache_file
 	done
 }
 readonly -f find-and-print-big-swapouts
