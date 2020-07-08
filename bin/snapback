@@ -4424,7 +4424,7 @@ show-errors-in-syslog() {
 	[[ -s $syslog_errors_count_msg_file ]] || return
 
 	set-warning_string warning \
-			   "count subset of $(basename $syslog_path) record"
+			   "count subset-of-$(basename $syslog_path)-record"
 	echo "$warning_string"
 	while read count msg
 	   do	local -i msg_len=${#msg}
