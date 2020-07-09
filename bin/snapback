@@ -4433,8 +4433,9 @@ readonly -f create-status_dir
 # --------------------------------------------
 
 show-errors-in-syslog() {
+	local errors_count_msg_file=$syslog_errors_count_msg_file
 
-	[[ -s $syslog_errors_count_msg_file ]] || return
+	[[ -s $errors_count_msg_file ]] || return
 
 	set-warning_string warning \
 			   "count subset-of-$(basename $syslog_path)-record"
@@ -4452,7 +4453,7 @@ show-errors-in-syslog() {
 		set-warning_string $type "$msg"
 		printf "%4d: %s\n" $count "$warning_string"
 		let rows_left-=1
-	done < $syslog_errors_count_msg_file
+	done < $errors_count_msg_file
 
 	echo
 	let rows_left-=2
@@ -5916,6 +5917,7 @@ readonly syslog_search_string_varnames="
 readonly syslog_search_results_file=$syslog_errors_dir/_errors.txt
 
 search-syslog-for-errors() {
+	local syslog_file=$syslog_path
 
 	local search_str_file=$tmp_1
 	local varname
@@ -5924,7 +5926,7 @@ search-syslog-for-errors() {
 	done > $search_str_file
 
 	create-status_dir
-	fgrep -f $search_str_file $syslog_path > $syslog_search_results_file &&
+	fgrep -f $search_str_file $syslog_file > $syslog_search_results_file &&
 	      rm $search_str_file
 
 	local file=$syslog_search_results_file
