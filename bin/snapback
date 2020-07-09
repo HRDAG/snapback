@@ -3891,9 +3891,9 @@ _recalculate-stats-vars() {
 		[[ $# != 0 ]] && {
 		local snapshot snap prev_snap= snaps=
 		for snapshot
-		    do	if [[ $skip_empty ]]
-			   then set -- $snapshot/*
-				[[ $# != 0 ]] || continue
+		    do	set -- $snapshot/*
+			if [[ $skip_empty ]]
+			   then [[ $# != 0 ]] || continue
 			fi
 			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != $snap ]] && snaps+="$snap "
