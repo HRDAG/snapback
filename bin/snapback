@@ -3888,6 +3888,7 @@ _recalculate-stats-vars() {
 		suspend-tracing
 		set -- $snapshot_glob$suffix
 		restore-tracing
+
 		[[ $# != 0 ]] && {
 		local snapshot snap prev_snap= snaps=
 		for snapshot
@@ -3905,6 +3906,10 @@ _recalculate-stats-vars() {
 		set -- $snaps
 		}
 		restore-tracing
+
+		set-lock_paths backup,copy $drive_name
+		[[ $lock_paths ]] && local is_writing=$true ||local is_writing=
+		[[ $is_writing && $skip_empty ]] && shift
 
 		nums+="$name=$# "
 
@@ -6654,6 +6659,8 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-lock_paths backup,copy $1; abort $lock_paths
+
 	for name in E I Q; do latest_snapshot=
 	    drive_dir=$drive_dir_prefix$name; echo -n "$drive_dir: "
 	    set-latest_snapshot && echo $latest_snapshot || echo $? ;done;_exit
