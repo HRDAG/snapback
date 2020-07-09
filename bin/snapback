@@ -4442,7 +4442,14 @@ show-errors-in-syslog() {
 	while read count msg
 	   do	local -i msg_len=${#msg}
 		(( $msg_len > $columns - 7 )) && msg="${msg:0:$columns-11} ..."
-		set-warning_string error "$msg"
+		case $msg in
+		    ( *"uas_eh_abort_handler"*		      |	\
+		      *"uas_eh_device_reset_handler start"*   |	\
+		      *"uas_eh_device_reset_handler success"*	  )
+			  local type=warning ;;
+		    ( * ) local type=error   ;;
+		esac
+		set-warning_string $type "$msg"
 		printf "%4d: %s\n" $count "$warning_string"
 		let rows_left-=1
 	done < $syslog_errors_count_msg_file
@@ -5882,7 +5889,8 @@ systemd can't connect to socket for service"
 
 is-set   USB_error_strings || 		# can set custom value in $config_file
 readonly USB_error_strings="\
-uas_eh_abort_handler"
+uas_eh_abort_handler
+uas_eh_device_reset_handler"
 
 is-set   XFS_error_strings || 		# can set custom value in $config_file
 readonly XFS_error_strings="\
