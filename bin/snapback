@@ -3816,13 +3816,14 @@ set-drive_usage() {
 
 		is-drive-usage-too-high && local warn=$true || local warn=
 		local     type=${max_drive_usage_percent:0:1}
-		local  percent=${max_drive_usage_percent#?}
+		local  percent=${max_drive_usage_percent#?}    _type
 		((  ${#percent} ==   1 )) && percent=0$percent
 		if [[ $percent  == 100 && $watch_opt ]]
 		   then set-warning_string error FULL
 			percent=$warning_string
 		elif [[ $warn && $watch_opt ]]
-		   then set-warning_string warning $percent%$type
+		   then [[ $percent == 99 ]] && _type=error || _type=warning
+			set-warning_string $_type $percent%$type
 			percent=$warning_string
 		   else percent=$percent%$type
 		fi
