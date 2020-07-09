@@ -4480,7 +4480,7 @@ show-stats-section-1() {
 	setup-snapshot-stats ''	      # was in show-stats-section-2-if-it-fits
 	echo "  Number complete/successful snapshots:  $stats_number"
 	setup-snapshot-stats .rm
-	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
+	echo "Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats .partial
 	echo " Number .partial snaps awaiting update:  $stats_number"
 	setup-snapshot-stats ''
