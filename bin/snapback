@@ -3894,6 +3894,8 @@ _recalculate-stats-vars() {
 		    do	set -- $snapshot/*
 			if [[ $skip_empty ]]
 			   then [[ $# != 0 ]] || continue
+			elif [[ $_suffix == .partial ]] #only count empty ones?
+			   then [[ $# == 0 ]] || continue
 			fi
 			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != $snap ]] && snaps+="$snap "
@@ -3954,7 +3956,7 @@ readonly -f _is-stats-cache-fresh
 
 setup-snapshot-stats() {
 	[[ $1 == -E ]] && { shift;local skip_empty=$true; } ||local skip_empty=
-	local suffix=$1
+	local suffix=$1 _suffix=$1
 	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
 
 	[[ $suffix ]] &&
@@ -4480,7 +4482,7 @@ show-stats-section-1() {
 	setup-snapshot-stats .rm
 	echo "# pruned .rm snapshots awaiting: rm -r:  $stats_number"
 	setup-snapshot-stats .partial
-	echo "# .partial snaps pending update (+err):  $stats_number"
+	echo " Number .partial snaps awaiting update:  $stats_number"
 	setup-snapshot-stats ''
 	echo "  Age of newest good snapshot, in days:  $stats_newest_age"
 }
