@@ -5769,8 +5769,9 @@ readonly -f finish-copy-backup-drive
 is-set   big_swapout_string ||		# can set custom value in $config_file
 readonly big_swapout_string="Severe demand for real memory"
 
+big_swapout_str=$big_swapout_string
 is-set   big_swapouts_regex ||		# can set custom value in $config_file
-readonly big_swapouts_regex=".* $big_swapout_string ([0-9]+)(\.[0-9]*)?pgs.*"
+readonly big_swapouts_regex=".* $big_swapout_str ([1-9][0-9]+)(\.[0-9]*)?pgs.*"
 
 _set-record--from-syslog-file() {
 	local log=${1:-$syslog_path}
