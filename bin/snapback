@@ -3891,7 +3891,11 @@ _recalculate-stats-vars() {
 		[[ $# != 0 ]] && {
 		local snapshot snap prev_snap= snaps=
 		for snapshot
-		    do	snap=${snapshot%$ending$suffix}
+		    do	if [[ $skip_empty ]]
+			   then set -- $snapshot/*
+				[[ $# != 0 ]] || continue
+			fi
+			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != $snap ]] && snaps+="$snap "
 			    prev_snap=$snap
 			suspend-tracing
@@ -3949,6 +3953,7 @@ readonly -f _is-stats-cache-fresh
 # ----------------------
 
 setup-snapshot-stats() {
+	[[ $1 == -E ]] && { shift;local skip_empty=$true; } ||local skip_empty=
 	local suffix=$1
 	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
 
@@ -4485,7 +4490,7 @@ readonly -f show-stats-section-1
 
 show-stats-section-2-if-it-fits() {
 
-	local -i rows_used=6		# stats plus 1 blank line
+	local -i rows_used=7		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
 
 	echo				# first row used
@@ -4494,8 +4499,9 @@ show-stats-section-2-if-it-fits() {
 	setup-snapshot-stats .links
 	echo " Number .links (failed 'ln') snapshots:  $stats_number"
 	echo "Days since newest 'Too many links' err:  $stats_newest_age"
-	setup-snapshot-stats .partial
-	echo "    Days since newest snapshot.partial:  $stats_newest_age"
+	setup-snapshot-stats -E .partial
+	echo "Number unfinished snapshots (.partial):  $stats_number"
+	echo "   Days since newest snapshot.partial :  $stats_newest_age"
 	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
 	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
 #	setup-snapshot-stats ''		# moved to show-stats-section-1
@@ -4539,7 +4545,7 @@ show-FS-repair-cmds() {
 	    egrep -e %MEM -e "\b($FS_repair_cmd_regex)\b" > $ps_file
 	local -i ps_lines=$(wc -l < $ps_file)
 	(( $ps_lines > 1 )) || { rm $ps_file; return 1; }
-	set-warning_string warning "FS repair commands, e.g. fsck"
+	set-warning_string warning "FS repair command(s), e.g. fsck"
 	header "$warning_string"
 	echo
 	if [[ $watch_opt ]]
