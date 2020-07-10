@@ -4436,7 +4436,7 @@ readonly -f create-status_dir
 show-errors-in-syslog() {
 	local errors_count_msg_file=${1:-$syslog_errors_count_msg_file}
 
-	[[ -s $errors_count_msg_file ]] || return
+	[[ -s $errors_count_msg_file ]] && {
 
 	local header="count subset-of-$(basename $syslog_path)-record"
 	set-warning_string warning "${header^^}"
@@ -4459,6 +4459,11 @@ show-errors-in-syslog() {
 
 	echo
 	let rows_left-=2
+
+	}
+
+	[[ $all_drive_dirs ]] ||
+	    { echo "No mounted backup drives found."; exit_normally; }
 }
 readonly -f show-errors-in-syslog
 
@@ -4717,8 +4722,6 @@ watch() {
 	[[ $action == watch ]] && exec-watch-snapback-w
 
 	set -- $(list-drive-dirs -a)
-	[[ $# != 0 ]] || 
-	    { echo "No mounted backup drives found."; exit_normally; }
 	local all_drive_dirs=$* drive_dirs=
 
 	local do_tput=$true show_all=$false
