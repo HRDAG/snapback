@@ -5831,8 +5831,8 @@ search-syslog-for-big-swapouts() {
 
 	create-status_dir
 	[[ ! $big_swapouts_record ]] && > $big_swapouts_file && return
-	echo $big_swapouts_record > $big_swapouts_file.new &&
-	mv $big_swapouts_file.new $big_swapouts_file
+	echo $big_swapouts_record       > $big_swapouts_file.new &&
+	  mv $big_swapouts_file.new       $big_swapouts_file
 }
 readonly -f search-syslog-for-big-swapouts
 
