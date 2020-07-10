@@ -5808,15 +5808,15 @@ big_swapout_str=$big_swapout_string
 is-set   big_swapouts_regex ||		# can set custom value in $config_file
 readonly big_swapouts_regex=".* $big_swapout_str ([1-9][0-9]+)(\.[0-9]*)?pgs.*"
 
-_set-swapouts_record--from-syslog-file() {
+_set-big_swapouts_record--from-syslog-file() {
 	local log=${1:-$syslog_path}
 
 	local cat_cmd regex=$big_swapouts_regex
 	  set-cat_cmd $log
 	set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
-	swapouts_record=$*
+	big_swapouts_record=$*
 }
-readonly -f _set-swapouts_record--from-syslog-file
+readonly -f _set-big_swapouts_record--from-syslog-file
 
 # -------------------------------------------------------
 
@@ -5827,11 +5827,11 @@ search-syslog-for-big-swapouts() {
 
 	[[ ! $is_regression_test ]] || return
 
-	_set-swapouts_record--from-syslog-file $log
+	_set-big_swapouts_record--from-syslog-file $log
 
 	create-status_dir
-	[[ ! $swapouts_record ]] && > $big_swapouts_file && return
-	echo $swapouts_record > $big_swapouts_file.new &&
+	[[ ! $big_swapouts_record ]] && > $big_swapouts_file && return
+	echo $big_swapouts_record > $big_swapouts_file.new &&
 	mv $big_swapouts_file.new $big_swapouts_file
 }
 readonly -f search-syslog-for-big-swapouts
