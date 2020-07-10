@@ -4429,7 +4429,8 @@ create-status_dir() {
 	sudo chmod g+w,g+s $status_dir ||
 	    { local s=$?; rmdir $status_dir; abort-function " -> $s"; }
 
-	sudo mkdir $syslog_errors_dir
+	sudo mkdir     $syslog_errors_dir
+	sudo chmod g+w $syslog_errors_dir
 }
 readonly -f create-status_dir
 
