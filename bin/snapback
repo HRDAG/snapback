@@ -3671,7 +3671,7 @@ create-jobs() {
 		fi
 	fi
 	if [[ $# == 0 ]]
-	   then [[ $is_cron ]] && exit_normally 0
+	   then [[ $is_cron ]] && { check-logs; exit_normally 0; }
 		abort-function "$type: pass a (non-excluded) drive name"
 	fi
 
@@ -4421,6 +4421,8 @@ create-status_dir() {
 
 	[[ -d $status_dir ]] && return
 
+	[[ $is_cron ]] && exit_normally	# FIXME: cron can't run set-admin_group
+
 	sudo mkdir $status_dir &&
 	set-admin_group &&
 	sudo chgrp $admin_group $status_dir &&
@@ -4462,8 +4464,13 @@ show-errors-in-syslog() {
 
 	}
 
-	[[ $all_drive_dirs ]] ||
-	    { echo "No mounted backup drives found."; exit_normally; }
+	[[ $all_drive_dirs ]] && return
+
+	create-status_dir		# in case we just did an install
+	print-big-swapouts-file
+	show-FS-repair-cmds
+	echo "No mounted backup drives found."
+	exit_normally
 }
 readonly -f show-errors-in-syslog
 
