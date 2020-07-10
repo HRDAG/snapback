@@ -5962,7 +5962,7 @@ search-syslog-for-errors() {
 		   -e '/uas_eh_abort_handler/s/^sd /scrzzz /' \
 		   -e  's/(blocks? +)[xa-f0-9]+/\1N/' \
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
-		   -e "s/^.*(\\.$service_string)/q$services\\1/" |
+		   -e "s/^.*(\\.$service_string)/$services\\1/" |
 	    sort | sed 's/scrzzz /sd /' | # undo hack to group UAS msgs
 	    uniq -c > $cnt_msg_file.new &&
 		   mv $cnt_msg_file.new $cnt_msg_file
