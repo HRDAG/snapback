@@ -5848,19 +5848,28 @@ function print-big-swapouts-file() {
 	   else local prefix="big swapouts"
 	fi
 
-	set -- $(< $file)
-	local values=$*
+	local values=
+	local -i pages_per_sec
+	for pages_per_sec in $(< $file)
+	    do	local -i MBps=$(( ( ($pages_per_sec * 4) + 512 ) / 1024 ))
+		(( $MBps > 0 )) || break
+		values+="$MBps, "
+	done
+	values=${values%, }
+	set --  $values
+	[[ $# != 0 ]] || return 1
+
 	local record
 	if [[ ${is_action-} ]]
-	   then printf -v record "%8s:%3s: %s" "$prefix" $# "${values// /, }"
-	   else printf -v record   "%s %s: %s" $# "$prefix" "${values// /, }"
+	   then printf -v record "%8s:%3s: %s" "$prefix" $# "$values"
+	   else printf -v record   "%s %s: %s" $# "$prefix" "$values"
 	fi
 	local -i record_len=${#record}
-	(( $record_len > $columns - 11 )) &&
-	    record="${record:0:$columns-15} ..."
+	(( $record_len > $columns - 6 )) &&
+	    record="${record:0:$columns-10} ..."
 
 	[[ ! ${is_action-} ]] && echo
-	echo "${record%,} pages/sec"
+	echo "${record%,} MBps"
 
 	return 0
 }
