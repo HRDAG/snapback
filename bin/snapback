@@ -4566,7 +4566,7 @@ readonly -f show-stats-section-3-if-it-fits
 # --------------------------------------------
 
 is-set   FS_repair_cmd_regex ||		# can set custom value in $config_file
-readonly FS_repair_cmd_regex='xfs_repair|fsck(\.[^ ]+)?'
+readonly FS_repair_cmd_regex='[x]fs_repair|fsck(\.[^ ]+)?'
 
 show-FS-repair-cmds() {
 
