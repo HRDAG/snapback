@@ -5905,6 +5905,7 @@ Failed to connect stdout to the journal socket, ignoring: "
 is-set   USB_error_strings || 		# can set custom value in $config_file
 readonly USB_error_strings="\
 abort
+fail
 reset"
 
 is-set   XFS_error_strings || 		# can set custom value in $config_file
@@ -5942,8 +5943,8 @@ search-syslog-for-errors() {
 	done > $search_str_file
 
 	create-status_dir
-	fgrep -f $search_str_file $syslog_file > $search_file &&
-	      rm $search_str_file
+	fgrep -i -f $search_str_file $syslog_file > $search_file &&
+		 rm $search_str_file
 
 	local file=$search_file
 	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
@@ -5959,11 +5960,12 @@ search-syslog-for-errors() {
 	    fgrep -v "$big_swapout_string" |
 	    sed -r -e 's/ tag#[0-9]+/ tag#M/; s/-tag [0-9]+/-tag N/' \
 		   -e 's/( inflight):.*$//' \
-		   -e '/uas_eh_abort_handler/s/^sd /scrzzz /' \
+		   -e '/uas_eh_abort_handler/s/^sd /scrzz /' \
+		   -e    '/Result: hostbyte=/s/^sd /scrzzz /' \
 		   -e  's/(blocks? +)[xa-f0-9]+/\1N/' \
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
-	    sort | sed 's/scrzzz /sd /' | # undo hack to group UAS msgs
+	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
 	    uniq -c > $cnt_msg_file.new &&
 		   mv $cnt_msg_file.new $cnt_msg_file
 }
