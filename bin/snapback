@@ -4469,6 +4469,7 @@ show-errors-in-syslog() {
 
 	create-status_dir		# in case we just did an install
 	print-big-swapouts-file
+	 set-FS_repair_cmds_file-FS_repair_cmds_lines-rows_left
 	show-FS-repair-cmds
 	echo "No mounted backup drives found."
 	exit_normally
@@ -4568,22 +4569,38 @@ readonly -f show-stats-section-3-if-it-fits
 is-set   FS_repair_cmd_regex ||		# can set custom value in $config_file
 readonly FS_repair_cmd_regex='[x]fs_repair|fsck(\.[^ ]+)?'
 
+set-FS_repair_cmds_file-FS_repair_cmds_lines-rows_left() {
+
+	declare -g -i FS_repair_cmds_lines=0
+	FS_repair_cmds_file=$tmp_2
+	ps -o $ps_keywords -U root |
+	   egrep -e %MEM -e "\b($FS_repair_cmd_regex)\b" > $FS_repair_cmds_file
+	# unless there's a time in the file, no processes were found
+	[[ "$(< $FS_repair_cmds_file)" == *[0-9]:[0-9]* ]] || return 1
+
+	FS_repair_cmds_lines=$(wc -l < $FS_repair_cmds_file)
+	let rows_left-=$FS_repair_cmds_lines
+}
+readonly -f set-FS_repair_cmds_file-FS_repair_cmds_lines-rows_left
+
+# ----------------------
+
 show-FS-repair-cmds() {
 
-	local ps_file=$tmp_1
-	ps -o $ps_keywords -U root |
-	    egrep -e %MEM -e "\b($FS_repair_cmd_regex)\b" > $ps_file
-	local -i ps_lines=$(wc -l < $ps_file)
-	(( $ps_lines > 1 )) || { rm $ps_file; return 1; }
+	(( $FS_repair_cmds_lines > 0 )) && {
+
 	set-warning_string warning "FS repair command(s), e.g. fsck"
 	header "$warning_string"
 	echo
 	if [[ $watch_opt ]]
-	   then sed -r 's@ -.* (/dev/)@ ... \1@' $ps_file
-	   else cat $ps_file
+	   then sed -r 's@ -.* (/dev/)@ ... \1@' $FS_repair_cmds_file
+	   else cat $FS_repair_cmds_file
 	fi
-	let rows_left-=$(( 3 + $ps_lines ))
-	rm $ps_file
+	let rows_left-=$(( 3 + $FS_repair_cmds_lines ))
+
+	}
+
+	rm $FS_repair_cmds_file
 }
 readonly -f show-FS-repair-cmds
 
@@ -4592,7 +4609,7 @@ readonly -f show-FS-repair-cmds
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
-	print-big-swapouts-file && let rows_left-=2
+	print-big-swapouts-file
 
 	show-FS-repair-cmds
 
@@ -4753,13 +4770,17 @@ watch() {
 	    set-cron_cmds || cron_cmds=
 
 	local -i rows_left=$rows
-	set-min_rows-min_rows_with_df-rows_left
 
 	# --------------------------------------------------
 	# now we're ready to start showing stuff to the user
 	# --------------------------------------------------
 
-	show-errors-in-syslog		# do before access disk
+	set-FS_repair_cmds_file-FS_repair_cmds_lines-rows_left
+	[[ -s $big_swapouts_file ]] && let rows_left-=2
+
+	set-min_rows-min_rows_with_df-rows_left
+
+	show-errors-in-syslog	  # before access disk (can trigger I/O error)
 
 	show-sudo-config-warning-if-it-fits
 
