@@ -4446,7 +4446,7 @@ show-errors-in-syslog() {
 	echo "$warning_string"
 	while read count msg
 	   do	local -i msg_len=${#msg}
-		(( $msg_len > $columns - 7 )) && msg="${msg:0:$columns-11} ..."
+		(( $msg_len > $columns - 8 )) && msg="${msg:0:$columns-12} ..."
 		case $msg in
 		    ( *"uas_eh_abort_handler"*		      |	\
 		      *"uas_eh_device_reset_handler start"*   |	\
@@ -4456,7 +4456,7 @@ show-errors-in-syslog() {
 		    ( * ) local type=error   ;;
 		esac
 		set-warning_string $type "$msg"
-		printf "%4d: %s\n" $count "$warning_string"
+		printf "%5d: %s\n" $count "$warning_string"
 		let rows_left-=1
 	done < $errors_count_msg_file
 
@@ -5935,8 +5935,9 @@ Failed to connect stdout to the journal socket, ignoring: "
 is-set   USB_error_strings || 		# can set custom value in $config_file
 readonly USB_error_strings="\
 abort
-fail
-reset"
+rejecting I/O to
+reset
+Synchronize Cache(10) failed"
 
 is-set   XFS_error_strings || 		# can set custom value in $config_file
 readonly XFS_error_strings="\
@@ -5972,9 +5973,12 @@ search-syslog-for-errors() {
 	    do	echo "${!varname}"
 	done > $search_str_file
 
+	set -- $syslog_path-????????
+	[[ $syslog_file == $syslog_path && $# != 0 && -s $1 ]] &&
+	    syslog_file+=" $1"
 	create-status_dir
-	fgrep -i -f $search_str_file $syslog_file > $search_file &&
-		 rm $search_str_file
+	fgrep -f $search_str_file $syslog_file > $search_file &&
+	      rm $search_str_file
 
 	local file=$search_file
 	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
@@ -5992,7 +5996,8 @@ search-syslog-for-errors() {
 		   -e 's/( inflight):.*$//' \
 		   -e '/uas_eh_abort_handler/s/^sd /scrzz /' \
 		   -e    '/Result: hostbyte=/s/^sd /scrzzz /' \
-		   -e  's/(blocks? +)[xa-f0-9]+/\1N/' \
+		   -e  's/(blocks? +)[xa-f0-9]+/\1B/' \
+		   -e 's/( error 5 numblks? )[0-9]+/\1N/' \
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
 	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
