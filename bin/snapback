@@ -5937,8 +5937,7 @@ readonly -f find-and-print-big-swapouts
 
 is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
 readonly OS_ignorable_error_strings="\
-NoThing BlockEd Yet
-"
+[AppIndicatorSupport-WARN] Attempting to re-register"
 
 is-set   OS_error_strings || 		# can set custom value in $config_file
 readonly OS_error_strings="\
