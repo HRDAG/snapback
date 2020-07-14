@@ -5947,6 +5947,7 @@ Failed to connect stdout to the journal socket, ignoring: "
 is-set   USB_error_strings || 		# can set custom value in $config_file
 readonly USB_error_strings="\
 abort
+FAILED Result:
 rejecting I/O to
 reset
 Synchronize Cache(10) failed"
