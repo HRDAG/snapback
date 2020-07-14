@@ -5869,12 +5869,20 @@ function print-big-swapouts-file() {
 	   else local prefix="big swapouts"
 	fi
 
-	local values=
+	local values= is_first_value=$true
 	local -i pages_per_sec
 	for pages_per_sec in $(< $file)
 	    do	local -i MBps=$(( ( ($pages_per_sec * 4) + 512 ) / 1024 ))
 		(( $MBps > 0 )) || break
-		values+="$MBps, "
+		if [[ ${max_swapout_MBps-} ]]
+		   then local -i percent=$(( 100*$MBps / $max_swapout_MBps ))
+		   else local -i percent=0
+		fi
+		if [[  $is_first_value && ${max_swapout_MBps-} ]]
+		   then is_first_value=$false
+			values+="$MBps ($percent% of swap dev), "
+		   else values+="$MBps, "
+		fi
 	done
 	values=${values%, }
 	set --  $values
