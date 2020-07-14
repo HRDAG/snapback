@@ -5927,6 +5927,11 @@ readonly -f find-and-print-big-swapouts
 # check syslog for FS and OS errors
 # -----------------------------------------------------------------------------
 
+is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
+readonly OS_ignorable_error_strings="\
+NoThing BlockEd Yet
+"
+
 is-set   OS_error_strings || 		# can set custom value in $config_file
 readonly OS_error_strings="\
 I/O error
