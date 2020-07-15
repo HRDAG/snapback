@@ -4610,10 +4610,6 @@ readonly -f show-FS-repair-cmds
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
-	print-big-swapouts-file		# these are also run at end of ...
-
-	show-FS-repair-cmds		# ... show-errors-in-syslog
-
 	if [[ $show_all ]]
 	   then filesystem-geometry $drive_dirs
 	   else	local -i extra=$rows_for_one_detailed_rsync
@@ -4629,6 +4625,10 @@ show-filesystem-info-that-fits() {
 		run-lsblk $drive_dirs &&
 		let rows_left-=$num_drives+2
 	fi
+
+	print-big-swapouts-file		# these are also run at end of ...
+
+	show-FS-repair-cmds		# ... show-errors-in-syslog
 }
 readonly -f show-filesystem-info-that-fits
 
