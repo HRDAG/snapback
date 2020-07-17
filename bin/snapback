@@ -4384,8 +4384,8 @@ readonly -f set-cron_cmds
 set-min_rows-min_rows_with_df-rows_left() {
 
 	declare -g -i \
-	rows_for_one_detailed_rsync=4+3	# details section + 1 rsync
-	rows_for_one_detailed_rsync+=2	# hack, to ensure we see one full rsync
+	rows_for_one_detailed_rsync=5	# full details section + 1 rsync
+	rows_for_one_detailed_rsync+=2	# full rsync wraps across lines
 	#  prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#   copy-snap  (CS) includes parent of 'rsync' process (also in -C)
 	# backup-drive (BD) includes 'rsync' only
@@ -4394,7 +4394,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	local -i CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
 	local -i BD=$(echo  "$bkp_rsync_cmds" | fgrep -c r); num_bkp_rsyncs=$BD
-	(( BD > 0 )) && let BD+=3	# default
+	(( BD > 0 )) && let BD+=7	# header plus default variable values
 	(( BD > 0 )) && let BD+=$rows_for_one_detailed_rsync ||
 				 rows_for_one_detailed_rsync=0
 	TraceV 1 PD CS BD && let rows_left-=3
