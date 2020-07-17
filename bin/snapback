@@ -4201,7 +4201,7 @@ readonly -f set-max_ps_width
 # ----------------------
 
 # dynamically determine 'ps' fields based on screen column width
-setup-ps-variables-and-function() {
+setup-ps-variables-and-ps_-function() {
 
 	cputime=cputime				 # global
 	[[ ! $is_darwin ]] && cputime=$cputime:9 # Darwin's is wider
@@ -4240,7 +4240,7 @@ setup-ps-variables-and-function() {
 	# all field-names followed by '=' means "don't print header"
 	ps_() { ps $ps_H_opt -o ${ps_keywords//,/=,}= "$@"; }
 }
-readonly -f setup-ps-variables-and-function
+readonly -f setup-ps-variables-and-ps_-function
 
 # --------------------------------------------
 
@@ -4763,7 +4763,7 @@ watch() {
 
 	set-rows-columns-COLUMNS
 
-	setup-ps-variables-and-function
+	setup-ps-variables-and-ps_-function
 
 	set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds $drive_dirs
 
