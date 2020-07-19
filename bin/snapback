@@ -2308,7 +2308,7 @@ readonly -f set-latest_snapshot
 
 function _have-full-snapshot {
 
-	set -- $drive_dir/$snapshot_glob
+	set -- $snapshot_glob
 	[[ $# != 0 ]]
 }
 readonly -f _have-full-snapshot
