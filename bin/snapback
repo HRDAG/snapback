@@ -2359,9 +2359,9 @@ set-link_dest_dirs() {
 		# don't consider *.partial or *.links to be adequate;
 		# rsync allows 20 --link-dest options max (10 per direction)
 		case $snapshot in
-		    (*.links) (( ++links_snapshots > 3 )) && continue ;;
-		    (*.*    ) (( ++junky_snapshots > 2 )) && continue ;;
-		    ( *     ) (( ++goody_snapshots >=$num_full_link_dests )) &&
+		   (*.links) (( ++links_snapshots > 3 )) && continue ;;
+		   (*.*    ) (( ++junky_snapshots > 2 )) && continue ;;
+		   ( *     ) (( ++goody_snapshots >= $num_full_link_dests )) &&
 				 link_dest_dirs+=" $PWD/$snapshot" && break ;;
 		esac
 		link_dest_dirs+=" $PWD/$snapshot"
