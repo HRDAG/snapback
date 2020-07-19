@@ -2374,9 +2374,9 @@ readonly -f set-link_dest_dirs
 # ----------------------
 
 set-link_dest_opts() {
-	local link_dest_dirs=" $*"	# leading SPACE for next command ...
-	(( $# <= 20 )) || 
-	    abort-function "$# is too many --link-dest opts for rsync (20 max)"
+	local link_dest_dirs=" $*"	# leading SPACE for final command
+	(( $# <= 20 )) ||
+	    abort-function "$*: $# snapshots, exceeds rsync's max (20)"
 
 	link_dest_opts=${link_dest_dirs// / --link-dest=}
 }
@@ -6748,6 +6748,10 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	set-drive_name ${1:-J}; set-drive_dir $drive_name
+	cd $drive_dir_prefix/$drive_name
+	set-link_dest_opts--for-copy-snapshot /backup/J/2019-03-28,00; exit
+
 	_tmp_dir=/run/user/$(id -u)/tmp; mkdir -p $_tmp_dir
 	syslog=$_tmp_dir/syslog.txt search=_errors.txt cnt_msg=count-msg.txt
 	bzcat -f $1 > $syslog && set-rows-columns-COLUMNS &&
