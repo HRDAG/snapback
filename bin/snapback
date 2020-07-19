@@ -2350,7 +2350,7 @@ set-link_dest_dirs() {
 
 	remember-tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
-	_have-full-snapshot || junky_snapshots=-4 # big src, slow/flakey dst?
+	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
 	local snapshot
 	for snapshot in $*
 	    do	[[ -d  $snapshot ]] || continue
