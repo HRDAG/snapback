@@ -2308,7 +2308,7 @@ readonly -f set-latest_snapshot
 
 function _have-full-snapshot {
 
-	set -- ${new_snapshot%/$snapshot_glob*}/$snapshot_glob
+	set -- $drive_dir/$snapshot_glob
 	[[ $# != 0 ]]
 }
 readonly -f _have-full-snapshot
@@ -6749,14 +6749,15 @@ case $action in
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
 	set-drive_name ${1:-J}; set-drive_dir $drive_name
-	cd $drive_dir_prefix/$drive_name
-	set-link_dest_opts--for-copy-snapshot /backup/J/2019-03-28,00; exit
+	cd $drive_dir_prefix/$drive_name; new_snapshot=/backup/J/2019-03-28,00
+	# set -x; _have-full-snapshot; set +x; _exit
+	set-link_dest_opts--for-copy-snapshot $new_snapshot; _exit
 
 	_tmp_dir=/run/user/$(id -u)/tmp; mkdir -p $_tmp_dir
 	syslog=$_tmp_dir/syslog.txt search=_errors.txt cnt_msg=count-msg.txt
 	bzcat -f $1 > $syslog && set-rows-columns-COLUMNS &&
 	    search-syslog-for-errors $syslog $search $cnt_msg &&
-	    show-errors-in-syslog $cnt_msg; abort rm -f $syslog; exit
+	    show-errors-in-syslog $cnt_msg; abort rm -f $syslog; _exit
 
 	set-lock_paths backup,copy $1; abort $lock_paths
 
