@@ -270,10 +270,12 @@ readonly copy_snapshot_exe="$our_path $our_opts copy-snapshot"
 
 readonly hostname=${HOSTNAME%%.*}
 
+[[ -d /run ]] && readonly run_dir=/run || readonly run_dir=/var/run
+
 is-set   syslog_path ||			# can set custom value in $config_file
 readonly syslog_path=/var/log/syslog
 readonly     log_dir=/var/log/$our_name
-readonly  status_dir=/var/run/$our_name
+readonly  status_dir=$run_dir/$our_name
 
 # these are used by log(), besides $log_level
 file_for_logging=$log_dir/messages.log	     # set-drive_log_dir-* sets it

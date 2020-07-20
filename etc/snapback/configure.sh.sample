@@ -50,7 +50,8 @@ readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
 # readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # action 'dir-sizes' suggests?
 
 # You probably won't need to change these.
-readonly common_mount_options="nodev,nosuid,relatime,nodiratime"
+# You could replace "noatime" with "strictatime,lazytime" .
+readonly common_mount_options="nodev,nosuid,noatime"
 readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
 readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
