@@ -528,7 +528,7 @@ function lock-PID() {
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
 	fi >&2
-	print-call-stack ${drive_name-}
+	print-call-stack ${drive_name-} >&2
 	$xtrace
 	return 1
 }
@@ -1666,7 +1666,7 @@ function _should-run-prune {
 	fi
 
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	lock $lock_opt prune ||
+	lock $lock_opt prune 2> /dev/null || # prune probably already running
 	    { is-copy-higher-priority-than-prune; return 1; }
 
 	if [[ $is_cron ]]
