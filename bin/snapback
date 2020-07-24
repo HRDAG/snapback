@@ -1093,9 +1093,9 @@ create-lock_dir-log_dirs() {
 	[[ -d $log_dir && -d $lock_dir ]] || {
 	set-admin_group && group=$admin_group
 	sudo mkdir -p --mode=1777 $lock_dir
-	sudo mkdir -p	   $log_dir	; [[ $group ]] &&
-	sudo chgrp $group  $log_dir $lock_dir &&
-	sudo chmod g+w,g+s $log_dir $lock_dir
+	sudo mkdir -p	      $log_dir/drives; [[ $group ]] &&
+	sudo chgrp -R $group  $log_dir $lock_dir &&
+	sudo chmod -R g+w,g+s $log_dir $lock_dir
 	}
 	[[ -d $log_dir ]] || abort "need sudo privs for initial setup"
 
@@ -1137,7 +1137,7 @@ set-drive_log_dir-file_for_logging-is_regression_test() {
 	    is_regression_test=$true
 
 	if [[ $drive_name ]]
-	   then drive_log_dir=$log_dir/$drive_name
+	   then drive_log_dir=$log_dir/drives/$drive_name
 	   else drive_log_dir=$log_dir
 	fi
 	TraceV 3 drive_log_dir
@@ -2578,7 +2578,19 @@ readonly -f set-seconds--from-msecs
 
 # ---------------------------------
 
-readonly rsync_time_subdir=stats/rsync-minutes
+readonly rsync_time_subdir=stats/backups/rsync-minutes
+
+rm-dangling-symlinks() {
+
+	cd $log_dir/$rsync_time_subdir &> /dev/null || return
+
+	for drive in *
+	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
+	done
+}
+readonly -f rm-dangling-symlinks
+
+# ----------------------------------------------------------------------------
 
 archive-rsync-time-data() {
 
@@ -2616,7 +2628,7 @@ record-rsync-time() {
 	local link=$log_dir/$rsync_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
-	$IfRun ln -s ../../$drive_name/$rsync_time_subdir $link
+	$IfRun ln -s ../../../drives/$drive_name/$rsync_time_subdir $link
 
 	local cmd="echo $minutes > $file"
 	if [[ $debug_opt ]]
@@ -6328,7 +6340,7 @@ case $action in
    ( b*k*p*dr*v* | bd* | r*b* ) undo-action-abbrev backup-drives
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
-	[[ $1 == all ]] && rm-stale-locks
+	[[ $1 == all ]] && { rm-stale-locks; rm-dangling-symlinks; }
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then check-logs		# create data for watch
