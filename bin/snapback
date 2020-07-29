@@ -5997,18 +5997,20 @@ search-syslog-for-errors() {
 	local  search_file=${2:-$syslog_search_results_file}
 	local cnt_msg_file=${3:-$syslog_errors_count_msg_file}
 
-	local search_str_file=$tmp_1
+	local search_str_file=$tmp_1 ignorable_str_file=$tmp_2
 	local varname
 	for varname in $syslog_search_string_varnames
 	    do	echo "${!varname}"
 	done > $search_str_file
+	echo "$OS_ignorable_error_strings" > $ignorable_str_file
 
 	set -- $syslog_path-????????
 	[[ $syslog_file == $syslog_path && $# != 0 && -s $1 ]] &&
 	    syslog_file+=" $1"
 	create-status_dir
-	fgrep -f $search_str_file $syslog_file > $search_file &&
-	      rm $search_str_file
+	fgrep -f $search_str_file $syslog_file |
+	    fgrep -v -f $ignorable_str_file > $search_file
+	rm $search_str_file $ignorable_str_file
 
 	local file=$search_file
 	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
