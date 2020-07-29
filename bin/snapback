@@ -5974,8 +5974,8 @@ Internal error
 xfs_do_force_shutdown
 Shutting down filesystem"
 
-is-set   ext4_error_strings || 		# can set custom value in $config_file
-readonly ext4_error_strings="\
+is-set   extN_error_strings || 		# can set custom value in $config_file
+readonly extN_error_strings="\
 Corrupted index cache file
 EXT4-fs error
 group descriptors corrupted!"
@@ -5985,7 +5985,7 @@ readonly syslog_search_string_varnames="
      OS_error_strings
     USB_error_strings
     XFS_error_strings
-   ext4_error_strings
+   extN_error_strings
   big_swapout_string
 "
 
