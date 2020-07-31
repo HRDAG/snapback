@@ -3919,10 +3919,9 @@ readonly -f _set-colorized_new
 _recalculate-stats-vars() {
 
 	set-stats_format $all_drive_dirs
-	local nums= oldies= newies=
+	local dir drive_name nums= oldies= newies=
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
-		local name=$drive_name
 		cd $dir || abort "cd $dir"
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
@@ -3951,7 +3950,7 @@ _recalculate-stats-vars() {
 		[[ $lock_paths ]] && local is_writing=$true ||local is_writing=
 		[[ $is_writing && $skip_empty ]] && shift
 
-		nums+="$name=$# "
+		nums+="$drive_name=$# "
 
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
@@ -3963,8 +3962,8 @@ _recalculate-stats-vars() {
 		   then _set-colorized_new $new # warn if newest not today
 			new=$colorized_new
 		fi
-		oldies+="$name=$old "
-		newies+="$name=$new "
+		oldies+="$drive_name=$old "
+		newies+="$drive_name=$new "
 	done
 	cd $OLDPWD || abort "cd $OLDPWD"
 
