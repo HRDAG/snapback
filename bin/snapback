@@ -4956,6 +4956,18 @@ monitor-drives() {
 }
 readonly -f monitor-drives
 
+# -----------------------------------------------------------------------------
+
+re-start-monitor-drives-if-needed() {
+
+	[[ $our_path == /usr/* &&      # if this is installed command, and ...
+	   $our_path -nt $drive_monitor_lock_path ]] && # .. newer than process
+	    kill -9 $(<  $drive_monitor_lock_path) # then restart it ...
+	is-active-lock   $drive_monitor_lock_path ||
+	    $our_path monitor-drives	# make sure it's running
+}
+readonly -f re-start-monitor-drives-if-needed
+
 # ----------------------------------------------------------------------------
 # functions to calculate directory sizes for different FS parameters
 # ----------------------------------------------------------------------------
@@ -6380,7 +6392,7 @@ case $action in
 	   then check-logs		# create data for 'watch'
 		rm-stale-locks
 		rm-dangling-symlinks
-		$IfRun $our_path monitor-drives
+		re-start-monitor-drives-if-needed
 		wait			# want to stay in 'ps'
 	   else true
 	fi
@@ -6799,8 +6811,9 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	monitor-drives |& less; exit
-	lock-replica-of-snapshots --wait; exit $?
+	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
+	monitor-drives |& less; _exit
+	lock-replica-of-snapshots --wait; _exit $?
 
 	set-drive_name ${1:-J}; set-drive_dir $drive_name
 	cd $drive_dir_prefix/$drive_name; new_snapshot=/backup/J/2019-03-28,00
