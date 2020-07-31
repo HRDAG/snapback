@@ -3852,6 +3852,30 @@ readonly -f set-drive_usage
 
 # ----------------------------------------------------------------------------
 
+set-drive_response() {
+	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
+
+	set-stats_format $all_drive_dirs
+	customize-config-variables
+
+	local drive_dir drive_name responses=
+	for drive_dir in $all_drive_dirs
+	    do	_set-drive_name $drive_dir
+		local -i msecs=$(< $drive_msecs_dir/$drive_name)
+		if (( $msecs <= 9999 ))
+		   then set-division 2 $msecs 1000
+			local secs=$division
+		   else set-warning_string error HUNG
+			local secs=$warning_string
+		fi
+		responses+="$drive_name=$secs "
+	done
+	printf -v drive_response "$stats_format" $responses
+}
+readonly -f set-drive_response
+
+# ----------------------------------------------------------------------------
+
 _set-age() {
 	local snapshot=$1
 
@@ -4415,11 +4439,11 @@ set-min_rows-min_rows_with_df-rows_left() {
 				 rows_for_one_detailed_rsync=0
 	TraceV 1 PD CS BD && let rows_left-=3
 
-	# min overhead: 1 watch line, 1 blank line, 7 lines of section-1 stats,
+	# min overhead: 1 watch line, 1 blank line, 8 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	declare -g -i \
-	min_rows=$(( 9 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
+	min_rows=$(( 1 + 1 + 8 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
@@ -4523,6 +4547,8 @@ show-stats-section-1() {
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
 	set-drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
+	set-drive_response
+	echo "     Seconds to list drive's snapshots:  $drive_response"
 	setup-snapshot-stats ''	      # was in show-stats-section-2-if-it-fits
 	echo "  Number complete/successful snapshots:  $stats_number"
 	setup-snapshot-stats .rm
