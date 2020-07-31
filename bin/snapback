@@ -3916,7 +3916,7 @@ readonly -f _set-colorized_new
 
 # ---------------------------------
 
-_recalculate-stats-vars() {
+_recalculate-snapshot-stats-vars() {
 
 	set-stats_format $all_drive_dirs
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
@@ -3976,7 +3976,7 @@ _recalculate-stats-vars() {
 	fix-padded-colorized-string-vars \
 	    stats_number stats_oldest_age stats_newest_age # done with printf
 }
-readonly -f _recalculate-stats-vars
+readonly -f _recalculate-snapshot-stats-vars
 
 # ----------------------
 
@@ -4031,7 +4031,7 @@ setup-snapshot-stats() {
 		return
 	fi
 
-	_recalculate-stats-vars
+	_recalculate-snapshot-stats-vars
 
 	[[ $watch_opt ]] || return	# don't cache non-colorized 'w' data
 
