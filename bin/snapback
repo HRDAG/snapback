@@ -244,14 +244,15 @@ shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
 shopt -s nullglob			# $# is 0 if pathname expansion "fails"
 
-umask 02				# log and lock dirs are setgid sudo/etc
+readonly umask=02			# log dirs are setgid sudo/etc
+umask $umask
 
 FUNCNEST=100				# abort on infinite recursion
 
 fgrep -q -x "# version=$version" $config_file_sample ||
   $IfRun abort "$config_file_sample version= does not match $our_path"
 
-need-cmds fuser
+need-cmds fuser setsid
 
 $TraceAll
 
@@ -2243,7 +2244,7 @@ function prune-drive() {
 	set-drive_dir  $drive_name || return 1
 	restore-tracing
 
-	_should-run-prune || return 1
+	_should-run-prune || return 1 # calls 'lock prune' (unless $is_update)
 
 	local -i backup_period=$backup_period
 	    _set-backup_period--for-prune
@@ -4583,14 +4584,15 @@ readonly -f show-stats-section-3-if-it-fits
 # --------------------------------------------
 
 is-set   FS_repair_cmd_regex ||		# can set custom value in $config_file
-readonly FS_repair_cmd_regex='[x]fs_repair|fsck(\.[^ ]+)?'
+readonly FS_repair_cmd_regex='[x]fs_repair|[f]sck(\.[^ ]+)?'
 
 set-FS_repair_cmds_file() {
 
 	declare -g -i FS_repair_cmds_lines=0
 	FS_repair_cmds_file=$tmp_3
 	ps -o $ps_keywords -U root |
-	   egrep -e %MEM -e "\b($FS_repair_cmd_regex)\b" > $FS_repair_cmds_file
+	   egrep -e '%[M]EM' \
+		 -e "\b($FS_repair_cmd_regex)\b" > $FS_repair_cmds_file
 	# unless there's a time in the file, no processes were found
 	[[ "$(< $FS_repair_cmds_file)" == *[0-9]:[0-9]* ]] ||
 	    { > $FS_repair_cmds_file; return 1; }
@@ -4829,105 +4831,133 @@ readonly -f watch
 ##############################################################################
 ##############################################################################
 
-# if make check_period_msecs smaller, we'll check each drive more frequently
-# (but also consume more CPU, because 1 fork per drive per check-period)
-is-set        check_period_msecs ||	# can set custom value in $config_file
-declare -r -i check_period_msecs=200
-
-is-set        min_hung_msecs ||		# can set custom value in $config_file
-declare -r -i min_hung_msecs=2000
-is-set        min_slow_msecs ||		# can set custom value in $config_file
-declare -r -i min_slow_msecs=200	# it's also the disk read timeout ...
-# set-seconds--from-msecs $min_slow_msecs
-# readonly disk_read_timeout=$seconds
-
-declare -r -i   msec_increment=10
-set-division 3 $msec_increment 1000
-readonly         sec_increment=$division
+# -----------------------------------------------------------------------------
+# functions to implement independent process that monitors disk speed,
+# and create fast replicas of each drive's snapshots (so 'w' doesn't hang)
+# -----------------------------------------------------------------------------
 
 readonly _monitor_dir=$status_dir/drives
 
-_monitor-drives() {
+readonly _mon_globs_dir=$_monitor_dir/globs
 
-	create-status_dir
-	local response_dir=$_monitor_dir/response-msecs
+mon-launch-globs() {
 
-	for dir
-	    do	 _set-drive_name $dir || abort "bad $dir"
-		name=$drive_name
-		[[ ${name2PID[$name]-} ]] && continue	   # hung drive?
-		( set -- $dir/*.nul ) & name2PID[$name]=$! # not, test it
-		name2msecs[$name]=0	# we just started the test
-		for file in $_monitor_dir/{hung,slow}/$name
-		    do	echo $false > $file
-		done
-		echo 0 > $response_dir/test-run/$name
+	local drive_dir drive_name
+	for drive_dir
+	    do	 _set-drive_name $drive_dir || abort "bad $drive_dir"
+		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
+
+		cd $drive_dir || continue
+		local glob_file=$_mon_globs_dir/$drive_name
+		local -i now_msecs=$(date +%s%3N) # takes ~1 msec to fork+exec
+		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
+		drive_name2PID[$drive_name]=$!
+		drive_name2msecs[$drive_name]=$now_msecs
 	done
+}
+readonly -f mon-launch-globs
 
-	local -i msecs=0
-	# for speed, the following loop nevever forks (except 'sleep' at end)
+# -----------------------------------------------------------------------------
+
+readonly  _mon_lock_dir=$_monitor_dir/lock
+
+lock-replica-of-snapshots() {
+
+	umask 0				# so watch doesn't need sudo-lockpid
+	$IfRun lockpid --dir=$_mon_lock_dir "$@" ${FUNCNAME#*lock-}.pid
+	umask $umask
+}
+readonly -f lock-replica-of-snapshots
+
+# ----------------------
+
+readonly drive_msecs_dir=$_monitor_dir/msecs	       # response time, for 'w'
+readonly snapshots_replica_dir=$_monitor_dir/snapshots # 'w' uses, avoids hangs
+
+create-monitor-dirs() {
+
+	mkdir -p $_mon_globs_dir $drive_msecs_dir $snapshots_replica_dir
+	mkdir -p      $_mon_lock_dir
+	chmod ugo+rwx $_mon_lock_dir	# so don't need sudo-lockpid
+}
+
+mon-process-finished-glob() {
+	local drive_name=$1
+
+	local -i      now_msecs=$(date +%s%3N)
+	local -i    start_msecs=${drive_name2msecs[$drive_name]}
+	local -i response_msecs=now_msecs-start_msecs
+	echo $response_msecs > $drive_msecs_dir/$drive_name
+
+	local  snapshots_dir=$snapshots_replica_dir/$drive_name
+	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
+	cd_   $snapshots_dir
+	local glob_file=$_mon_globs_dir/$drive_name
+	lock-replica-of-snapshots --wait # 'w' action uses same locking
+	rm -f *
+	touch $(< $glob_file)
+	touch -r  $glob_file .
+	lock-replica-of-snapshots --release
+}
+readonly -f mon-process-finished-glob
+
+# -------------------------------------------------
+
+# check_period_msecs=200 & msec_increment=5 uses 25% of 1.8 GHz qi7-8565U core
+is-set        check_period_msecs ||	# can set custom value in $config_file
+declare -r -i check_period_msecs=200	# when look for newly-attached drives
+#
+is-set		msec_increment ||	# can set custom value in $config_file
+declare -r -i   msec_increment=5	# when check if any drives responded
+set-division 3 $msec_increment 1000
+readonly         sec_increment=$division
+
+mon-look-for-finished-globs() {
+
+	local -i  msecs=0
 	while (( $msecs < $check_period_msecs )) # not waited long?
-	   do	set -- ${!name2PID[*]}		 # any slow drives?
+	   do	set -- ${drive_name2PID[*]}	 # any backgrounded globbing?
 		[[ $# == 0 ]] && break		 # if not, time to re-test
-		for name
-		    do	if ! kill -0 ${name2PID[$name]} 2> /dev/null # done?
-			   then unset  name2PID[$name]
-				continue
-			fi
 
-			# drive is (a little bit?) slow
+		local drive_name
+		for drive_name in ${!drive_name2PID[*]}
+		    do	local PID=${drive_name2PID[$drive_name]}
+			[[ $PID ]] || continue		      # already done?
+			kill -0 $PID 2> /dev/null && continue # still running?
+			drive_name2PID[$drive_name]=	      # just finished
 
-			local  count_file=$response_dir/counter/$name
-			[[ -s $count_file ]] || echo 0 > $count_file
-			local -i count=$(< $count_file)
-			let count+=1
-			echo $count > $count_file
-
-			hung_msecs=${name2msecs[$name]}
-			name2msecs[$name]+=$msec_increment
-			echo $hung_msecs > $response_dir/test-run/$name
-
-			  if (( $hung_msecs >= $min_hung_msecs ))
-			   then echo $true  > $_monitor_dir/hung
-				echo $true  > $_monitor_dir/slow
-			elif (( $hung_msecs >= $min_slow_msecs ))
-			   then echo $false > $_monitor_dir/hung
-				echo $true  > $_monitor_dir/slow
-			   else echo $false > $_monitor_dir/hung
-				echo $false > $_monitor_dir/slow
-			fi
+			mon-process-finished-glob $drive_name
 		done
 
 		sleep   $sec_increment
 		msecs+=$msec_increment
 	done
 }
-readonly -f _monitor-drives
+readonly -f mon-look-for-finished-globs
 
-# ---------------------------------
+# -----------------------------------------------------------------------------
 
 readonly drive_monitor_lock_path=$lock_dir/monitor.pid
 
 monitor-drives() {
 	local dirs=${*-}		# only for testing
 
-	lockpid -q $drive_monitor_lock_path || exit_normally 0 # probably running
-
-	trap '' HUP			# we want to run forever
+	lockpid -q $drive_monitor_lock_path || exit_normally 0
 
 	create-status_dir
-	for sub_dir in slow hung response-msecs/{average,counter,test-run}
-	    do	mkdir -p $_monitor_dir/$sub_dir
-	done
+	create-monitor-dirs
 
-	SECONDS=0
-	local -A -i name2PID name2msecs
+	local -A -i drive_name2msecs	# drive response time in millliseconds
+	local -A    drive_name2PID	# not -i: set to '' when PID dies
 	while true			# monitor forever
-	    do	_monitor-drives ${dirs:-$(list-drive-dirs -a)} # new drive?
+	    do	mon-launch-globs ${dirs:-$(list-drive-dirs -a)} # new drive?
+		mon-look-for-finished-globs
 	done
 }
 readonly -f monitor-drives
 
+# ----------------------------------------------------------------------------
+# miscellaneous functions for later functions
 # ----------------------------------------------------------------------------
 
 # for each name (can be 'all'), kill any backups/pruning/etc & unmount drive
@@ -5046,6 +5076,8 @@ function add-extN-journal() {
 }
 readonly -f add-extN-journal
 
+# ----------------------------------------------------------------------------
+# functions to calculate directory sizes for different FS parameters
 # ----------------------------------------------------------------------------
 
 set-total_dir_MB-avg_dir_KB() {
@@ -6343,12 +6375,13 @@ case $action in
    ( b*k*p*dr*v* | bd* | r*b* ) undo-action-abbrev backup-drives
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
-	[[ $1 == all ]] && { rm-stale-locks; rm-dangling-symlinks; }
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
-	   then check-logs		# create data for watch
-		wait			# want to stay in 'ps'; but ...
-#		$IfRun $our_path monitor-drives & # ... not for monitor
+	   then check-logs		# create data for 'watch'
+		rm-stale-locks
+		rm-dangling-symlinks
+		$IfRun $our_path monitor-drives
+		wait			# want to stay in 'ps'
 	   else true
 	fi
 	;;
@@ -6470,12 +6503,13 @@ case $action in
 
    # monitor-drives: start run-forever monitor of drive response time
    ( mon* | m ) undo-action-abbrev monitor-drives
-	[[ $1 == -r ]] || $IfRun exec sudo setsid $our_path $action -r ||
-	    abort "you need sudo perms"
-	shift
-
-	trap '' HUP
-	monitor-drives "$@"
+	if [[ ${1-} == -r ]]
+	   then shift
+		trap '' HUP
+		$IfRun monitor-drives "$@" &
+	   else	exec sudo setsid $our_path $debug_opt $trace_opt $action -r ||
+		    abort "you need sudo perms"
+	fi
 	;;
 
    ( add*extN*journal | aej ) undo-action-abbrev add-extN-journal
@@ -6765,6 +6799,9 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	monitor-drives |& less; exit
+	lock-replica-of-snapshots --wait; exit $?
+
 	set-drive_name ${1:-J}; set-drive_dir $drive_name
 	cd $drive_dir_prefix/$drive_name; new_snapshot=/backup/J/2019-03-28,00
 	# set -x; _have-full-snapshot; set +x; _exit
