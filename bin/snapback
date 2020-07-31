@@ -4788,6 +4788,8 @@ watch() {
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 	assert-not-option -o "${1-}"
 
+	is-active-lock $drive_monitor_lock_path || $our_path monitor-drives
+
 	[[ $action == watch ]] && exec-watch-snapback-w
 
 	set -- $(list-drive-dirs -a)
