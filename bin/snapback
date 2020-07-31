@@ -2589,6 +2589,8 @@ rm-dangling-symlinks() {
 	for drive in *
 	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
 	done
+
+	cd $OLDPWD
 }
 readonly -f rm-dangling-symlinks
 
@@ -3232,39 +3234,6 @@ readonly -f copy-snapshot-rsync
 # ----------------------------------------------------------------------------
 # ----------------------------------------------------------------------------
 
-rmdir-empty-partial-snapshots() {
-	local drive_dir=$1
-
-	cd_ $drive_dir
-	set -- *.partial
-	[[ $# != 0 ]] &&
-	# 'sudo -n' because we're called by 'watch' and 'w'
-	sudo-unless-dir-writable -n rmdir $* &> /dev/null # optional
-	cd_ $OLDPWD
-}
-readonly -f rmdir-empty-partial-snapshots
-
-# ---------------------------------
-
-cleanup-after-updates() {
-	local drive_dirs=${*:-$(list-drive-dirs -a)}
-
-	local drive_dir drive_name	# protect caller's values
-	for drive_dir in $drive_dirs
-	    do	_set-drive_name $drive_dir
-		set-lock_path copy	# update could be running
-		(
-		sudo-lockpid -o $lock_path &> /dev/null &&	  {
-		$IfRun rmdir-empty-partial-snapshots $drive_dir
-		sudo-lockpid -r $lock_path			; }
-		) &			# do them in parallel
-	done
-	wait				# 'w' wants us to have finished
-}
-readonly -f cleanup-after-updates
-
-# ----------------------------------------------------------------------------
-
 wait-for-full-snapshots() {
 	local min_full_snapshots=$1
 
@@ -3560,13 +3529,14 @@ function update-drive() {
 	is_update=$true
 	set-drive_name $1
 	set-drive_dir $drive_name
+	cd $drive_dir || abort-function cd
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
 	IfRun= lock $lock_opt copy > /dev/null || exit_normally 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
-	rmdir-empty-partial-snapshots $drive_dir # in case previously crashed
+	rmdir --ignore-fail-on-non-empty *.partial # in case previously crashed
 
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
@@ -3583,7 +3553,7 @@ function update-drive() {
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
 	local status=$?
 
-	rmdir-empty-partial-snapshots $drive_dir
+	rmdir --ignore-fail-on-non-empty *.partial
 
 	IfRun= unlock copy
 	return $status
@@ -3920,10 +3890,10 @@ _recalculate-snapshot-stats-vars() {
 
 	set-stats_format $all_drive_dirs
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
-	local dir drive_name nums= oldies= newies=
-	for dir in $all_drive_dirs
-	    do	_set-drive_name $dir
-		dir=$snapshots_replica_dir/$drive_name
+	local _dir drive_name nums= oldies= newies=
+	for _dir in $all_drive_dirs
+	    do	_set-drive_name $_dir
+		local dir=$snapshots_replica_dir/$drive_name
 		cd $dir || abort "cd $dir"
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
@@ -3931,13 +3901,21 @@ _recalculate-snapshot-stats-vars() {
 		restore-tracing
 
 		[[ $# != 0 ]] && {
+		# since computing values to be cached, wait for a somewhat-slow
+		# drive (but not too long, only needed for .partial stats)
+		if (( $(< $drive_msecs_dir/$drive_name) < 500 )) ||
+		   [[ ! $watch_opt ]]	# wait if running 'w'
+		   then local is_drive_hung=$false
+		   else local is_drive_hung=$true
+		fi
+
 		local snapshot snap prev_snap= snaps=
 		for snapshot in $*
-		    do	set -- $snapshot/*
-			if [[ $skip_empty ]]
-			   then [[ $# != 0 ]] || continue
-			elif [[ $_suffix == .partial ]] #only count empty ones?
-			   then [[ $# == 0 ]] || continue
+		    do	if [[ ( $skip_empty || $only_empty ) &&
+			      ! $is_drive_hung ]]
+			   then set -- $_dir/$snapshot/*
+				[[ $skip_empty && $# == 0 ]] && continue
+				[[ $only_empty && $# != 0 ]] && continue
 			fi
 			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != $snap ]] && snaps+="$snap "
@@ -4002,6 +3980,7 @@ readonly -f _is-stats-cache-fresh
 # ----------------------
 
 setup-snapshot-stats() {
+	[[ $1 == -e ]] && { shift;local only_empty=$true; } ||local only_empty=
 	[[ $1 == -E ]] && { shift;local skip_empty=$true; } ||local skip_empty=
 	local suffix=$1 _suffix=$1
 	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
@@ -4177,7 +4156,6 @@ readonly -f trim-copy-update-ps
 
 exec-watch-snapback-w() {
 
-	cleanup-after-updates &	      # don't wait for it to finish, it's slow
 	local all_opts="$ps_opt $cron_opt"
 	if [[ $names ]]
 	   then set-drive_names--from-user-args $names
@@ -4555,7 +4533,7 @@ show-stats-section-1() {
 	echo "  Number complete/successful snapshots:  $stats_number"
 	setup-snapshot-stats .rm
 	echo "Number pruned .rm snaps awaiting rm -r:  $stats_number"
-	setup-snapshot-stats .partial
+	setup-snapshot-stats -e .partial
 	echo " Number .partial snaps awaiting update:  $stats_number"
 	setup-snapshot-stats ''
 	echo "  Age of newest good snapshot, in days:  $stats_newest_age"
@@ -4800,7 +4778,6 @@ watch() {
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || trap '' HUP
-	[[ $watch_opt ]] || cleanup-after-updates $all_drive_dirs # wait for it
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 
 	SECONDS=$(date '+%s')		# for _set-age()
@@ -4917,13 +4894,13 @@ mon-process-finished-glob() {
 	local -i      now_msecs=$(date +%s%3N)
 	local -i    start_msecs=${drive_name2msecs[$drive_name]}
 	local -i response_msecs=now_msecs-start_msecs
-	echo $response_msecs > $drive_msecs_dir/$drive_name
 
 	local  snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
 	cd_   $snapshots_dir
 	local glob_file=$_mon_globs_dir/$drive_name
 	lock-replica-of-snapshots --wait # 'w' action uses same locking
+	echo $response_msecs > $drive_msecs_dir/$drive_name
 	rm -f *
 	touch $(< $glob_file)
 	touch -r  $glob_file .
