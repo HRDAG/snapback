@@ -12,6 +12,9 @@
 ##################################################################
 ##################################################################
 
+# NOTE: to illustrate how to customize a variable, the pseudo-drive_name 'X' is
+# often used, so don't use 'X' yourself (unless you change it in this file :-).
+
 renice 1 $$ &> /dev/null		# lower priority than logins
 
 ##############################################################################
@@ -55,6 +58,13 @@ readonly common_mount_options="nodev,nosuid,noatime"
 readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
 readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
+# -----------------------
+# monitoring swapout rate
+# -----------------------
+
+# see doc/Install.txt for a method to find the value of this variable
+# declare -r -i max_swapout_MBps=50
+
 # ----------------------------------------------
 # Rotational hard disks need special handling. #
 # ----------------------------------------------
@@ -64,7 +74,7 @@ readonly FS_log_VG=			# should be fast & reliable
 
 # Used by set-FS_external_log: should it setup an external filesystem journal?
 	 do_want_external_log=$FS_log_VG # value for (RAID of) rotational disks
-drv_name2do_want_external_log[A]=$false	 # value for SSD / flash memory stick
+drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 #
 # The above and the below are correlated.
 #
@@ -72,7 +82,7 @@ drv_name2do_want_external_log[A]=$false	 # value for SSD / flash memory stick
 # snapshots simultaneously with no I/O penalty (the priority is controlled as
 # described later).  Hard disks are different, so you can change that policy.
 	 is_multi_writer_drive=$false	# non-striped rotational disk drive
-drv_name2is_multi_writer_drive[A]=$true	# no (or little) seek penalty
+drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 
 # --------------------------------------------------
 # Variables used by backup-drive* and prune-drive* #
@@ -134,7 +144,7 @@ declare -r -A level2IO_priority_cmd=([lower]= [medium]= [higher]=)
 
 # The directories we back up, *must* be absolute paths; can use bash globbing.
 	 dirs_to_backup="/"
-drv_name2dirs_to_backup[Q]=/home/scott/{.bash*,bin,git} # personal memory stick
+drv_name2dirs_to_backup[X]=/home/scott/{.bash*,bin,git} # personal memory stick
 drv_name2dirs_to_backup[Z]=/var/tmp/small-dir # for testing with pseudo-drive Z
 
 # Basic options for "rsync"; add --acls if it's supported.
@@ -174,17 +184,17 @@ readonly excluded_backup_hours="23 1 3"
 # note that some backups are pruned faster unless use a power of 2 (or 24).
 # A backup is *always* done at midnight, since that's the one pruning keeps.
 declare -i backup_period=1		# need much RAM for small period
-  drv_name2backup_period[B]=2		# if low RAM, or drive is slower
-  drv_name2backup_period[C]=4		# if fast disk running big update
-  drv_name2backup_period[S]=8		# if slow disk running big update
-  drv_name2backup_period[Q]=24		# small drive, or drive with history
+  drv_name2backup_period[X]=2		# if low RAM, or drive is slower
+  drv_name2backup_period[X]=4		# if fast disk running big update
+  drv_name2backup_period[X]=8		# if slow disk running big update
+  drv_name2backup_period[X]=24		# small drive, or drive with history
   drv_name2backup_period[Z]=2		# twice the period of the mk-Z output
 
 declare -i backup_period_for_update=0	 # default to the same
-  drv_name2backup_period_for_update[S]=4 # for big update on Slow disk
+  drv_name2backup_period_for_update[X]=4 # for big update on slow disk
 
 declare -i max_backup_period_for_pruning=0    # default to the same
-  drv_name2max_backup_period_for_pruning[N]=4 # updating New disk, slow bkps
+  drv_name2max_backup_period_for_pruning[X]=4 # updating New disk, slow bkps
 
 # ----------------------------------------------------------------------------
 # Variables that control prune-drives.  NOTE: backup_period, extra_excludes, #
@@ -238,7 +248,7 @@ declare -i decades_per_span_for_year_prune=5	# prune-drive* can change
 # You can use this variable to change all 4 of the previous variables at once,
 # or to scale all 4 of the previous variables for a drive of a different size.
 	 pruning_span_scale_factor=1.0	  # scales previous 4 variables
-drv_name2pruning_span_scale_factor[G]=1.5 # G is 50% bigger than other drives
+drv_name2pruning_span_scale_factor[X]=1.5 # X is 50% bigger than other drives
 drv_name2pruning_span_scale_factor[Z]=1	  # Z: for pruning regression test
 
 # ----------------------------------------------------------------------------
