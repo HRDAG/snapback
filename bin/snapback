@@ -4577,6 +4577,7 @@ show-stats-section-3-if-it-fits() {
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
 
 	echo				# first row used
+	setup-snapshot-stats ''
 	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
 	setup-snapshot-stats '' hour
 	echo "  Total number  days  w/good snapshots:  $stats_number"
