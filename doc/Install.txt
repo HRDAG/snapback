@@ -8,7 +8,7 @@ of GNU utilities:
 On BSD, you'll need to do something similar to the above, and set the PATH
 inside /etc/snapback/configure.sh (see below) to put them first.
 
-First run:
+Grab the library that's needed, by running:
 
     git clone git@github.com:HRDAG/libsnap.git
 
@@ -19,14 +19,14 @@ into a terminal window running bash:
 
     pushd   ../libsnap/src/lockpid && make && popd &&
     sudo cp ../libsnap/src/lockpid/lockpid	/usr/local/bin/
+    sudo cp ../libsnap/bin/libsnap.sh		/usr/local/bin/
     sudo cp bin/snapback			/usr/local/bin/
     sudo cp etc/sudoers.d/snapback		/etc/sudoers.d/
-    sudo cp ../libsnap/bin/libsnap.sh		/usr/local/bin/
 
-    sudo cp -r etc/snapback /etc/	# could instead copy to /usr/local/etc/
-    cd /etc/snapback &&			# ... or: cd /usr/local/etc/snapback
+    sudo cp -r etc/snapback /etc/	# could instead copy to ~/etc/ or ...
+    cd /etc/snapback &&			# ... /usr/local/etc/ (and cd to there)
     for fs in *.sample; do f=${fs%.sample}; sudo cp -v $fs $f; done &&
-    echo "now edit the two files copied from the .sample files"
+    echo "now edit the files copied from the .sample files"
 
 
 B. TL;DR (Too Long; Didn't Read)
@@ -36,7 +36,7 @@ To get up and running quickly, here's the minimal edits to
 
    1. single type of backup on flash drive(s)
 
-      Set suspend_prune_when_backup= and do_want_external_log= to $false
+      Set is_multi_writer_drive=$true
 
       You can name your drives A, B, C, etc.
 
@@ -48,13 +48,16 @@ To get up and running quickly, here's the minimal edits to
 
    3. backups split across a pair of (small?) flash drives
 
-      Set suspend_prune_when_backup= and do_want_external_log= to $false
+      Set is_multi_writer_drive=$true
+
+      Here's some sample naming for the drives:
 
       H (hourly) drive (smaller?), frequent backups: create
       drv_name2months_per_span_for_day_prune[H]=0 (delete old snapshots).
       Could use e.g. drv_name2dirs_to_backup[H]=/home if drive is small.
 
-      D (daily) drive, long-term backups: create backup_period[D]=24
+      D (daily) drive, long-term backups:
+      create drv_name2backup_period[D]=24
 
       If you want to have multiple H and D drives (so some drives can be
       off-site), then name them H-1, H-2, D-1, D-2, etc
@@ -62,7 +65,7 @@ To get up and running quickly, here's the minimal edits to
 On GNU/Linux, run "sudo snapback mkfs ..."  to build a filesystem on each
 drive (which will *DESTROY* any existing data on the specified partion).
 
-On Darwin (macOS aka Mac OS-X), use an APFS filesystem labeled backup-<name>,
+On Darwin (macOS aka Mac OS-X), use an APFS filesystem labeled backup-{name},
 and set backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
 
 
@@ -80,38 +83,43 @@ link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
 32-bit link-count (*never* use HFS: every "hard link" creates a hidden copy of
 the file?!).
 
-Here's how to setup a brand new drive to be an encrypted drive (this process
-has been automated in HRDAG's 'snapcrypt' utility).  [NOTE: on a Mac, use the
-macOS encryption utility instead.]  Find the drive's device name with:
-    ls -lt /dev/sd*	# most-recently-plugged-in-drive at the top
+If you want to encrypt your backup drives ...
+
+On a Mac, use the macOS encryption utility.
+
+On GNU/Linux (and probably on *BSD), you can use HRDAG's 'snapcrypt' utility.
+Here's how to install it:
+
+    git clone git@github.com:HRDAG/snapcrypt.git
+    cd snapcrypt
+    sudo cp sbin/snapback			/usr/local/sbin/
+    sudo cp -r etc/snapcrypt /etc/	# could instead copy to ~/etc/ or ...
+    cd /etc/snapcrypt &&		# ... /usr/local/etc/ (and cd to there)
+    for fs in *.sample; do f=${fs%.sample}; sudo cp -v $fs $f; done &&
+    echo "now edit the files copied from the .sample files"
+
+Find the drive's device name with:
+    ls -lt /dev/sd*[!0-9]	# most-recently-plugged-in-drive at the top
 Save the device name, and specify the drive-name you will use
-    device=/dev/sd?  drive=?
-    label=backup_$drive			# assumes drive_dir_prefix=/backup/
+    raw_device=/dev/sd?  drive_name=?
 Verify it's the drive you want:
-    fdisk -l $device
+    fdisk -l $raw_device
 Choose the partition you want:
-    device=${device}?
+    raw_device=${raw_device}?
 See if someone is using it:
-    fuser -m -v $device
+    fuser -m -v $raw_device
 Use an encryption keypair:
-    keypair=/etc/snapcrypt/keys/keyfile.bin
+    set drive_key_file= in /etc/snapcrypt/configure.sh
 Create an encryption keypair (if don't already have one you want to use):
     sudo mkdir -p $(dirname $keypair)
     cd $(dirname $keypair)
     # create key $(basename $keypair)
-Format (i.e. initialize for encryption) the device:
-    echo -e "\nbe SURE you type 'YES' not 'yes' ..."
-    cryptsetup luksFormat $device $keypair
-If the luksFormat fails with "... in use ... already mapped ...", run:
-    cryptsetup close $label
-    # after 'close': repeat the 'luksFormat' command, above
-Now decrypt the device:
-    cryptsetup open --key-file $keypair --type luks $device $label
+Encrypt the drive, then create a decrypted mapping:
+    snapcrypt $drive_name $raw_device
 
-Then create a new rule in /etc/snapcrypt/drives.rules (this step is needed
-even when using HRDAG's 'snapcrypt' utility), with the same format as the
-existing rules (see sample file snapcrypt/drives.rules.sample, found in the
-snapcrypt repo).  You find the serial number with:
+Then create a new rule in /etc/snapcrypt/drives.rules (eventually, HRDAG's
+'snapcrypt' utility will do this automatically), with the same format as the
+existing rules.  You find the serial number with:
 
     udevadm info $device | fgrep SERIAL_SHORT
 
@@ -124,17 +132,19 @@ copy-drive' to initialize the new drive; otherwise, use 'snapback mkfs' to
 create a filesystem, and 'snapback update-drive' to copy snapshots from your
 other backup drives.
 
-To determine your actual average directory size, e.g. for ext4:
+To determine your actual average directory size, e.g. to optimize ext4:
      # Specify your filesystem type with mkfs_cmd_opts= in configure.sh .
      # Choose the fastest drive (especially SSD/flash) that holds 1 backup.
-     snapback mkfs -f -b 1024 <device> <name> # first test, use smallest -b
+     snapback mkfs -f -b 1024 {device} {name} # first test, use smallest -b
      # Configure dirs_to_backup= in configure.sh, and exclude.txt .
-     snapback run-backup <device> <name>
-     snapback dir-sizes  <device> <name>
+     snapback backup-drive {name}
+     snapback dir-sizes {device} {name}
 
-     snapback mkfs -f -b 2048 <drive-name> # next test, overwrite older FS
+     snapback mkfs -f -b 2048 {drive-name} # next test, overwrite older FS
      ...
-If your filesystem stores small dirs in the inode, you might mess with isize.
+
+If your filesystem stores small dirs in the inode (as with XFS), you might
+mess with isize.
 
 NOTE: the rest of this document is heavily oriented towards a GNU/Linux system
 like Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
@@ -161,9 +171,8 @@ master partition), you need to rename the snapshots to conform to snapback's
 standards, and make sure all the snapshots are in the root of the partition
 (and, ideally, nothing else is in the root of the partition, except perhaps in
 an e.g. /.my-stuff/ sub-directory).  To see snapback's snapshot naming
-conventions, run:
-
-    snapback mkfs		# you won't otherwise need to use this command
+conventions, search for 'snapshot_glob=' in snapback, and read the preceding
+comment.
 
 Now, label your master partition.  First, to see a good fstab record, run e.g.:
 
@@ -187,16 +196,13 @@ When it finishes (it could take hours), again use "resize2fs -P" to see if
 it's shrunk enough to fit in any of your smaller partitions.
 
 Before you copy the master partition to your other partitions, you may want to
-think seriously about first encrypting the other partitions.  See HRDAG's
-'snapcrypt' project for easy setup and maintenance of encrypted partitions
-(note that it currently encrypts the whole drive, overwriting the partition
-table).
+think seriously about first encrypting the other partitions: See section C.
 
 Now you can use "snapback copy-drive" (which will show you what arguments are
 needed) to copy your master partition to each of the partitions large enough
 to hold its contents.  If the partitions are physically smaller than the
 master partition, "snapback copy-drive" runs a 'dd' command that will fail;
-but you can run a simulation with "snapback -d copy-drive <args>" to see what
+but you can run a simulation with "snapback -d copy-drive {args}" to see what
 commands you need to run to finish the job (it's best to 'nohup' the 'fsck'
 command, it will take a long time).  You can copy multiple partitions
 simultaneously (this is desired, since all the copies will share the same
@@ -205,7 +211,7 @@ with "snapback copy-drive": it runs 'nohup' internally, and saves the output
 to $FS_label.out .
 
 If you copied your master partition to encrypted partitions, you now want to
-encrypt your master partition and use "snapback copy-drive" to copy the
+unmap your master partition and use "snapback copy-drive" to copy the
 smallest partition back to your now-encrypted no-longer-master partition.
 
 Now you can mount all your backup partitions on $drive_dir_prefix (defined in
@@ -216,16 +222,17 @@ E. Configuring 'snapback'
 
 All configuration takes place in
 
-    /etc/snapback/configure.sh		# could instead be in /usr/local/etc/
+    /etc/snapback/configure.sh		# or in ~/etc/ or /usr/local/etc/
     /etc/snapback/exclude.txt		# ditto
 
 NOTE: From here on, when I mention "configure.sh" or "exclude.txt", I mean the
-file in /usr/local/etc/snapback/ else /etc/snapback/ .
+file in ~/etc/snapack/ else /usr/local/etc/snapback/ else /etc/snapback/ .
 
-Some of it is quite abstract, you'll need to carefully read the comments.  And
-it's probably best to leave the tuning variables alone (see final section on
-Tuning.), and re-read those variables comments after you've let cron create a
-lot of snapshots and you start to run out of resources on some drives.
+Some of the configure.sh variables are quite abstract, you'll need to
+carefully read the comments.  And it's probably best to leave the tuning
+variables alone (see final section on Tuning), and re-read those variable's
+comments after you've let cron create a lot of snapshots and you start to run
+out of resources on some drives.
 
 [If there's something you want to change that can't be accomplished by editing
 those two files, email sweikart@gmail.com with a description of what you want
@@ -243,26 +250,36 @@ to prepare a new partition.  Unless your setup auto-mounts partitions
 (or equivalent), then mount the partition on $drive_dir_prefix (defined in
 configure.sh).
 
-You can test a single, mounted backup partition with:
+If this is your first snapback drive, create a backup by running:
 
-    sudo snapback run-backup <drive-name>
+    sudo snapback backup-drive {drive-name}
 
-in a new window, and then in another window watch it by running:
+which will create a backgrounded job and immediately return.  You can then
+watch the backup by running:
 
     snapback watch
 
 See doc/watch.txt for details on using the 'watch' action.
 
+If you already have an existing snapback drive, you should instead copy its
+latest backup to the new drive:
+
+    sudo snapback copy-drive -B /backup/{old-drive-name}/latest {drive-name}
+
 Once you've created and mounted all the partitions you plan to use, you can
 backup all of them simultaneously with:
 
-    sudo snapback run-backups
+    sudo snapback backup-drives
+
+but it's best to let 'cron' do it ...
 
 
 G. Automation with cron
 
+Add your backup drive_names to drive_name_regex= in configure.sh .
+
 NOTE: send sweikart@gmail.com instructions on how to support automation if the
-following doesn't work.
+following doesn't work.  [On macOS, see Library/***]
 
 Once everything looks OK, from the root of the snapback workspace,
 copy-and-paste the following command into a terminal window:
@@ -281,9 +298,9 @@ etc/cron.d/snapback to your /etc/crontab file.
 
 H. OS tuning
 
-To devote more RAM to inode and directory caches with the linux kernel,
+To devote more RAM to inode and directory caches with the Linux kernel,
 decrease the value of vm.vfs_cache_pressure.  You might start with a value
-near 80; if your filesytem drives are SSD but your backup drives are
+near 20; if your filesytem drives are SSD but your backup drives are
 rotational disks, a lower value might be safe for regular work while being
 good for backups.  But there are some details ...
 
@@ -313,29 +330,42 @@ The snapback repo includes a file to change the default:
 
     etc/sysctl.d/60-snapback.conf
 
-If you make vm.vfs_cache_pressure too low, and you're running 'pmie', you'll
-get a message (on ubuntu-18.04) that looks like:
+Then you want to run the 'pmie' command, typically by installing the 'pcp'
+package.
+
+If you make vm.vfs_cache_pressure too low, pmie will write a message to syslog
+tht that looks like:
 
     pcp-pmie[PID]: Severe demand for real memory N.Mpgsout/s@HOST
 
+If you installed /etc/cron.d/snapback, every 5 minutes snapback will search
+syslog for these messages (along with other error messages); if you run
+'snapback watch', you'll see all the error messages that were recently found.
+If you set max_swapout_MBps= in configure.sh, 'snapback watch' will report the
+percentage of swap bandwidth that's used.  Here's how to determine the value
+of max_swapout_MBps:
+
+    IfRun=echo		# comment-out to not debug
+
+    swap_dev=/dev/???		# from swapon -s
+    swap_label=????		# from LABEL=???? in /etc/fstab
+
+    $IfRun swapoff $swap_dev &&
+    $IfRun dd if=/dev/zero of=$swap_dev bs=1M count=20480
+
+    $IfRun mkswap --label $swap_label $swap_dev &&
+    $IfRun swapon -a &&
+    $IfRun swapon --show
+
 So, first assess how often this happens with the default value of
-vm.vfs_cache_pressure, e.g. check all the older logs:
+vm.vfs_cache_pressure, by checking all the older syslog files:
 
-    for log in /var/log/syslog?*; do echo -n "${log##*/}: "
-	zcat -f $log | fgrep -c 'Severe demand for real memory' ; done
+    snapback big-swapouts
 
-Now you can experiment with the sysctl command, e.g:
+Now you can experiment with different values for vm.vfs_cache_pressure, and
+then check to see if things got worse:
 
-    sudo sysctl -w vm.vfs_cache_pressure=75
-
-but you should make sure you don't run out of real memory, e.g.:
-
-    watch fgrep -c 'Severe demand for real memory' /var/log/syslog
-
-Once you've decided on a value, you can set a permanent value in
-/etc/sysctl.d/60-snapback.conf (or /etc/sysctl.conf). e.g.:
-
-    vm.vfs_cache_pressure=75
+    snapback watch	# finds errors in yesterday's and today's syslog files
 
 
 I. snapback Tuning
@@ -352,7 +382,7 @@ variables; carefully read the comments to figure out what these do.  It's best
 to just change one variable at a time.  Then wait 5 minutes: cron will
 kick off a prune, which will rename the now-unneeded snapshots to
 Date,Hour.rm, and then start deleting them (but if you set
-'suspend_prune_when_backup=$true' because you're using disk drives not SSDs,
+'is_multi_writer_drive=$false' because you're using disk drives not SSDs,
 then the prune won't be started until the backup finishes).  As soon as the
 prune job finishes, "snapback watch" will show that your drive now has non-0
 "Number pruned snapshots awaiting 'rm'"; you'll need to wait until this value
@@ -372,9 +402,9 @@ and for studying how pruning works with the "-T 5" option to snapback).
 --
 
 Instead of the above, you could edit exclude.txt (in same directory as
-configure.sh) to exclude pieces of your system.  Again, you'll need to wait an
-hour for the next prune job to start, and then wait until the partition's log
-(/var/log/snapback/<drive-name>/messages.log) reports:
+configure.sh) to exclude pieces of your system.  Again, you'll need to wait
+for the next prune job to start, and then wait until the drive's log
+(/var/log/snapback/drives/{drive-name}/messages.log) reports:
 
     pruned exclude-patterns from _all_ snapshots
 
@@ -384,6 +414,7 @@ categories of partitions.
 
 Note that you might be able to accomplish the same goal by changing
 'dirs_to_backup' in configure.sh, which is also convenient because it's easy
-to add separate per-drive values to configure.sh .  But, 'snapback' won't
-currently delete the no-longer-backed-up-dirs from older snapshots; you'll
-need to do this manually.
+to add separate per-drive values to configure.sh .  BUT, 'snapback' won't
+currently delete the no-longer-backed-up-dirs from older snapshots; also,
+update-drives will only copy between drives that have the same values for
+dirs_to_backup .
