@@ -277,9 +277,10 @@ readonly hostname=${HOSTNAME%%.*}
 [[ -d /run ]] && readonly run_dir=/run || readonly run_dir=/var/run
 
 is-set   syslog_path ||			# can set custom value in $config_file
-readonly syslog_path=/var/log/syslog
-readonly     log_dir=/var/log/$our_name
-readonly  status_dir=$run_dir/$our_name
+readonly    syslog_path=/var/log/syslog
+readonly        log_dir=/var/log/$our_name
+readonly drives_log_dir=$log_dir/drives
+readonly     status_dir=$run_dir/$our_name
 
 # these are used by log(), besides $log_level
 file_for_logging=$log_dir/messages.log	     # set-drive_log_dir-* sets it
@@ -1094,10 +1095,10 @@ create-lock_dir-log_dirs() {
 
 	local group=
 
-	[[ -d $log_dir && -d $lock_dir ]] || {
+	[[ -d $drives_log_dir && -d $lock_dir ]] || {
 	set-admin_group && group=$admin_group
 	sudo mkdir -p --mode=1777 $lock_dir
-	sudo mkdir -p	      $log_dir/drives; [[ $group ]] &&
+	sudo mkdir -p  $drives_log_dir; [[ $group ]] &&
 	sudo chgrp -R $group  $log_dir $lock_dir &&
 	sudo chmod -R g+w,g+s $log_dir $lock_dir
 	}
@@ -1106,12 +1107,10 @@ create-lock_dir-log_dirs() {
 	[[ ${drive_log_dir-} ]] || return
 
 	if [[ ! -d $drive_log_dir ]]
-	   then set-admin_group && group=$admin_group && group=:$group
-		[[ ${drive_dir-} && $UID == 0 ]] && fix-drive_dir-perms
-		sudo mkdir -p -m g+w,o-w $drive_log_dir
+	   then sudo mkdir -p $drive_log_dir
 		[[ $is_regression_test ]] &&
 		sudo touch $file_for_logging &&
-		sudo chown $LOGNAME$group $drive_log_dir $file_for_logging
+		sudo chown $LOGNAME $drive_log_dir $file_for_logging
 	fi
 	[[ -d $drive_log_dir ]] || abort "need sudo privs to setup new drive"
 }
@@ -1132,21 +1131,21 @@ _last_fully_initialized_drive_name=
 set-drive_log_dir-file_for_logging-is_regression_test() {
 	local  drive_name=${1-}	     # called from set-drive_name, so $1 valid
 
-	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
-	   then _last_fully_initialized_drive_name=${drive_name:-$none}
-	   else return			# skip very-long, duplicative setup
-	fi
-
 	[[ $drive_name == [zZ] || ( $debug_opt && $is_cron ) ]] &&
 	    is_regression_test=$true
 
 	if [[ $drive_name ]]
-	   then drive_log_dir=$log_dir/drives/$drive_name
-	   else drive_log_dir=$log_dir
+	   then drive_log_dir=$drives_log_dir/$drive_name
+	   else drive_log_dir=$drives_log_dir
 	fi
 	TraceV 3 drive_log_dir
 	file_for_logging=$drive_log_dir/messages.log
 	[[ -d $drive_log_dir ]] || create-lock_dir-log_dirs
+
+	if  [[ $_last_fully_initialized_drive_name != ${drive_name:-$none} ]]
+	   then _last_fully_initialized_drive_name=${drive_name:-$none}
+	   else return			# skip very-long, duplicative setup
+	fi
 
 	customize-and-validate-configuration-variables $drive_name
 }
@@ -3739,7 +3738,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
 		local name=$drive_name
-		local  dir=$log_dir/$name/$rsync_time_subdir
+		local  dir=$drives_log_dir/$name/$rsync_time_subdir
 		set -- $dir/$snapshot_glob.txt
 		if [[ $# != 0 ]]
 		   then local -i mins max_mins=0
