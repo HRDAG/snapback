@@ -256,6 +256,8 @@ need-cmds fuser setsid
 
 $TraceAll
 
+# exec &> $tmp_dir/$our_name.log	# uncomment for slap-dash debugging
+
 ##############################################################################
 # Miscellaneous variables used by for making and pruning backup snapshots.
 ##############################################################################
@@ -3901,10 +3903,10 @@ _recalculate-snapshot-stats-vars() {
 		restore-tracing
 
 		[[ $# != 0 ]] && {
-		# since computing values to be cached, wait for a somewhat-slow
-		# drive (but not too long, only needed for .partial stats)
+		# we're computing values to be cached, so wait for a slowish
+		# drive (but not too long, it only affects two .partial stats)
 		if (( $(< $drive_msecs_dir/$drive_name) < 500 )) ||
-		   [[ ! $watch_opt ]]	# wait if running 'w'
+		   [[ ! $watch_opt ]]	# always wait if running 'w'
 		   then local is_drive_hung=$false
 		   else local is_drive_hung=$true
 		fi
@@ -3980,6 +3982,7 @@ readonly -f _is-stats-cache-fresh
 # ----------------------
 
 setup-snapshot-stats() {
+	[[ $1 == -? ]] && local option=$1 || local option=
 	[[ $1 == -e ]] && { shift;local only_empty=$true; } ||local only_empty=
 	[[ $1 == -E ]] && { shift;local skip_empty=$true; } ||local skip_empty=
 	local suffix=$1 _suffix=$1
@@ -3989,7 +3992,8 @@ setup-snapshot-stats() {
 	   local suffix_name=${suffix/\*/STAR} || local suffix_name=NONE
 	suffix_name=${suffix_name#/}
 	suffix_name=${suffix_name#.} ; local \
-	 cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type.txt"
+	 cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type"
+	 cache_name+=",option=$option.txt"
 	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
 
 	[[ $suffix == .rm ]] && suffix=*$suffix
@@ -4954,6 +4958,8 @@ monitor-drives() {
 	create-status_dir
 	create-monitor-dirs
 
+	exec &> $_monitor_dir/monitor.log # to catch problems
+
 	local -A -i drive_name2msecs	# drive response time in millliseconds
 	local -A    drive_name2PID	# not -i: set to '' when PID dies
 	while true			# monitor forever
@@ -5123,6 +5129,8 @@ filesystem-geometry() {
 	run-df    $drive_dirs
 	run-lsblk $drive_dirs
 	echo
+
+	[[ $UID == 0 ]] || return
 
 	local dash="------" dsh="---------------" # alternate header
 	local dash="======" dsh="==============="
