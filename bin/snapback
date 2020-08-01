@@ -3996,7 +3996,7 @@ setup-snapshot-stats() {
 	 cache_name+=",option=$option.txt"
 	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
 
-	[[ $suffix == .rm ]] && suffix=*$suffix
+	[[ $suffix == .rm ]] && suffix=*$suffix # also handle .partial.rm
 	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
 	   local dates=$true || local dates=$false
 
