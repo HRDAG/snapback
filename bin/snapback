@@ -4974,7 +4974,8 @@ readonly -f monitor-drives
 re-start-monitor-drives-if-needed() {
 
 	[[ $our_path == /usr/* &&      # if this is installed command, and ...
-	   $our_path -nt $drive_monitor_lock_path ]] && # .. newer than process
+	   $our_path -nt $drive_monitor_lock_path && # .. newer than process ..
+		      -s $drive_monitor_lock_path ]] && # ,.. and it exists?
 	    kill -9 $(<  $drive_monitor_lock_path) # then restart it ...
 	is-active-lock   $drive_monitor_lock_path ||
 	    $our_path monitor-drives	# make sure it's running
