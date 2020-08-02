@@ -699,10 +699,9 @@ function set-PID_ps_fields--in-process-groups() {
 
 	PID_ps_fields=
 
-	[[ $is_darwin ]] && local ps_PGID_opt=-G || local ps_PGID_opt=-g
 	local PGID
 	for PGID
-	    do	set -- $(COLUMNS=999 ps -o $columns_opt $ps_PGID_opt $PGID)
+	    do	set -- $(COLUMNS=9999 ps -o $columns_opt -G $PGID)
 		shift			# toss header
 		[[ $# != 0 ]] && PID_ps_fields+="$* "
 	done
@@ -981,7 +980,7 @@ function ps-locks() {
 	    do	header $lock
 		[[ -s  $lock ]] || { echo "no such lock"; continue; }
 		set -- $(< $lock)
-		ps $ps_opts -g $1 || ps $ps_h_opt $ps_opts $1
+		ps $ps_opts -G $1 || ps $ps_h_opt $ps_opts $1
 		status=$?
 	done
 	$xtrace
@@ -1606,7 +1605,7 @@ function count-rsyncs-using-resource() {
 	local regex=$*
 
 	[[ $drive_name == [zZ] || $IfRun ]] && return 0
-	return $(COLUMNS=999 ps l -u root | egrep -c "\brsync .*$regex")
+	return $(COLUMNS=9999 ps -U root | egrep -c "\brsync .*$regex")
 }
 readonly -f count-rsyncs-using-resource
 
@@ -1618,7 +1617,8 @@ function is-sleeping() {
 	_set-drive_name $drive_name
 	set-job_PGID $job_type || return 1
 	set-executables--in-process-groups $job_PGID || { warn "set-exe* -> $?"
-		print-call-stack $drive_name; ps www -$job_PGID; return 1; }
+		print-call-stack $drive_name; ps-locks $job_type $drive_name;
+		return 1; }
 	is-arg1-in-arg2 sleep $executables
 }
 readonly -f is-sleeping
@@ -1631,7 +1631,8 @@ function is-suspended() {
 	_set-drive_name $drive_name
 	set-job_PGID $job_type || return 1
 	set-state--in-process-groups $job_PGID || { warn "set-exe* -> $?"
-		print-call-stack $drive_name; ps www -$job_PGID; return 1; }
+		print-call-stack $drive_name; ps-locks $job_type $drive_name;
+		return 1; }
 	[[ $state == *T* ]]
 }
 readonly -f is-suspended
@@ -4260,9 +4261,10 @@ setup-ps-variables-and-ps_-function() {
 	ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,$cputime,command
 	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
 
-	case $OSTYPE in
+	# set variables that map Linux's 'ps' options to random OS's 'ps' opts
+	case $OSTYPE,$is_BSD in
 	    ( linux* ) ps_H_opt=-H  ps_f_opt=f  ps_h_opt=h ;;
-	    ( *bsd*  ) ps_H_opt=-d  ps_f_opt=-d ps_h_opt=  ;;
+	    (*,$true ) ps_H_opt=-d  ps_f_opt=-d ps_h_opt=  ;;
 	    (   *    ) ps_H_opt=    ps_f_opt=   ps_h_opt=  ;;
 	esac; readonly ps_H_opt     ps_f_opt	ps_h_opt
 
@@ -4296,7 +4298,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	declare -g -i num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ -g $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ -G $lock_PGIDs 2>/dev/null  |
 	  egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
@@ -4307,7 +4309,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
-	copy_rsync_cmds=$(ps_ -g $lock_PGIDs |
+	copy_rsync_cmds=$(ps_ -G $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
 			   grep -e "[0-9] .*$_our_name.* [cu]"  \
 				-e " [l]ockpid " -e " [s]leep " \
@@ -4315,7 +4317,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	[[ $ps_H_opt ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ -g $lock_PGIDs | grep "[0-9] $rsync_ps")
+	bkp_rsync_cmds=$(ps_ -G $lock_PGIDs | grep "[0-9] $rsync_ps")
 	[[ $ps_H_opt ]] ||
 	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
 }
@@ -4326,11 +4328,11 @@ readonly -f set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds
 function _set-cron_PGIDs() {
 
 	local rsync_or_rm_cmd_PGIDs_file=$tmp_1
-	ps -u root -o pgid,command |
+	ps -U root -o pgid,command |
 	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
 	       $rsync_or_rm_cmd_PGIDs_file
 	cron_job_regex=' -C backup-drives? ' # put into configure.sh ??
-	set -- $(ps -u root -o pgid,command |
+	set -- $(ps -U root -o pgid,command |
 			egrep "$cron_job_regex" |
 			fgrep -w -f $rsync_or_rm_cmd_PGIDs_file |
 			awk '$0 !~ /setsid / {print $1}' |
