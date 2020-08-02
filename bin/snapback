@@ -1326,7 +1326,6 @@ customize-config-variables() {
 	[[ ${custom_config_vars-} ]] || {
 	# set-drive_log_dir-file_for_logging-is_regression_test
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
-	declare -g custom_config_var_assignments= # to localize with 'local'
 	for var_name in $custom_config_vars $config_vars
 	    do	is-arg1-in-arg2 $var_name $uncustomizable_config_vars &&
 		   continue
@@ -1338,16 +1337,12 @@ customize-config-variables() {
 		is-set		$var_name || continue
 		is-readonly-var $var_name && continue # can't customize?
 
-		local default_value=${!var_name}
-		custom_config_var2default_value[$var_name]=$default_value
-		default_value=${default_value%% *} # excluded_backup_hours
-		custom_config_var_assignments+="$var_name=$default_value "
+		custom_config_var2default_value[$var_name]=${!var_name}
 
 		suspend-tracing
 	done
 	custom_config_vars=${!custom_config_var2default_value[*]}
-	readonly custom_config_var2default_value custom_config_vars
-	readonly custom_config_var_assignments ; }
+	readonly custom_config_var2default_value custom_config_vars ; }
 	restore-tracing
 
 	[[ $drive_name ]] || return
@@ -1374,6 +1369,26 @@ customize-config-variables() {
 	restore-tracing custom_config_vars
 }
 readonly -f customize-config-variables
+
+# ---------------------------------
+
+function customize-config-variable-name() {
+	local var_name=$1 resource=${2:-$drive_name}
+
+	[[ ${custom_config_vars-} ]] || abort-function \
+	   ": first call customize-config-variables or set-drive_log_dir-*"
+
+	local default_value=${custom_config_var2default_value[$var_name]-}
+	[[   $default_value ]] || return 1
+
+	_set-_drive_name $resource
+
+	eval "local value=\${drv_name2$var_name[$_drive_name]-\$default_value}"
+	eval "$var_name=\$value"
+
+	[[ $value != $default_value ]]
+}
+readonly -f customize-config-variable-name
 
 # ------------------------------------------------------------------
 
@@ -1456,11 +1471,12 @@ readonly -f customize-and-validate-configuration-variables
 ##############################################################################
 
 function is-multi-writer-drive() {
-	local resource=${1-$drive_name}
+	local drive_name=${1:-$drive_name}
 
-	 _set-_drive_name $resource
+	local   is_multi_writer_drive=$is_multi_writer_drive
+	customize-config-variable-name is_multi_writer_drive
 
-	[[ ${drv_name2is_multi_writer_drive[$_drive_name]-${custom_config_var2default_value[is_multi_writer_drive]-$is_multi_writer_drive}} ]]
+	[[ $is_multi_writer_drive ]]
 }
 readonly -f is-multi-writer-drive
 
@@ -1476,8 +1492,8 @@ function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
 
 	_set-_drive_name $drive_dir
-	[[  $_drive_name == $drive_name ]] ||
-	local max_FS_usage_percent=${drv_name2max_FS_usage_percent[$_drive_name]-${custom_config_var2default_value[max_FS_usage_percent]-$max_FS_usage_percent}}
+	local    max_FS_usage_percent=$max_FS_usage_percent
+	customize-config-variable-name max_FS_usage_percent $_drive_name
 
 	suspend-tracing
 	local -i pcent ipcent
@@ -3062,10 +3078,16 @@ set-backup_type() {
 	backup_type=${drive_name2backup_type[$drive_name]-}
 	[[ $backup_type ]] && return	# was it in the cache?
 
-	[[   ${custom_config_var_assignments-} ]] &&
-	local $custom_config_var_assignments # don't trash caller's values
-	set-drive_name $drive_name	# calls customize-config-variables
-	backup_type="$dirs_to_backup|$exclude_file|$extra_excludes"
+	local variable_name backup_type=
+	for variable_name in dirs_to_backup exclude_file extra_excludes
+	    do	if  is-writable-var   $variable_name
+		   then eval   "local $variable_name=\$$variable_name"
+			customize-config-variable-name $variable_name
+		fi
+		local value=${!variable_name}
+		backup_type+="$value|"
+	done
+	backup_type=${backup_type%|}
 	drive_name2backup_type[$drive_name]=$backup_type # cache it
 }
 readonly -f set-backup_type
@@ -3749,9 +3771,6 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
-	customize-config-variables
-	local var_name=backup_period; local \
-	   default_backup_period=${custom_config_var2default_value[$var_name]-}
 	local hour_avgs= hour_maxs=
 	local dir drive_name format=
 	for dir in $all_drive_dirs
@@ -3772,8 +3791,8 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 			local -i avg_mins=$(( ($total+($#/2)) / $# ))
 			set-hours--from-minutes -1 $avg_mins # 1 decimal point
 			# drv_name2backup_period_for_update -> localize period
-			[[ $default_backup_period ]] &&
-			local backup_period=${drv_name2backup_period[$drive_name]-$default_backup_period}
+			local backup_period=$backup_period
+			customize-config-variable-name backup_period
 			local -i backup_period_mins=$backup_period*60
 			if (( avg_mins >= backup_period_mins ))
 			   then if (( avg_mins == backup_period_mins ))
@@ -3809,17 +3828,10 @@ set-drive_usage() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
-	customize-config-variables
-	local var_name=max_FS_usage_percent; local \
-	    default_min_FS_usage=${custom_config_var2default_value[$var_name]-}
 
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
-	    do	# a speedup to avoid (slow) call to set-drive_name
-		_set-drive_name $drive_dir
-		[[ $default_min_FS_usage ]] &&
-		max_FS_usage_percent=${drv_name2max_FS_usage_percent[$drive_name]-$default_min_FS_usage}
-
+	    do	# is-drive-usage-too-high sets max_drive_usage_percent
 		is-drive-usage-too-high && local warn=$true || local warn=
 		local     type=${max_drive_usage_percent:0:1}
 		local  percent=${max_drive_usage_percent#?}    _type
@@ -3846,7 +3858,6 @@ set-drive_response() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
-	customize-config-variables
 
 	local drive_dir drive_name responses=
 	for drive_dir in $all_drive_dirs
@@ -4550,6 +4561,8 @@ readonly -f show-sudo-config-warning-if-it-fits
 
 # this section is mandatory
 show-stats-section-1() {
+
+	customize-config-variables # for customize-config-variable-name
 
 	set-rsync_hour_avgs-rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
@@ -6864,6 +6877,13 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	_set-drive_name ${1:-I}
+	customize-config-variables
+	for n in I Z X; do set-backup_type $n; done;
+	   echo ${drive_name2backup_type[*]}; _exit
+	customize-config-variable-name backup_period;
+	   echo "$backup_period -> $?"; _exit
+
 	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
