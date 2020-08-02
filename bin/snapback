@@ -950,12 +950,16 @@ readonly -f set-lock_PGIDs
 function ps-locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
+
 	local ps_opts=
 	# $1 types are (a)ll, (b)ackup, (c)opy, (p)rune, (m)on: so not 'ps' opt
 	while [[ ${1-} == -* || ${1-} == [^abcpm] || $# -ge 3 ]]
 	   do ps_opts+="$1 "; shift; done
-	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
-	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
+	set-drive_dirs
+	set-rows-columns-COLUMNS
+	setup-ps-variables-and-ps_-function
+	[[ $ps_opts ]] || ps_opts="-o $ps_keywords"
+
 	set-lock_paths "$@"
 
 	[[ $do_rm ]] && rm-stale-locks
@@ -965,7 +969,7 @@ function ps-locks() {
 	    do	header $lock
 		[[ -s  $lock ]] || { echo "no such lock"; continue; }
 		set -- $(< $lock)
-		ps $ps_opts -g $1 || ps ${no_header_opt-} $ps_opts $1
+		ps $ps_opts -g $1 || ps $ps_h_opt $ps_opts $1
 		status=$?
 	done
 	$xtrace
@@ -4245,10 +4249,10 @@ setup-ps-variables-and-ps_-function() {
 	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
 
 	case $OSTYPE in
-	    ( linux* ) ps_H_opt=-H  ps_f_opt=f  ;;
-	    ( *bsd*  ) ps_H_opt=-d  ps_f_opt=-d ;; # works on FreeBSD, at least
-	    (   *    ) ps_H_opt=    ps_f_opt=   ;;
-	esac; readonly ps_H_opt     ps_f_opt
+	    ( linux* ) ps_H_opt=-H  ps_f_opt=f  ps_h_opt=h ;;
+	    ( *bsd*  ) ps_H_opt=-d  ps_f_opt=-d ps_h_opt=  ;;
+	    (   *    ) ps_H_opt=    ps_f_opt=   ps_h_opt=  ;;
+	esac; readonly ps_H_opt     ps_f_opt	ps_h_opt
 
 	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
 	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
@@ -4258,7 +4262,7 @@ setup-ps-variables-and-ps_-function() {
 	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
 	local min_full_columns=$max_ps_width
 
-	if (( $columns >= $min_full_columns )) || [[ $ps_opt == -f ]]
+	if (( $columns >= $min_full_columns )) || [[ ${ps_opt-} == -f ]]
 	   then readonly is_wide=$true
 	   else readonly is_wide=$false
 	fi
