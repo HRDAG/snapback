@@ -300,11 +300,15 @@ readonly snapshot_date_time_separator=','
 # backups and pruning, remove the drive's name from drive_name_regex= (only).
       drive_name_regex='[A-Z]'		# only drives being backed-up & pruned
 admin_drive_name_regex='[A-Za-z]'	# all, for watch & list-drives -a
-_wider_name_regex='+-?[0-9]*'		# support AB, CD-2, E3, etc
-readonly       drive_name_regex=$drive_name_regex$_wider_name_regex
-readonly admin_drive_name_regex=$admin_drive_name_regex$_wider_name_regex
+drive_class_regex="^$admin_drive_name_regex+" # D2 & D-2 use 'D' customization
+
+_drive_version_regex='[-._]?[0-9]*'	# support AB, CD-2, E3, etc
+drive_name_regex=$drive_name_regex$admin_drive_name_regex*$_drive_version_regex
+admin_drive_name_regex=$admin_drive_name_regex+$_drive_version_regex
 readonly is_drive_name_capitalized=$true
 readonly is_drive_name_upper_cased=$true
+
+readonly drive_name_regex admin_drive_name_regex drive_class_regex
 
 # -----------------------------------------------------------------------------
 

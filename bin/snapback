@@ -6072,8 +6072,8 @@ Corrupted index cache file
 EXT4-fs error
 group descriptors corrupted!"
 
-is-set syslog_search_string_varnames ||	# can set custom value in $config_file
-readonly syslog_search_string_varnames="
+is-set syslog_search_string_var_names || # can set custom value in $config_file
+readonly syslog_search_string_var_names="
      OS_error_strings
     USB_error_strings
     XFS_error_strings
@@ -6089,9 +6089,9 @@ search-syslog-for-errors() {
 	local cnt_msg_file=${3:-$syslog_errors_count_msg_file}
 
 	local search_str_file=$tmp_1 ignorable_str_file=$tmp_2
-	local varname
-	for varname in $syslog_search_string_varnames
-	    do	echo "${!varname}"
+	local var_name
+	for var_name in $syslog_search_string_var_names
+	    do	echo "${!var_name}"
 	done > $search_str_file
 	echo "$OS_ignorable_error_strings" > $ignorable_str_file
 
