@@ -4978,12 +4978,17 @@ readonly -f monitor-drives
 # ----------------------------------------------------------------------------
 
 re-start-monitor-drives-if-needed() {
+	[[ ${1-} == -f ]] && { shift;local do_force=$true; } || local do_force=
 
-	[[ $our_path == /usr/* &&      # if this is installed command, and ...
-	   $our_path -nt $drive_monitor_lock_path && # .. newer than process ..
-		      -s $drive_monitor_lock_path ]] && # ,.. and it exists?
-	    kill -9 $(<  $drive_monitor_lock_path) # then restart it ...
-	is-active-lock   $drive_monitor_lock_path ||
+	if [[ $do_force ]] ||
+	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
+	     is-newer $our_path $drive_monitor_lock_path )
+	   then lock-replica-of-snapshots --wait   # don't interrupt monitor
+		kill -9 $(< $drive_monitor_lock_path) # now safe to kill
+		lock-replica-of-snapshots --release
+	fi
+
+	is-active-lock $drive_monitor_lock_path ||
 	    $our_path monitor-drives	# make sure it's running
 }
 readonly -f re-start-monitor-drives-if-needed
@@ -6412,8 +6417,8 @@ case $action in
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then check-logs		# create data for 'watch'
-		rm-stale-locks
 		rm-dangling-symlinks
+		rm-stale-locks		# do before ...
 		re-start-monitor-drives-if-needed
 		wait			# want to stay in 'ps'
 	   else true
