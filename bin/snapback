@@ -3760,53 +3760,66 @@ set-stats_format() {
 }
 readonly -f set-stats_format
 
+# -----------------------------------------------------------------------------
+
+set-average-maximum--from-files-of-numbers() {
+
+	declare -g -i maximum=-999999
+	local -i sum=0
+	local file
+	for file
+	    do	local -i number=$(< $file)
+		sum+=$number
+		(( maximum<number )) &&
+		   maximum=number
+	done
+	declare -g -i average=$(( ($sum+($#/2)) / $# ))
+}
+readonly -f set-average-maximum--from-files-of-numbers
+
 # ---------------------------------
+
+set-hour_avg-hour_max--from-files-of-minutes() {
+	if [[ $# != 0 ]]
+	   then set-average-maximum--from-files-of-numbers $*
+		set-hours--from-minutes -1 $average # 1 decimal point
+		# drv_name2backup_period_for_update -> localize period
+		set-customized_value--for-config-var-name backup_period &&
+		local -i backup_period=$customized_value
+		local -i backup_period_mins=$backup_period*60
+		if (( average >= backup_period_mins ))
+		   then if (( average == backup_period_mins ))
+			   then local type=warning
+			   else local type=error
+			fi
+			set-warning_string $type $hours
+			set-padded_colorized_string--for-printf \
+			    $hours $warning_string
+			hours=$padded_colorized_string
+		fi
+		hour_avg=$hours
+		set-hours--from-minutes -1 $maximum
+		hour_max=$hours
+	   else hour_max= hour_avg=
+	fi
+}
+readonly -f set-hour_avg-hour_max--from-files-of-minutes
+
+# --------------------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
 	local hour_avgs= hour_maxs=
-	local dir drive_name format=
+	local dir drive_name
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
-		local name=$drive_name
-		local  dir=$drives_log_dir/$name/$rsync_time_subdir
+		local   dir=$drives_log_dir/$drive_name/$rsync_time_subdir
 		set -- $dir/$snapshot_glob.txt
-		if [[ $# != 0 ]]
-		   then local -i mins max_mins=0
-			local file sum=
-			for file
-			    do	mins=$(< $file)
-				sum+="$mins+"
-				(( max_mins < mins )) &&
-				   max_mins=$mins
-			done
-			local -i total=${sum%+}
-			local -i avg_mins=$(( ($total+($#/2)) / $# ))
-			set-hours--from-minutes -1 $avg_mins # 1 decimal point
-			# drv_name2backup_period_for_update -> localize period
-			set-customized_value--for-config-var-name backup_period &&
-			   local backup_period=$customized_value
-			local -i backup_period_mins=$backup_period*60
-			if (( avg_mins >= backup_period_mins ))
-			   then if (( avg_mins == backup_period_mins ))
-				   then local type=warning
-				   else local type=error
-				fi
-				set-warning_string $type $hours
-				set-padded_colorized_string--for-printf \
-				    $hours $warning_string
-				hours=$padded_colorized_string
-			fi
-			hour_avg=$hours
-			set-hours--from-minutes -1 $max_mins
-			hour_max=$hours
-		   else hour_avg= hour_max=
-		fi
-		hour_avgs+="$name=$hour_avg "
-		hour_maxs+="$name=$hour_max "
-
+		set-hour_avg-hour_max--from-files-of-minutes $*
+		hour_avgs+="$drive_name=$hour_avg "
+		hour_maxs+="$drive_name=$hour_max "
 	done
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
@@ -6872,6 +6885,11 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	cd_ $log_dir/$rsync_time_subdir/I
+	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
+	set-average-maximum--from-files-of-numbers *.txt
+	TraceV 0 average maximum; _exit
+
 	_set-drive_name ${1:-I}
 	customize-config-variables
 	for n in I X Z; do set-backup_type $n; done;
