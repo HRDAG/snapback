@@ -895,14 +895,25 @@ function kill-job-on-drives() {
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
 	assert-not-option "${1-}"
+	local type=$1 drives=${2-}
 
 	set-lock_paths "$@" || return 1
 
 	set-signal_is_kill $signal
 	local path status=1		# assume nothing we're allowed to kill
 	for path in $lock_paths
-	    do	if [[ $signal_is_kill ]]
-		   then # sometimes it takes multiple kills for update-drive
+	    do	if [[ $path == $drive_monitor_lock_path ]]
+		   then local is_monitor_lock=$true
+		   else local is_monitor_lock=$false
+		fi
+		if [[ $signal_is_kill ]]
+		   then if [[ $is_monitor_lock ]]
+			   then [[   $type == m* ||
+				   ( $type == a* && $drives == all ) ]] &&
+				re-start-monitor-drives-if-needed -f
+				continue
+			fi
+			# sometimes it takes multiple kills for update-drive
 			local did_loop=$false
 			until signal-job $signal $path
 			   do	echo -n .
@@ -911,7 +922,8 @@ function kill-job-on-drives() {
 			done
 			[[ $did_loop ]] && echo
 			status=0
-		   else signal-job $signal $path && status=0
+		   else [[ $is_monitor_lock ]] && continue
+			signal-job $signal $path && status=0
 		fi
 	done
 
@@ -4783,7 +4795,7 @@ watch() {
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 
-	is-active-lock $drive_monitor_lock_path || $our_path monitor-drives
+	is-active-lock $drive_monitor_lock_path ||sudo $our_path monitor-drives
 
 	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
 
@@ -4989,13 +5001,13 @@ re-start-monitor-drives-if-needed() {
 	if [[ $do_force ]] ||
 	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
 	     is-newer $our_path $drive_monitor_lock_path )
-	   then lock-replica-of-snapshots --wait   # don't interrupt monitor
-		kill -9 $(< $drive_monitor_lock_path) # now safe to kill
+	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
+		signal-job -KILL $drive_monitor_lock_path # now safe to kill
 		lock-replica-of-snapshots --release
 	fi
 
 	is-active-lock $drive_monitor_lock_path ||
-	    $our_path monitor-drives	# make sure it's running
+	    sudo $our_path monitor-drives # make sure it's running
 }
 readonly -f re-start-monitor-drives-if-needed
 
@@ -6509,7 +6521,7 @@ case $action in
    # kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
    ( kil* | k ) undo-action-abbrev kill
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
-	[[ $# == 2 ]] || abort-with-action-Usage
+	[[ $# == 2 || $* == m* ]] || abort-with-action-Usage
 	$Trace
 	kill-job-on-drives ${signal-} "$@"
 	;;
@@ -6550,10 +6562,10 @@ case $action in
    ( mon* | m ) undo-action-abbrev monitor-drives
 	if [[ ${1-} == -r ]]
 	   then shift
+		$IfRun monitor-drives "$@"
+	   else	[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
-		$IfRun monitor-drives "$@" &
-	   else	exec sudo setsid $our_path $debug_opt $trace_opt $action -r ||
-		    abort "you need sudo perms"
+		setsid $our_path $debug_opt $trace_opt $action -r &
 	fi
 	;;
 
