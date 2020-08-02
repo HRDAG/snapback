@@ -34,12 +34,13 @@ Typically, the cron job starts every hour on the hour; it will start to get
 smaller over time, as rsync finishes on the smaller or faster partitions (or
 ones with limited $dirs_to_backup.  Also, the "biggest" cron job only appears
 by "restarting fresh" (pruning-jobs run for hours, so the typical cron job
-doesn't have to do much pruning).  If you want to see the full cron job, run:
+doesn't have to do much pruning).  If you want to see the full cron job,
+first run:
 
-    snapback kill-both all
+    snapback kill b,p all
 
 which kills both backups and pruning on all the partitions ... which is
 *completely* *safe*, there are *no* *races*, this is done *all* *the* *time*.
-Really.  Run the kill-both (in another window) *after* you start "snapback
-watch", so you can 'watch' the kill take place (some commands take time to
+Really.  Run the kill (in another window) *after* you start "snapback watch",
+so you can 'watch' the kill take place (some commands take time to
 die, because they're waiting to finish expensive I/O).
