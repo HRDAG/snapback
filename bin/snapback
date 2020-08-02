@@ -145,7 +145,7 @@ Usage: $our_name [options] action [options] [args]
     copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
 
     w: show full details on all jobs and drives
-    watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
+    watch [-s][-C][-N names] [watch-opts]: dashboard (-s: stats; -C: cron jobs)
     big-swapouts: search syslog files for warnings about high swapout rates
     check-logs: update error cache: run this if dashboard fails with I/O error
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
@@ -4203,7 +4203,7 @@ readonly -f trim-copy-update-ps
 
 exec-watch-snapback-w() {
 
-	local all_opts="$ps_opt $cron_opt"
+	local all_opts="$ps_opt $no_errors $stats_opt $cron_opt"
 	if [[ $names ]]
 	   then set-drive_names--from-user-args $names
 		all_opts+=" -N ${drive_names// /,}"
@@ -4465,6 +4465,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	(( BD > 0 )) && let BD+=7	# header plus default variable values
 	(( BD > 0 )) && let BD+=$rows_for_one_detailed_rsync ||
 				 rows_for_one_detailed_rsync=0
+	[[ $stats_opt ]] && PD=0 CS=0 BD=0
 	TraceV 1 PD CS BD && let rows_left-=3
 
 	# min overhead: 1 watch line, 1 blank line, 8 lines of section-1 stats,
@@ -4507,7 +4508,7 @@ readonly -f create-status_dir
 show-errors-in-syslog() {
 	local errors_count_msg_file=${1:-$syslog_errors_count_msg_file}
 
-	[[ -s $errors_count_msg_file ]] && {
+	[[ ! ${no_errors-} && -s $errors_count_msg_file ]] && {
 
 	local header="count subset-of-$(basename $syslog_path)-record"
 	set-warning_string warning "${header^^}"
@@ -4811,9 +4812,12 @@ readonly -f show-copy-cmds-with-full-details
 # ------------------------------------------------------------------
 
 watch() {
-	local watch_opt= cron_opt= ps_opt= names=
+	# most of these variables are accessed in exec-watch-snapback-w
+	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= names=
 	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ ${1-} == -E ]] && { no_errors=-E; shift; }
+	[[ ${1-} == -s ]] && { stats_opt=-s; shift; }
 	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
@@ -4865,6 +4869,8 @@ watch() {
 	show-stats-section-3-if-it-fits
 
 	show-filesystem-info-that-fits $drive_dirs
+
+	[[ $stats_opt ]] && return
 
 	[[ ! $cron_cmds || $show_all ]] &&
 	show-prune-cmds
