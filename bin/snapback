@@ -474,6 +474,8 @@ function set-lock_paths() {
 
 	eval "set -- $lock_dir/$type_glob*-$name_glob.pid"
 	lock_paths=$*
+	[[ -e $drive_monitor_lock_path && $type_glob == [*m]* ]] &&
+	lock_paths+=" $drive_monitor_lock_path"
 	$xtrace
 	[[ $lock_paths ]]
 }
@@ -949,8 +951,8 @@ function ps-locks() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 	local ps_opts=
-	# $1 type abbrevs are (a)ll, (b)ackup, (c)opy, (p)rune: so not 'ps' opt
-	while [[ ${1-} == -* || ${1-} == [^abcp] || $# -ge 3 ]]
+	# $1 types are (a)ll, (b)ackup, (c)opy, (p)rune, (m)on: so not 'ps' opt
+	while [[ ${1-} == -* || ${1-} == [^abcpm] || $# -ge 3 ]]
 	   do ps_opts+="$1 "; shift; done
 	[[ $ps_opts   ]] || ps_opts="-o pid,stat,stime,command"
 	[[ $is_darwin ]] || ps_opts="-H $ps_opts" no_header_opt=h
@@ -963,7 +965,7 @@ function ps-locks() {
 	    do	header $lock
 		[[ -s  $lock ]] || { echo "no such lock"; continue; }
 		set -- $(< $lock)
-		ps $ps_opts -$1 || ps ${no_header_opt-} $ps_opts $1
+		ps $ps_opts -g $1 || ps ${no_header_opt-} $ps_opts $1
 		status=$?
 	done
 	$xtrace
