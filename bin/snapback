@@ -3892,10 +3892,10 @@ _recalculate-snapshot-stats-vars() {
 	set-stats_format $all_drive_dirs
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
 	local _dir drive_name nums= oldies= newies=
-	for _dir in $all_drive_dirs
-	    do	_set-drive_name $_dir
-		local dir=$snapshots_replica_dir/$drive_name
-		cd $dir || abort "cd $dir"
+	for dir in $all_drive_dirs
+	    do	_set-drive_name $dir
+		local replica_dir=$snapshots_replica_dir/$drive_name
+		cd $replica_dir || abort "cd $replica_dir"
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
 		set -- $snapshot_glob$suffix
@@ -3914,7 +3914,7 @@ _recalculate-snapshot-stats-vars() {
 		for snapshot in $*
 		    do	if [[ ( $skip_empty || $only_empty ) &&
 			      ! $is_drive_hung ]]
-			   then set -- $_dir/$snapshot/*
+			   then set -- $dir/$snapshot/* # can't use replica_dir
 				[[ $skip_empty && $# == 0 ]] && continue
 				[[ $only_empty && $# != 0 ]] && continue
 			fi
@@ -3963,6 +3963,9 @@ readonly watch_cache_dir=$log_dir/stats/watch
 readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
 
 function _is-stats-cache-fresh {
+	local cache_file=$1
+
+	[[ -s $cache_file ]] || return 1
 
 	if [[ $drive_dirs != "$(< $cached_drive_dirs_file)" ]]
 	   then rm -f $cached_drive_dirs_file $watch_cache_dir/*/*,*.txt
@@ -3970,8 +3973,10 @@ function _is-stats-cache-fresh {
 	fi
 
 	local dir drive_name
-	for dir in $drive_dirs
-	    do	[[ $number_cache_file -nt $dir/. ]] || return 1
+	for dir in $all_drive_dirs
+	    do	_set-drive_name $dir
+		local replica_dir=$snapshots_replica_dir/$drive_name
+		[[ $cache_file -nt $replica_dir/. ]] || return 1
 	done
 
 	return 0
@@ -4003,7 +4008,8 @@ setup-snapshot-stats() {
 	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
 	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_dirs=$all_drive_dirs
-	if _is-stats-cache-fresh && [[ $watch_opt ]]
+	# the cache files in number/ are a pure superset of the files in *-age/
+	if _is-stats-cache-fresh $number_cache_file && [[ $watch_opt ]]
 	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
 		stats_oldest_age=$(< $oldest_age_cache_file)
