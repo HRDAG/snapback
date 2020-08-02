@@ -3745,7 +3745,7 @@ readonly -f set-stats_format
 # ---------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
-	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
+	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
 	customize-config-variables
@@ -3805,7 +3805,7 @@ readonly -f set-rsync_hour_avgs-rsync_hour_maxs
 # ----------------------------------------------------------------------------
 
 set-drive_usage() {
-	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
+	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
 	customize-config-variables
@@ -3842,7 +3842,7 @@ readonly -f set-drive_usage
 # ----------------------------------------------------------------------------
 
 set-drive_response() {
-	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs)}
+	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
 	customize-config-variables
@@ -6563,7 +6563,13 @@ case $action in
 	if [[ ${1-} == -r ]]
 	   then shift
 		$IfRun monitor-drives "$@"
-	   else	[[ $UID == 0 ]] || abort "run with sudo"
+	   else	set -- $(list-drive-dirs -a)
+		if [[ $# == 0 ]]
+		   then [[ -t 1 ]] &&
+			echo "No mounted backup drives, won't start $action"
+			exit_normally 1
+		fi
+		[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
 		setsid $our_path $debug_opt $trace_opt $action -r &
 	fi
