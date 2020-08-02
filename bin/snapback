@@ -4104,12 +4104,12 @@ function run-df() {
 	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	if (( ${columns:-99} >= $min_full_columns ))
-	   then df_sed() { cat; }
-	   else df_sed() { sed	-e 's/Mounted on/Drive/' \
-				-e "s@$drive_dir_prefix@ @" ; }
+	   then filter-df() { cat; }
+	   else filter-df() { sed -e 's/Mounted on/Drive/' \
+				  -e "s@$drive_dir_prefix@ @" ; }
 		df_fields=${df_fields/,size/}
 	fi
-	df --block-size=G --output=$df_fields --no-sync $drive_dirs | df_sed
+	df --block-size=G --output=$df_fields --no-sync $drive_dirs | filter-df
 }
 readonly -f run-df
 
