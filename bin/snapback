@@ -4810,8 +4810,6 @@ watch() {
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 
-	is-active-lock $drive_monitor_lock_path ||sudo $our_path monitor-drives
-
 	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
 
 	set -- $(list-drive-dirs -a)
@@ -4849,6 +4847,8 @@ watch() {
 	# --------------------------------------------------
 
 	show-errors-in-syslog	  # before access disk (can trigger I/O error)
+
+	is-active-lock $drive_monitor_lock_path ||sudo $our_path monitor-drives
 
 	show-sudo-config-warning-if-it-fits
 
