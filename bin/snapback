@@ -1214,8 +1214,13 @@ _set-drive_name() {
 	    [[ $is_quiet ]] && { $xtrace; return 1; }
 	    abort "'$name' is not a valid drive-name"	; }
 
-	set-name_glob $name
-	drive_name=$name_glob
+	if   [[ $is_drive_name_upper_cased ]]
+	   then name=${name^^}
+	elif [[ $is_drive_name_capitalized ]]
+	   then name=${name^}
+	fi
+	drive_name=$name
+
 	_last_fully_initialized_drive_name= # prevent weird bugs
 	$xtrace
 }
@@ -1319,18 +1324,29 @@ readonly -f set-drive_dir
 
 # ----------------------------------------------------------------------------
 
+function set-customized_drv_names() {
+	local var_name=$1
+
+	eval \
+	    "customized_drv_names=\${!drv_name2$var_name[*]}"
+	[[  $customized_drv_names ]]
+}
+readonly -f set-customized_drv_names
+
+# ---------------------------------
+
 declare -A custom_config_var2default_value
 
 set-custom_config_vars-custom_config_var2default_value() {
 
 	[[ ${custom_config_vars-} ]] && return
 
-	# constants, for set-drive_log_dir-file_for_logging-is_regression_test
+	# controlled by set-drive_log_dir-file_for_logging-is_regression_test
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
 
 	remember-tracing		# since suspend-tracing maybe not run
 
-	local var_name
+	local var_name customized_drv_names
 	for var_name in $custom_config_vars $config_vars
 	    do	is-arg1-in-arg2 $var_name $uncustomizable_config_vars &&
 		   continue
@@ -1341,6 +1357,7 @@ set-custom_config_vars-custom_config_var2default_value() {
 
 		is-set		$var_name || continue
 		is-readonly-var $var_name && continue # can't customize?
+		set-customized_drv_names $var_name || continue #not customized?
 
 		custom_config_var2default_value[$var_name]=${!var_name}
 
@@ -1350,9 +1367,35 @@ set-custom_config_vars-custom_config_var2default_value() {
 	custom_config_vars=${!custom_config_var2default_value[*]}
 	readonly custom_config_var2default_value custom_config_vars
 
-	restore-tracing
+	restore-tracing custom_config_vars
 }
 readonly -f set-custom_config_vars-custom_config_var2default_value
+
+# ---------------------------------
+
+function _set-value--for-config-var() {
+	local var_name=$1 drive_name=$2 customized_drv_names
+
+	set-customized_drv_names $var_name || return 1
+
+	[[ $drive_name =~ $drive_class_regex ]] || abort-function "no class"
+	drive_class=${BASH_REMATCH[0]}
+
+	local drv_name is_customized=$false
+	for drv_name in $drive_name $drive_class # most specific first
+	    do	is-arg1-in-arg2 $drv_name $customized_drv_names || continue
+		is_customized=$true
+		break
+	done
+	if [[ $is_customized ]]
+	   then eval "value=\${drv_name2$var_name[\$drv_name]}"
+		Trace 2 "drv_name2$var_name[$drv_name] -> $var_name=$value"
+	   else value=${custom_config_var2default_value[$var_name]}
+	fi
+	return 0
+}
+
+readonly -f _set-value--for-config-var
 
 # ---------------------------------
 
@@ -1362,29 +1405,18 @@ customize-config-variables() {
 	set-custom_config_vars-custom_config_var2default_value
 
 	[[ $drive_name ]] || return
-
 	[[ $drive_name == [zZ] ]] && is_regression_test=$true
 
+	remember-tracing
 	for var_name in $custom_config_vars
-	    do	local array_name=drv_name2$var_name
-		eval "local drv_names=\${!$array_name[*]}"
-		[[ $drv_names ]] || continue
+	    do	_set-value--for-config-var $var_name $drive_name || continue
+		eval "$var_name=\$value"
 		suspend-tracing
-
-		is-arg1-in-arg2 $var_name $uncustomizable_config_vars &&
-		   abort "$config_file can't have custom '$var_name'"
-
-		is-arg1-in-arg2 $drive_name $drv_names || {
-		eval "$var_name=\${custom_config_var2default_value[$var_name]}"
-		continue; }
-
-		eval "local custom_value=\${$array_name[\$drive_name]-}"
-		eval "$var_name=\$custom_value"
-		Trace 2 "$array_name[$drive_name] -> $var_name=$custom_value"
 	done
+	restore-tracing
+
 	(( $backup_period_for_update > 0 )) && [[ $is_update ]] &&
 	    backup_period=$backup_period_for_update
-	restore-tracing custom_config_vars
 }
 readonly -f customize-config-variables
 
@@ -1395,14 +1427,12 @@ function set-customized_value--for-config-var-name() {
 
 	set-custom_config_vars-custom_config_var2default_value
 
-	local default_value=${custom_config_var2default_value[$var_name]-}
-	[[   $default_value ]] || { customized_value=${!var_name}; return 1; }
-
-	local drive_name
+	local drive_name drive_class value
 	 _set-drive_name $resource
-	eval \
-	"customized_value=\${drv_name2$var_name[\$drive_name]-\$default_value}"
-	return 0
+	if _set-value--for-config-var $var_name $drive_name
+	   then customized_value=$value       && return 0
+	   else customized_value=${!var_name} && return 1
+	fi
 }
 readonly -f set-customized_value--for-config-var-name
 
@@ -6923,22 +6953,25 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
+	monitor-drives |& less; _exit
+	lock-replica-of-snapshots --wait; _exit $?
+
+	_set-drive_name ${1:-I}
+	for n in I X Z; do set-backup_type $n; done;
+	   echo ${drive_name2backup_type[*]}
+	echo ${!custom_config_var2default_value[*]}
+	for drive_name in not I Z i1 i-2 i.3 i_45
+	    do	set-customized_value--for-config-var-name backup_period;
+		echo "$drive_name -> $customized_value"; done
+	for not in max_FS_usage_percent max_backup_period_for_pruning
+	    do	set-customized_value--for-config-var-name $not && abort $not
+	done; _exit
+
 	cd_ $log_dir/$rsync_time_subdir/I
 	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
 	set-average-maximum--from-files-of-numbers *.txt
 	TraceV 0 average maximum; _exit
-
-	_set-drive_name ${1:-I}
-	set-custom_config_vars-custom_config_var2default_value
-	for n in I X Z; do set-backup_type $n; done;
-	   echo ${drive_name2backup_type[*]}
-	for drive_name in I X Z
-	    do set-customized_value--for-config-var-name backup_period;
-	       echo "$customized_value -> $?"; done; _exit
-
-	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
-	monitor-drives |& less; _exit
-	lock-replica-of-snapshots --wait; _exit $?
 
 	set-drive_name ${1:-J}; set-drive_dir $drive_name
 	cd $drive_dir_prefix/$drive_name; new_snapshot=/backup/J/2019-03-28,00

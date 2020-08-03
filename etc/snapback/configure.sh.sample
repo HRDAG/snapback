@@ -20,7 +20,10 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 ##############################################################################
 # Most variables can have per-drive values (must remove -r or readonly label),
 #   using either source-drive-specific-config-file (which can be modified) or
-#   eg: drv_name2dirs_to_backup[Z]=/var/tmp/small-dir  # test w/pseudo-drive Z
+#   e.g.: drv_name2backup_period[D]=24 # D drive has Daily backups.
+# $drive_class_regex (end of this file) defines a drive class: by default,
+#   if drive_name 'D-2' is not a key in the drv_name2backup_period array, then
+#   it checks to see if drive_class 'D' is a key (as in the previous example).
 ##############################################################################
 
 # -----------------------------------------------------------------------------
@@ -278,7 +281,7 @@ readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 readonly very_old_immutable_files=
 
 # --------------------------------------------------------------------------
-# Naming policy (can be re-implemented with custom functions defined here) #
+# Drive naming policy.
 # --------------------------------------------------------------------------
 
 # Set to 'T' for ISO standard, code will automagically rename snapshots.
@@ -290,8 +293,9 @@ readonly snapshot_date_time_separator=','
 # the following variables (and/or by assigning functions to
 # set_drive_name_pre_hook and set_drive_name_post_hook).
 #
-# The regex variables are extended regular expressions; snapback will anchor
-# them ( e.g. ^$drive_name_regex$ ) when it uses them.
+# The regex variables are extended regular expressions.
+# When snapback uses the two *drive_name_regex variables, it will anchor them:
+#    ^$drive_name_regex$ and ^$admin_drive_name_regex$
 #
 # Note that drive_name_regex is used by action 'list-drives' to generate the
 # list of "all" drives for jobs whose std(in|out|err) is not a terminal
@@ -301,7 +305,11 @@ readonly snapshot_date_time_separator=','
 # backups and pruning, remove the drive's name from drive_name_regex= (only).
       drive_name_regex='[A-Z]'		# only drives being backed-up & pruned
 admin_drive_name_regex='[A-Za-z]'	# all, for watch & list-drives -a
-drive_class_regex="^$admin_drive_name_regex+" # D2 & D-2 use 'D' customization
+
+# This regex is matched against $drive_name to determine the drive_class,
+# an alternate key for drv_name2{var} if the array has no key for $drive_name .
+drive_class_regex="^."	# make the first character of $drive_name be the class
+drive_class_regex="^$admin_drive_name_regex+" # Hr2 & Hr-2 use Hr customization
 
 _drive_version_regex='[-._]?[0-9]*'	# support AB, CD-2, E.3, D_4, etc
 drive_name_regex=$drive_name_regex$admin_drive_name_regex*$_drive_version_regex

@@ -60,10 +60,11 @@ To get up and running quickly, here's the minimal edits to
       create drv_name2backup_period[D]=24
 
       If you want to have multiple H and D drives (so some drives can be
-      off-site), then name them H-1, H-2, D-1, D-2, etc
+      off-site), then name them H1, H2, D1, D2, etc.  A customization for H
+      (e.g. drv_name2backup_period[H]=1) is used for any H## (e.g. H1 and H2).
 
 On GNU/Linux, run "sudo snapback mkfs ..."  to build a filesystem on each
-drive (which will *DESTROY* any existing data on the specified partion).
+drive (which will *DESTROY* any existing data on the specified partition).
 
 On Darwin (macOS aka Mac OS-X), use an APFS filesystem labeled backup-{name},
 and set backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
