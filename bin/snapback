@@ -1239,7 +1239,7 @@ set-drive_name() {
 	[[ $# == 1 && $1 ]] || abort "set-drive_name takes a single argument"
 	local name=$1
 
-	${set_drive_name__pre_hook-}
+	${set_drive_name_pre_hook-} # can munge 'name' variable
 
 	_set-drive_name -c $name && name=$drive_name
 
@@ -1253,7 +1253,7 @@ set-drive_name() {
 			drive_dir=$mount_dir
 		   else drive_dir=$name
 		fi
-		[[  $drive_dir =~					\
+		[[  $drive_dir =~ \
 		   ^$drive_dir_prefix$admin_drive_name_regex$ ]] ||
 		   abort "$name is not drive-dir or FS-label or valid-name"
 		name=${drive_dir#$drive_dir_prefix}
@@ -1261,7 +1261,7 @@ set-drive_name() {
 	_set-drive_name $name	  # call again, for globbing and case-control
 	TraceV 3 drive_name
 
-	${set_drive_name__post_hook-}
+	${set_drive_name_post_hook-} # can munge 'drive_name' variable
 
 	set-drive_log_dir-file_for_logging-is_regression_test $drive_name
 }

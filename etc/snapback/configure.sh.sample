@@ -288,7 +288,7 @@ readonly snapshot_date_time_separator=','
 # Default policy: drives are named as capitalized alpha strings optionally
 # followed by a number.  You can set your own policy by simply changing
 # the following variables (and/or by assigning functions to
-# set_drive_name__pre_hook and set_drive_name__post_hook).
+# set_drive_name_pre_hook and set_drive_name_post_hook).
 #
 # The regex variables are extended regular expressions; snapback will anchor
 # them ( e.g. ^$drive_name_regex$ ) when it uses them.
