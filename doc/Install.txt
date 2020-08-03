@@ -238,6 +238,35 @@ out of resources on some drives.
 those two files, email sweikart@gmail.com with a description of what you want
 to accomplish.]
 
+configure.sh can hold functions that are assigned to hook variables, so
+snapback can call your own functions.  For example:
+
+1. You can set set_drive_name__pre_hook= to the name of a function that can
+munge the 'name' variable before it's checked and processed.
+
+2. You can set set_drive_name__post_hook= to the name of a function that can
+munge the 'drive_name' variable before it's used to create various directories
+(for a new backup drive).
+
+3. You can set backup_drive_pre_hook= to the name of a function that's called
+before a backup's rsync, to e.g. create an LVM/Btrfs/ZFS/etc snapshot (that's
+specified in $dirs_to_backup) of the source filesystem, and/or do a database
+dump to store in the backup snapshot.
+
+4. You can set backup_drive_post_hook= to the name of a function that's called
+after the backup's rsync, to e.g. delete the source-filesystem snapshot that's
+specified in $dirs_to_backup, and/or delete a database-dump, and/or write the
+snapshot's name to a database (depending on the value of $status).
+
+5. You can set rm_snapshot_pre_hook= to the name of a function that's called
+before a .rm snapshot is deleted: you can prevent the deletion by setting
+snapshot to the null string (and removing the snapshot's .rm suffix); you can
+prevent future pruning by touch'in .keep in the snapshot.
+
+6. You can set rm_snapshot_post_hook= to the name of a function that's called
+after a .rm snapshot is deleted, e.g. to delete the existence of the snapshot
+from a database.
+
 
 F. Preparing brand new partitions when you have no existing snapshots
 

@@ -1868,15 +1868,20 @@ rm-pruned-snapshots() {
 	for snapshot
 	    do	local subdir
 		for subdir in $hard_link_dirs
-		    do	$IfRun rm -rf $snapshot$subdir
+		    do	${rm_snapshot_pre_hook-} # could set snapshot= to block
+			$IfRun rm -rf $snapshot$subdir
+			${rm_snapshot_post_hook-} # could update database
 		done
 		suspend-tracing
 	done
+	subdir=
 	restore-tracing
 
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
-	    do	$IfRun rm -rf $snapshot
+	    do	${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
+		$IfRun rm -rf $snapshot
+		${rm_snapshot_post_hook-} # could update database
 		suspend-tracing
 	done
 	restore-tracing
@@ -3028,15 +3033,15 @@ function backup-drive() {
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
-	# could create the snapshot that's specified in dirs_to_backup, and/or
+	# could create LVM snapshot that's specified in $dirs_to_backup, and/or
 	# do a database-dump
 	${backup_drive_pre_hook-}
 
 	backup-drive-rsync $date_time
 	local status=$?
 
-	# could delete the snapshot that's specified in dirs_to_backup, and/or
-	# delete a database-dump, and/or write backup name to a DBMS
+	# could delete source-snapshot that's specified in $dirs_to_backup, or
+	# delete a database-dump, or write $date_time & $status to a database
 	${backup_drive_post_hook-}
 
 	unlock backup
