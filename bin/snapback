@@ -3028,8 +3028,16 @@ function backup-drive() {
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
+	# could create the snapshot that's specified in dirs_to_backup, and/or
+	# do a database-dump
+	${backup_drive_pre_hook-}
+
 	backup-drive-rsync $date_time
 	local status=$?
+
+	# could delete the snapshot that's specified in dirs_to_backup, and/or
+	# delete a database-dump, and/or write backup name to a DBMS
+	${backup_drive_post_hook-}
 
 	unlock backup
 
