@@ -5296,6 +5296,9 @@ readonly -f unmount-drives
 
 # ----------------------------------------------------------------------------
 
+is-set   FS_external_log_size || # can set custom value in $config_file
+readonly FS_external_log_size=400M # max journal size for ext4
+
 # Optional function to allocate an external filesystem log/journal
 # on fast storage (SSD, or always-plugged-in flash memory stick),
 # for use with rotational hard disks.
@@ -5315,7 +5318,8 @@ function set-FS_external_log() {
 	       FS_external_log=/dev/$VG/${FS_label}_log
 	[[ -b $FS_external_log ]] && return 0
 
-	$IfRun lvcreate --size 128M --name $FS_external_log $VG ||
+	$IfRun \
+	lvcreate --size $FS_external_log_size --name $FS_external_log $VG ||
 	    FS_external_log=
 	[[ $FS_external_log ]]
 }
