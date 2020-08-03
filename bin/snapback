@@ -119,7 +119,7 @@ for _var in $config_vars; do _customizable_arrays+="drv_name2$_var "; done
 declare -A $_customizable_arrays
 #
 # this grabs variables that control backup and pruning, and may also hold
-# customizable functions *set-drive_name & source-drive-specific-config-file
+# customizable functions like source-drive-specific-config-file
 source $config_file || abort "source'd $config_file ended with non-0 status"
 
 [[ $is_drive_name_capitalized || $is_drive_name_upper_cased ]] &&
@@ -1175,7 +1175,7 @@ source-drive-specific-config-file ||# can define custom version in $config_file
 source-drive-specific-config-file() {
 	[[ $# == 0 ]] && return
 	local _name=$1  _main_config_file=${2:-${config_file-}}
-	set-drive_name $_name
+	_set-drive_name $_name
 	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
 
 	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
@@ -1190,8 +1190,6 @@ readonly -f source-drive-specific-config-file
 
 readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
 
-have-cmd \
-_set-drive_name ||	   # can define custom version in $config_file
 # This is much faster than set-drive_name, but can only be used for
 # already-existing-and-initialized backup directories and their names.
 # This checks name-validity, and fixex the case of valid names.
@@ -1236,12 +1234,12 @@ readonly -f _set-_drive_name
 
 # ----------------------
 
-have-cmd \
-set-drive_name ||		   # can define custom version in $config_file
 # pass: directory (that holds snapshots), filesystem label, or valid name
 set-drive_name() {
 	[[ $# == 1 && $1 ]] || abort "set-drive_name takes a single argument"
 	local name=$1
+
+	${set_drive_name__pre_hook-}
 
 	_set-drive_name -c $name && name=$drive_name
 
@@ -1262,6 +1260,8 @@ set-drive_name() {
 	fi
 	_set-drive_name $name	  # call again, for globbing and case-control
 	TraceV 3 drive_name
+
+	${set_drive_name__post_hook-}
 
 	set-drive_log_dir-file_for_logging-is_regression_test $drive_name
 }
