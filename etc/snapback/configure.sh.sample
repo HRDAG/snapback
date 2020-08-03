@@ -285,18 +285,19 @@ readonly very_old_immutable_files=
 # [Code is hard-wired to ',' ; email sweikart@gmail.com to implement variable.]
 readonly snapshot_date_time_separator=','
 
-# Default policy: drives are named as a single capitalized letter; you can
-# usually set your own policy by simply changing *drive_name_regex= ,
-# instead of defining your own 'set-drive_name' & '_set-drive_name' functions.
+# Default policy: drives are named as capitalized alpha strings optionally
+# followed by a number.  You can set your own policy by simply changing
+# the following variables (and/or by assigning functions to
+# set_drive_name__pre_hook and set_drive_name__post_hook).
 #
-# These regex variables are extended regular expressions; they're anchored when
-# used ( e.g. ^$drive_name_regex$ ).
+# The regex variables are extended regular expressions; snapback will anchor
+# them ( e.g. ^$drive_name_regex$ ) when it uses them.
 #
 # Note that drive_name_regex is used by action 'list-drives' to generate the
 # list of "all" drives for jobs whose std(in|out|err) is not a terminal
 # (i.e. cron jobs and nohup jobs); admin_drive_name_regex is used when
 # the sysadmin runs a command, or for the 'watch' action ('list-drives -a').
-# So, when you want to do maintenance on a drive, so want to suspend
+# So, when you want to do maintenance on a drive, i.e. you want to suspend
 # backups and pruning, remove the drive's name from drive_name_regex= (only).
       drive_name_regex='[A-Z]'		# only drives being backed-up & pruned
 admin_drive_name_regex='[A-Za-z]'	# all, for watch & list-drives -a
@@ -305,8 +306,8 @@ drive_class_regex="^$admin_drive_name_regex+" # D2 & D-2 use 'D' customization
 _drive_version_regex='[-._]?[0-9]*'	# support AB, CD-2, E.3, D_4, etc
 drive_name_regex=$drive_name_regex$admin_drive_name_regex*$_drive_version_regex
 admin_drive_name_regex="$admin_drive_name_regex+$_drive_version_regex"
-readonly is_drive_name_capitalized=$true
-readonly is_drive_name_upper_cased=$true
+readonly is_drive_name_capitalized=$true  # best to not change this
+readonly is_drive_name_upper_cased=$false
 
 readonly drive_name_regex admin_drive_name_regex drive_class_regex
 
