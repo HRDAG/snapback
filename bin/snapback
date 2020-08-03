@@ -1192,7 +1192,9 @@ readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
 
 have-cmd \
 _set-drive_name ||	   # can define custom version in $config_file
-# ignore invalid names, fix the case of valid names
+# This is much faster than set-drive_name, but can only be used for
+# already-existing-and-initialized backup directories and their names.
+# This checks name-validity, and fixex the case of valid names.
 _set-drive_name() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
@@ -1201,6 +1203,8 @@ _set-drive_name() {
 	local  name=${1#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
 	name=${name%/latest*}
+
+	# quick exit for first phase of set-drive_name?
 	[[ $clean ]] && drive_name=$name && { $xtrace; return 0; }
 
 	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
@@ -1225,7 +1229,7 @@ readonly -f _set-drive_name
 _set-_drive_name() {
 
 	local drive_name	      # don't mess up the usually-global value
-	_set-drive_name "$@"
+	 _set-drive_name "$@"
 	_drive_name=$drive_name
 }
 readonly -f _set-_drive_name
@@ -1256,7 +1260,7 @@ set-drive_name() {
 		   abort "$name is not drive-dir or FS-label or valid-name"
 		name=${drive_dir#$drive_dir_prefix}
 	fi
-	_set-drive_name $name
+	_set-drive_name $name	  # call again, for globbing and case-control
 	TraceV 3 drive_name
 
 	set-drive_log_dir-file_for_logging-is_regression_test $drive_name
