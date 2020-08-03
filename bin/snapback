@@ -1319,16 +1319,16 @@ readonly -f set-drive_dir
 
 # ----------------------------------------------------------------------------
 
-declare -A custom_config_var2default_value # set-drive_usage also uses this
+declare -A custom_config_var2default_value
 
-set-custom_config_var2default_value() {
+set-custom_config_vars-custom_config_var2default_value() {
 
 	[[ ${custom_config_vars-} ]] && return
 
-	remember-tracing		# since suspend-tracing maybe not run
-
-	# see set-drive_log_dir-file_for_logging-is_regression_test
+	# constants, for set-drive_log_dir-file_for_logging-is_regression_test
 	declare -g custom_config_vars="drive_log_dir file_for_logging"
+
+	remember-tracing		# since suspend-tracing maybe not run
 
 	local var_name
 	for var_name in $custom_config_vars $config_vars
@@ -1346,19 +1346,20 @@ set-custom_config_var2default_value() {
 
 		suspend-tracing
 	done
+
 	custom_config_vars=${!custom_config_var2default_value[*]}
 	readonly custom_config_var2default_value custom_config_vars
 
 	restore-tracing
 }
-readonly -f set-custom_config_var2default_value
+readonly -f set-custom_config_vars-custom_config_var2default_value
 
 # ---------------------------------
 
 customize-config-variables() {
 	local drive_name=${1-}
 
-	set-custom_config_var2default_value
+	set-custom_config_vars-custom_config_var2default_value
 
 	[[ $drive_name ]] || return
 
@@ -1392,8 +1393,7 @@ readonly -f customize-config-variables
 function set-customized_value--for-config-var-name() {
 	local var_name=$1 resource=${2:-$drive_name}
 
-	[[ ${custom_config_vars-} ]] || abort-function \
-	   ": first call set-custom_config_var2default_value"
+	set-custom_config_vars-custom_config_var2default_value
 
 	local default_value=${custom_config_var2default_value[$var_name]-}
 	[[   $default_value ]] || { customized_value=${!var_name}; return 1; }
@@ -4588,9 +4588,6 @@ readonly -f show-sudo-config-warning-if-it-fits
 # this section is mandatory
 show-stats-section-1() {
 
-	# this is needed for set-customized_value--for-config-var-name
-	set-custom_config_var2default_value
-
 	set-rsync_hour_avgs-rsync_hour_maxs
 	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
@@ -6915,7 +6912,7 @@ case $action in
 	TraceV 0 average maximum; _exit
 
 	_set-drive_name ${1:-I}
-	set-custom_config_var2default_value
+	set-custom_config_vars-custom_config_var2default_value
 	for n in I X Z; do set-backup_type $n; done;
 	   echo ${drive_name2backup_type[*]}
 	for drive_name in I X Z
