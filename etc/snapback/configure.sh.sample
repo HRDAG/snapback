@@ -302,9 +302,9 @@ readonly snapshot_date_time_separator=','
 admin_drive_name_regex='[A-Za-z]'	# all, for watch & list-drives -a
 drive_class_regex="^$admin_drive_name_regex+" # D2 & D-2 use 'D' customization
 
-_drive_version_regex='[-._]?[0-9]*'	# support AB, CD-2, E3, etc
+_drive_version_regex='[-._]?[0-9]*'	# support AB, CD-2, E.3, D_4, etc
 drive_name_regex=$drive_name_regex$admin_drive_name_regex*$_drive_version_regex
-admin_drive_name_regex=$admin_drive_name_regex+$_drive_version_regex
+admin_drive_name_regex="$admin_drive_name_regex+$_drive_version_regex"
 readonly is_drive_name_capitalized=$true
 readonly is_drive_name_upper_cased=$true
 
