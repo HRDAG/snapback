@@ -37,32 +37,6 @@ if which libsnap.sh > /dev/null
    else echo "install libsnap.sh from $libsnap_project" >&2; exit 1
 fi
 #
-# We use these constants from libsnap.sh (and change $our_name)
-readonly tmp_dir our_path true false is_darwin max_call_stack_args
-readonly warning_level2tput_args
-# We used these functions from libsnap.sh .
-# FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
-# set-FS_label--from-mount_dir, $config_file can replace them.
-readonly -f is-set have-cmd need-cmds set-FS_type--from-path
-readonly -f set-inode_size-data_block_size-dir_block_size--from-path
-readonly -f set-FS_label--from-FS-device label-drive
-readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
-readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
-readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
-readonly -f assert-not-option set-var_value--from-var_name echoE echoEV
-readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
-readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
-readonly -f set-padded_colorized_string--for-printf
-readonly -f fix-padded-colorized-string-vars
-readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
-readonly -f cd_ have-proc is-process-alive set-reversed_words
-readonly -f set-popped_word-is_last_word--from-list
-readonly -f set-division set-warning_string
-readonly -f confirm run-function set-backup_suffix
-
-is-set coder ||				# can set custom value in $config_file
-       coder=sweikart@gmail.com
-
 if   is-arg1-in-arg2 -E $1 # regression-test wants alternative config_dir?
    then _args=" $*"
 	config_dir=${_args/* -E /}
@@ -144,6 +118,35 @@ readonly config_vars=$__config_vars__
     shopt -s nocaseglob			# we mostly glob drive names or dirs
 
 readonly PS4		      # remove if some functions want to manipulate it
+
+# all of the following are created in libsnap.sh, but any of them can be
+# replaced in $config_file: local customization, experimentation, bug-fixing.
+#
+# We use these constants from libsnap.sh (and change $our_name)
+readonly tmp_dir our_path true false is_darwin max_call_stack_args
+readonly warning_level2tput_args
+# We used these functions from libsnap.sh .
+# FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
+# set-FS_label--from-mount_dir, $config_file can replace them.
+readonly -f is-set have-cmd need-cmds set-FS_type--from-path
+readonly -f set-inode_size-data_block_size-dir_block_size--from-path
+readonly -f set-FS_label--from-FS-device label-drive
+readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
+readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
+readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
+readonly -f assert-not-option set-var_value--from-var_name echoE echoEV
+readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
+readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
+readonly -f set-padded_colorized_string--for-printf
+readonly -f fix-padded-colorized-string-vars
+readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
+readonly -f cd_ have-proc is-process-alive set-reversed_words
+readonly -f set-popped_word-is_last_word--from-list
+readonly -f set-division set-warning_string
+readonly -f confirm run-function set-backup_suffix
+
+is-set coder ||				# can set custom value in $config_file
+       coder=sweikart@gmail.com
 
 [[ -s $exclude_file ]] ||
    abort "install/edit $exclude_file, see included .sample"
@@ -3825,7 +3828,7 @@ set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dirs=$*
 
-	is-set stats_format && { $xtrace; return; }
+	[[ ${stats_format-} ]] && { $xtrace; return; }
 
 	local -i format_width
 	local format=
