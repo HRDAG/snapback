@@ -120,7 +120,7 @@ readonly config_vars=$__config_vars__
 readonly PS4		      # remove if some functions want to manipulate it
 
 # all of the following are created in libsnap.sh, but any of them can be
-# replaced in $config_file: local customization, experimentation, bug-fixing.
+# replaced in $config_file: customization, experimentation, porting, bug-fixing
 #
 # We use these constants from libsnap.sh (and change $our_name)
 readonly tmp_dir our_path true false is_darwin max_call_stack_args
