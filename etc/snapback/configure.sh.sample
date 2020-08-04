@@ -61,13 +61,6 @@ readonly common_mount_options="nodev,nosuid,noatime"
 readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
 readonly    XFS_mount_options="logbsize=256k"	 # for performance
 
-# -----------------------
-# monitoring swapout rate
-# -----------------------
-
-# see doc/Install.txt for a method to find the value of this variable
-# declare -r -i max_swapout_MBps=50
-
 # ----------------------------------------------
 # Rotational hard disks need special handling. #
 # ----------------------------------------------
@@ -86,6 +79,13 @@ drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 # described later).  Hard disks are different, so you can change that policy.
 	 is_multi_writer_drive=$false	# non-striped rotational disk drive
 drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
+
+# -----------------------
+# monitoring swapout rate
+# -----------------------
+
+# see doc/Install.txt for a method to find the value of this variable
+# declare -r -i max_swapout_MBps=50
 
 # --------------------------------------------------
 # Variables used by backup-drive* and prune-drive* #

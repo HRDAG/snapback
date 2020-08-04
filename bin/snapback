@@ -1194,24 +1194,6 @@ readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 # functions for naming and finding backup drives
 # ----------------------------------------------------------------------------
 
-have-cmd \
-source-drive-specific-config-file ||# can define custom version in $config_file
-source-drive-specific-config-file() {
-	[[ $# == 0 ]] && return
-	local _name=$1  _main_config_file=${2:-${config_file-}}
-	_set-drive_name $_name
-	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
-
-	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
-	if [[ -s $_config_file ]]
-	   then drive_specific_config_file=$_config_file; source $_config_file
-	   else drive_specific_config_file=		; true
-	fi || abort-function "'source $_config_file' returned non-0"
-}
-readonly -f source-drive-specific-config-file
-
-# ----------------------------------------------------------------------------
-
 readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
 
 # This is much faster than set-drive_name, but can only be used for
@@ -1348,6 +1330,24 @@ readonly -f set-drive_dir
 
 # ----------------------------------------------------------------------------
 # functions for customizing configuration variables
+# ----------------------------------------------------------------------------
+
+have-cmd \
+source-drive-specific-config-file ||# can define custom version in $config_file
+source-drive-specific-config-file() {
+	[[ $# == 0 ]] && return
+	local _name=$1  _main_config_file=${2:-${config_file-}}
+	_set-drive_name $_name
+	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
+
+	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
+	if [[ -s $_config_file ]]
+	   then drive_specific_config_file=$_config_file; source $_config_file
+	   else drive_specific_config_file=		; true
+	fi || abort-function "'source $_config_file' returned non-0"
+}
+readonly -f source-drive-specific-config-file
+
 # ----------------------------------------------------------------------------
 
 function set-customized_drv_names() {
