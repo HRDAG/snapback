@@ -96,9 +96,6 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # DON'T FORGET to add this directory to PRUNEPATHS in /etc/updatedb.conf !
 readonly drive_dir_prefix=/backup/
 
-# In case have mounted drives encrypted with old name (usually FS label).
-readonly old_crypt_name_prefixes=
-
 # Where send warning and error messages.
 readonly sysadmin_email_addresses=
 
@@ -169,7 +166,7 @@ readonly no_log_rsync_exit_statuses="20" # can add 31
 # older snapshots, freeing up space.
 #
 # NOTE: using this variable (or dirs_to_backup) has a big disadvantage: such
-# drives can't be updated with bigger drives (e.g. after a drive was off-site):
+# drives can't be updated from bigger drives (e.g. after a drive was off-site):
 # If you keep drives off-site, it's better to use a bigger backup_period
 # or faster pruning for smaller drives, which still allows for updating.
 #
@@ -177,7 +174,6 @@ readonly no_log_rsync_exit_statuses="20" # can add 31
 # a full exclude-style prune run is needed, so new excludes delete files.
 #
 # Best not to customize, since that prevents use by update-drives (see above).
-# yumdb/ has inodes with 1K links: overwhelms ext*, but OK with XFS/Btrfs/APFS.
 readonly extra_excludes="/var/lib/yum/yumdb" # per-drive custom excludes
 
 # Skip backups when there aren't many users, to avoid 'Too many links" problem.

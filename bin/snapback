@@ -77,7 +77,6 @@ elif is-arg1-in-arg2 -e $1 # regression-test wants config_file inside snapshot?
    else _root=
 fi
 #
-our_name=${our_name%.~*~}
 [[ ! ${config_dir-} ]] &&
 for dir in ~/etc /usr/local/etc /etc
     do	[[ -d $_root$dir/$our_name ]] && break
@@ -96,31 +95,50 @@ fi ;						readonly config_file_sample
 [[ -s $config_file_sample ]] ||
    abort "have to install $config_file_sample"
 
-readonly optional_config_vars='mkfs_cmd_opts FS_log_VG'
+readonly optional_config_vars="
+	    mkfs_cmd_opts do_want_external_log FS_log_VG max_swapout_MBps
+	    common_mount_options extN_mount_options XFS_mount_options
+	    flakey_drive_names_regex drive_specific_config_file"
 
 # For each config var, create associative array for per-drive customization.
 # [customize-config-variables currently fails when try to customize an array.]
 readonly uncustomizable_config_vars="
-	    drive_dir_prefix old_crypt_name_prefixes drive_specific_config_file
-	    level2CPU_priority_cmd level2IO_priority_cmd
+	    drive_dir_prefix level2CPU_priority_cmd level2IO_priority_cmd
+	    flakey_drive_names_regex old_cmd tst_cmd update_test_dst_drive
 	    is_drive_name_capitalized drive_name_regex admin_drive_name_regex
-	    is_drive_name_upper_cased"
-config_vars=$(
-    # toss functions before looking for variable assignments
-    sed -n -r	-e '/(^[ 	]*function\b.*|\(\)) *\{.*\}/d'		\
+	    is_drive_name_upper_cased drive_class_regex"
+#
+_set-__config_vars__() {
+
+      set -- $(
+      # toss functions before looking for variable assignments
+      sed -n -r	-e '/(^[ 	]*function\b.*|\(\)) *\{.*\}/d'		\
 		-e '/(^[ 	]*function\b.*|\(\)) *\{/,/^[ 	]*\}/d'	\
-		-e 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' $config_file_sample | uniq
-)
-for _var in $optional_config_vars
-    do	is-set $_var || config_vars=${config_vars/$_var/}
-done							; readonly config_vars
+		-e 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' $config_file_sample |sort -u
+      )
+      __config_vars__=" $* " # 'for _var in $optional_config_vars' needs SPACEs
+}
+_set-__config_vars__
+#
 _customizable_arrays=
-for _var in $config_vars; do _customizable_arrays+="drv_name2$_var "; done
+for _var in $__config_vars__
+    do	is-arg1-in-arg2 $_var $uncustomizable_config_vars && continue
+	_customizable_arrays+="drv_name2$_var "
+done
 declare -A $_customizable_arrays
 #
 # this grabs variables that control backup and pruning, and may also hold
-# customizable functions like source-drive-specific-config-file
+# customizing functions (like source-drive-specific-config-file and *hooks)
 source $config_file || abort "source'd $config_file ended with non-0 status"
+
+for _var in $optional_config_vars
+    do	is-set $_var && continue
+	__config_vars__=${__config_vars__/ $_var / }
+	_map=drv_name2$_var
+	is-set $_map && abort "can't set $_map without setting $_var"
+	unset  $_map
+done
+readonly config_vars=$__config_vars__
 
 [[ $is_drive_name_capitalized || $is_drive_name_upper_cased ]] &&
     shopt -s nocaseglob			# we mostly glob drive names or dirs
@@ -1059,6 +1077,10 @@ readonly -f set-oldest_snapshot
 # Setup variables for working with a specific backup drive.
 ##############################################################################
 
+# ----------------------------------------------------------------------------
+# manage backup and log directories
+# ----------------------------------------------------------------------------
+
 is-set	 possible_admin_groups ||	# can set custom value in $config_file
 readonly possible_admin_groups="sudo wheel admin staff adm" # 'admin' is macOS
 
@@ -1168,7 +1190,9 @@ set-drive_log_dir-file_for_logging-is_regression_test() {
 }
 readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 
-# ---------------------------------
+# ----------------------------------------------------------------------------
+# functions for naming and finding backup drives
+# ----------------------------------------------------------------------------
 
 have-cmd \
 source-drive-specific-config-file ||# can define custom version in $config_file
@@ -1186,7 +1210,7 @@ source-drive-specific-config-file() {
 }
 readonly -f source-drive-specific-config-file
 
-# ---------------------------------
+# ----------------------------------------------------------------------------
 
 readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
 
@@ -1323,6 +1347,8 @@ function set-drive_dir() {
 readonly -f set-drive_dir
 
 # ----------------------------------------------------------------------------
+# functions for customizing configuration variables
+# ----------------------------------------------------------------------------
 
 function set-customized_drv_names() {
 	local var_name=$1
@@ -1335,29 +1361,23 @@ readonly -f set-customized_drv_names
 
 # ---------------------------------
 
+declare -g custom_config_vars=
 declare -A custom_config_var2default_value
 
 set-custom_config_vars-custom_config_var2default_value() {
 
-	[[ ${custom_config_vars-} ]] && return
-
-	# controlled by set-drive_log_dir-file_for_logging-is_regression_test
-	declare -g custom_config_vars="drive_log_dir file_for_logging"
+	[[ $custom_config_vars ]] && return
 
 	remember-tracing		# since suspend-tracing maybe not run
 
 	local var_name customized_drv_names
-	for var_name in $custom_config_vars $config_vars
-	    do	is-arg1-in-arg2 $var_name $uncustomizable_config_vars &&
-		   continue
-
-		is-arg1-in-arg2 $var_name $custom_config_vars ||
-		is-set $var_name ||
-		   abort "need to set '$var_name=' in $config_file"
-
-		is-set		$var_name || continue
-		is-readonly-var $var_name && continue # can't customize?
-		set-customized_drv_names $var_name || continue #not customized?
+	for var_name in $config_vars
+	    do	is-set $var_name || abort "set '$var_name=' in $config_file"
+		local drv_name2var=drv_name2$var_name
+		set-customized_drv_names $var_name || # not customized?
+		    { unset $drv_name2var; readonly $var_name; continue; }
+		is-readonly-var $var_name &&
+		  abort "can't use $drv_name2var, $var_name is marked readonly"
 
 		custom_config_var2default_value[$var_name]=${!var_name}
 
@@ -1365,7 +1385,7 @@ set-custom_config_vars-custom_config_var2default_value() {
 	done
 
 	custom_config_vars=${!custom_config_var2default_value[*]}
-	readonly custom_config_var2default_value custom_config_vars
+	readonly custom_config_vars custom_config_var2default_value
 
 	restore-tracing custom_config_vars
 }
@@ -1376,13 +1396,13 @@ readonly -f set-custom_config_vars-custom_config_var2default_value
 function _set-value--for-config-var() {
 	local var_name=$1 drive_name=$2 customized_drv_names
 
-	set-customized_drv_names $var_name || return 1
+	set-customized_drv_names $var_name || return 1 # not customized?
 
 	[[ $drive_name =~ $drive_class_regex ]] || abort-function "no class"
-	drive_class=${BASH_REMATCH[0]}
+	local drive_class=${BASH_REMATCH[0]}
 
 	local drv_name is_customized=$false
-	for drv_name in $drive_name $drive_class # most specific first
+	for drv_name in $drive_name $drive_class # try most-specific name first
 	    do	is-arg1-in-arg2 $drv_name $customized_drv_names || continue
 		is_customized=$true
 		break
@@ -1408,6 +1428,7 @@ customize-config-variables() {
 	[[ $drive_name == [zZ] ]] && is_regression_test=$true
 
 	remember-tracing
+	local var_name value
 	for var_name in $custom_config_vars
 	    do	_set-value--for-config-var $var_name $drive_name || continue
 		eval "$var_name=\$value"
@@ -1427,7 +1448,7 @@ function set-customized_value--for-config-var-name() {
 
 	set-custom_config_vars-custom_config_var2default_value
 
-	local drive_name drive_class value
+	local drive_name value
 	 _set-drive_name $resource
 	if _set-value--for-config-var $var_name $drive_name
 	   then customized_value=$value       && return 0
@@ -1513,7 +1534,7 @@ customize-and-validate-configuration-variables() {
 readonly -f customize-and-validate-configuration-variables
 
 ##############################################################################
-# Manage priorities for backup and prune and update/merge.
+# Manage priorities for backup and prune and update/copy.
 ##############################################################################
 
 function is-multi-writer-drive() {
@@ -1891,7 +1912,7 @@ rm-pruned-snapshots() {
 	   else	set-FS_type--from-path $PWD
 	fi
 	case ${FS_type,,} in
-	    ( xfs | btrfs )		# any FS that supports a zillion links
+	    ( xfs | btrfs | apfs ) # any FS that supports a zillion links
 		hard_link_dirs= ;;
 	esac
 	[[ ${hard_link_dirs-} ]] && ! is-drive-usage-too-high $drive_dir &&
@@ -3820,7 +3841,7 @@ set-stats_format() {
 }
 readonly -f set-stats_format
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 set-average-maximum--from-files-of-numbers() {
 
@@ -6953,20 +6974,21 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
-	monitor-drives |& less; _exit
-	lock-replica-of-snapshots --wait; _exit $?
-
 	_set-drive_name ${1:-I}
 	for n in I X Z; do set-backup_type $n; done;
-	   echo ${drive_name2backup_type[*]}
-	echo ${!custom_config_var2default_value[*]}
-	for drive_name in not I Z i1 i-2 i.3 i_45
+	   echo; echo ${drive_name2backup_type[*]}; echo
+	echo $custom_config_vars | tr ' ' '\n' |
+	    fgrep -v -e _prune -e _scale_ -e _to_backup; echo # skip Z ones
+	for drive_name in NOT I Z i1 I-2 i.3 I_45
 	    do	set-customized_value--for-config-var-name backup_period;
 		echo "$drive_name -> $customized_value"; done
 	for not in max_FS_usage_percent max_backup_period_for_pruning
 	    do	set-customized_value--for-config-var-name $not && abort $not
 	done; _exit
+
+	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
+	monitor-drives |& less; _exit
+	lock-replica-of-snapshots --wait; _exit $?
 
 	cd_ $log_dir/$rsync_time_subdir/I
 	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
