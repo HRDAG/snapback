@@ -4752,12 +4752,16 @@ show-FS-repair-cmds() {
 
 	[[ -s $FS_repair_cmds_file ]] && {
 
+	fgrep -q ' fsck ' $FS_repair_cmds_file &&
+	fgrep -q ' fsck.' $FS_repair_cmds_file &&
+	   local sed_opt='/ fsck /d' || local sed_opt='#'
+
 	set-warning_string warning "FS repair command(s), e.g. fsck"
 	header "$warning_string"
 	echo
 	if [[ $watch_opt ]]
-	   then sed -r 's@ -.* (/dev/)@ ... \1@'
-	   else cat
+	   then sed -r -e "$sed_opt" -e 's@ -.* (/dev/)@ ... \1@'
+	   else sed "$sed_opt"
 	fi < $FS_repair_cmds_file
 
 	}
