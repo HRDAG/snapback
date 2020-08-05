@@ -459,7 +459,7 @@ set-name_glob() {
 	name_glob=$*
 
 	local glob
-	  set-glob $name_glob
+	  set-glob "$name_glob"
 	 name_glob=$glob
 
 	if   [[ $is_drive_name_upper_cased ]]
