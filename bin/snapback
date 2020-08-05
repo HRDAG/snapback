@@ -5014,6 +5014,7 @@ mon-launch-globs() {
 		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
 		drive_name2PID[$drive_name]=$!
 		drive_name2msecs[$drive_name]=$now_msecs
+		cd $tmp_dir
 	done
 }
 readonly -f mon-launch-globs
