@@ -998,8 +998,12 @@ function ps-locks() {
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	local status=1			# assume all locks are missing/stale
 	for lock in $lock_paths
-	    do	header $lock
-		[[ -s  $lock ]] || { echo "no such lock"; continue; }
+	    do	# race: lockpid has created file but not yet written pid
+		[[ -s  $lock ]] || sleep 0.01
+		[[ -e  $lock ]] || continue
+		header $lock
+		[[ -s  $lock ]] ||
+		    { [[ -e $lock ]] && echo "empty lock file"; continue; }
 		set -- $(< $lock)
 		ps $ps_opts -G $1 || ps $ps_h_opt $ps_opts $1
 		status=$?
