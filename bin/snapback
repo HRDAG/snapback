@@ -4789,7 +4789,7 @@ show-filesystem-info-that-fits() {
 	   then filesystem-geometry $drive_dirs
 	   else	local -i extra=$rows_for_one_detailed_rsync
 		# df is more important than rsync details
-		(( $rows_left + $extra > $min_rows_with_df )) && # see BD+=
+		(( $rows_left + $extra >= $min_rows_with_df )) && # see BD+=
 		run-df $drive_dirs &&
 		let rows_left-=$num_drives+2
 
@@ -6234,6 +6234,7 @@ search-syslog-for-errors() {
 	    fgrep -v -f $ignorable_str_file > $search_file
 	rm $search_str_file $ignorable_str_file
 
+	# ext4: blk_update_request: I/O error, dev sda, sector 0 op 0x1:(WRITE)
 	local file=$search_file
 	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
 	local sectors="$# sectors: $*"
