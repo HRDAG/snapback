@@ -723,7 +723,7 @@ function set-PID_ps_fields--in-process-groups() {
 
 	local PGID
 	for PGID
-	    do	set -- $(COLUMNS=9999 ps -o $columns_opt $ps_g_opt $PGID)
+	    do	set -- $(COLUMNS=9999 ps -o $columns_opt $ps_opt_g $PGID)
 		shift			# toss header
 		[[ $# != 0 ]] && PID_ps_fields+="$* "
 	done
@@ -1006,7 +1006,7 @@ function ps-locks() {
 		[[ -s  $lock ]] ||
 		    { [[ -e $lock ]] && echo "empty lock file"; continue; }
 		set -- $(< $lock)
-		ps $ps_opts $ps_g_opt $1 || ps $ps_h_opt $ps_opts $1
+		ps $ps_opts $ps_opt_g $1 || ps $ps_opt_h $ps_opts $1
 		status=$?
 	done
 	$xtrace
@@ -4378,14 +4378,14 @@ setup-ps-variables-and-ps_-function() {
 
 	# set variables that map Linux's 'ps' options to random OS's 'ps' opts
 	case $OSTYPE,$is_BSD in
-	    ( linux* ) ps_H_opt=-H  ps_f_opt=f   ps_h_opt=h  ps_g_opt=g ;;
-	    (*,$true ) ps_H_opt=-d  ps_f_opt=-d  ps_h_opt=   ps_g_opt=G ;;
-	    (   *    ) ps_H_opt=    ps_f_opt=    ps_h_opt=   ps_g_opt=G ;;
-	esac; readonly ps_H_opt     ps_f_opt	 ps_h_opt    ps_g_opt
+	    ( linux* ) ps_opt_H=-H  ps_opt_f=f   ps_opt_h=h  ps_opt_g=g ;;
+	    (*,$true ) ps_opt_H=-d  ps_opt_f=-d  ps_opt_h=   ps_opt_g=G ;;
+	    (   *    ) ps_opt_H=    ps_opt_f=    ps_opt_h=   ps_opt_g=G ;;
+	esac; readonly ps_opt_H     ps_opt_f	 ps_opt_h    ps_opt_g
 
 	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
 	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
-	[[ $ps_H_opt ]] || {
+	[[ $ps_opt_H ]] || {
 	    [[ max_rsync_ps_out =~ rsync.* ]] &&
 	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip leading SPACEs
 	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
@@ -4402,7 +4402,7 @@ setup-ps-variables-and-ps_-function() {
 	fi
 
 	# all field-names followed by '=' means "don't print header"
-	ps_() { ps $ps_H_opt -o ${ps_keywords//,/=,}= "$@"; }
+	ps_() { ps $ps_opt_H -o ${ps_keywords//,/=,}= "$@"; }
 	readonly -f ps_
 }
 readonly -f setup-ps-variables-and-ps_-function
@@ -4414,27 +4414,27 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	declare -g -i num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ $ps_g_opt $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>/dev/null  |
 	  egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
-	[[ $ps_H_opt ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
+	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
 	cmds-with-one-rsync() { echo "$@" |
 		awk '  /rsync/ { if (second) {print; second=0} else second=1 }
 		     ! /rsync/ { print }' ; } # use when don't have -H
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
-	copy_rsync_cmds=$(ps_ $ps_g_opt $lock_PGIDs |
+	copy_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
 			   grep -e "[0-9] .*$_our_name.* [cu]"  \
 				-e " [l]ockpid " -e " [s]leep " \
 				-e "[0-9] $rsync_ps")
-	[[ $ps_H_opt ]] ||
+	[[ $ps_opt_H ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ $ps_g_opt $lock_PGIDs | grep "[0-9] $rsync_ps")
-	[[ $ps_H_opt ]] ||
+	bkp_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs | grep "[0-9] $rsync_ps")
+	[[ $ps_opt_H ]] ||
 	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
 }
 readonly -f set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds
@@ -4475,10 +4475,10 @@ is-set		      min_ps_wchan_width || # custom value in $config_file?
 
 	ps_keywords=${ps_min_keywords/,%mem,stat,*time*,/,%mem,%cpu,state,}
 	local ps_header="  PID  PGID %MEM %CPU S COMMAND"
-	[[ $ps_f_opt ]] && ps_header=${ps_header/  PGID/} # have forest?
-	[[ $ps_f_opt ]] && ps_keywords=${ps_keywords/,pgid,/,}	; local \
+	[[ $ps_opt_f ]] && ps_header=${ps_header/  PGID/} # have forest?
+	[[ $ps_opt_f ]] && ps_keywords=${ps_keywords/,pgid,/,}	; local \
 	rsync_ps_out=" |       \_ rsync .opts -R .dirs /2019-07-07,00.partial/"
-	[[ $ps_f_opt ]] || {
+	[[ $ps_opt_f ]] || {
 	    [[ max_rsync_ps_out =~ rsync.* ]] &&		  local \
 	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip forest stuff
 	set-max_ps_width "$ps_header" "$rsync_ps_out"
@@ -4520,8 +4520,8 @@ _set-cron_cmds--from-PGIDs() {
 	local PIDs
 	set-PIDs--in-process-groups $PGIDs
 	#  option f for "forest"; run trim-backup-ps now, for next adjustment
-	cron_cmds=$($sudo ps $ps_f_opt -o $ps_keywords $PIDs | trim-backup-ps)
-	[[ $ps_f_opt ]] ||
+	cron_cmds=$($sudo ps $ps_opt_f -o $ps_keywords $PIDs | trim-backup-ps)
+	[[ $ps_opt_f ]] ||
 	# since no forest ascii-art to visually separate jobs, use blank lines
 	cron_cmds=$(echo "$cron_cmds" |
 		    awk '$1 == $2 {if (old) print ""; else old=1} {print}')
