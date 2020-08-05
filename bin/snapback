@@ -615,6 +615,8 @@ readonly -f _set-wait_opt
 
 # --------------------------------------------
 
+# The locking & job-management policy:
+
 # When $is_multi_writer_drive == $true, all writer jobs run in parallel, with
 # their (relative) I/O and CPU priorities controlled by
 # set-job_type2priority_level() .  [Locking and job creation are described in
@@ -1696,6 +1698,24 @@ readonly -f reset-priority
 ##############################################################################
 ##############################################################################
 
+sync-drive-unless-writers() {
+	local locks_to_skip=$*
+
+	local lock locks=
+	for lock in $writer_types
+	    do	is-arg1-in-arg2 $lock $locks_to_skip || locks+=" $lock"
+	done
+	for lock in $locks
+	    do	  lock $lock || return
+		unlock $lock
+	done &> /dev/null
+
+	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
+}
+readonly -f sync-drive-unless-writers
+
+# ----------------------------------------------------------------------------
+
 function count-rsyncs-using-resource() {
 	local regex=$*
 
@@ -1961,7 +1981,7 @@ rm-pruned-snapshots() {
 
 	_prune-exclude-globs-from-all-snapshots
 
-	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
+	sync-drive-unless-writers prune
 }
 readonly -f rm-pruned-snapshots
 
@@ -2946,7 +2966,8 @@ function run-rsync() {
 
 	_handle-rsync-results $dst_snapshot $status $log
 
-	$IfRun sync --file-system $dst_snapshot* &> /dev/null # optional
+	[[ $is_copy_snapshot ]] && local our_lock=copy || local our_lock=backup
+	sync-drive-unless-writers $our_lock
 
 	return $status
 }
@@ -4411,7 +4432,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>/dev/null  |
-	  egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm) ')
+     egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm|sync) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
@@ -4423,13 +4444,14 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
-			   grep -e "[0-9] .*$_our_name.* [cu]"  \
-				-e " [l]ockpid " -e " [s]leep " \
-				-e "[0-9] $rsync_ps")
+			   grep -e "[0-9] .*$_our_name.* [cu]"      \
+				-e " [l]ockpid "     -e " [s]leep " \
+				-e "[0-9] $rsync_ps" -e " [s]ync "     )
 	[[ $ps_opt_H ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs | grep "[0-9] $rsync_ps")
+	bkp_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
+			     grep -e "[0-9] $rsync_ps" -e " [s]ync ")
 	[[ $ps_opt_H ]] ||
 	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
 }
@@ -5014,7 +5036,7 @@ mon-launch-globs() {
 		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
 		drive_name2PID[$drive_name]=$!
 		drive_name2msecs[$drive_name]=$now_msecs
-		cd $tmp_dir
+		cd $tmp_dir	  # in case user tries to unmount $drive_dir
 	done
 }
 readonly -f mon-launch-globs
@@ -5134,7 +5156,7 @@ re-start-monitor-drives-if-needed() {
 	fi
 
 	is-active-lock $drive_monitor_lock_path ||
-	    sudo $our_path monitor-drives # make sure it's running
+	    PATH=/usr/local/bin:$PATH sudo $_our_name monitor-drives
 }
 readonly -f re-start-monitor-drives-if-needed
 
@@ -7009,6 +7031,9 @@ case $action in
 	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
+
+	set-drive_name ${1:-F}
+	set-drive_dir $drive_name; sync-drive-unless-writers prune; _exit
 
 	cd_ $log_dir/$rsync_time_subdir/I
 	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
