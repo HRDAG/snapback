@@ -991,7 +991,7 @@ function ps-locks() {
 	set-drive_dirs
 	set-rows-columns-COLUMNS
 	setup-ps-variables-and-ps_-function
-	[[ $ps_opts ]] || ps_opts="-o $ps_keywords"
+	[[ $ps_opts ]] || ps_opts="-o $ps_keywords $ps_opt_H"
 
 	set-lock_paths "$@"
 
