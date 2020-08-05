@@ -718,11 +718,12 @@ readonly -f unlock
 function set-PID_ps_fields--in-process-groups() {
 	local columns_opt=$1; shift
 
+	setup-ps-variables-and-ps_-function
 	PID_ps_fields=
 
 	local PGID
 	for PGID
-	    do	set -- $(COLUMNS=9999 ps -o $columns_opt -G $PGID)
+	    do	set -- $(COLUMNS=9999 ps -o $columns_opt $ps_g_opt $PGID)
 		shift			# toss header
 		[[ $# != 0 ]] && PID_ps_fields+="$* "
 	done
@@ -1005,7 +1006,7 @@ function ps-locks() {
 		[[ -s  $lock ]] ||
 		    { [[ -e $lock ]] && echo "empty lock file"; continue; }
 		set -- $(< $lock)
-		ps $ps_opts -G $1 || ps $ps_h_opt $ps_opts $1
+		ps $ps_opts $ps_g_opt $1 || ps $ps_h_opt $ps_opts $1
 		status=$?
 	done
 	$xtrace
@@ -1381,8 +1382,12 @@ set-custom_config_vars-custom_config_var2default_value() {
 	for var_name in $config_vars
 	    do	is-set $var_name || abort "set '$var_name=' in $config_file"
 		local drv_name2var=drv_name2$var_name
-		set-customized_drv_names $var_name || # not customized?
-		    { unset $drv_name2var; readonly $var_name; continue; }
+		if ! set-customized_drv_names $var_name # not customized?
+		   then unset $drv_name2var
+			# rm-pruned-snapshots can clear hard_link_dirs
+			[[ $var_name != hard_link_dirs ]] && readonly $var_name
+			continue
+		fi
 		is-readonly-var $var_name &&
 		  abort "can't use $drv_name2var, $var_name is marked readonly"
 
@@ -4358,8 +4363,11 @@ readonly -f set-max_ps_width
 # dynamically determine 'ps' fields based on screen column width
 setup-ps-variables-and-ps_-function() {
 
+	[[ ${cputime-} ]] && return
+
 	cputime=cputime				 # global
 	[[ ! $is_darwin ]] && cputime=$cputime:9 # Darwin's is wider
+	readonly cputime
 
 	# min fits in 80-column screen; grep's expect ends with cputime,command
 	ps_min_keywords=pid,pgid,%mem,stat,$cputime,command # cron_opt uses
@@ -4370,10 +4378,10 @@ setup-ps-variables-and-ps_-function() {
 
 	# set variables that map Linux's 'ps' options to random OS's 'ps' opts
 	case $OSTYPE,$is_BSD in
-	    ( linux* ) ps_H_opt=-H  ps_f_opt=f  ps_h_opt=h ;;
-	    (*,$true ) ps_H_opt=-d  ps_f_opt=-d ps_h_opt=  ;;
-	    (   *    ) ps_H_opt=    ps_f_opt=   ps_h_opt=  ;;
-	esac; readonly ps_H_opt     ps_f_opt	ps_h_opt
+	    ( linux* ) ps_H_opt=-H  ps_f_opt=f   ps_h_opt=h  ps_g_opt=g ;;
+	    (*,$true ) ps_H_opt=-d  ps_f_opt=-d  ps_h_opt=   ps_g_opt=G ;;
+	    (   *    ) ps_H_opt=    ps_f_opt=    ps_h_opt=   ps_g_opt=G ;;
+	esac; readonly ps_H_opt     ps_f_opt	 ps_h_opt    ps_g_opt
 
 	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
 	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
@@ -4389,12 +4397,13 @@ setup-ps-variables-and-ps_-function() {
 	fi
 
 	if [[ $is_wide ]]
-	   then ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
-	   else ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
+	   then readonly ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
+	   else readonly ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
 	fi
 
 	# all field-names followed by '=' means "don't print header"
 	ps_() { ps $ps_H_opt -o ${ps_keywords//,/=,}= "$@"; }
+	readonly -f ps_
 }
 readonly -f setup-ps-variables-and-ps_-function
 
@@ -4405,7 +4414,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	declare -g -i num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ -G $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ $ps_g_opt $lock_PGIDs 2>/dev/null  |
 	  egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
@@ -4416,7 +4425,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	# both update-drive and copy-snapshot use the copy lock
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
-	copy_rsync_cmds=$(ps_ -G $lock_PGIDs |
+	copy_rsync_cmds=$(ps_ $ps_g_opt $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
 			   grep -e "[0-9] .*$_our_name.* [cu]"  \
 				-e " [l]ockpid " -e " [s]leep " \
@@ -4424,7 +4433,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	[[ $ps_H_opt ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
-	bkp_rsync_cmds=$(ps_ -G $lock_PGIDs | grep "[0-9] $rsync_ps")
+	bkp_rsync_cmds=$(ps_ $ps_g_opt $lock_PGIDs | grep "[0-9] $rsync_ps")
 	[[ $ps_H_opt ]] ||
 	    bkp_rsync_cmds=$(cmds-with-one-rsync "$bkp_rsync_cmds")
 }
@@ -6447,7 +6456,7 @@ function regression-test() {
 	# can exclude one test (especially useful to exclude the slow 'u' test)
 	[[ $tests == [A-Z] ]] && tests=${regression_tests/${tests,}/}
 
-	validate-prune_globs
+	[[ $tests == *[zpu]* ]] && validate-prune_globs
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
