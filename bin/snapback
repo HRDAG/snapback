@@ -4377,12 +4377,7 @@ setup-ps-variables-and-ps_-function() {
 	ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,$cputime,command
 	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
 
-	# set variables that map Linux's 'ps' options to random OS's 'ps' opts
-	case $OSTYPE,$is_BSD in
-	    ( linux* ) ps_opt_H=-H  ps_opt_f=f   ps_opt_h=h  ps_opt_g=-g ;;
-	    (*,$true ) ps_opt_H=-d  ps_opt_f=-d  ps_opt_h=   ps_opt_g=-G ;;
-	    (   *    ) ps_opt_H=    ps_opt_f=    ps_opt_h=   ps_opt_g=-G ;;
-	esac; readonly ps_opt_H     ps_opt_f	 ps_opt_h    ps_opt_g
+	setup-ps-options
 
 	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
 	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
