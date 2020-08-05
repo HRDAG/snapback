@@ -5421,7 +5421,8 @@ function set-FS_external_log() {
 	   abort "must define set-FS_external_log or FS_log_VG in $config_file"
 
 	       FS_external_log=/dev/$VG/${FS_label}_log
-	[[ -b $FS_external_log ]] && return 0
+	[[ -b $FS_external_log ]] &&
+	    $IfRun lvremove --yes $FS_external_log # in case size changed
 
 	$IfRun \
 	lvcreate --size $FS_external_log_size --name $FS_external_log $VG ||
