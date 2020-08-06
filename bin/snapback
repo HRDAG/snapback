@@ -4106,15 +4106,17 @@ _recalculate-snapshot-stats-vars() {
 			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != $snap ]] && snaps+="$snap "
 			    prev_snap=$snap
-			suspend-tracing
+			[[ $skip_empty || $only_empty ]] || suspend-tracing
 		done
 		set -- $snaps
 		}
 		restore-tracing
 
-		set-lock_paths backup,copy $drive_name
-		[[ $lock_paths ]] && local is_writing=$true ||local is_writing=
-		[[ $is_writing && $skip_empty ]] && shift
+		[[ $skip_empty ]] &&
+		# don't count snapshots we're creating
+		for _type in backup copy
+		    do	set-lock_paths $_type $drive_name && shift
+		done
 
 		nums+="$drive_name=$# "
 
