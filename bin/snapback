@@ -2721,13 +2721,26 @@ readonly -f set-seconds--from-msecs
 
 # ---------------------------------
 
-readonly rsync_time_subdir=stats/backups/rsync-minutes
+readonly stats_dir=$log_dir/stats
+
+readonly rsync_time_basename=rsync-minutes
+readonly backup_rsync_time_subdir=stats/backup/$rsync_time_basename
+readonly   copy_rsync_time_subdir=stats/copy/$rsync_time_basename
+
+set-rsync_time_dir() {
+
+	[[ $is_copy_snapshot ]] && local type=copy || local type=backup
+	local rsync_time_dir=$drive_log_dir/stats/$type/$rsync_time_basename
+}
+readonly -f set-rsync_time_dir
+
+# ---------------------------------
 
 rm-dangling-symlinks() {
 
-	cd $log_dir/$rsync_time_subdir &> /dev/null || return
+	cd $stats_dir &> /dev/null || return
 
-	for drive in *
+	for drive in */$rsync_time_basename/*
 	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
 	done
 
@@ -2739,7 +2752,7 @@ readonly -f rm-dangling-symlinks
 
 archive-rsync-time-data() {
 
-	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+	set-rsync_time_dir
 [[ ! -d ${rsync_time_dir%/*} && -d ${rsync_time_dir%/*}/rsync-minutes ]] &&
 ln -s . ${rsync_time_dir%/*}		# DelMe
 	mkdir -p $rsync_time_dir
@@ -2770,9 +2783,7 @@ record-rsync-time() {
 	set-hours--from-minutes $minutes
 	rsync_hours=$hours
 
-	# $rsync_time_subdir/* used to set backup_period, so don't save copy
-	[[ ! $is_copy_snapshot ]] || return
-	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+	set-rsync_time_dir
 [[ ! -d ${rsync_time_dir%/*} && -d ${rsync_time_dir%/*}/rsync-minutes ]] &&
 ln -s . ${rsync_time_dir%/*}		# DelMe
 	local file=$rsync_time_dir/$snapshot.txt
@@ -4125,7 +4136,7 @@ readonly -f _recalculate-snapshot-stats-vars
 
 # ----------------------
 
-readonly watch_cache_dir=$log_dir/stats/watch
+readonly watch_cache_dir=$stats_dir/watch
 readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
 
 function _is-stats-cache-fresh {
