@@ -5193,7 +5193,7 @@ dir-sizes() {
 	   then echo -e "\nThe actual drive-space consumed by a directory is"
 		echo -e "the size of: its directory block(s) plus its inode:\n"
 		set -- *.$suffix.bz2
-		[[ -f $1 ]] ||
+		[[ $# != 0 ]] ||
 		   abort "no saved data files, you need to run: $our_name name"
 		for file
 		    do	set-total_dir_MB-avg_dir_KB $file || continue
@@ -5207,7 +5207,7 @@ dir-sizes() {
 
 	if [[ $1 == -f ]]
 	   then set -- $(/bin/ls *.$suffix.bz2 | sed 's/\.bz2//')
-		[[ -f $1.bz2 ]] || abort "don't have any old data files"
+		[[ $# != 0 ]] || abort "don't have any old data files"
 		PS3="specify file number: "
 		select file
 		   do	[[ $file ]] && break
