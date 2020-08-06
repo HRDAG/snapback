@@ -5170,7 +5170,8 @@ set-total_dir_MB-avg_dir_KB() {
 	isize=$(echo $file | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
 	set -- $( bzcat $file |
 		  awk -F K -v isize=$isize \
-			'{ space += ($1*1024) + isize; count += 1 }
+			'{ sub(/K$/, "", $1); space += ($1*1024) + isize;
+			   count += 1 }
 			 END { printf "%.1f %.2f\n",
 					space/(1024*1024),
 					space/(1024*count)}' )
@@ -5183,7 +5184,7 @@ readonly -f set-total_dir_MB-avg_dir_KB
 # dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
 dir-sizes() {
 	set-drive_log_dir-file_for_logging-is_regression_test
-	readonly sizes_dir=$drive_log_dir/dir-sizes
+	readonly sizes_dir=$log_dir/dir-sizes
 	mkdir -p -m g+w,o-w $sizes_dir || abort "need to use sudo"
 	cd_ $sizes_dir
 
@@ -5205,7 +5206,15 @@ dir-sizes() {
 		exit_normally
 	fi
 
-	if [[ $1 == -f ]]
+	if [[ $1 == -f && ${2-} =~ ^[0-9]+$ ]]
+	   then index=$2
+		set -- *.$suffix.bz2
+		eval "file=\${$index}"
+	elif [[ $1 == -f && ${2-} ]]
+	   then set -- *$2*
+		[[ $# == 1 ]] || abort "can't find a single file for $2"
+		file=$1
+	elif [[ $1 == -f ]]
 	   then set -- $(/bin/ls *.$suffix.bz2 | sed 's/\.bz2//')
 		[[ $# != 0 ]] || abort "don't have any old data files"
 		PS3="specify file number: "
