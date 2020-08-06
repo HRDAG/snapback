@@ -2727,12 +2727,12 @@ readonly rsync_time_basename=rsync-minutes
 readonly backup_rsync_time_subdir=stats/backup/$rsync_time_basename
 readonly   copy_rsync_time_subdir=stats/copy/$rsync_time_basename
 
-set-rsync_time_dir() {
+set-rsync_time_subdir() {
 
 	[[ $is_copy_snapshot ]] && local type=copy || local type=backup
-	local rsync_time_dir=$drive_log_dir/stats/$type/$rsync_time_basename
+	rsync_time_subdir=stats/$type/$rsync_time_basename
 }
-readonly -f set-rsync_time_dir
+readonly -f set-rsync_time_subdir
 
 # ---------------------------------
 
@@ -2752,7 +2752,8 @@ readonly -f rm-dangling-symlinks
 
 archive-rsync-time-data() {
 
-	set-rsync_time_dir
+	set-rsync_time_subdir
+	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
 [[ ! -d ${rsync_time_dir%/*} && -d ${rsync_time_dir%/*}/rsync-minutes ]] &&
 ln -s . ${rsync_time_dir%/*}		# DelMe
 	mkdir -p $rsync_time_dir
@@ -2783,7 +2784,8 @@ record-rsync-time() {
 	set-hours--from-minutes $minutes
 	rsync_hours=$hours
 
-	set-rsync_time_dir
+	set-rsync_time_subdir
+	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
 [[ ! -d ${rsync_time_dir%/*} && -d ${rsync_time_dir%/*}/rsync-minutes ]] &&
 ln -s . ${rsync_time_dir%/*}		# DelMe
 	local file=$rsync_time_dir/$snapshot.txt
@@ -3945,6 +3947,11 @@ readonly -f set-hour_avg-hour_max--from-files-of-minutes
 # --------------------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
+	if [[ ${1-} == -c ]]
+	   then shift
+		local is_copy_snapshot=$true
+	   else local is_copy_snapshot=$false
+	fi
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
@@ -3952,6 +3959,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	local dir drive_name
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
+		set-rsync_time_subdir
 		local   dir=$drives_log_dir/$drive_name/$rsync_time_subdir
 [[ ! -d ${dir%/*} && -d ${dir%/*}/rsync-minutes ]] &&
 ln -s . ${dir%/*}		# DelMe
@@ -4608,11 +4616,11 @@ set-min_rows-min_rows_with_df-rows_left() {
 	[[ $stats_opt ]] && PD=0 CS=0 BD=0
 	TraceV 1 PD CS BD && let rows_left-=3
 
-	# min rows: 1 watch line, 1 blank line, 8+1 lines of section-1 stats,
+	# min rows: 1 watch line, 1 blank line, 9+1 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	declare -g -i \
-	min_rows=$(( 1 + 1 + 8+1 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
+	min_rows=$(( 1 + 1 + 9+1 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
@@ -4714,8 +4722,10 @@ show-stats-section-1() {
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
 	set-rsync_hour_avgs-rsync_hour_maxs
-	echo "Average hours to create rsync snapshot:  $rsync_hour_avgs"
-	echo "Maximum hours to create rsync snapshot:  $rsync_hour_maxs"
+	echo " Average hours to create bckp snapshot:  $rsync_hour_avgs"
+	echo " Maximum hours to create bckp snapshot:  $rsync_hour_maxs"
+	set-rsync_hour_avgs-rsync_hour_maxs -c
+	echo " Average hours to create copy snapshot:  $rsync_hour_avgs"
 	set-drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
 	set-drive_response
