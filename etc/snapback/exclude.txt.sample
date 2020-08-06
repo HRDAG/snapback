@@ -24,7 +24,10 @@
 # you can uncomment the following section if you're tight on backup drive space
 #
 # kernels come and go, and are large; don't uncomment if boot VM from snapshots
+# /boot/System.map-*
 # /boot/initrd.img-*
+# /boot/vmlinuz-*
+# /lib/firmware/*
 # /lib/modules/*
 #
 # /usr/lib/jvm
@@ -42,7 +45,7 @@
 # you could keep more or fewer, could be 1 MB each
 /var/backups/dpkg.status.[3-9].gz
 
-/var/cache/*
+/var/cache/*/*
 /var/lib/apt/lists/*
 /var/lib/mlocate/*
 /var/lib/snapd/*
@@ -128,8 +131,6 @@
 /home/*/.config/google-chrome/*ShaderCache/*
 #
 # chromium files that can disappear, or are very large and change often
-/home/*/.cache/chromium/Profile ?/Cache/*
-/home/*/.cache/chromium/Profile ?/Code?Cache/*
 /home/*/.config/chromium/Profile ?/Extensions/*
 /home/*/.config/chromium/Profile ?/Local Storage/*
 /home/*/.config/chromium/Profile ?/IndexedDB/*
