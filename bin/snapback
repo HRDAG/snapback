@@ -2729,7 +2729,7 @@ readonly   copy_rsync_time_subdir=stats/copy/$rsync_time_basename
 
 set-rsync_time_subdir() {
 
-	[[ $is_copy_snapshot ]] && local type=copy || local type=backup
+	[[ ${is_copy_snapshot-} ]] && local type=copy || local type=backup
 	rsync_time_subdir=stats/$type/$rsync_time_basename
 }
 readonly -f set-rsync_time_subdir
@@ -7085,6 +7085,10 @@ case $action in
 	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
+
+	set-drive_name ${1:-F}
+	SECONDS=0; set-drive_dir $drive_name
+	record-rsync-time 2000-01-01,00; _exit
 
 	set-drive_name ${1:-F}
 	set-drive_dir $drive_name; sync-drive-unless-writers prune; _exit
