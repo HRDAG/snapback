@@ -6705,9 +6705,18 @@ case $action in
    # suspend	   job-type-glob  name-glob: as above, but -STOP signal
    # stop	   job-type-glob  name-glob: as above, but -STOP signal
    ( sus* | st*p | s ) undo-action-abbrev suspend
-	[[ $# == 2 ]] || abort-with-action-Usage
-	$Trace
-	kill-job-on-drives -s "$@"
+	[[ $1 == -l ]] && { shift; local do_loop=$true; } || local do_loop=
+	[[ $# ==  2 ]] || abort-with-action-Usage
+	if [[ $do_loop ]]
+	   then $Trace
+		while true
+		    do	kill-job-on-drives -s "$@"
+			set +x
+			sleep 1
+		done
+	   else $Trace
+		kill-job-on-drives -s "$@"
+	fi
 	;;
    # ps [ps-opts] [type-glob [name-glob]]: show holders of lock(s)
    ( ps )
