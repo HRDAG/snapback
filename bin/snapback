@@ -6301,7 +6301,10 @@ search-syslog-for-errors() {
 	    fgrep -v -f $ignorable_str_file > $search_file
 	rm $search_str_file $ignorable_str_file
 
-	# ext4: blk_update_request: I/O error, dev sda, sector 0 op 0x1:(WRITE)
+	# blk_update_request: I/O error, dev sda, sector B op 0x1:(WRITE) ...
+	#    print_req_error: I/O error, dev sda, sector B
+	# metadata I/O error: block B ("xfs_...") error 5 numblks N
+	#   Buffer I/O error on dev dm-30, logical block B, async page read
 	local file=$search_file
 	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
 	local sectors="$# sectors: $*"
