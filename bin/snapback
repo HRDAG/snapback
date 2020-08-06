@@ -1144,6 +1144,7 @@ create-lock_dir-log_dirs() {
 
 	local group=
 
+[[ ! -d $drives_log_dir && -d $lock_dir ]] && ln -s . $drives_log_dir # DelMe
 	[[ -d $drives_log_dir && -d $lock_dir ]] || {
 	set-admin_group && group=$admin_group
 	sudo mkdir -p --mode=1777 $lock_dir
@@ -2739,6 +2740,8 @@ readonly -f rm-dangling-symlinks
 archive-rsync-time-data() {
 
 	rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+[[ ! -d ${rsync_time_dir%/*} && -d ${rsync_time_dir%/*}/rsync-minutes ]] &&
+ln -s . ${rsync_time_dir%/*}		# DelMe
 	mkdir -p $rsync_time_dir
 	cd $rsync_time_dir && {
 	set -- *.txt &&
@@ -2766,8 +2769,10 @@ record-rsync-time() {
 
 	# $rsync_time_subdir/* used to set backup_period, so don't save copy
 	[[ ! $is_copy_snapshot ]] || return
-
-	local file=$drive_log_dir/$rsync_time_subdir/$snapshot.txt
+	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+[[ ! -d ${rsync_time_dir%/*} && -d ${rsync_time_dir%/*}/rsync-minutes ]] &&
+ln -s . ${rsync_time_dir%/*}		# DelMe
+	local file=$rsync_time_dir/$snapshot.txt
 	$IfRun mkdir -p ${file%/*}
 	local link=$log_dir/$rsync_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
@@ -3930,6 +3935,8 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
 		local   dir=$drives_log_dir/$drive_name/$rsync_time_subdir
+[[ ! -d ${dir%/*} && -d ${dir%/*}/rsync-minutes ]] &&
+ln -s . ${dir%/*}		# DelMe
 		set -- $dir/$snapshot_glob.txt
 		set-hour_avg-hour_max--from-files-of-minutes $*
 		hour_avgs+="$drive_name=$hour_avg "
