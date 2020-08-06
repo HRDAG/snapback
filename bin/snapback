@@ -2763,6 +2763,9 @@ declare -r -i days_to_keep=3		# ensure more than weekend-only data
 record-rsync-time() {
 	local snapshot=${1##*/}
 
+	rsync_hours='<unknown>'
+	(( $SECONDS >= 0 )) || return	# did snapshot start non-empty?
+
 	local -i minutes=$(( ($SECONDS + 30) / 60 ))
 	set-hours--from-minutes $minutes
 	rsync_hours=$hours
@@ -2913,7 +2916,11 @@ function _run-rsync-cmd() {
 	[[ ! $is_copy_snapshot ]] &&
 	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
-	SECONDS=0			# time the rsync
+	set -- $partial_dst/*
+	if [[ $# == 0 ]]		# snapshot starting out empty?
+	   then SECONDS=0		# then time the rsync
+	   else SECONDS=-1123456789	# don't, destination partially done
+	fi
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\
