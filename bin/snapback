@@ -6302,7 +6302,8 @@ search-syslog-for-errors() {
 	done > $search_str_file
 	echo "$OS_ignorable_error_strings" > $ignorable_str_file
 
-	set -- $syslog_path-????????
+	# in case /etc/logrotate.conf contains 'dateext' & 'delaycompress'
+	set -- $syslog_path-????????	# have yesterday's file?
 	[[ $syslog_file == $syslog_path && $# != 0 && -s $1 ]] &&
 	    syslog_file+=" $1"
 	create-status_dir

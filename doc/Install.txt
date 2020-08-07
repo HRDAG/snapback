@@ -399,8 +399,8 @@ then check to see if things got worse:
 
     snapback watch
 
-which will find errors in yesterday's (if you enable 'dateext' in
-/etc/logrotate.conf) and today's syslog files.
+which will find errors in yesterday's (if /etc/logrotate.conf contains
+'dateext' and 'delaycompress') and today's syslog files.
 
 
 I. snapback Tuning
