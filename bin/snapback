@@ -6307,7 +6307,7 @@ search-syslog-for-errors() {
 	[[ $syslog_file == $syslog_path && $# != 0 && -s $1 ]] &&
 	    syslog_file+=" $1"
 	create-status_dir
-	fgrep --text -f $search_str_file $syslog_file |
+	fgrep --text -f    $search_str_file $syslog_file |
 	    fgrep -v -f $ignorable_str_file > $search_file
 	rm $search_str_file $ignorable_str_file
 

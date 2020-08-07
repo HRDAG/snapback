@@ -65,6 +65,7 @@
 /var/log/sn**/.cache.sh*
 /var/log/sn*/monitor/big-swapouts/today.txt
 # only backup non-snapback logs that are dated & compressed: small,don't change
+# have *-???????? files if dateext' & 'delaycompress' in /etc/logrotate.conf
 /var/log/a[^u]*
 /var/log/au*[a-y]
 /var/log/au*-????????
