@@ -2070,7 +2070,7 @@ declare -r -A type2prune_type_globs_=(
 )
 #
 if \
-is-var type2prune_type_globs		# can set custom value in $config_file
+is-set type2prune_type_globs		# can set custom value in $config_file
    then [[ "${type2prune_type_globs[hour]}" == \
 	   "${type2prune_type_globs_[hour]}" ]] ||
 	   abort "your custom type2prune_type_globs[hour] must match $our_name"
@@ -6542,6 +6542,8 @@ function regression-test() {
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
+
+	set-rows-columns-COLUMNS # if call setup-ps-variables-and-ps_-function
 
 	echo -e "\nComparing $old_cmd to $tst_cmd"
 
