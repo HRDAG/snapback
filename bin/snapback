@@ -5101,12 +5101,15 @@ readonly -f lock-replica-of-snapshots
 readonly drive_msecs_dir=$_monitor_dir/msecs	       # response time, for 'w'
 readonly snapshots_replica_dir=$_monitor_dir/snapshots # 'w' uses, avoids hangs
 
-create-monitor-dirs() {
+function create-monitor-dirs() {
 
-	mkdir -p $_mon_globs_dir $drive_msecs_dir $snapshots_replica_dir
-	mkdir -p      $_mon_lock_dir
+	mkdir -p $_mon_globs_dir $drive_msecs_dir $snapshots_replica_dir &&
+	mkdir -p      $_mon_lock_dir &&
 	chmod ugo+rwx $_mon_lock_dir	# so don't need sudo-lockpid
 }
+readonly -f create-monitor-dirs
+
+# ----------------------
 
 mon-process-finished-glob() {
 	local drive_name=$1
@@ -5171,8 +5174,8 @@ monitor-drives() {
 
 	lockpid -q $drive_monitor_lock_path || exit_normally 0
 
-	create-status_dir
-	create-monitor-dirs
+	create-status_dir &&
+	create-monitor-dirs || abort-function "couldn't create dirs"
 
 	exec &> $_monitor_dir/monitor.log # to catch problems
 
