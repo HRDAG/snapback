@@ -1110,6 +1110,14 @@ function set-admin_group {
 	for user in $env_var_values
 	    do	[[ $user != root ]] && break
 	done
+
+	if [[ ! $user || $user == root ]] # run from cron?
+	   then set -- $(ls -ld $log_dir 2>/dev/null)
+		readonly admin_group=${4:-}
+		[[ $admin_group ]]
+		return $?
+	fi
+
 	local users_groups=$(id -G -n $user)
 
 	local group
@@ -4640,8 +4648,6 @@ create-status_dir() {
 
 	[[ -d $status_dir ]] && return
 
-	[[ $is_cron ]] && exit_normally	# FIXME: cron can't run set-admin_group
-
 	sudo mkdir $status_dir &&
 	set-admin_group &&
 	sudo chgrp $admin_group $status_dir &&
@@ -5193,7 +5199,7 @@ re-start-monitor-drives-if-needed() {
 	fi
 
 	is-active-lock $drive_monitor_lock_path ||
-	    PATH=/usr/local/bin:$PATH sudo $_our_name monitor-drives
+	    sudo $our_path monitor-drives > /dev/null
 }
 readonly -f re-start-monitor-drives-if-needed
 
@@ -6784,7 +6790,8 @@ case $action in
 		fi
 		[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
-		setsid $our_path $debug_opt $trace_opt $action -r &
+		PATH=/usr/local/bin:$PATH \
+		setsid $_our_name $debug_opt $trace_opt $action -r &
 	fi
 	;;
 
