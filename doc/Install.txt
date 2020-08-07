@@ -397,7 +397,10 @@ vm.vfs_cache_pressure, by checking all the older syslog files:
 Now you can experiment with different values for vm.vfs_cache_pressure, and
 then check to see if things got worse:
 
-    snapback watch	# finds errors in yesterday's and today's syslog files
+    snapback watch
+
+which will find errors in yesterday's (if you enable 'dateext' in
+/etc/logrotate.conf) and today's syslog files.
 
 
 I. snapback Tuning

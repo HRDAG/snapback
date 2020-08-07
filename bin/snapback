@@ -4733,7 +4733,7 @@ show-stats-section-1() {
 	echo " Average hours to create bckp snapshot:  $rsync_hour_avgs"
 	echo " Maximum hours to create bckp snapshot:  $rsync_hour_maxs"
 	set-rsync_hour_avgs-rsync_hour_maxs -c
-	echo " Average hours to create copy snapshot:  $rsync_hour_avgs"
+	echo " Average hours to copy/update snapshot:  $rsync_hour_avgs"
 	set-drive_usage
 	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
 	set-drive_response
