@@ -356,7 +356,7 @@ function sudo-lockpid() {
 	   else local is_optional=$false
 	fi
 
-	# we're used when locks maybe stale (sudo-lockpid $lock &> /dev/null);
+	# we're used when locks maybe stale (sudo-lockpid $lock &> $dev_null);
 	# but they usuaully aren't, so "$IfRun lockpid" would only show release
 	[[ $debug_opt && ! $is_regression_test ]] && return 0
 
@@ -366,7 +366,7 @@ function sudo-lockpid() {
 	   { $IfRun lockpid "$@"; return; }
 
 	is-set can_sudo_lockpid ||
-	if sudo -n lockpid -h &> /dev/null
+	if sudo -n lockpid -h &> $dev_null
 	   then readonly can_sudo_lockpid=$true
 	   else readonly can_sudo_lockpid=$false
 	fi
@@ -394,7 +394,7 @@ rm-stale-locks() {
 	local lock_path
 	for lock_path in $lock_dir/*.pid
 	    do	[[ -e $lock_path ]] || continue
-		sudo-lockpid -o $lock_path &> /dev/null &&
+		sudo-lockpid -o $lock_path &> $dev_null &&
 		sudo-lockpid -r $lock_path # we grabbed it, i.e. it was stale
 	done
 }
@@ -828,7 +828,7 @@ readonly -f have-job
 function sudo-kill() {
 	local PID=${!#}
 
-	$IfRun kill "$@" 2> /dev/null && return 0 # kill is built-in, so cheap
+	$IfRun kill "$@" 2> $dev_null && return 0 # kill is built-in, so cheap
 	is-process-alive ${PID#-} || return 1
 	local  kill_msg=$(kill "$@" 2>&1)
 	if   [[ $kill_msg == *"Operation not permitted"* ]]
@@ -858,7 +858,7 @@ function signal-job() {
 
 	[[ ! $debug_opt ]] &&
 	# use -o, because we don't really need to remove a stale lock
-	sudo-lockpid -o --not-hold $lock_path &> /dev/null && # if stale ...
+	sudo-lockpid -o --not-hold $lock_path &> $dev_null && # if stale ...
 	sudo-lockpid    --release  $lock_path && return 0     # nothing to kill
 
 	set-lock_PGID $lock_path || return 0 # is there a valid job to signal?
@@ -866,7 +866,7 @@ function signal-job() {
 
 	set-signal_is_kill $signal || return 0 # (wanted to) terminate job?
 
-	sudo-lockpid -o $lock_path &> /dev/null && # see if it really died
+	sudo-lockpid -o $lock_path &> $dev_null && # see if it really died
 	sudo-lockpid -r $lock_path
 	return $?			# is lock-holder still alive?
 }
@@ -974,7 +974,7 @@ function set-lock_PGIDs() {
 	    do	set -- $(< $lock)
 		[[ $# == 1 ]] || continue
 		lock_PGIDs+=$1,
-	done 2> /dev/null	    # a lock might disappear, i.e. $(< ) fails
+	done 2> $dev_null	    # a lock might disappear, i.e. $(< ) fails
 	lock_PGIDs=${lock_PGIDs%,}
 	[[ $lock_PGIDs ]]
 }
@@ -1112,7 +1112,7 @@ function set-admin_group {
 	done
 
 	if [[ ! $user || $user == root ]] # run from cron?
-	   then set -- $(ls -ld $log_dir 2>/dev/null)
+	   then set -- $(ls -ld $log_dir 2>$dev_null)
 		readonly admin_group=${4:-}
 		[[ $admin_group ]]
 		return $?
@@ -1684,7 +1684,7 @@ function is-copy-higher-priority-than-prune() {
 		if set-copy_PGID--if-copy-src #2 drives copying to each other?
 		   then local lock_paths
 			set-lock_paths prune
-			sudo lockpid -r -p $copy_PGID $lock_paths &> /dev/null
+			sudo lockpid -r -p $copy_PGID $lock_paths &> $dev_null
 		fi
 		continue-jobs prune # may do nothing if backup running
 	   else set-copy_PGID--if-copy-src && # is this a copy job's source?
@@ -1717,9 +1717,9 @@ sync-drive-unless-writers() {
 	for lock in $locks
 	    do	  lock $lock || return
 		unlock $lock
-	done &> /dev/null
+	done &> $dev_null
 
-	$IfRun sync --file-system $drive_dir &> /dev/null # maybe not supported
+	$IfRun sync --file-system $drive_dir &> $dev_null # maybe not supported
 }
 readonly -f sync-drive-unless-writers
 
@@ -1812,7 +1812,7 @@ function _should-run-prune {
 	fi
 
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	lock $lock_opt prune 2> /dev/null || # prune probably already running
+	lock $lock_opt prune 2> $dev_null || # prune probably already running
 	    { is-copy-higher-priority-than-prune; return 1; }
 
 	if [[ $is_cron ]]
@@ -2746,7 +2746,7 @@ readonly -f set-rsync_time_subdir
 
 rm-dangling-symlinks() {
 
-	cd $stats_dir &> /dev/null || return
+	cd $stats_dir &> $dev_null || return
 
 	for drive in */$rsync_time_basename/*
 	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
@@ -2875,7 +2875,7 @@ _handle-rsync-results() {
 		   ! $is_cron || $debug_opt ]] &&
 		$IfRun log \
 	  "created $new_snapshot (at $priority priority) in $rsync_hours hours"
-	   else set -- $(bzcat $log 2>/dev/null | # might be empty file
+	   else set -- $(bzcat $log 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
 		if (( $link_fail_count == 0 ))
@@ -3717,7 +3717,7 @@ function update-drive() {
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	IfRun= lock $lock_opt copy > /dev/null || exit_normally 1
+	IfRun= lock $lock_opt copy > $dev_null || exit_normally 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir --ignore-fail-on-non-empty *.partial # in case previously crashed
@@ -4222,7 +4222,7 @@ setup-snapshot-stats() {
 	[[ -w $log_dir  ]] || return # might not have write access to the cache
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	local lockpid_args="--dir=$lock_dir $lock_name"
-	lockpid $lockpid_args > /dev/null || return
+	lockpid $lockpid_args > $dev_null || return
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
@@ -4286,7 +4286,7 @@ function run-lsblk() {
 	echo
 	# fields that don't work: rm,model; unreliable fields: rota
 	lsblk_fields=name,fstype,type,size,state,sched,opt-io,mountpoint
-	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>/dev/null ||
+	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>$dev_null ||
 	lsblk --output=$lsblk_fields			$devices
 }
 readonly -f run-lsblk
@@ -4474,7 +4474,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	declare -g -i num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>/dev/null  |
+	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null  |
      egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm|sync) ')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
@@ -4552,7 +4552,7 @@ is-set		      min_ps_wchan_width || # custom value in $config_file?
 	fi
 
 	[[ $ps_wchan_width ]] && wchan=wchan:$ps_wchan_width || wchan=
-	[[ $wchan ]] && sudo -n ps &> /dev/null && sudo=sudo || sudo= wchan=
+	[[ $wchan ]] && sudo -n ps &> $dev_null && sudo=sudo || sudo= wchan=
 	[[ $wchan ]] && ps_keywords=${ps_keywords/,stat/,$wchan,stat}
 }
 readonly -f _set-sudo-wchan-max_ps_wchan_width-ps_keywords
@@ -5150,7 +5150,7 @@ mon-look-for-finished-globs() {
 		for drive_name in ${!drive_name2PID[*]}
 		    do	local PID=${drive_name2PID[$drive_name]}
 			[[ $PID ]] || continue		      # already done?
-			kill -0 $PID 2> /dev/null && continue # still running?
+			kill -0 $PID 2> $dev_null && continue # still running?
 			drive_name2PID[$drive_name]=	      # just finished
 
 			mon-process-finished-glob $drive_name
@@ -5199,7 +5199,7 @@ re-start-monitor-drives-if-needed() {
 	fi
 
 	is-active-lock $drive_monitor_lock_path ||
-	    sudo $our_path monitor-drives > /dev/null
+	    sudo $our_path monitor-drives > $dev_null
 }
 readonly -f re-start-monitor-drives-if-needed
 
@@ -5432,13 +5432,13 @@ function unmount-drives() {
 	    do	$IfRun kill-job-on-drives all $name
 	done
 
-	[[ $debug_opt ]] && local output=/dev/stdout || local output=/dev/null
+	[[ $debug_opt ]] && local output=/dev/stdout || local output=$dev_null
 	local name drive_name drive_dir status=0
 	for name
 	    do	set-drive_name $name
 		set-drive_dir $quiet_opt $drive_name
 		is-drive-mounted $drive_dir || continue
-		sudo umount -h &> /dev/null || warn "need sudo privs" || break
+		sudo umount -h &> $dev_null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
@@ -5691,7 +5691,7 @@ _set-device-drive_name-drive_dir-is_new_dev() {
 	_set-drive_dir
 	TraceV 2 mkfs_opts device drive_name drive_dir && echo
 
-	if [[ $(df --output=source $device 2> /dev/null) != *$device ]]
+	if [[ $(df --output=source $device 2> $dev_null) != *$device ]]
 	   then is_new_dev=$true
 	   else	is_new_dev=$false
 		$IfRun abort "$device is mounted; to *DESTROY* its contents,
@@ -6355,7 +6355,7 @@ readonly -f check-logs
 set-sudo--if-pwd-not-writable() {
 
 	local test_file=.test-file.$BASHPID
-	if touch $test_file &> /dev/null
+	if touch $test_file &> $dev_null
 	   then rm $test_file
 		sudo=
 	   else sudo=sudo
@@ -6377,7 +6377,7 @@ function check-snapshot-hard-links() {
 
 	set-inum() {
 		[[ -r $1 ]] || abort "run with sudo"
-		set -- $(ls -i -d $1 2>/dev/null)
+		set -- $(ls -i -d $1 2>$dev_null)
 		inum=$1
 		[[ $inum ]]
 	}
@@ -6386,7 +6386,7 @@ function check-snapshot-hard-links() {
 
 	local -A file2inum
 	for old_file in $very_old_immutable_files
-	    do	$IfRun sudo -n chattr +i $old_file &> /dev/null # optional
+	    do	$IfRun sudo -n chattr +i $old_file &> $dev_null # optional
 		file=$1$old_file
 		set-inum $file ||
 		  abort "$drive_name: $file missing from oldest snapshot $1"
@@ -6592,11 +6592,11 @@ function regression-test() {
 	_set-drive_dir
 	suspend-jobs backup prune
 	have-job copy &&
-	$our_path kill copy $dst &> /dev/null && killed_dst=$dst && {
+	$our_path kill copy $dst &> $dev_null && killed_dst=$dst && {
 	    warn "killed update-drive (or copy) on drive $dst"
 	    cd_ $drive_dir
 	    $IfRun sudo rm -f *.partial/.keep
-	    $IfRun sudo rmdir *.partial &> /dev/null
+	    $IfRun sudo rmdir *.partial &> $dev_null
 	}
 
 	_run-debug-cmds u update-drive $args
