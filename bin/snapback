@@ -375,7 +375,9 @@ function sudo-lockpid() {
 	   else local sudo_lockpid=lockpid # only reclaim writable locks
 	fi
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $sudo_lockpid" >&2
-	$IfRun $sudo_lockpid "$@"
+	$IfRun $sudo_lockpid ${is_optional:+-q} "$@" |
+	    sed "s/--pid=[0-9]*/--pid=PID/" # for regression-test, when $IfRun
+	[[ ${PIPESTATUS[0]} == 0 ]]
 }
 readonly -f sudo-lockpid
 
