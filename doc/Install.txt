@@ -110,13 +110,14 @@ Choose the partition you want:
 See if someone is using it:
     fuser -m -v $raw_device
 Use an encryption keypair:
-    set drive_key_file= in /etc/snapcrypt/configure.sh
+    # set drive_key_file= in /etc/snapcrypt/configure.sh
 Create an encryption keypair (if don't already have one you want to use):
+    keypair=/etc/snapcrypt/keys/keyfile.bin
     sudo mkdir -p $(dirname $keypair)
     cd $(dirname $keypair)
     # create key $(basename $keypair)
 Encrypt the drive, then create a decrypted mapping:
-    snapcrypt $drive_name $raw_device
+    snapcrypt init $drive_name $raw_device
 
 Then create a new rule in /etc/snapcrypt/drives.rules (eventually, HRDAG's
 'snapcrypt' utility will do this automatically), with the same format as the
