@@ -106,21 +106,28 @@ Here's how to install it:
 
 Find the drive's device name with:
     ls -lt /dev/sd*[!0-9]	# most-recently-plugged-in-drive at the top
+
 Save the device name, and specify the drive-name you will use
     raw_device=/dev/sd?  drive_name=?
+
 Verify it's the drive you want:
     fdisk -l $raw_device
+
 Choose the partition you want:
     raw_device=${raw_device}?	# you could instead encrypt the whole drive
+
 See if someone is using it:
     fuser -m -v $raw_device
+
 Use an encryption keypair:
     # set drive_key_file= in /etc/snapcrypt/configure.sh
+
 Create an encryption keypair (if don't already have one you want to use):
     keypair=/etc/snapcrypt/keys/keyfile.bin
     sudo mkdir -p $(dirname $keypair)
     cd $(dirname $keypair)
     # create key $(basename $keypair)
+
 Encrypt the drive, then create a decrypted mapping:
     snapcrypt init $drive_name $raw_device
     # If fails, and syslog says "Device size is not multiple of sector_size",
