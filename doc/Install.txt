@@ -168,6 +168,9 @@ You can test the rule with:
 
     udevadm test $(udevadm info $device | sed -n 's/^P: //p') |& tail -n1
 
+
+E. What filesystem parameters should I use?
+
 If you have existing ext4 backup drives that are no bigger, use 'snapback
 copy-drive' to initialize the new drive; otherwise, use 'snapback mkfs' to
 create a filesystem, and 'snapback update-drive' to copy snapshots from your
@@ -194,7 +197,7 @@ like Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
 years of backup snapshots on an ext4 filesystem.]
 
 
-E. Re-using existing backup drives and partitions
+F. Re-using existing backup drives and partitions
 
 Unless you have drive partitions with one or more existing backup snaphots,
 you can skip this whole section.
@@ -259,7 +262,7 @@ Now you can mount all your backup partitions on $drive_dir_prefix (defined in
 configure.sh).
 
 
-F. Configuring 'snapback'
+G. Configuring 'snapback'
 
 All configuration takes place in
 
@@ -311,7 +314,7 @@ function that's called after a .rm snapshot is deleted, e.g. to delete the
 existence of the snapshot from a database.
 
 
-G. Preparing brand new partitions when you have no existing snapshots
+H. Preparing brand new partitions when you have no existing snapshots
 
 You can use:
 
@@ -346,7 +349,7 @@ backup all of them simultaneously with:
 but it's best to let 'cron' do it ...
 
 
-H. Automation with cron
+I. Automation with cron
 
 Add your backup drive_names to drive_name_regex= in configure.sh .
 
@@ -368,7 +371,7 @@ from etc/cron.d/snapback into a file in /etc/cron.hourly/ . If you don't have
 etc/cron.d/snapback to your /etc/crontab file.
 
 
-I. OS tuning
+J. OS tuning
 
 To devote more RAM to inode and directory caches with the Linux kernel,
 decrease the value of vm.vfs_cache_pressure.  You might start with a value
@@ -443,7 +446,7 @@ which will find errors in yesterday's (if /etc/logrotate.conf contains
 'dateext' and 'delaycompress') and today's syslog files.
 
 
-J. snapback Tuning
+K. snapback tuning
 
 There's two kinds of problems that will require tuning: you're running out
 of drive space or inodes, or you're getting "Too many links" errors.  If you

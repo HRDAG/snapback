@@ -2597,8 +2597,8 @@ readonly -f set-older_link_dest_dirs-newer_link_dest_dirs
 
 # ---------------------------------
 
-# Need to link to snapshots that are earlier and later than $new_snapshot.
-# See doc/Install.txt for tuning the VFS cache (directory and inode caches).
+# Need to link to snapshots that are earlier and later than $new_snapshot.  See
+# J. in doc/Install.txt for tuning the VFS cache (directory and inode caches).
 set-link_dest_opts--for-copy-snapshot() {
 	local new_snapshot=${1##*/}
 
@@ -5550,7 +5550,7 @@ readonly -f add-extN-journal
 # we should choose a block-size that will result in the smallest space
 # usage by directories.
 
-# To find your actual average directory size, see section C. in doc/Install.txt
+# To find your actual average directory size, see section E. in doc/Install.txt
 
 _set-blocks_per_inode-bytes_per_inode--for-extN() {
 
@@ -5646,7 +5646,7 @@ _set-opts-log_opt-mount_opts--for-xfs() {
 	# we chose this, because XFS stores many things in inodes).
 	# For servers with bigger dirs, experiment with different
 	# mkfs opts (on your fastest drive) and the dir-sizes action (see
-	# section C. in doc/Install.txt).
+	# section E. in doc/Install.txt).
 
 	[[ $force_opt		 ]] && opts+="$force_opt "
 
@@ -5777,7 +5777,7 @@ readonly -f _mkfs-warnings
 
 # -------------------------------------------------------
 
-# For encrypting a drive/partition, see section C. in doc/Install.txt .
+# For encrypting a drive/partition, see section D. in doc/Install.txt .
 
 # mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
 function mkfs-backup-drive() {

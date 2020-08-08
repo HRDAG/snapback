@@ -31,8 +31,9 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # -----------------------------------------------------------------------------
 
 # --------------------------
-# To understand the defaults mentioned below, read the long comments in
-# mkfs_backup_drive and its helper functions ... soon moved to Install.txt .
+# To understand the defaults mentioned below, search for mkfs-backup-drive
+# in snapbck, and read the long comments in the following functions ...
+# and also see E. in doc/Install.txt .
 # --------------------------
 
 # NOTE: XFS defaults support ~15% more snapshots than ext4 defaults.
@@ -50,6 +51,7 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
 # but first read the long comments near _set-opts-log_opt-mount_opts--for-extN.
+# Small block sizes are best, see the comment above about mkfs-backup-drive .
 # Use -I 256 to backup nanosecond timestamps and/or file creation time.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
 readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
@@ -84,7 +86,7 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # monitoring swapout rate
 # -----------------------
 
-# see doc/Install.txt for a method to find the value of this variable
+# see J. in doc/Install.txt for a method to find the value of this variable
 # declare -r -i max_swapout_MBps=50
 
 # --------------------------------------------------
