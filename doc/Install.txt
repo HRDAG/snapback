@@ -70,7 +70,7 @@ On Darwin (macOS aka Mac OS-X), use an APFS filesystem labeled backup-{name},
 and set backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
 
 
-C. What filesystem type(s) should I use?  Can I use an encrypted drive?
+C. What filesystem type(s) should I use?
 
 WARNING: if you heavily use an application which generates lots of hard-linked
 files (like HRDAG's 'snap' aka 'snapshot'; or Red Hat's 'yum' package
@@ -84,7 +84,12 @@ link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
 32-bit link-count (*never* use HFS: every "hard link" creates a hidden copy of
 the file?!).
 
-If you want to encrypt your backup drives ...
+My experience is that ext4 is faster than XFS (especially when filesystems get
+very full), and ext4 is less fragile.  xfs_repair wants to use an immense
+amount of RAM, besides taking a long time.
+
+
+D. How do I encrypt a backup drive?
 
 On a Mac, use the macOS encryption utility.
 
@@ -106,7 +111,7 @@ Save the device name, and specify the drive-name you will use
 Verify it's the drive you want:
     fdisk -l $raw_device
 Choose the partition you want:
-    raw_device=${raw_device}?
+    raw_device=${raw_device}?	# you could instead encrypt the whole drive
 See if someone is using it:
     fuser -m -v $raw_device
 Use an encryption keypair:
@@ -118,6 +123,33 @@ Create an encryption keypair (if don't already have one you want to use):
     # create key $(basename $keypair)
 Encrypt the drive, then create a decrypted mapping:
     snapcrypt init $drive_name $raw_device
+    # If fails, and syslog says "Device size is not multiple of sector_size",
+    # you have options (some of which WILL *DESTROY* all the drive's data):
+
+    # 0. easiest but least efficient: re-run 'init' with the smallist
+    # sector-size that will work, i.e. copy-and-paste the following 3 lines::
+         snapcrypt init -s 2048 $drive_name $raw_device ||
+         snapcrypt init -s 1024 $drive_name $raw_device ||
+         snapcrypt init -s  512 $drive_name $raw_device
+
+    # 1. DESTROY data: if the drive has no needed data, then run
+    # ' fdisk ${raw_device%%[0-9]*} ', run 'g' to create a new GPT disklabel,
+    # then run 'n' to create a new partition, and select all the defaults,
+    # and remember the reported size; run 'd' & 'n' to re-create partition 1,
+    # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
+
+    # 2. safely retain data: to use the *last* partition on the drive, run
+    # ' fdisk ${raw_device%%[0-9]*} ', then delete the *last* partition,
+    # then run 'n' to create a new partition, and select all the defaults,
+    # and remember the reported size; run 'd' & 'n' to re-create partition,
+    # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
+
+    # 3. gently redo early partition: to use an earlier partition, run
+    # ' fdisk ${raw_device%%[0-9]*} ', then delete your partition, then
+    # run 'n' & '#' to create a new partition, and select all the defaults,
+    # and remember the reported size; run 'd' & 'n' & # to re-create partition,
+    # and for the "Last sector, ... or +size{...}" use +size, *BUT* specify
+    # a size that's slightly smaller than the remembered size, e.g. +119.4G
 
 Then create a new rule in /etc/snapcrypt/drives.rules (eventually, HRDAG's
 'snapcrypt' utility will do this automatically), with the same format as the
@@ -155,7 +187,7 @@ like Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
 years of backup snapshots on an ext4 filesystem.]
 
 
-D. Re-using existing backup drives and partitions
+E. Re-using existing backup drives and partitions
 
 Unless you have drive partitions with one or more existing backup snaphots,
 you can skip this whole section.
@@ -198,7 +230,7 @@ When it finishes (it could take hours), again use "resize2fs -P" to see if
 it's shrunk enough to fit in any of your smaller partitions.
 
 Before you copy the master partition to your other partitions, you may want to
-think seriously about first encrypting the other partitions: See section C.
+think seriously about first encrypting the other partitions: See section D.
 
 Now you can use "snapback copy-drive" (which will show you what arguments are
 needed) to copy your master partition to each of the partitions large enough
@@ -220,7 +252,7 @@ Now you can mount all your backup partitions on $drive_dir_prefix (defined in
 configure.sh).
 
 
-E. Configuring 'snapback'
+F. Configuring 'snapback'
 
 All configuration takes place in
 
@@ -272,7 +304,7 @@ function that's called after a .rm snapshot is deleted, e.g. to delete the
 existence of the snapshot from a database.
 
 
-F. Preparing brand new partitions when you have no existing snapshots
+G. Preparing brand new partitions when you have no existing snapshots
 
 You can use:
 
@@ -307,7 +339,7 @@ backup all of them simultaneously with:
 but it's best to let 'cron' do it ...
 
 
-G. Automation with cron
+H. Automation with cron
 
 Add your backup drive_names to drive_name_regex= in configure.sh .
 
@@ -329,7 +361,7 @@ from etc/cron.d/snapback into a file in /etc/cron.hourly/ . If you don't have
 etc/cron.d/snapback to your /etc/crontab file.
 
 
-H. OS tuning
+I. OS tuning
 
 To devote more RAM to inode and directory caches with the Linux kernel,
 decrease the value of vm.vfs_cache_pressure.  You might start with a value
@@ -404,7 +436,7 @@ which will find errors in yesterday's (if /etc/logrotate.conf contains
 'dateext' and 'delaycompress') and today's syslog files.
 
 
-I. snapback Tuning
+J. snapback Tuning
 
 There's two kinds of problems that will require tuning: you're running out
 of drive space or inodes, or you're getting "Too many links" errors.  If you
