@@ -4407,8 +4407,6 @@ set-rows-columns-COLUMNS() {
 }
 readonly -f set-rows-columns-COLUMNS
 
-set-rows-columns-COLUMNS	     # for setup-ps-variables-and-ps_-function
-
 # --------------------------------------------
 
 set-max_ps_width() {
