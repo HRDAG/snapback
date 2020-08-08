@@ -360,13 +360,8 @@ function sudo-lockpid() {
 	# but they usuaully aren't, so "$IfRun lockpid" would only show release
 	[[ $debug_opt && ! $is_regression_test ]] && return 0
 
-	local lock=${!#}
-	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
-	[[ $IfRun || -w $lock || ( ! -e $lock && -w $lock_dir ) ]] &&
-	   { $IfRun lockpid "$@"; return; }
-
 	is-set can_sudo_lockpid ||
-	if sudo -n lockpid -h &> $dev_null
+	if $IfRun sudo -n lockpid -h &> $dev_null
 	   then readonly can_sudo_lockpid=$true
 	   else readonly can_sudo_lockpid=$false
 	fi
@@ -4410,6 +4405,8 @@ set-rows-columns-COLUMNS() {
 }
 readonly -f set-rows-columns-COLUMNS
 
+set-rows-columns-COLUMNS	     # for setup-ps-variables-and-ps_-function
+
 # --------------------------------------------
 
 set-max_ps_width() {
@@ -6542,8 +6539,6 @@ function regression-test() {
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
-
-	set-rows-columns-COLUMNS # if call setup-ps-variables-and-ps_-function
 
 	echo -e "\nComparing $old_cmd to $tst_cmd"
 
