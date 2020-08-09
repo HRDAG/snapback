@@ -1301,9 +1301,22 @@ function _set-drive_dir() {
 	local name=${1:-$drive_name}
 
 	drive_dir=$drive_dir_prefix$name
-	[[ -d $drive_dir ]] || warn "'$drive_name' not mounted"
+	[[ -d $drive_dir ]] || warn "'$name' not mounted"
 }
 readonly -f _set-drive_dir
+
+# ----------------------
+
+function set-decryption_dev() {
+	local name=${1:-$drive_name} drive_dir FS_label
+	name=${1#$drive_dir_prefix}	# might be $drive_dir
+
+	drive_dir=$drive_dir_prefix$name
+	set-FS_label--from-mount_dir $drive_dir
+	decryption_dev=/dev/mapper/$FS_label
+	[[ -b $decryption_dev ]]
+}
+readonly -f set-decryption_dev
 
 # ----------------------
 
@@ -2230,7 +2243,7 @@ unset _period
 readonly backup_period2minimal_snapshot_regex
 
 set-date_span--scaled() {
-	local _date_span=${1-$date_span}
+	local _date_span=${1:-$date_span}
 
 	date_span=$( echo "$_date_span $pruning_span_scale_factor" |
 		     awk '{ printf "%.0f\n", $1 * $2 }' )
@@ -4970,6 +4983,16 @@ readonly -f show-copy-cmds-with-full-details
 
 # ------------------------------------------------------------------
 
+_start-monitor-drives-if-needed() {
+
+	if ! is-active-lock $drive_monitor_lock_path
+           then sleep 0.5	      # another process will probably start it
+		is-active-lock $drive_monitor_lock_path ||
+		    sudo $our_path monitor-drives
+	fi
+}
+readonly -f _start-monitor-drives-if-needed
+
 watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= names=
@@ -5019,7 +5042,7 @@ watch() {
 
 	show-errors-in-syslog	  # before access disk (can trigger I/O error)
 
-	is-active-lock $drive_monitor_lock_path ||sudo $our_path monitor-drives
+	_start-monitor-drives-if-needed
 
 	show-sudo-config-warning-if-it-fits
 
@@ -5768,8 +5791,8 @@ _mkfs-warnings() {
 	warn "$line_1\n   $line_2\n   $line_3\n   $line_4\n   $line_5"
 
 	[[ $force_opt || $mkfs_cmd_opts != mkfs.ext* ]] || {
-	   echo "If this is your first or smallest drive, use the -f option;"
-	   echo "otherwise, use the very-fast 'copy-drive' action instead."
+	   echo "If this is first or smallest drive, use -f option; otherwise,"
+	   echo "if using ext4, use the very-fast 'copy-drive' action instead."
 	   abort-with-action-Usage
 	} >&2
 }
@@ -5828,13 +5851,42 @@ readonly -f mkfs-backup-drive
 # ----------------------------------------------------------------------------
 
 _assert-dst-big-enough() {
+	local src_device=${1:-$src_device}
+	local dst_device=${2:-$dst_device}
 
-	local msg
+	local FS_type msg
+	set-FS_type--from-path $src_device
 	if set-device_KB--from-block-device $src_device
 	   then declare -i src_KB=$device_KB
 		set-device_KB--from-block-device $dst_device
-		local -i KB_missing=$(( src_KB - device_KB ))
-		(( KB_missing > 0 )) || return 1
+		local -i dst_KB=$device_KB
+		local -i KB_missing=$(( src_KB - dst_KB ))
+		(( KB_missing > 0 )) || return
+
+		if [[ $FS_type == ext? ]]
+		   then set -- $(tune2fs -l $src_device | grep '^Block size:')
+			local -i block_KB=$(( ${!#} / 1024 ))
+
+			$IfRun sync --file-system $src_device &> $dev_null
+
+			# FIXME: might be more accurate than the following fsck
+			set -- $(resize2fs -P $src_device)
+			local -i min_blocks=${!#}
+
+			set -f
+			set -- $(fsck -n $src_device | sed 's/blocks$//')
+			set +f
+			local     used_total_blocks=${!#}
+			local -i  used_blocks=${used_total_blocks%/*}
+			local -i total_blocks=${used_total_blocks#*/}
+			local -i  used_KB=$((  $used_blocks * $block_KB ))
+			local -i total_KB=$(( $total_blocks * $block_KB ))
+			(( total_KB < dst_KB )) && return
+			((  used_KB < dst_KB )) &&
+			    msg="$dst_device too small; but it's OK if" &&
+			    abort "$msg you run: resize2fs -M -p $src_device"
+		fi
+
 		local -i MB=KB_missing/1024
 		local -i GB=MB/1024 &&
 		msg="$dst_name's $dst_device is too-small by $MB MB ($GB GB)"
@@ -5856,9 +5908,15 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 	[[ $name == /dev/* ]] && device=$name && name=
 
 	[[ $name ]] && set-drive_name $name && name=$drive_name
-	[[ !  $device ]] &&
-	   set-FS_label--from-mount_dir $drive_dir_prefix$name &&
-	   set-FS_device--from-FS-label $FS_label && device=$FS_device
+	if [[ ! $device ]]
+	   then if set-decryption_dev $name
+		   then device=$decryption_dev
+		   else _set-drive_dir $name
+			set-FS_label--from-mount_dir $drive_dir_prefix$name &&
+			set-FS_device--from-FS-label $FS_label &&
+			device=$FS_device
+		fi
+	fi
 	[[ -b $device ]] || abort "$device is not a block device"
 
 	if [[ ! $name ]]
@@ -5899,7 +5957,12 @@ copy-backup-drive() {
 	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
+	set-FS_type--from-path $dst_device
+	local dst_FS_type=$FS_type
 	set-FS_type--from-path $src_device
+	local src_FS_type=$FS_type
+	[[ $src_FS_type == $dst_FS_type ]] ||
+	    abort "different filesystem types, must use update-drive instead"
 	if [[ $FS_type == xfs ]] || is-arg1-in-arg2 -D $action_opts # not dd?
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
 	   else _assert-dst-big-enough
