@@ -37,11 +37,11 @@ if which libsnap.sh > /dev/null
    else echo "install libsnap.sh from $libsnap_project" >&2; exit 1
 fi
 #
-if   is-arg1-in-arg2 -E $1 # regression-test wants alternative config_dir?
+if   is-arg1-in-arg2 -E ${1-} # regression-test wants alternative config_dir?
    then _args=" $*"
 	config_dir=${_args/* -E /}
 	config_dir=${config_dir%% *}
-elif is-arg1-in-arg2 -e $1 # regression-test wants config_file inside snapshot?
+elif is-arg1-in-arg2 -e ${1-} # regression-test wants config_file in snapshot?
    then _root=$our_path
 	if [[  $_root =~ .*/([0-9]{4}-[^/]+|latest)/ ]]
 	   then _root=${BASH_REMATCH[0]}
@@ -358,7 +358,7 @@ function sudo-lockpid() {
 
 	# we're used when locks maybe stale (sudo-lockpid $lock &> $dev_null);
 	# but they usuaully aren't, so "$IfRun lockpid" would only show release
-	[[ $debug_opt && ! $is_regression_test ]] && return 0
+	[[ $debug_opt && $is_optional ]] && return 1
 
 	is-set can_sudo_lockpid ||
 	if $IfRun sudo -n lockpid -h &> $dev_null
@@ -386,7 +386,6 @@ readonly -f sudo-lockpid
 rm-stale-locks() {
 
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
-	[[ $debug_opt ]] && return	# 'sudo-lockpid -o' will return 0
 
 	local lock_path
 	for lock_path in $lock_dir/*.pid
@@ -1725,8 +1724,8 @@ sync-drive-unless-writers() {
 	    do	is-arg1-in-arg2 $lock $locks_to_skip || locks+=" $lock"
 	done
 	for lock in $locks
-	    do	  lock $lock || return
-		unlock $lock
+	    do	set-lock_path  $lock
+		is-active-lock $lock_path && return
 	done &> $dev_null
 
 	$IfRun sync --file-system $drive_dir &> $dev_null # maybe not supported
@@ -2537,10 +2536,14 @@ readonly -f set-link_dest_dirs
 # ----------------------
 
 set-link_dest_opts() {
-	local link_dest_dirs=" $*"	# leading SPACE for final command
+	local link_dest_dirs=$*
+
+	[[ $link_dest_dirs ]] || { link_dest_opts= ; return; }
+
 	(( $# <= 20 )) ||
 	    abort-function "$*: $# snapshots, exceeds rsync's max (20)"
 
+	link_dest_dirs=" $*"		# so handle first dir also
 	link_dest_opts=${link_dest_dirs// / --link-dest=}
 }
 readonly -f set-link_dest_opts
