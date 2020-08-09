@@ -160,7 +160,7 @@ Usage: $our_name [options] action [options] [args]
       run: $our_name watch
 
   Current actions are (you can specify their acronym, see process-action):
-    backup-drive  names: backup names ('all' for every mounted backup drive)
+    backup-drives names: backup names ('all' for every mounted backup drive)
      prune-drives names: prune  names ('all' for every "" ""); see configure.sh
     update-drives  [-s src-names-glob] dst-names: copy missing snapshots
     copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
@@ -6700,8 +6700,9 @@ case $action in
 
    # backup-drives   names: backup names ('all' for every mounted backup drive)
    ( b*k*p*dr*v* | bd* | r*b* ) undo-action-abbrev backup-drives
-	[[ $1 != -r  ]] && assert-not-option $1
-	[[ $# != 0   ]] || abort-with-action-Usage
+	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $1 != -r ]] && assert-not-option $1
+	[[ $# != 0  ]] || abort-with-action-Usage
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then check-logs		# create data for 'watch'
@@ -6714,7 +6715,8 @@ case $action in
 	;;
   # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
-	[[ $1 == -f ]] && { final_prune_type=$2; shift 2; } || final_prune_type=
+	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $1 == -f ]] && { final_prune_type=$2;shift 2; } || final_prune_type=
 	[[ $1 != -r ]] && assert-not-option $1
 	[[ $# != 0  ]] || abort-with-action-Usage
 	create-jobs prune "$@"
@@ -6722,11 +6724,12 @@ case $action in
 	;;
    # update-drives  [-s src-names-glob] dst-names: copy missing snapshots
    ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
-	[[ $1 == -S  ]] && {     ignore_slow_sources_opt=$1    ; shift  ; }
-	[[ $1 == -s  ]] && {          src_names_glob_opt="$1$2"; shift 2; }
-	[[ $1 == -e  ]] && { excluded_src_names_glob_opt="$1$2"; shift 2; }
-	[[ $1 != -r  ]] && assert-not-option $1
-	[[ $# != 0   ]] || abort-with-action-Usage
+	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $1 == -S ]] && {     ignore_slow_sources_opt=$1    ; shift  ; }
+	[[ $1 == -s ]] && {          src_names_glob_opt="$1$2"; shift 2; }
+	[[ $1 == -e ]] && { excluded_src_names_glob_opt="$1$2"; shift 2; }
+	[[ $1 != -r ]] && assert-not-option $1
+	[[ $# != 0  ]] || abort-with-action-Usage
 	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}
 				 ${excluded_src_names_glob_opt-}"
 	create-jobs update $opts "$@"
@@ -6735,6 +6738,7 @@ case $action in
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
+	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 != -r  ]] && assert-not-option $1
 	[[ $# != 0   ]] || abort-with-action-Usage
 	set-drive_names--from-user-args "$@"
@@ -6747,6 +6751,7 @@ case $action in
 	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
+	[[ $# != 0  ]] || abort-with-action-Usage
 	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit_normally $?; }
 
 	local opts=
