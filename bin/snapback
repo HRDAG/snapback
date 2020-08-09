@@ -6386,7 +6386,7 @@ search-syslog-for-errors() {
 	set -- $(sed -r -n "s/.* ([^ ]*)\\.$service_string.*/\\1/p" $file |
 		 sort -u)
 	local services=$*
-	(( $# > 1 )) && services="{${services// /,}}"
+	(( $# > 1 )) && services="systemd service failures: {${services// /,}}"
 
 	sed 's/.*[0-9]\][: ] *//' $search_file |
 	    fgrep -v "$big_swapout_string" |
