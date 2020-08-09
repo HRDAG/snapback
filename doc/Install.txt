@@ -105,19 +105,19 @@ Here's how to install it:
     echo "now edit the files copied from the .sample files"
 
 Find the drive's device name with:
-    ls -lt /dev/sd*[!0-9]	# most-recently-plugged-in-drive at the top
+    ls -lt /dev/sd*[^0-9]	# most-recently-plugged-in-drive at the top
 
 Save the device name, and specify the drive-name you will use
     raw_device=/dev/sd?  drive_name=?
 
 Verify it's the drive you want:
-    fdisk -l $raw_device
+    sudo fdisk -l ${raw_device%%[0-9]*}
 
 Choose the partition you want:
     raw_device=${raw_device}?	# you could instead encrypt the whole drive
 
 See if someone is using it:
-    fuser -m -v $raw_device
+    sudo fuser -m -v $raw_device
 
 Use an encryption keypair:
     # set drive_key_file= in /etc/snapcrypt/configure.sh
@@ -129,12 +129,19 @@ Create an encryption keypair (if don't already have one you want to use):
     # create key $(basename $keypair)
 
 Encrypt the drive, then create a decrypted mapping:
-    snapcrypt init $drive_name $raw_device
-    # If fails, and syslog says "Device size is not multiple of sector_size",
+    # If you're going to use ext4 with snapback's default block size (-b 1024),
+    # then you'll need to encrypt the drive with the matching sector size:
+	snapcrypt init -s 1024 $drive_name $raw_device
+
+    # If you'll instead use XFS, which defaults to a block size of 4096,
+    # you can use snapcrypt's default sector size:
+	snapcrypt init $drive_name $raw_device
+
+    # If it fails and syslog says "Device size is not multiple of sector_size",
     # you have options (some of which WILL *DESTROY* all the drive's data):
 
-    # 0. easiest but least efficient: re-run 'init' with the smallist
-    # sector-size that will work, i.e. copy-and-paste the following 3 lines::
+    # 0. easiest, but least efficient: re-run 'init' with the smallest
+    # sector-size that will work, i.e. copy-and-paste the following 3 lines:
          snapcrypt init -s 2048 $drive_name $raw_device ||
          snapcrypt init -s 1024 $drive_name $raw_device ||
          snapcrypt init -s  512 $drive_name $raw_device
@@ -144,12 +151,14 @@ Encrypt the drive, then create a decrypted mapping:
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition 1,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
+    # then run 'w' to write the results and DESTROY what's on the drive
 
     # 2. safely retain data: to use the *last* partition on the drive, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete the *last* partition,
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
+    # then run 'w' to write the results
 
     # 3. gently redo early partition: to use an earlier partition, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete your partition, then
@@ -157,6 +166,7 @@ Encrypt the drive, then create a decrypted mapping:
     # and remember the reported size; run 'd' & 'n' & # to re-create partition,
     # and for the "Last sector, ... or +size{...}" use +size, *BUT* specify
     # a size that's slightly smaller than the remembered size, e.g. +119.4G
+    # then run 'w' to write the results
 
 Then create a new rule in /etc/snapcrypt/drives.rules (eventually, HRDAG's
 'snapcrypt' utility will do this automatically), with the same format as the
@@ -339,7 +349,8 @@ See doc/watch.txt for details on using the 'watch' action.
 If you already have an existing snapback drive, you should instead copy its
 latest backup to the new drive:
 
-    sudo snapback copy-drive -B /backup/{old-drive-name}/latest {drive-name}
+   sudo \
+   nohup snapback copy-snapshot -B /backup/{old-drive-name}/latest {drive-name}
 
 Once you've created and mounted all the partitions you plan to use, you can
 backup all of them simultaneously with:
