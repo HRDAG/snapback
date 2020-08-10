@@ -1227,7 +1227,7 @@ _set-drive_name() {
 
 	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
 	   [[ $is_quiet ]] && { $xtrace; return 1; }
-	   abort "drive_name $1 has disallowed chars (can ask $coder to allow)"
+	   abort "drive_name='$1' has bad chars (can ask $coder to allow)"
 	}
 
 	[[ $name =~ ^$admin_drive_name_regex$ ]] ||	  {
@@ -4423,7 +4423,7 @@ set-max_ps_width() {
 	local ps_header=$1 rsync_ps_out=$2
 
 	ps_header=${ps_header%COMMAND}
-	set-max_drive_name_len $drive_dirs
+	set-max_drive_name_len ${drive_dirs-$drive_dir}
 	declare -g -i \
 	max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
 	let max_ps_width+=1    # 'watch' executable requires blank last column
@@ -4458,7 +4458,7 @@ setup-ps-variables-and-ps_-function() {
 	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
 	local min_full_columns=$max_ps_width
 
-	if (( $columns >= $min_full_columns )) || [[ ${ps_opt-} == -f ]]
+	if (( ${columns-0} >= $min_full_columns )) || [[ ${ps_opt-} == -f ]]
 	   then readonly is_wide=$true
 	   else readonly is_wide=$false
 	fi
@@ -7164,6 +7164,20 @@ case $action in
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
 
+	set-drive_name ${1:-J}
+	fastest-snapshots /backup/E/2020-05-08,00 /backup/X/2020-05-08,00;_exit
+
+	set-drive_name ${1:-J}
+	set-drive_dir $drive_name; d=$drive_name
+	arg_file=$tmp_dir/snapback-update-$d.args; [[ $UID == 0 ]] ||abort root
+	# maybe call inner function with file containing just this:
+	ss=${1-2020-05-08,00}
+	fgrep $ss $arg_file  > $tmp
+	[[ -s $tmp ]] || abort $tmp is empty
+	fill-in-unpruned-empty-snapshots $tmp; _exit
+	[[ -s $arg_file ]] || abort "$arg_file empty"
+	fill-in-unpruned-empty-snapshots $arg_file; _exit
+
 	set-drive_name ${1:-F}
 	SECONDS=0; set-drive_dir $drive_name
 	record-rsync-time 2000-01-01,00; _exit
@@ -7213,17 +7227,6 @@ case $action in
 	is-suspended copy; echo "is-suspended -> $?"
 	is-sleeping  copy; echo "is-sleeping  -> $?"; _exit
 
-	set-drive_name ${1:-X}
-	set-drive_dir $drive_name; d=$drive_name
-	arg_file=$tmp_dir/snapback-update-$d.args; [[ $UID == 0 ]] ||abort root
-	# maybe call inner function with file containing just this:
-	ss=${1-2020-05-25,08}
-	fgrep $ss $arg_file > $tmp
-	[[ -s $tmp ]] || abort $tmp is empty
-	fill-in-unpruned-empty-snapshots $tmp; _exit
-	[[ -s $arg_file ]] || abort "$arg_file empty"
-	fill-in-unpruned-empty-snapshots $arg_file; _exit
-
 	set-drive_name ${1:-E}
 	set-drive_dir $drive_name
 	is-copy-higher-priority-than-prune; echo $?; _exit
@@ -7231,9 +7234,6 @@ case $action in
 	date "$log_date_format"
 	print-call-stack test
 	print-call-stack; _exit
-
-	set-drive_name ${1:-E}
-	fastest-snapshots /backup/E/2020-05-17,08 /backup/F/2020-05-17,08;_exit
 
 	set-executables--in-process-groups   $* || _exit 1
 	echo $executables; _exit
