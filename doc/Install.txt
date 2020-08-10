@@ -119,9 +119,6 @@ Choose the partition you want:
 See if someone is using it:
     sudo fuser -m -v $raw_device*
 
-Use an encryption keypair:
-    # set drive_key_file= in /etc/snapcrypt/configure.sh
-
 Create an encryption keypair (if don't already have one you want to use):
     keypair=/etc/snapcrypt/keys/keyfile.bin
     sudo mkdir -p $(dirname $keypair)
