@@ -4152,7 +4152,7 @@ _recalculate-snapshot-stats-vars() {
 		# don't count snapshots we're creating
 		for _type in backup copy
 		    do	set-lock_paths $_type $drive_name &&
-			    is-active-lock $lock_paths && shift
+			    is-active-lock $lock_paths && shift &> $dev_null
 		done
 
 		nums+="$drive_name=$# "
@@ -4877,7 +4877,8 @@ show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
 	if [[ $show_all ]]
-	   then filesystem-geometry $drive_dirs
+	   then have-cmd snapcrypt && snapcrypt status all
+		filesystem-geometry $drive_dirs
 	   else	local -i extra=$rows_for_one_detailed_rsync
 		# df is more important than rsync details
 		(( $rows_left + $extra >= $min_rows_with_df )) && # see BD+=
