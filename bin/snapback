@@ -3235,7 +3235,8 @@ set-backup_type() {
 	backup_type=${drive_name2backup_type[$drive_name]-}
 	[[ $backup_type ]] && return	# was it in the cache?
 
-	local variable_name backup_type=
+	backup_type=
+	local variable_name
 	for variable_name in dirs_to_backup exclude_file extra_excludes
 	    do	set-customized_value--for-config-var-name $variable_name
 		backup_type+="$customized_value|"
