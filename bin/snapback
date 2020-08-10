@@ -264,6 +264,8 @@ have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
 shopt -s nullglob			# $# is 0 if pathname expansion "fails"
+shopt -s globasciiranges		# range expressions assume C locale
+shopt -s shift_verbose			# print error message if bad shift
 
 readonly umask=02			# log dirs are setgid sudo/etc
 umask $umask
@@ -2333,7 +2335,7 @@ prune-type-to-file() {
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 4 "\n  LOOP $type: $# dates left: $ss"
 
-		shift $date_span ||	# skip span of newer dates
+		shift $date_span 2> $dev_null || # skip span of newer dates
 		    shift $# # shift does nothing if try to shift more than $#
 		[[ ! $is_last_word ]] || shift $date_span_diff || shift $#
 		remaining_reverse_sorted_snapshot_dates=$*
