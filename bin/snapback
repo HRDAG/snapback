@@ -4737,22 +4737,22 @@ show-stats-section-1() {
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
 	set-rsync_hour_avgs-rsync_hour_maxs
-	echo " Average hours to create bckp snapshot:  $rsync_hour_avgs"
-	echo " Maximum hours to create bckp snapshot:  $rsync_hour_maxs"
+	echo "Average hours to create backup snapshot:  $rsync_hour_avgs"
+	echo "Maximum hours to create backup snapshot:  $rsync_hour_maxs"
 	set-rsync_hour_avgs-rsync_hour_maxs -c
-	echo " Average hours to copy/update snapshot:  $rsync_hour_avgs"
+	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
 	set-drive_usage
-	echo "Drive maximum (b)lock or (i)node usage:  $drive_usage"
+	echo " Maximum drive (b)lock or (i)node usage:  $drive_usage"
 	set-drive_response
-	echo "     Seconds to list drive's snapshots:  $drive_response"
+	echo "      Seconds to list drive's snapshots:  $drive_response"
 	setup-snapshot-stats ''	      # was in show-stats-section-2-if-it-fits
-	echo "  Number complete/successful snapshots:  $stats_number"
+	echo " Number complete & successful snapshots:  $stats_number"
 	setup-snapshot-stats .rm
-	echo "Number pruned .rm snaps awaiting rm -r:  $stats_number"
+	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
-	echo " Number .partial snaps awaiting update:  $stats_number"
+	echo "  Number .partial snaps awaiting update:  $stats_number"
 	setup-snapshot-stats ''
-	echo "  Age of newest good snapshot, in days:  $stats_newest_age"
+	echo "   Age of newest good snapshot, in days:  $stats_newest_age"
 }
 readonly -f show-stats-section-1
 
@@ -4765,15 +4765,15 @@ show-stats-section-2-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats .rm
-	echo "  Age of newest pending prune, in days:  $stats_newest_age"
+	echo "   Age of newest pending prune, in days:  $stats_newest_age"
 	setup-snapshot-stats .links
-	echo " Number .links (failed 'ln') snapshots:  $stats_number"
-	echo "Days since newest 'Too many links' err:  $stats_newest_age"
+	echo "  Number .links (failed 'ln') snapshots:  $stats_number"
+	echo " Days since newest 'Too many links' err:  $stats_newest_age"
 	setup-snapshot-stats -E .partial
-	echo "Number unfinished snapshots (.partial):  $stats_number"
-	echo "   Days since newest snapshot.partial :  $stats_newest_age"
+	echo " Number unfinished snapshots (.partial):  $stats_number"
+	echo "    Days since newest .partial snapshot:  $stats_newest_age"
 	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
-	echo "Numbr snaps never pruned (have /.keep):  $stats_number"
+	echo "Number snaps never pruned (have /.keep):  $stats_number"
 #	setup-snapshot-stats ''		# moved to show-stats-section-1
 #	echo "  Number complete/successful snapshots:  $stats_number"
 
@@ -4790,15 +4790,15 @@ show-stats-section-3-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats ''
-	echo "  Age of oldest good snapshot, in days:  $stats_oldest_age"
+	echo "   Age of oldest good snapshot, in days:  $stats_oldest_age"
 	setup-snapshot-stats '' hour
-	echo "  Total number  days  w/good snapshots:  $stats_number"
+	echo "   Total number  days  w/good snapshots:  $stats_number"
 	setup-snapshot-stats '' day
-	echo "  Total number months w/good snapshots:  $stats_number"
+	echo "   Total number months w/good snapshots:  $stats_number"
 	setup-snapshot-stats '' month
-	echo "  Total number years  w/good snapshots:  $stats_number"
+	echo "   Total number years  w/good snapshots:  $stats_number"
 	setup-snapshot-stats '*'
-	echo "  Total snapshots (good, partial, .rm):  $stats_number"
+	echo "TOTAL snapshots (good+links+partial+rm):  $stats_number"
 
 	let rows_left-=$rows_used
 }
