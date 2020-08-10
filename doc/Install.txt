@@ -117,7 +117,7 @@ Choose the partition you want:
     raw_device=${raw_device}?	# you could instead encrypt the whole drive
 
 See if someone is using it:
-    sudo fuser -m -v $raw_device
+    sudo fuser -m -v $raw_device*
 
 Use an encryption keypair:
     # set drive_key_file= in /etc/snapcrypt/configure.sh
