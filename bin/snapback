@@ -4464,8 +4464,8 @@ setup-ps-variables-and-ps_-function() {
 	fi
 
 	if [[ $is_wide ]]
-	   then readonly ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
-	   else readonly ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
+	   then ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
+	   else ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
 	fi
 
 	# all field-names followed by '=' means "don't print header"
