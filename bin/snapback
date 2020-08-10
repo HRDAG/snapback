@@ -2774,18 +2774,22 @@ readonly -f rm-dangling-symlinks
 
 archive-rsync-time-data() {
 
-	set-rsync_time_subdir
-	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
-	mkdir -p $rsync_time_dir
-	cd $rsync_time_dir && {
-	set -- *.txt &&
-	if [[ $# != 0 ]]
-	   then set-date_time -r .
-		dir=$PWD/.${date_time%,*} # absolute path, for $IfRun and -v
-		$IfRun mkdir -p    $dir
-		$IfRun mv -v *.txt $dir/
-	fi; true; } &&
-	cd $OLDPWD
+	is_copy_snapshot=
+	while true
+	    do	set-rsync_time_subdir
+		local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+		mkdir -p $rsync_time_dir
+		cd $rsync_time_dir && {
+		set -- *.txt &&
+		if [[ $# != 0 ]]
+		   then set-date_time -r .
+			dir=$PWD/.${date_time%,*} # absolute path, for $and -v
+			$IfRun mkdir -p    $dir
+			$IfRun mv -v *.txt $dir/
+		fi; true; } && cd $OLDPWD
+		[[ $is_copy_snapshot ]] && break
+		    is_copy_snapshot=$true
+	done
 }
 readonly -f archive-rsync-time-data
 
@@ -3741,7 +3745,7 @@ function update-drive() {
 	# in rsync's --link-dest options
 	set-num_full_link_dests
 	[[ $do_force ]] || ! is-in-cron-job $drive_name ||
-	    wait-for-full-snapshots $num_full_link_dests
+	    $IfRun wait-for-full-snapshots $num_full_link_dests
 
 	set-srcs_dst_file
 	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
