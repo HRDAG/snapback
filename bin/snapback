@@ -1655,7 +1655,7 @@ function set-priority() {
 	{
 	$IfRun $CPU_priority_cmd $PGID && { [[ ! $IO_priority_cmd ]] ||
 	$IfRun  $IO_priority_cmd $PGID					; }
-	} |
+	} 2> $dev_null |
 	if [[ $is_regression_test ]]
 	   then sed "s@\b$PGID\b@<a_PGID>@"
 	   else egrep -v ' new priority '
