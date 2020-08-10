@@ -3907,8 +3907,8 @@ set-stats_format() {
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
 	    do	_set-drive_name $drive_dir
-		format_width=${#drive_name}+5
-		format+="%-${format_width}s "
+		format_width=${#drive_name}+6
+		format+="%-${format_width}s  "
 	done
 	stats_format=${format% }
 	TraceV 1 stats_format
@@ -3935,10 +3935,22 @@ readonly -f set-average-maximum--from-files-of-numbers
 
 # ---------------------------------
 
+set-padded_number() {
+	local number=$1
+
+	if [[ $number == ?.* ]]
+	   then padded_number=0$number
+	   else padded_number=$number
+	fi
+}
+readonly -f set-padded_number
+
+# ----------------------
+
 set-hour_avg-hour_max--from-files-of-minutes() {
 	if [[ $# != 0 ]]
 	   then set-average-maximum--from-files-of-numbers $*
-		set-hours--from-minutes -1 $average # 1 decimal point
+		set-hours--from-minutes -2 $average # 2 decimal points
 		# drv_name2backup_period_for_update -> localize period
 		set-customized_value--for-config-var-name backup_period &&
 		local -i backup_period=$customized_value
@@ -3953,9 +3965,11 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 			    $hours $warning_string
 			hours=$padded_colorized_string
 		fi
-		hour_avg=$hours
-		set-hours--from-minutes -1 $maximum
-		hour_max=$hours
+		set-padded_number $hours
+		hour_avg=$padded_number
+		set-hours--from-minutes -2 $maximum
+		set-padded_number $hours
+		hour_max=$padded_number
 	   else hour_max= hour_avg=
 	fi
 }
@@ -4013,7 +4027,7 @@ set-drive_usage() {
 		   then [[ $percent == 99 ]] && _type=error || _type=warning
 			set-warning_string $_type $percent%$type
 			percent=$warning_string
-		   else percent=$percent%$type
+		   else percent=$percent%_$type
 		fi
 		_set-drive_name $drive_dir
 		percents+="$drive_name=$percent "
@@ -4033,9 +4047,10 @@ set-drive_response() {
 	for drive_dir in $all_drive_dirs
 	    do	_set-drive_name $drive_dir
 		local -i msecs=$(< $drive_msecs_dir/$drive_name)
-		if (( $msecs <= 9999 ))
+		if (( $msecs <= 99999 ))
 		   then set-division 2 $msecs 1000
-			local secs=$division
+			set-padded_number $division
+			local secs=$padded_number
 		   else set-warning_string error HUNG
 			local secs=$warning_string
 		fi
