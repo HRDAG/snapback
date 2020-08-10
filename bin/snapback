@@ -3371,11 +3371,13 @@ function copy-snapshots() {
 
 	lock -w copy || exit_normally 1
 
+	[[ $lock_bkp ]] && lock -w -c backup
 	local status=0
 	for src_snapshot in $src_snapshots
 	    do	copy-snapshot $quiet_opt $src_snapshot $drive_name ||
 		    status=$?
 	done
+	[[ $lock_bkp ]] && unlock backup
 
 	unlock copy
 	return $status
@@ -3392,9 +3394,10 @@ function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
 	if [[ ! $is_multi_writer_drive ]]
-	   then   lock -w -c backup || return 1 # wait for any backup to finish
-		[[ ${lock_bkp-} ]]  ||
-		unlock	     backup
+	   then if [[ ! ${lock_bkp-} ]]
+		   then lock -w -c backup || return 1 # wait for backup ...
+			unlock     backup	      # ... but don't hold lock
+		fi
 
 		set-copy_PGID--if-copy-src || # 2 drives copying to each other?
 		suspend-jobs prune    # cron will swap jobs if drive space low
@@ -3417,7 +3420,6 @@ function copy-snapshot-rsync() {
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
 
-	[[    ${lock_bkp-}     ]] && unlock backup
 	[[ $did_lock_src_prune ]] && unlock prune $src_snapshot
 
 	return $status
