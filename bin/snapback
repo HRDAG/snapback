@@ -4530,7 +4530,7 @@ function _set-cron_PGIDs() {
 
 	local rsync_or_rm_cmd_PGIDs_file=$tmp_1
 	ps -U root -o pgid,command |
-	   awk '/[ /]rm / || /[ /]rsync / {print $1}' > \
+	   awk '/[ \/]rm / || /[ \/]rsync / {print $1}' > \
 	       $rsync_or_rm_cmd_PGIDs_file
 	cron_job_regex=' -C backup-drives? ' # put into configure.sh ??
 	set -- $(ps -U root -o pgid,command |
