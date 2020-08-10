@@ -1230,9 +1230,9 @@ _set-drive_name() {
 	   abort "drive_name='$1' has bad chars (can ask $coder to allow)"
 	}
 
-	[[ $name =~ ^$admin_drive_name_regex$ ]] ||	  {
+	[[ $name =~ ^$admin_drive_name_regex$ && $name != all ]] || {
 	    [[ $is_quiet ]] && { $xtrace; return 1; }
-	    abort "'$name' is not a valid drive-name"	; }
+	    abort "'$name' is not a valid drive-name";		    }
 
 	if   [[ $is_drive_name_upper_cased ]]
 	   then name=${name^^}
