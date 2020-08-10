@@ -3445,10 +3445,11 @@ readonly -f wait-for-full-snapshots
 
 # ----------------------------------------------------------------------------
 
-set-srcs_dst_file() {
+function set-srcs_dst_file() {
 
 	# this is not deleted, so can be inspected
 	srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
+	[[ -s $srcs_dst_file ]]
 }
 readonly -f set-srcs_dst_file
 
