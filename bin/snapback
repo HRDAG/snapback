@@ -3731,7 +3731,7 @@ function update-drive() {
 	IfRun= lock $lock_opt copy > $dev_null || exit_normally 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
-	rmdir --ignore-fail-on-non-empty *.partial # in case previously crashed
+	rmdir --ignore-fail-on-non-empty *.partial &> $dev_null # in case crash
 
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
@@ -3748,7 +3748,7 @@ function update-drive() {
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
 	local status=$?
 
-	rmdir --ignore-fail-on-non-empty *.partial
+	rmdir --ignore-fail-on-non-empty *.partial &> $dev_null
 
 	IfRun= unlock copy
 	return $status
