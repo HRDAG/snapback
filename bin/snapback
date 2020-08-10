@@ -2938,8 +2938,6 @@ readonly -f set-partial_dst
 
 function _run-rsync-cmd() {
 
-	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
-
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
 	[[ ! $is_copy_snapshot ]] &&
@@ -2950,6 +2948,9 @@ function _run-rsync-cmd() {
 	   then SECONDS=0		# then time the rsync
 	   else SECONDS=-1123456789	# don't, destination partially done
 	fi
+
+	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
+
 	$Trace
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\

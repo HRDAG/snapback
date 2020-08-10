@@ -168,15 +168,9 @@ Encrypt the drive, then create a decrypted mapping:
     # a size that's slightly smaller than the remembered size, e.g. +119.4G
     # then run 'w' to write the results
 
-Then create a new rule in /etc/snapcrypt/drives.rules (eventually, HRDAG's
-'snapcrypt' utility will do this automatically), with the same format as the
-existing rules.  You find the serial number with:
+    snapcrypt will have created a udev rule for the device, test it with:
 
-    udevadm info $device | fgrep SERIAL_SHORT
-
-You can test the rule with:
-
-    udevadm test $(udevadm info $device | sed -n 's/^P: //p') |& tail -n1
+      udevadm test $(udevadm info $raw_device | sed -n 's/^P: //p') |& tail -n1
 
 
 E. What filesystem parameters should I use?
