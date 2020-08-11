@@ -2432,6 +2432,7 @@ function prune-drive() {
 	   then local file=$snapshots_to_prune_file
 		prune-snapshots-not-matching-backup_period $file &&
 		    rm-pruned-snapshots $file
+		rm -f $snapshots_to_prune_file
 	fi
 
 	$IfRun touch $drive_dir/$pruned_timestamp # touch even if did nothing
