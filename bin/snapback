@@ -3906,6 +3906,8 @@ readonly -f create-jobs
 ##############################################################################
 ##############################################################################
 
+readonly default_padded_colorized_string_field_width=5
+
 set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dirs=$*
@@ -3913,11 +3915,12 @@ set-stats_format() {
 	[[ ${stats_format-} ]] && { $xtrace; return; }
 
 	local -i format_width
+	local -i field_width=$default_padded_colorized_string_field_width+1
 	local format=
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
 	    do	_set-drive_name $drive_dir
-		format_width=${#drive_name}+6
+		format_width=${#drive_name}+$field_width
 		format+="%-${format_width}s  "
 	done
 	stats_format=${format% }
@@ -4035,7 +4038,7 @@ set-drive_usage() {
 			percent=$warning_string
 		elif [[ $warn && $watch_opt ]]
 		   then [[ $percent == 99 ]] && _type=error || _type=warning
-			set-warning_string $_type $percent%$type
+			set-warning_string $_type $percent%_$type
 			percent=$warning_string
 		   else percent=$percent%_$type
 		fi
