@@ -4262,7 +4262,8 @@ setup-snapshot-stats() {
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
-	echo "$drive_dirs" > $cached_drive_dirs_file
+	echo "$drive_dirs" > $cached_drive_dirs_file.new &&
+	    mv $cached_drive_dirs_file.new $cached_drive_dirs_file
 	echo "$stats_number"	 >     $number_cache_file   ; [[ $dates ]] && {
 	echo "$stats_oldest_age" > $oldest_age_cache_file
 	echo "$stats_newest_age" > $newest_age_cache_file		    ; }
@@ -5164,13 +5165,15 @@ mon-process-finished-glob() {
 	local -i      now_msecs=$(date +%s%3N)
 	local -i    start_msecs=${drive_name2msecs[$drive_name]}
 	local -i response_msecs=now_msecs-start_msecs
+	local msecs_file=$drive_msecs_dir/$drive_name
+	echo $response_msecs > $msecs_file.new &&
+	    mv $msecs_file.new $msecs_file
 
 	local  snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
 	cd_   $snapshots_dir
 	local glob_file=$_mon_globs_dir/$drive_name
 	lock-replica-of-snapshots --wait # 'w' action uses same locking
-	echo $response_msecs > $drive_msecs_dir/$drive_name
 	rm -f *
 	touch $(< $glob_file)
 	touch -r  $glob_file .
