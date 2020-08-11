@@ -81,6 +81,10 @@
 /var/log/**.[1-9][0-9][0-9].*[zZ]*
 /var/log/journal/*
 
+# only uncomment the next two if /var/lock and/or /var/run are *not* symlinks
+# /var/lock/*
+# /var/run/*
+
 /var/snap/*
 /var/staging/*
 /var/tmp/*cache*
