@@ -4131,11 +4131,14 @@ readonly -f _set-colorized_new
 
 # ---------------------------------
 
+is-set        max_drive_msecs_for_exact_partial_count || # set in $config_file
+declare -r -i max_drive_msecs_for_exact_partial_count=750
+
 _recalculate-snapshot-stats-vars() {
 
 	set-stats_format $all_drive_dirs
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
-	local _dir drive_name nums= oldies= newies=
+	local dir drive_name nums= oldies= newies=
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
 		local replica_dir=$snapshots_replica_dir/$drive_name
@@ -4148,7 +4151,8 @@ _recalculate-snapshot-stats-vars() {
 		[[ $# != 0 ]] && {
 		# we're computing values to be cached, so wait for a slowish
 		# drive (but not too long, it only affects two .partial stats)
-		if (( $(< $drive_msecs_dir/$drive_name) < 500 )) ||
+		if (( $(< $drive_msecs_dir/$drive_name) <=
+		      $max_drive_msecs_for_exact_partial_count )) ||
 		   [[ ! $watch_opt ]]	# always wait if running 'w'
 		   then local is_drive_hung=$false
 		   else local is_drive_hung=$true
