@@ -3770,6 +3770,17 @@ readonly -f update-drive
 ##############################################################################
 ##############################################################################
 
+do-chores() {
+
+	check-logs			# create data for 'watch'
+	rm-dangling-symlinks
+	rm-stale-locks			# do before ...
+	re-start-monitor-drives-if-needed
+}
+readonly -f do-chores
+
+# ----------------------------------------------------------------------------
+
 function set-drive_dirs--from-user-args() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
@@ -3854,6 +3865,7 @@ create-jobs() {
 	   then set-excluded_drive_dirs_regex
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
+		[[ $is_cron && $type == backup ]] && $IfRun do-chores &
 	   else if set-drive_names--from-user-args "$@"
 		   then set -- $drive_names
 		elif [[ $* != [zZ] ]]
@@ -3861,7 +3873,10 @@ create-jobs() {
 		fi
 	fi
 	if [[ $# == 0 ]]
-	   then [[ $is_cron ]] && { check-logs; exit_normally 0; }
+	   then if [[ $is_cron ]]
+		   then [[ $type == backup ]] && do-chores
+			exit_normally 0
+		fi
 		abort-function "$type: pass a (non-excluded) drive name"
 	fi
 
@@ -6428,7 +6443,8 @@ search-syslog-for-errors() {
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
 	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
 	    uniq -c > $cnt_msg_file.new &&
-		   mv $cnt_msg_file.new $cnt_msg_file
+		   mv $cnt_msg_file.new $cnt_msg_file ||
+		       { ls -ld . $cnt_msg_file*; print-call-stack; }
 }
 readonly -f search-syslog-for-errors
 
@@ -6740,11 +6756,7 @@ case $action in
 	[[ $# != 0  ]] || abort-with-action-Usage
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
-	   then check-logs		# create data for 'watch'
-		rm-dangling-symlinks
-		rm-stale-locks		# do before ...
-		re-start-monitor-drives-if-needed
-		wait			# want to stay in 'ps'
+	   then wait			# want to stay in 'ps'
 	   else true
 	fi
 	;;
