@@ -5084,6 +5084,8 @@ watch() {
 	# now we're ready to start showing stuff to the user
 	# --------------------------------------------------
 
+	[[ $watch_opt ]] || $Trace
+
 	show-errors-in-syslog	  # before access disk (can trigger I/O error)
 
 	_start-monitor-drives-if-needed
