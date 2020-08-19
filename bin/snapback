@@ -2827,6 +2827,9 @@ record-rsync-time() {
 	local -i number_files_per_day=24/$backup_period
 	local -i number_files_to_keep=$number_files_per_day*$days_to_keep
 	set -- ${file%/*}/$snapshot_glob.txt
+	[[ $# != 0 ]] || return
+	# copy'ed snapshots aren't copied in date,time order, so use file time
+	set -- $(ls -t -r $*)		# oldest (by file time) first
 	while (( $# > $number_files_to_keep ))
 	    do	$IfRun rm $1
 		shift
