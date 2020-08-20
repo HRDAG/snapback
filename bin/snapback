@@ -3868,7 +3868,10 @@ create-jobs() {
 	   then set-excluded_drive_dirs_regex
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
-		[[ $is_cron && $type == backup ]] && $IfRun do-chores &
+		if [[ $is_cron && $type == backup ]]
+		   then $IfRun do-chores &
+			[[ $is_regression_test ]] && sleep 0.05
+		fi
 	   else if set-drive_names--from-user-args "$@"
 		   then set -- $drive_names
 		elif [[ $* != [zZ] ]]
@@ -5190,9 +5193,7 @@ readonly  _mon_lock_dir=$_monitor_dir/lock
 
 lock-replica-of-snapshots() {
 
-	local division
-	set-division 2 $msec_increment 10
-	local sleep_msecs=$division
+	local sleep_msecs=$lock_replica_sleep_msecs
 	local lock_file=${FUNCNAME#*lock-}.pid
 
 	umask 0				# so watch doesn't need sudo-lockpid
@@ -5249,6 +5250,10 @@ is-set		msec_increment ||	# can set custom value in $config_file
 declare -r -i   msec_increment=5	# when check if any drives responded
 set-division 3 $msec_increment 1000
 readonly         sec_increment=$division
+#
+set-division 2 $msec_increment 10
+[[ $division == 0.00 ]] && division=0.01
+readonly lock_replica_sleep_msecs=$division
 
 mon-look-for-finished-globs() {
 
@@ -7252,6 +7257,7 @@ case $action in
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
 	IfRun=echo lock-replica-of-snapshots; _exit
+	set-division 2 1 1000; echo $division; _exit
 
 	for n in E F J X; do
 	  count-snapshots-being-created-on-drive $n; echo "$n: $?"; done; _exit
