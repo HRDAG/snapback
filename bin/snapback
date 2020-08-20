@@ -4099,7 +4099,10 @@ _set-age() {
 
 	set-seconds--from-snapshot $snapshot
 	local -i snap_secs=$seconds
-	age=$(( ($SECONDS - $snap_secs)/(24*60*60) ))
+	if [[ ${hour_ages-} ]]
+	   then age=$(( ($SECONDS - $snap_secs)/(60*60   ) ))
+	   else age=$(( ($SECONDS - $snap_secs)/(60*60*24) ))
+	fi
 }
 readonly -f _set-age
 
@@ -4117,13 +4120,16 @@ readonly -f set-oldest_age-newest_age
 _set-colorized_new() {
 	local new=${1-}
 
+	set-customized_value--for-config-var-name backup_period
+	local -i max_age=2*$customized_value
 	local warning_string=
-	[[ $new ]] || new=NONE!
-	case $new in
-	    ( 0  ) true				   ;;
-	    ( 1  ) set-warning_string warning $new ;;
-	    ( *  ) set-warning_string error   $new ;;
-	esac
+	if [[ ! $new ]]
+	   then set-warning_string error NONE!
+	elif (( $new < $max_age ))
+	   then true
+	   else set-warning_string warning $new
+	fi
+
 	if [[ $warning_string ]]
 	   then set-padded_colorized_string--for-printf $new $warning_string
 		warning_string=$padded_colorized_string
@@ -4261,6 +4267,7 @@ readonly -f _is-stats-cache-fresh
 
 setup-snapshot-stats() {
 	[[ $1 == -? ]] && local option=$1 || local option=
+	[[ $1 == -h ]] && { shift;local  hour_ages=$true; } ||local  hour_ages=
 	[[ $1 == -e ]] && { shift;local only_empty=$true; } ||local only_empty=
 	[[ $1 == -E ]] && { shift;local skip_empty=$true; } ||local skip_empty=
 	local suffix=$1 _suffix=$1
@@ -4824,8 +4831,8 @@ show-stats-section-1() {
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
 	echo "  Number .partial snaps awaiting update:  $stats_number"
-	setup-snapshot-stats ''
-	echo "   Age of newest good snapshot, in days:  $stats_newest_age"
+	setup-snapshot-stats -h ''
+	echo "  Age of newest good snapshot, in hours:  $stats_newest_age"
 }
 readonly -f show-stats-section-1
 
