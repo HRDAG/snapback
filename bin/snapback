@@ -4824,7 +4824,7 @@ show-stats-section-1() {
 	setup-snapshot-stats .rm
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
-	echo "  Number .partial snaps awaiting update:  $stats_number"
+	echo "Number .partial snaps created by update:  $stats_number"
 	set-rsync_hour_avgs-rsync_hour_maxs -c
 	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
 }
@@ -4844,7 +4844,7 @@ show-stats-section-2-if-it-fits() {
 	echo "  Number .links (failed 'ln') snapshots:  $stats_number"
 	echo " Days since newest 'Too many links' err:  $stats_newest_age"
 	setup-snapshot-stats -E .partial
-	echo " Number unfinished snapshots (.partial):  $stats_number"
+	echo " Number of aborted snapshots (.partial):  $stats_number"
 	echo "    Days since newest .partial snapshot:  $stats_newest_age"
 	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
 	echo "Number snaps never pruned (have /.keep):  $stats_number"
