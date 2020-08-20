@@ -4105,12 +4105,12 @@ readonly -f _set-age
 
 # ------------------
 
-_setup-ages() {
+set-oldest_age-newest_age() {
 
 	_set-age $1    ; oldest_age=$age
 	_set-age ${!#} ; newest_age=$age
 }
-readonly -f _setup-ages
+readonly -f set-oldest_age-newest_age
 
 # ---------------------------------
 
@@ -4209,7 +4209,7 @@ _recalculate-snapshot-stats-vars() {
 
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
-		   then _setup-ages $*
+		   then set-oldest_age-newest_age $*
 			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
 		fi
