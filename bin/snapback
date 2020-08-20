@@ -3869,8 +3869,8 @@ create-jobs() {
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 		if [[ $is_cron && $type == backup ]]
-		   then $IfRun do-chores &
-			[[ $is_regression_test ]] && sleep 0.05
+		   then $IfRun do-chores & # echo appears whenever, unless ...
+			[[ $is_regression_test ]] && sleep 0.05 # wait for it
 		fi
 	   else if set-drive_names--from-user-args "$@"
 		   then set -- $drive_names
