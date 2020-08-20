@@ -4107,8 +4107,8 @@ readonly -f _set-age
 
 _setup-ages() {
 
-	_set-age $1    ; oldest_age=$age
-	_set-age ${!#} ; newest_age=$age
+	_set-age $1    ; oldest_days=$age
+	_set-age ${!#} ; newest_days=$age
 }
 readonly -f _setup-ages
 
@@ -4131,6 +4131,28 @@ _set-colorized_new() {
 	colorized_new=${warning_string:-$new}
 }
 readonly -f _set-colorized_new
+
+# --------------------------------------------
+
+function count-snapshots-being-created-on-drive() {
+	local drive_name=${1:-$drive_name}
+
+	local -i count=0
+
+	local lock_paths
+	set-lock_paths backup,copy
+	set -- $lock_paths
+	[[ $# == 2 ]] && (( $(< $1) == $(< $2) )) && shift # duplicate PID?
+
+	# count snapshots we're creating
+	local path
+	for path
+	    do	is-active-lock $path && count+=1
+	done
+
+	return $count
+}
+readonly -f count-snapshots-being-created-on-drive
 
 # ---------------------------------
 
@@ -4177,24 +4199,18 @@ _recalculate-snapshot-stats-vars() {
 		set -- $snaps
 		}
 		restore-tracing
-		local snapshots=$*  snapshot_count=$#
 
-		if [[ $skip_empty ]] && set-lock_paths b,c $drive_name
-		   then set -- $lock_paths
-			[[ $# == 2 ]] &&
-			(( $(< $1) == $(< $2) )) && shift # duplicate PID?
-			# don't count snapshots we're creating
-			for _path
-			    do	is-active-lock $_path && shift # &> $dev_null
-			done
+		if [[ $skip_empty ]]
+		   then count-snapshots-being-created-on-drive
+			shift $?
 		fi
 
-		nums+="$drive_name=$snapshot_count "
+		nums+="$drive_name=$# "
 
 		[[ $dates ]] || continue
-		if [[ $snapshot_count != 0 ]]
-		   then _setup-ages $snapshots
-			local old=$oldest_age	new=$newest_age
+		if [[ $# != 0 ]]
+		   then _setup-ages $*
+			local old=$oldest_days	new=$newest_days
 		   else local old=		new=
 		fi
 		if [[ ! $suffix && $watch_opt ]] # checking complete snapshots?
@@ -4207,11 +4223,11 @@ _recalculate-snapshot-stats-vars() {
 	cd $OLDPWD || abort "cd $OLDPWD"
 	lock-replica-of-snapshots --release
 
-	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
-	printf -v stats_oldest_age "$stats_format" $oldies
-	printf -v stats_newest_age "$stats_format" $newies		    ; }
+	printf -v stats_number      "$stats_format" $nums   ; [[ $dates ]] && {
+	printf -v stats_oldest_days "$stats_format" $oldies
+	printf -v stats_newest_days "$stats_format" $newies		    ; }
 	fix-padded-colorized-string-vars \
-	    stats_number stats_oldest_age stats_newest_age # done with printf
+	    stats_number stats_oldest_days stats_newest_days # done with printf
 }
 readonly -f _recalculate-snapshot-stats-vars
 
@@ -4262,16 +4278,16 @@ setup-snapshot-stats() {
 	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
 	   local dates=$true || local dates=$false
 
-	local     number_cache_file=$watch_cache_dir/number/$cache_name
-	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
-	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
+	local      number_cache_file=$watch_cache_dir/number/$cache_name
+	local oldest_days_cache_file=$watch_cache_dir/oldest-age/$cache_name
+	local newest_days_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_dirs=$all_drive_dirs
 	# the cache files in number/ are a pure superset of the files in *-age/
 	if _is-stats-cache-fresh $number_cache_file && [[ $watch_opt ]]
 	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
-		stats_oldest_age=$(< $oldest_age_cache_file)
-		stats_newest_age=$(< $newest_age_cache_file)
+		stats_oldest_days=$(< $oldest_days_cache_file)
+		stats_newest_days=$(< $newest_days_cache_file)
 		}
 		# echo -n C:		# uncomment to ensure cache is working
 		return
@@ -4287,13 +4303,13 @@ setup-snapshot-stats() {
 	local lockpid_args="--dir=$lock_dir $lock_name"
 	lockpid $lockpid_args > $dev_null || return
 
-	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
-					 ${newest_age_cache_file%/*}
+	mkdir -p ${number_cache_file%/*} ${oldest_days_cache_file%/*} \
+					 ${newest_days_cache_file%/*}
 	echo "$drive_dirs" > $cached_drive_dirs_file.new &&
 	    mv $cached_drive_dirs_file.new $cached_drive_dirs_file
-	echo "$stats_number"	 >     $number_cache_file   ; [[ $dates ]] && {
-	echo "$stats_oldest_age" > $oldest_age_cache_file
-	echo "$stats_newest_age" > $newest_age_cache_file		    ; }
+	echo "$stats_number"	  >      $number_cache_file ; [[ $dates ]] && {
+	echo "$stats_oldest_days" > $oldest_days_cache_file
+	echo "$stats_newest_days" > $newest_days_cache_file		    ; }
 
 	lockpid --release $lockpid_args
 }
@@ -4809,7 +4825,7 @@ show-stats-section-1() {
 	setup-snapshot-stats -e .partial
 	echo "  Number .partial snaps awaiting update:  $stats_number"
 	setup-snapshot-stats ''
-	echo "   Age of newest good snapshot, in days:  $stats_newest_age"
+	echo "   Age of newest good snapshot, in days:  $stats_newest_days"
 }
 readonly -f show-stats-section-1
 
@@ -4822,14 +4838,14 @@ show-stats-section-2-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats .rm
-	echo "   Age of newest pending prune, in days:  $stats_newest_age"
+	echo "   Age of newest pending prune, in days:  $stats_newest_days"
 	setup-snapshot-stats .links
 	echo "  Number .links (failed 'ln') snapshots:  $stats_number"
-	echo " Days since newest 'Too many links' err:  $stats_newest_age"
+	echo " Days since newest 'Too many links' err:  $stats_newest_days"
 	setup-snapshot-stats -E .partial
 	echo " Number unfinished snapshots (.partial):  $stats_number"
-	echo "    Days since newest .partial snapshot:  $stats_newest_age"
-	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
+	echo "    Days since newest .partial snapshot:  $stats_newest_days"
+	setup-snapshot-stats /.keep	# doesn't set oldest/newest_days
 	echo "Number snaps never pruned (have /.keep):  $stats_number"
 #	setup-snapshot-stats ''		# moved to show-stats-section-1
 #	echo "  Number complete/successful snapshots:  $stats_number"
@@ -4847,7 +4863,7 @@ show-stats-section-3-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats ''
-	echo "   Age of oldest good snapshot, in days:  $stats_oldest_age"
+	echo "   Age of oldest good snapshot, in days:  $stats_oldest_days"
 	setup-snapshot-stats '' hour
 	echo "   Total number  days  w/good snapshots:  $stats_number"
 	setup-snapshot-stats '' day
@@ -4911,7 +4927,7 @@ readonly -f show-FS-repair-cmds
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
-	if [[ $show_all ]]
+	if [[ $show_all && ! $stats_opt ]]
 	   then have-cmd snapcrypt && snapcrypt status all
 		filesystem-geometry $drive_dirs
 	   else	local -i extra=$rows_for_one_detailed_rsync
@@ -7212,16 +7228,19 @@ case $action in
 	   echo; echo ${drive_name2backup_type[*]}; echo
 	echo $custom_config_vars | tr ' ' '\n' |
 	    fgrep -v -e _prune -e _scale_ -e _to_backup; echo # skip Z ones
-	for drive_name in NOT I Z i1 I-2 i.3 I_45
+	for drive_name in NOT J Z j1 J-2 j.3 J_45
 	    do	set-customized_value--for-config-var-name backup_period;
 		echo "$drive_name -> $customized_value"; done
-	for not in max_FS_usage_percent max_backup_period_for_pruning
+	for not in max_backup_period_for_pruning extra_excludes
 	    do	set-customized_value--for-config-var-name $not && abort $not
 	done; _exit
 
 	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
+
+	for n in E F J X; do
+	  count-snapshots-being-created-on-drive $n; echo "$n: $?"; done; _exit
 
 	set-drive_name ${1:-J}
 	fastest-snapshots /backup/E/2020-05-08,00 /backup/X/2020-05-08,00;_exit
