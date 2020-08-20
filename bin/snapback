@@ -4165,9 +4165,6 @@ readonly -f _set-colorized_new
 
 # ----------------------
 
-is-set        max_drive_msecs_for_exact_partial_count || # set in $config_file
-declare -r -i max_drive_msecs_for_exact_partial_count=750
-
 _recalculate-snapshot-stats-vars() {
 
 	set-stats_format $all_drive_dirs
@@ -4175,30 +4172,24 @@ _recalculate-snapshot-stats-vars() {
 	local dir drive_name nums= oldies= newies=
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
-		local replica_dir=$snapshots_replica_dir/$drive_name
-		cd $replica_dir || abort "cd $replica_dir"
+		local dir=$snapshots_replica_dir/$drive_name
+		cd_  $dir
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
 		set -- $snapshot_glob$suffix
 		restore-tracing
 
 		[[ $# != 0 ]] && {
-		# we're computing values to be cached, so wait for a slowish
-		# drive (but not too long, it only affects two .partial stats)
-		if (( $(< $drive_msecs_dir/$drive_name) <=
-		      $max_drive_msecs_for_exact_partial_count )) ||
-		   [[ ! $watch_opt ]]	# always wait if running 'w'
-		   then local is_drive_hung=$false
-		   else local is_drive_hung=$true
-		fi
-
+		local  partials_file=$non_empty_partial_dir/$drive_name
+		[[ -s $partials_file ]] &&
+		    local partials=$(< $partials_file) || local partials=
 		local snapshot snap prev_snap= snaps=
 		for snapshot in $*
-		    do	if [[ ( $skip_empty || $only_empty ) &&
-			      ! $is_drive_hung ]]
-			   then set -- $dir/$snapshot/* # can't use replica_dir
-				[[ $skip_empty && $# == 0 ]] && continue
-				[[ $only_empty && $# != 0 ]] && continue
+		    do	if [[ $skip_empty || $only_empty ]]
+			   then is-arg1-in-arg2 $snapshot $partials &&
+				   local is_empty=$false ||local is_empty=$true
+				[[ $skip_empty &&   $is_empty ]] && continue
+				[[ $only_empty && ! $is_empty ]] && continue
 			fi
 			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != $snap ]] && snaps+="$snap "
@@ -4209,9 +4200,9 @@ _recalculate-snapshot-stats-vars() {
 		}
 		restore-tracing
 
-		if [[ $skip_empty ]]
+		if [[ $skip_empty ]]	# counting old & unfinished snapshots?
 		   then count-snapshots-being-created-on-drive
-			shift $?
+			shift $?	# forget ones we're creating
 		fi
 
 		nums+="$drive_name=$# "
@@ -5208,7 +5199,7 @@ mon-maybe-launch-ls() {
 	local partial_file=$non_empty_partial_dir/$drive_name
 	_set-drive_dir $drive_name
 	cd $drive_dir || return
-	( ls -ld *.partial 2> $dev_null | # want link count, to detect subdirs
+	( /bin/ls -ld *.partial 2> $dev_null | # detect subdirs with link count
 	     awk '$2 > 2 { print $(NF) }' > $partial_file.new &&
 					 mv $partial_file.new $partial_file ) &
 	ls_drive_name2PID[$drive_name]=$!
@@ -7283,6 +7274,7 @@ case $action in
 	_set-drive_name ${1:-F}; declare -A ls_drive_name2PID
 	    mon-maybe-launch-ls; wait;
 	    head -v $non_empty_partial_dir/$drive_name; _exit
+	foo= ; is-arg1-in-arg2 x $foo && abort badness; _exit
 
 	for n in E F J X; do
 	  count-snapshots-being-created-on-drive $n; echo "$n: $?"; done; _exit
