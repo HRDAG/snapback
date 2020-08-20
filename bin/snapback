@@ -4094,6 +4094,28 @@ readonly -f set-drive_response
 
 # ----------------------------------------------------------------------------
 
+function count-snapshots-being-created-on-drive() {
+	local drive_name=${1:-$drive_name}
+
+	local -i count=0
+
+	local lock_paths
+	set-lock_paths backup,copy
+	set -- $lock_paths
+	[[ $# == 2 ]] && (( $(< $1) == $(< $2) )) && shift # duplicate PID?
+
+	# count snapshots we're creating
+	local path
+	for path
+	    do	is-active-lock $path && count+=1
+	done
+
+	return $count
+}
+readonly -f count-snapshots-being-created-on-drive
+
+# --------------------------------------------
+
 _set-age() {
 	local snapshot=$1
 
@@ -4138,29 +4160,7 @@ _set-colorized_new() {
 }
 readonly -f _set-colorized_new
 
-# --------------------------------------------
-
-function count-snapshots-being-created-on-drive() {
-	local drive_name=${1:-$drive_name}
-
-	local -i count=0
-
-	local lock_paths
-	set-lock_paths backup,copy
-	set -- $lock_paths
-	[[ $# == 2 ]] && (( $(< $1) == $(< $2) )) && shift # duplicate PID?
-
-	# count snapshots we're creating
-	local path
-	for path
-	    do	is-active-lock $path && count+=1
-	done
-
-	return $count
-}
-readonly -f count-snapshots-being-created-on-drive
-
-# ---------------------------------
+# ----------------------
 
 is-set        max_drive_msecs_for_exact_partial_count || # set in $config_file
 declare -r -i max_drive_msecs_for_exact_partial_count=750
