@@ -4177,24 +4177,28 @@ _recalculate-snapshot-stats-vars() {
 		set -- $snaps
 		}
 		restore-tracing
+		local snapshots=$*  snapshot_count=$#
 
-		[[ $skip_empty ]] &&
-		# don't count snapshots we're creating
-		for _type in backup copy
-		    do	set-lock_paths $_type $drive_name &&
-			    is-active-lock $lock_paths && shift &> $dev_null
-		done
+		if [[ $skip_empty ]] && set-lock_paths b,c $drive_name
+		   then set -- $lock_paths
+			[[ $# == 2 ]] &&
+			(( $(< $1) == $(< $2) )) && shift # duplicate PID?
+			# don't count snapshots we're creating
+			for _path
+			    do	is-active-lock $_path && shift # &> $dev_null
+			done
+		fi
 
-		nums+="$drive_name=$# "
+		nums+="$drive_name=$snapshot_count "
 
 		[[ $dates ]] || continue
-		if [[ $# != 0 ]]
-		   then _setup-ages $*
+		if [[ $snapshot_count != 0 ]]
+		   then _setup-ages $snapshots
 			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
 		fi
 		if [[ ! $suffix && $watch_opt ]] # checking complete snapshots?
-		   then _set-colorized_new $new # warn if newest not today
+		   then _set-colorized_new $new	 # warn if newest not today
 			new=$colorized_new
 		fi
 		oldies+="$drive_name=$old "
