@@ -4819,8 +4819,8 @@ show-stats-section-1() {
 	set-rsync_hour_avgs-rsync_hour_maxs
 	echo "Average hours to create backup snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create backup snapshot:  $rsync_hour_maxs"
-	set-rsync_hour_avgs-rsync_hour_maxs -c
-	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
+	setup-snapshot-stats -h ''
+	echo "  Age of newest good snapshot, in hours:  $stats_newest_age"
 	set-drive_usage
 	echo " Maximum drive (b)lock or (i)node usage:  $drive_usage"
 	set-drive_response
@@ -4831,8 +4831,8 @@ show-stats-section-1() {
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
 	echo "  Number .partial snaps awaiting update:  $stats_number"
-	setup-snapshot-stats -h ''
-	echo "  Age of newest good snapshot, in hours:  $stats_newest_age"
+	set-rsync_hour_avgs-rsync_hour_maxs -c
+	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
 }
 readonly -f show-stats-section-1
 
