@@ -5190,8 +5190,14 @@ readonly  _mon_lock_dir=$_monitor_dir/lock
 
 lock-replica-of-snapshots() {
 
+	local division
+	set-division 2 $msec_increment 10
+	local sleep_msecs=$division
+	local lock_file=${FUNCNAME#*lock-}.pid
+
 	umask 0				# so watch doesn't need sudo-lockpid
-	$IfRun lockpid --dir=$_mon_lock_dir "$@" ${FUNCNAME#*lock-}.pid
+	$IfRun \
+	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file
 	umask $umask
 }
 readonly -f lock-replica-of-snapshots
@@ -6274,8 +6280,8 @@ function finish-copy-backup-drive() {
 readonly -f finish-copy-backup-drive
 
 # ----------------------------------------------------------------------------
-# check syslog for big swapout rates.  This assumes you installed the Linux
-# pmie package ('pcp', i.e. Performance Co-Pilot, on Debian/Ubuntu).
+# check syslog for big swapout rates.  This assumes you're running 'pmie',
+# contained in the 'pcp' (i.e. Performance Co-Pilot) package on Debian/Ubuntu.
 # ----------------------------------------------------------------------------
 
 is-set   big_swapout_string ||		# can set custom value in $config_file
@@ -7245,6 +7251,7 @@ case $action in
 	is-active-lock $drive_monitor_lock_path &&echo "monitor running"; _exit
 	monitor-drives |& less; _exit
 	lock-replica-of-snapshots --wait; _exit $?
+	IfRun=echo lock-replica-of-snapshots; _exit
 
 	for n in E F J X; do
 	  count-snapshots-being-created-on-drive $n; echo "$n: $?"; done; _exit
