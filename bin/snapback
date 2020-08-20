@@ -4107,8 +4107,8 @@ readonly -f _set-age
 
 _setup-ages() {
 
-	_set-age $1    ; oldest_days=$age
-	_set-age ${!#} ; newest_days=$age
+	_set-age $1    ; oldest_age=$age
+	_set-age ${!#} ; newest_age=$age
 }
 readonly -f _setup-ages
 
@@ -4210,7 +4210,7 @@ _recalculate-snapshot-stats-vars() {
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
 		   then _setup-ages $*
-			local old=$oldest_days	new=$newest_days
+			local old=$oldest_age	new=$newest_age
 		   else local old=		new=
 		fi
 		if [[ ! $suffix && $watch_opt ]] # checking complete snapshots?
@@ -4223,11 +4223,11 @@ _recalculate-snapshot-stats-vars() {
 	cd $OLDPWD || abort "cd $OLDPWD"
 	lock-replica-of-snapshots --release
 
-	printf -v stats_number      "$stats_format" $nums   ; [[ $dates ]] && {
-	printf -v stats_oldest_days "$stats_format" $oldies
-	printf -v stats_newest_days "$stats_format" $newies		    ; }
+	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
+	printf -v stats_oldest_age "$stats_format" $oldies
+	printf -v stats_newest_age "$stats_format" $newies		    ; }
 	fix-padded-colorized-string-vars \
-	    stats_number stats_oldest_days stats_newest_days # done with printf
+	    stats_number stats_oldest_age stats_newest_age # done with printf
 }
 readonly -f _recalculate-snapshot-stats-vars
 
@@ -4278,16 +4278,16 @@ setup-snapshot-stats() {
 	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
 	   local dates=$true || local dates=$false
 
-	local      number_cache_file=$watch_cache_dir/number/$cache_name
-	local oldest_days_cache_file=$watch_cache_dir/oldest-age/$cache_name
-	local newest_days_cache_file=$watch_cache_dir/newest-age/$cache_name
+	local     number_cache_file=$watch_cache_dir/number/$cache_name
+	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
+	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_dirs=$all_drive_dirs
 	# the cache files in number/ are a pure superset of the files in *-age/
 	if _is-stats-cache-fresh $number_cache_file && [[ $watch_opt ]]
 	   then stats_number=$(< $number_cache_file)
 		[[ $dates ]] && {
-		stats_oldest_days=$(< $oldest_days_cache_file)
-		stats_newest_days=$(< $newest_days_cache_file)
+		stats_oldest_age=$(< $oldest_age_cache_file)
+		stats_newest_age=$(< $newest_age_cache_file)
 		}
 		# echo -n C:		# uncomment to ensure cache is working
 		return
@@ -4303,13 +4303,13 @@ setup-snapshot-stats() {
 	local lockpid_args="--dir=$lock_dir $lock_name"
 	lockpid $lockpid_args > $dev_null || return
 
-	mkdir -p ${number_cache_file%/*} ${oldest_days_cache_file%/*} \
-					 ${newest_days_cache_file%/*}
+	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
+					 ${newest_age_cache_file%/*}
 	echo "$drive_dirs" > $cached_drive_dirs_file.new &&
 	    mv $cached_drive_dirs_file.new $cached_drive_dirs_file
-	echo "$stats_number"	  >      $number_cache_file ; [[ $dates ]] && {
-	echo "$stats_oldest_days" > $oldest_days_cache_file
-	echo "$stats_newest_days" > $newest_days_cache_file		    ; }
+	echo "$stats_number"	 >     $number_cache_file ; [[ $dates ]] && {
+	echo "$stats_oldest_age" > $oldest_age_cache_file
+	echo "$stats_newest_age" > $newest_age_cache_file		  ; }
 
 	lockpid --release $lockpid_args
 }
@@ -4825,7 +4825,7 @@ show-stats-section-1() {
 	setup-snapshot-stats -e .partial
 	echo "  Number .partial snaps awaiting update:  $stats_number"
 	setup-snapshot-stats ''
-	echo "   Age of newest good snapshot, in days:  $stats_newest_days"
+	echo "   Age of newest good snapshot, in days:  $stats_newest_age"
 }
 readonly -f show-stats-section-1
 
@@ -4838,14 +4838,14 @@ show-stats-section-2-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats .rm
-	echo "   Age of newest pending prune, in days:  $stats_newest_days"
+	echo "   Age of newest pending prune, in days:  $stats_newest_age"
 	setup-snapshot-stats .links
 	echo "  Number .links (failed 'ln') snapshots:  $stats_number"
-	echo " Days since newest 'Too many links' err:  $stats_newest_days"
+	echo " Days since newest 'Too many links' err:  $stats_newest_age"
 	setup-snapshot-stats -E .partial
 	echo " Number unfinished snapshots (.partial):  $stats_number"
-	echo "    Days since newest .partial snapshot:  $stats_newest_days"
-	setup-snapshot-stats /.keep	# doesn't set oldest/newest_days
+	echo "    Days since newest .partial snapshot:  $stats_newest_age"
+	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
 	echo "Number snaps never pruned (have /.keep):  $stats_number"
 #	setup-snapshot-stats ''		# moved to show-stats-section-1
 #	echo "  Number complete/successful snapshots:  $stats_number"
@@ -4863,7 +4863,7 @@ show-stats-section-3-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats ''
-	echo "   Age of oldest good snapshot, in days:  $stats_oldest_days"
+	echo "   Age of oldest good snapshot, in days:  $stats_oldest_age"
 	setup-snapshot-stats '' hour
 	echo "   Total number  days  w/good snapshots:  $stats_number"
 	setup-snapshot-stats '' day
