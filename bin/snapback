@@ -5167,6 +5167,34 @@ readonly -f watch
 
 readonly _monitor_dir=$status_dir/drives
 
+readonly drive_msecs_dir=$_monitor_dir/msecs	       # response time, for 'w'
+readonly   _mon_lock_dir=$_monitor_dir/lock	       # world-writable,for 'w'
+readonly snapshots_replica_dir=$_monitor_dir/snapshots # 'w' uses, avoids hangs
+
+function create-monitor-dirs() {
+
+	mkdir -p $_mon_globs_dir $drive_msecs_dir $snapshots_replica_dir &&
+	mkdir -p      $_mon_lock_dir &&
+	chmod ugo+rwx $_mon_lock_dir	# so don't need sudo-lockpid
+}
+readonly -f create-monitor-dirs
+
+# ----------------------------------------------------------------------------
+
+lock-replica-of-snapshots() {
+
+	local sleep_msecs=$lock_replica_sleep_msecs
+	local lock_file=${FUNCNAME#*lock-}.pid
+
+	umask 0				# so watch doesn't need sudo-lockpid
+	$IfRun \
+	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file
+	umask $umask
+}
+readonly -f lock-replica-of-snapshots
+
+# ----------------------------------------------------------------------------
+
 readonly _mon_globs_dir=$_monitor_dir/globs
 
 mon-launch-globs() {
@@ -5186,35 +5214,6 @@ mon-launch-globs() {
 	done
 }
 readonly -f mon-launch-globs
-
-# ----------------------------------------------------------------------------
-
-readonly  _mon_lock_dir=$_monitor_dir/lock
-
-lock-replica-of-snapshots() {
-
-	local sleep_msecs=$lock_replica_sleep_msecs
-	local lock_file=${FUNCNAME#*lock-}.pid
-
-	umask 0				# so watch doesn't need sudo-lockpid
-	$IfRun \
-	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file
-	umask $umask
-}
-readonly -f lock-replica-of-snapshots
-
-# ----------------------
-
-readonly drive_msecs_dir=$_monitor_dir/msecs	       # response time, for 'w'
-readonly snapshots_replica_dir=$_monitor_dir/snapshots # 'w' uses, avoids hangs
-
-function create-monitor-dirs() {
-
-	mkdir -p $_mon_globs_dir $drive_msecs_dir $snapshots_replica_dir &&
-	mkdir -p      $_mon_lock_dir &&
-	chmod ugo+rwx $_mon_lock_dir	# so don't need sudo-lockpid
-}
-readonly -f create-monitor-dirs
 
 # ----------------------
 
