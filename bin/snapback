@@ -4448,7 +4448,7 @@ exec-watch-snapback-w() {
 		all_opts+=" -N ${drive_names// /,}"
 	fi
 	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
-	[[ ${SSH_TTY-} ]] && local n=0.5 || local n=0.5
+	[[ ${SSH_TTY-} ]] && local n=1.0 || local n=0.5
 	exec watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 	abort-function "exec failed"
 }
@@ -4481,10 +4481,10 @@ readonly -f set-drive_dirs-names_msg-names_glob
 
 set-rows-columns-COLUMNS() {
 
-	if [[ ${watch_opt-} || -t 1 ]]
+	if [[ ${watch_opt-} ]]
 	   then set -f; set -- $(stty -a); set +f
 		declare -g -i rows=${5%;} columns=${7%;}
-	   else declare -g -i rows=9999   columns=9999
+	   else declare -g -i rows=999999 columns=9999
 	fi
 	declare -g -i rows_left=$rows
 	export COLUMNS=9999	     # for 'ps' (we shorten the COMMAND value)
@@ -4824,7 +4824,7 @@ show-stats-section-1() {
 	setup-snapshot-stats .rm
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
-	echo "Number .partial snaps created by update:  $stats_number"
+	echo " Number empty .partial dirs, for update:  $stats_number"
 	set-rsync_hour_avgs-rsync_hour_maxs -c
 	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
 }
@@ -5203,6 +5203,7 @@ mon-maybe-launch-ls() {
 	     awk '$2 > 2 { print $(NF) }' > $partial_file.new &&
 					 mv $partial_file.new $partial_file ) &
 	ls_drive_name2PID[$drive_name]=$!
+	cd $OLDPWD
 }
 readonly -f mon-maybe-launch-ls
 
