@@ -4074,6 +4074,9 @@ readonly -f set-drive_usage
 
 # ----------------------------------------------------------------------------
 
+is-set	      drive_response_warning_msecs || # custom value in $config_file?
+declare -r -i drive_response_warning_msecs=1000
+
 set-drive_response() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
@@ -4087,6 +4090,10 @@ set-drive_response() {
 		   then set-division 2 $msecs 1000
 			set-padded_number $division
 			local secs=$padded_number
+			if (( $msecs >= $drive_response_warning_msecs ))
+			   then set-warning_string warning $secs
+				secs=$warning_string
+			fi
 		   else set-warning_string error HUNG!
 			local secs=$warning_string
 		fi
