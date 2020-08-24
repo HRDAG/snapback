@@ -3986,6 +3986,12 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 	if [[ $# != 0 ]]
 	   then set-average-maximum--from-files-of-numbers $*
 		set-hours--from-minutes -2 $average # 2 decimal points
+		set-padded_number $hours
+		hour_avg=$padded_number
+		set-hours--from-minutes -2 $maximum
+		set-padded_number $hours
+		hour_max=$padded_number
+
 		# drv_name2backup_period_for_update -> localize period
 		set-customized_value--for-config-var-name backup_period &&
 		local -i backup_period=$customized_value
@@ -3995,16 +4001,11 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 			   then local type=warning
 			   else local type=error
 			fi
-			set-warning_string $type $hours
+			set-warning_string $type $hour_avg
 			set-padded_colorized_string--for-printf \
-			    $hours $warning_string
-			hours=$padded_colorized_string
+			    $hour_avg $warning_string
+			hour_avg=$padded_colorized_string
 		fi
-		set-padded_number $hours
-		hour_avg=$padded_number
-		set-hours--from-minutes -2 $maximum
-		set-padded_number $hours
-		hour_max=$padded_number
 	   else hour_max= hour_avg=
 	fi
 }
