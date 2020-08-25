@@ -5345,8 +5345,7 @@ re-start-monitor-drives-if-needed() {
 	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
 	     is-newer $our_path $drive_monitor_lock_path )
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
-		set-lock_PGID $drive_monitor_lock_path
-		while sudo-kill -KILL -$lock_PGID
+		until signal-job -KILL $drive_monitor_lock_path
 		   do	$IfRun sleep 0.09 # wait for globs/etc; but 'watch' hangs
 			[[ $debug_opt ]] && break
 		done
