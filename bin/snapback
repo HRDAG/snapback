@@ -3652,12 +3652,12 @@ function _set-speed_record() {
 
 	[[ ! $do_force ]] &&
 	[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
-	    continue		# prefer a better snapshot?
+	    return 1			# prefer a better snapshot?
 
 	count-rsyncs-using-resource " $drive_dir/"
 	local rsync_count=$?
 	[[ ( $rsync_count -gt 0 || $writer_count -gt 0 ) &&
-	   $ignore_slow_sources && ! $do_force ]] && continue
+	   $ignore_slow_sources && ! $do_force ]] && return 1
 
 	speed_record="$not_multi_writer|$writer_count|$rsync_count|$snapshot"
 }
