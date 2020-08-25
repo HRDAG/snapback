@@ -5338,6 +5338,9 @@ readonly -f monitor-drives
 re-start-monitor-drives-if-needed() {
 	[[ ${1-} == -f ]] && { shift;local do_force=$true; } || local do_force=
 
+	[[ $UID == 0 ]] || { sudo -n kill && sudo -n $our_path; } &> $dev_null ||
+	    return
+
 	if [[ $do_force ]] ||
 	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
 	     is-newer $our_path $drive_monitor_lock_path )
