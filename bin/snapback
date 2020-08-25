@@ -3780,6 +3780,7 @@ do-chores() {
 	rm-dangling-symlinks
 	rm-stale-locks			# do before ...
 	re-start-monitor-drives-if-needed
+	log "$FUNCNAME finished"
 }
 readonly -f do-chores
 
@@ -5333,7 +5334,10 @@ re-start-monitor-drives-if-needed() {
 	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
 	     is-newer $our_path $drive_monitor_lock_path )
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
-		signal-job -KILL $drive_monitor_lock_path # now safe to kill
+		while signal-job -KILL $drive_monitor_lock_path
+		   do	$IfRun sleep 0.1 # wait for globs/etc, but 'watch' hangs
+			[[ $debug_opt ]] && break
+		done
 		lock-replica-of-snapshots --release
 	fi
 
