@@ -5343,7 +5343,7 @@ re-start-monitor-drives-if-needed() {
 	     is-newer $our_path $drive_monitor_lock_path )
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
 		while signal-job -KILL $drive_monitor_lock_path
-		   do	$IfRun sleep 0.1 # wait for globs/etc, but 'watch' hangs
+		   do	$IfRun sleep 0.09 # wait for globs/etc, but 'watch' hangs
 			[[ $debug_opt ]] && break
 		done
 		lock-replica-of-snapshots --release
@@ -5593,7 +5593,7 @@ function unmount-drives() {
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
-			$IfRun sleep 0.1
+			$IfRun sleep 0.15
 		done &> $output
 		is-drive-mounted $drive_dir || continue
 		$umount_cmd || status=$? # this time, show the error message
@@ -6118,7 +6118,7 @@ copy-backup-drive() {
 	"
 	nohup $cmd > $output_file &
 	local copy_PID=$!
-	sleep 0.1; set -x; exec tail --pid=$copy_PID -f $output_file
+	sleep 0.2; set -x; exec tail --pid=$copy_PID -f $output_file
 }
 readonly -f copy-backup-drive
 
