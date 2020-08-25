@@ -3635,7 +3635,7 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 # ----------------------------------------------------------------------------
 
 function _set-speed_record() {
-	local snapshot=$1 drive_dir
+	local snapshot=$1   drive_name drive_dir
 
 	_set-drive_name $snapshot
 	_set-drive_dir || { print-call-stack; return 1; }
@@ -3650,18 +3650,23 @@ function _set-speed_record() {
 						      writer_count+=1
 	have-job prune	&& is-drive-usage-too-high && writer_count+=1
 
-	[[ ! $do_force ]] &&
-	[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
-	    return 1			# prefer a better snapshot?
-
 	count-rsyncs-using-resource " $drive_dir/"
 	local rsync_count=$?
-	[[ ( $rsync_count -gt 0 || $writer_count -gt 0 ) &&
-	   $ignore_slow_sources && ! $do_force ]] && return 1
 
+	# this must match _set-not_multi_writer-writer_count-rsync_count()
 	speed_record="$not_multi_writer|$writer_count|$rsync_count|$snapshot"
 }
 readonly -f _set-speed_record
+
+# ----------------------
+
+_set-not_multi_writer-writer_count-rsync_count() {
+	local speed_record=$1
+
+	set -- ${speed_record//|/ }
+	not_multi_writer=$1 writer_count=$2 rsync_count=$3
+}
+readonly -f _set-not_multi_writer-writer_count-rsync_count
 
 # ---------------------------------
 
@@ -3679,9 +3684,18 @@ fastest-snapshots() {
 	   else local do_force=$false
 	fi
 
-	local snapshot drive_name
+	local snapshot not_multi_writer writer_count rsync_count
 	for snapshot
 	    do	_set-speed_record $snapshot || continue
+		_set-not_multi_writer-writer_count-rsync_count $speed_record
+
+		[[ ! $do_force ]] &&
+		[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
+		    continue			# prefer a better snapshot?
+
+		[[ ( $writer_count -gt 0 || $rsync_count -gt 0 ) &&
+		   $ignore_slow_sources && ! $do_force ]] && continue
+
 		echo "$speed_record"
 	done | sort -t\| -n |		# numeric sort
 	# cat; return			# uncomment to debug with action 'test'
