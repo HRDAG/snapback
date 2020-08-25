@@ -4735,9 +4735,13 @@ readonly -f set-min_rows-min_rows_with_df-rows_left
 readonly syslog_errors_dir=$status_dir/syslog-errors
 readonly syslog_errors_count_msg_file=$syslog_errors_dir/count-msg.txt
 
+readonly status_dir_lock_path=$lock_dir/status-dir.pid
+
 create-status_dir() {
 
-	[[ -d $status_dir ]] && return
+	[[ $UID == 0 ]] && lockpid --quiet $status_dir_lock_path || return
+
+	[[ -d $status_dir ]] || {
 
 	sudo mkdir $status_dir &&
 	set-admin_group &&
@@ -4747,6 +4751,10 @@ create-status_dir() {
 
 	sudo mkdir     $syslog_errors_dir
 	sudo chmod g+w $syslog_errors_dir
+
+	}
+
+	lockpid --release $status_dir_lock_path
 }
 readonly -f create-status_dir
 
