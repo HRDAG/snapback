@@ -553,6 +553,7 @@ function lock-PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
+	   else $xtrace; return 1
 	fi >&2
 	print-call-stack ${drive_name-} >&2
 	$xtrace
