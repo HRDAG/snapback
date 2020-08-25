@@ -3814,7 +3814,7 @@ do-chores() {
 	rm-dangling-symlinks
 	rm-stale-locks			# do before ...
 	re-start-monitor-drives-if-needed
-	log "$FUNCNAME finished"
+	# log "$FUNCNAME finished"	# for debugging
 }
 readonly -f do-chores
 
