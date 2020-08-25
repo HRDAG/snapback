@@ -5278,7 +5278,7 @@ is-set        check_period_msecs ||	# can set custom value in $config_file
 declare -r -i check_period_msecs=200	# when look for newly-attached drives
 #
 is-set		msec_increment ||	# can set custom value in $config_file
-declare -r -i   msec_increment=5	# when check if any drives responded
+declare -r -i   msec_increment=10	# period for checking if drive responded
 set-division 3 $msec_increment 1000
 readonly         sec_increment=$division
 #
@@ -5347,7 +5347,6 @@ re-start-monitor-drives-if-needed() {
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
 		until signal-job -KILL $drive_monitor_lock_path
 		   do	$IfRun sleep 0.09 # wait for globs/etc; but 'watch' hangs
-			[[ $debug_opt ]] && break
 		done
 		lock-replica-of-snapshots --release
 	fi
