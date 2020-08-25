@@ -5342,8 +5342,9 @@ re-start-monitor-drives-if-needed() {
 	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
 	     is-newer $our_path $drive_monitor_lock_path )
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
-		while signal-job -KILL $drive_monitor_lock_path
-		   do	$IfRun sleep 0.09 # wait for globs/etc, but 'watch' hangs
+		set-lock_PGID $drive_monitor_lock_path
+		while sudo-kill -KILL -$lock_PGID
+		   do	$IfRun sleep 0.09 # wait for globs/etc; but 'watch' hangs
 			[[ $debug_opt ]] && break
 		done
 		lock-replica-of-snapshots --release
@@ -7303,6 +7304,8 @@ case $action in
 
 	set-drive_name ${1:-J}
 	fastest-snapshots /backup/E/2020-05-08,00 /backup/X/2020-05-08,00;_exit
+
+	signal-job -KILL $drive_monitor_lock_path; abort $?
 
 	set-drive_name ${1:-J}
 	set-drive_dir $drive_name; d=$drive_name
