@@ -4212,7 +4212,7 @@ _recalculate-snapshot-stats-vars() {
 
 		if [[ $skip_empty ]]	# counting old & unfinished snapshots?
 		   then count-snapshots-being-created-on-drive
-			shift $?	# forget ones we're creating
+			shift $? &> $dev_null # forget ones we're creating
 		fi
 
 		nums+="$drive_name=$# "
