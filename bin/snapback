@@ -3638,7 +3638,12 @@ function _set-speed_record() {
 	local snapshot=$1   drive_name drive_dir
 
 	_set-drive_name $snapshot
+
+	speed_record=${drive_name2speed_record[$drive_name]-}
+	[[ $speed_record ]] && return 0
+
 	_set-drive_dir || { print-call-stack; return 1; }
+
 	if is-multi-writer-drive $snapshot
 	   then local not_multi_writer=0
 	   else local not_multi_writer=1
@@ -3724,9 +3729,15 @@ fill-in-unpruned-empty-snapshots() {
 			# desired snapshot could be newly created, or pruned...
 			set -- $drive_dir_prefix*/${src_snapshot_1##*/}
 			[[ $# != 0 ]] || continue # sources pruned away?
+
+			is-set     drive_name2speed_record ||
+			declare -A drive_name2speed_record
 			set -- $(fastest-snapshots $force_opt $*)
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync $1 $dst_snapshot >&2
+				[[ ! $debug_opt ]] &&
+				# copy-* took a long time, re-check drive speeds
+				unset drive_name2speed_record # force a rebuild
 				force_opt= # do 1 force per pass
 			   else did_skip_a_snapshot=$true
 				echo $args # save for next pass
