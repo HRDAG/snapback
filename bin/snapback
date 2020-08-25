@@ -935,6 +935,7 @@ function kill-job-on-drives() {
 				re-start-monitor-drives-if-needed -f
 				continue
 			fi
+
 			# sometimes it takes multiple kills for update-drive
 			local did_loop=$false
 			until signal-job $signal $path
@@ -943,6 +944,7 @@ function kill-job-on-drives() {
 				did_loop=$true
 			done
 			[[ $did_loop ]] && echo
+
 			status=0
 		   else [[ $is_monitor_lock ]] && continue
 			signal-job $signal $path && status=0
@@ -3632,6 +3634,37 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 
 # ----------------------------------------------------------------------------
 
+function _set-speed_record() {
+	local snapshot=$1 drive_dir
+
+	_set-drive_name $snapshot
+	_set-drive_dir || { print-call-stack; return 1; }
+	if is-multi-writer-drive $snapshot
+	   then local not_multi_writer=0
+	   else local not_multi_writer=1
+	fi
+
+	local -i writer_count=0
+	have-job backup &&			      writer_count+=1
+	have-job copy	&& ! is-sleeping copy && ! is-suspended copy &&
+						      writer_count+=1
+	have-job prune	&& is-drive-usage-too-high && writer_count+=1
+
+	[[ ! $do_force ]] &&
+	[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
+	    continue		# prefer a better snapshot?
+
+	count-rsyncs-using-resource " $drive_dir/"
+	local rsync_count=$?
+	[[ ( $rsync_count -gt 0 || $writer_count -gt 0 ) &&
+	   $ignore_slow_sources && ! $do_force ]] && continue
+
+	speed_record="$not_multi_writer|$writer_count|$rsync_count|$snapshot"
+}
+readonly -f _set-speed_record
+
+# ---------------------------------
+
 # the "fastest" snapshot is on drive that's: 1. multi-writer; else 2. not
 # running a backup or copy; else 3. not being pruned (or can kill prune);
 # else 4. hosting the smallest number of rsync commands.
@@ -3646,34 +3679,10 @@ fastest-snapshots() {
 	   else local do_force=$false
 	fi
 
-	local drive_name drive_dir	# don't change caller's values
-
-	local snapshot
+	local snapshot drive_name
 	for snapshot
-	    do	_set-drive_name $snapshot
-		_set-drive_dir || { print-call-stack; continue; }
-		if is-multi-writer-drive $snapshot
-		   then local not_multi_writer=0
-		   else local not_multi_writer=1
-		fi
-
-		local -i writer_count=0
-		have-job backup &&			      writer_count+=1
-		have-job copy	&& ! is-sleeping copy && ! is-suspended copy &&
-							      writer_count+=1
-		have-job prune	&& is-drive-usage-too-high && writer_count+=1
-
-		[[ ! $do_force ]] &&
-		[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
-		    continue		# prefer a better snapshot?
-
-		count-rsyncs-using-resource " $drive_dir/"
-		local rsync_count=$?
-		[[ ( $rsync_count -gt 0 || $writer_count -gt 0 ) &&
-		   $ignore_slow_sources && ! $do_force ]] && continue
-
-		local ss=$snapshot
-		echo "$not_multi_writer|$writer_count|$rsync_count|$ss"
+	    do	_set-speed_record $snapshot || continue
+		echo "$speed_record"
 	done | sort -t\| -n |		# numeric sort
 	# cat; return			# uncomment to debug with action 'test'
 	cut -d\| -f4
