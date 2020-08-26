@@ -2431,6 +2431,7 @@ function prune-drive() {
 
 	[[ $is_update ]] && return 0
 
+	[[ ! $debug_opt ]] &&		# did rm-pruned-snapshots actually prune?
 	if is-drive-usage-too-high
 	   then local file=$snapshots_to_prune_file
 		prune-snapshots-not-matching-backup_period $file &&
@@ -6761,7 +6762,7 @@ function regression-test() {
 	[[ ${1-} == -t ]] && { _trace_opt=-t; shift; } || _trace_opt=
 	local tests=${*:-$regression_tests}
 	# can exclude one test (especially useful to exclude the slow 'u' test)
-	[[ $tests == [A-Z] ]] && tests=${regression_tests/${tests,}/}
+	[[ $tests == [A-Z]* ]] && tests=${regression_tests//[${tests,,}]/}
 
 	[[ $tests == *[zpu]* ]] && validate-prune_globs
 
