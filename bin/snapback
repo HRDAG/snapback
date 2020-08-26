@@ -161,7 +161,7 @@ Usage: $our_name [options] action [options] [args]
 
   Current actions are (you can specify their acronym, see process-action):
     backup-drives names: backup names ('all' for every mounted backup drive)
-     prune-drives names: prune  names ('all' for every "" ""); see configure.sh
+     prune-drives names: prune  names ('all' is same as above); see configure.sh
     update-drives  [-s src-names-glob] dst-names: copy missing snapshots
     copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
 
@@ -6879,7 +6879,7 @@ case $action in
 	   else true
 	fi
 	;;
-  # prune-drives  names: prune  names ('all' for every "" ""); see configure.sh
+  #  prune-drives names: prune  names ('all' is same as above); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 == -f ]] && { final_prune_type=$2;shift 2; } || final_prune_type=
@@ -7026,12 +7026,12 @@ case $action in
 	fi
 	;;
 
-   ( add*extN*journal | aej ) undo-action-abbrev add-extN-journal
-     add-extN-journal "$@"
-	;;
-
    ( dir*sizes | ds ) undo-action-abbrev dir-sizes
      dir-sizes "$@"
+	;;
+
+   ( add*extN*journal | aej ) undo-action-abbrev add-extN-journal
+     add-extN-journal "$@"
 	;;
 
    # mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
