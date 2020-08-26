@@ -180,8 +180,8 @@ Usage: $our_name [options] action [options] [args]
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
-    add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
+    add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
     copy-drive {src_name | src_dev} dst_name [dst_dev]: duplicate backup drive
     filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
