@@ -630,14 +630,15 @@ readonly -f _set-wait_opt
 # backup job gets priority (i.e. non-backup jobs will be suspended when a
 # backup job is initiated).  When no backup job is running, and copy and prune
 # jobs both exist, reset-priority aka is-copy-higher-priority-than-prune
-# decides which one should be suspended.
+# decides which one should be suspended (every 5 minutes, with default crontab).
 #
 # An hourly cron job calls action backup-drives (with argument 'all'), which
 # calls create-jobs() to create a backup-drive() job for each drive;
 # each backup-drive() job starts a prune-drive() job, and prune-drive() may
 # start an update-drive() job.  If the cron job is called more frequently
 # than hourly, the off-hour jobs just call reset-priority and prune-drive
-# (for drives with too-high usage, suspend any copy and start a prune).
+# (for drives with too-high usage, suspend any copy and start a prune),
+# and also run do-chores.
 #
 # A lock() call for a non-backup lock will get its requested lock immediately
 # (so the job will then appear on the dashboard), but will release that lock
@@ -651,8 +652,8 @@ declare -A _lock_type_name2lock_path
 # Usage: lock [-w [-c]] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed;
-#    if -c also, it's copy (or update) not backup, so no trickiness.
-#    If -P, called by prevent-pruning, doesn't matter if backup running.
+#    if -c also, it's a Copy (or update) not backup, so no trickiness.
+#    If -P, called by Prevent-Pruning, doesn't matter if backup running.
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
