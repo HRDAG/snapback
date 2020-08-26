@@ -278,7 +278,7 @@ file in ~/etc/snapack/ else /usr/local/etc/snapback/ else /etc/snapback/ .
 
 Some of the configure.sh variables are quite abstract, you'll need to
 carefully read the comments.  And it's probably best to leave the tuning
-variables alone (see final section on Tuning), and re-read those variable's
+variables alone (see 'K. snapback tuning'), and re-read those variable's
 comments after you've let cron create a lot of snapshots and you start to run
 out of resources on some drives.
 

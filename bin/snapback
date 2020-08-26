@@ -5760,6 +5760,24 @@ function add-extN-journal() {
 readonly -f add-extN-journal
 
 # ----------------------------------------------------------------------------
+
+check-lost+found() {
+
+	sudo -n ls &> $dev_null || return
+
+	for dir in $(list-drive-dirs)
+	    do	lost_found=$dir/lost+found
+		[[ -d $lost_found ]] || continue
+		set -- $(sudo ls $lost_found)
+		[[ $# == 0 ]] && continue
+		warn "$lost_found/ contains $# files: mv them to correct place;
+	else delete them and run: $_our_name redo $dir/*,??
+	then rebuild snapshots with: $_our_name update-drive ${dir##*/}"
+	done
+}
+readonly -f check-lost+found
+
+# ----------------------------------------------------------------------------
 # functions leading up to mkfs-backup-drive
 # ----------------------------------------------------------------------------
 
@@ -7585,7 +7603,11 @@ case $action in
 	exit-normally 1
 	;;
 esac
+local status=$?
 
+[[ -t 1 ]] && check-lost+found
+
+return $status
 }
 readonly -f process-action
 
