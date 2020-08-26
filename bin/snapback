@@ -5974,6 +5974,7 @@ _create-and-mount-filesystem() {
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
 	fix-drive_dir-perms $drive_dir
+	run-df $drive_dir
 }
 readonly -f _create-and-mount-filesystem
 
