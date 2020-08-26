@@ -5413,7 +5413,7 @@ predict-prune() {
 	echo -e "
 	With current *prun* variable values in $config_file,
 	running '$_our_name prune $args' would prune $1 snapshots.
-"
+" >& 2
 }
 readonly -f predict-prune
 
