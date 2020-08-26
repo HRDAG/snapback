@@ -180,6 +180,7 @@ Usage: $our_name [options] action [options] [args]
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
+    predict-prune [-f span] name: see: grep 'prun\w*=' $config_file
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
@@ -5391,6 +5392,28 @@ re-start-monitor-drives-if-needed() {
 }
 readonly -f re-start-monitor-drives-if-needed
 
+
+# ----------------------------------------------------------------------------
+# function to predict impact of changing pruning vriables in configure.sh
+# ----------------------------------------------------------------------------
+
+# predict-prune [-f span] name: see: grep 'prun\w*=' $config_file
+predict-prune() {
+	local args=$*
+
+	[[ ( ${1-} == -f && $# -ge 3 ) || ( ${1-} != -f && $# -ge 1 ) ]] ||
+	    abort-with-action-Usage
+
+	$our_path -d prune-drives "$@" > $tmp_1 || exit $?
+	set -- $(egrep -c '^(mv|rm) ' $tmp_1); rm $tmp_1
+
+	echo -e "
+	With current *prun* variable values in $config_file,
+	running '$_our_name prune $args' would prune $1 snapshots.
+"
+}
+readonly -f predict-prune
+
 # ----------------------------------------------------------------------------
 # functions to calculate directory sizes for different FS parameters
 # ----------------------------------------------------------------------------
@@ -6882,9 +6905,9 @@ case $action in
   #  prune-drives names: prune  names ('all' is same as above); see configure.sh
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 == -f ]] && { final_prune_type=$2;shift 2; } || final_prune_type=
-	[[ $1 != -r ]] && assert-not-option $1
+	[[ $1 == -f ]] && { final_prune_type=$2; shift 2; } || final_prune_type=
 	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $1 != -r ]] && assert-not-option $1
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
@@ -7024,6 +7047,10 @@ case $action in
 		PATH=/usr/local/bin:$PATH \
 		setsid $_our_name $debug_opt $trace_opt $action -r &
 	fi
+	;;
+
+   ( predict*prune | pp ) undo-action-abbrev predict-prune
+     predict-prune "$@"
 	;;
 
    ( dir*sizes | ds ) undo-action-abbrev dir-sizes
