@@ -85,8 +85,11 @@ link reference-count; similarly, APFS on Darwin (macOS aka Mac OS-X) uses a
 the file?!).
 
 My experience is that ext4 is faster than XFS (especially when filesystems get
-very full), and ext4 is less fragile.  xfs_repair wants to use an immense
-amount of RAM, besides taking a long time.
+above 55% or 65% or 75% blocks used), _except_ when the drive is an SSD.  ext4
+is less fragile (an XFS crash resulted in most files being moved to
+/lost+found/); and xfs_repair wants to use an immense amount of RAM, besides
+taking a long time.  But I use XFS anyway, because my filesystems have a huge
+number of hardlinks (because we use HRDAG's 'snap' aka 'snapshot').
 
 
 D. How do I encrypt a backup drive?
