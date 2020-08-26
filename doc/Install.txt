@@ -311,7 +311,7 @@ the value of $status).
 5. rm_snapshot_pre_hook: you can set rm_snapshot_pre_hook= to the name of a
 function that's called before a .rm snapshot is deleted: you can prevent the
 deletion by setting snapshot to the null string (and removing the snapshot's
-.rm suffix); you can prevent future pruning by touch'in .keep in the snapshot.
+.rm suffix); you can prevent future pruning by touch'ing .keep in the snapshot.
 
 6. rm_snapshot_post_hook: you can set rm_snapshot_post_hook= to the name of a
 function that's called after a .rm snapshot is deleted, e.g. to delete the
@@ -459,28 +459,49 @@ get these errors when "snapback watch" reports e.g.
 
     Number pruned snapshots awaiting 'rm':  A=0    C=0    G=0
 
-then you'll need to edit configure.sh and either increase
-'backup_period' or decrease one of the four '*_per_span_for_*_prune'
-variables; carefully read the comments to figure out what these do.  It's best
-to just change one variable at a time.  Then wait 5 minutes: cron will
-kick off a prune, which will rename the now-unneeded snapshots to
-Date,Hour.rm, and then start deleting them (but if you set
-'is_multi_writer_drive=$false' because you're using disk drives not SSDs,
-then the prune won't be started until the backup finishes).  As soon as the
-prune job finishes, "snapback watch" will show that your drive now has non-0
-"Number pruned snapshots awaiting 'rm'"; you'll need to wait until this value
-goes to 0, then decide if your tuning-change freed up enough disk space.  See
-doc/watch.txt for more details on watching how the system responds to tuning.
+then you'll need to edit configure.sh and either increase '*backup_period',
+and/or decrease one of the four '*_per_span_for_*_prune' variables, and/or
+decrease pruning_span_scale_factor; carefully read the comments to figure out
+what these do.
 
 [If you'd rather that these variables were automagically tuned by snapback
 itself (with some tuning-priorities specified by you), ask sweikart@gmail.com
 to implement something like the ideas in doc/extra-prune.txt .]
 
+After you change a *prun* variables, measure the impact with:
+
+    snapback predict-pruning [-f span] name(s)
+
+where the optional "-f span" specifies the Final span that will be pruned
+(e.g. with "-f hour", stop pruning after the "hour" span).  This will show and
+count all the snapshots that would be pruned, including the ones that have
+already been renamed to *.rm (and thus could be partially deleted).
+
+Do *not* change variables close to the 5 minute mark, because that's when cron
+will kick off a prune, which will rename the to-be-pruned snapshots to
+Date,Hour.rm, and then start deleting them (but, if you set
+'is_multi_writer_drive=$false' because you're using disk drives not SSDs, then
+the prune won't be started until the backup finishes).
+
+Soon after cron kicks of a prune, "snapback watch" will show that your drive
+now has non-0 "Number pruned .rm snaps awaiting rm -r"; you'll need to wait
+until this value goes to 0, then decide if your tuning-change freed up enough
+disk space.  See doc/watch.txt for more details on watching how the system
+responds to tuning.
+
+If you indvertently kick off a too-aggressive prune on multiple drives, you
+can recover with:
+
+    snapback k p all			# kill all prune jobs
+    snapback undelete /backup/*/*.rm	# rename *.rm snapshots to *.partial
+    snapback update-drive all		# restore *.partial from other drives
+
 Remember, you don't need to change the global tuning variables, you can set a
 custom value for each partition that's running out of resources.  To see
 examples of this, search configure.sh for '[Z]', to see how very-small values
 are used for the pseudo-partition named 'Z' ('Z' is used for regression tests,
-and for studying how pruning works with the "-T 5" option to snapback).
+and for studying how pruning works with the "-T 5" option to snapback), or
+search configure.sh for '[X]' (sample customizations).
 
 --
 
@@ -493,7 +514,8 @@ for the next prune job to start, and then wait until the drive's log
 
 And note that you can use the source_drive_specific_config_file function at
 the end of configure.sh.sample to have separate exclude files for different
-categories of partitions.
+categories of partitions (BUT, if you do this, you won't be able to
+update-drive between those categories).
 
 Note that you might be able to accomplish the same goal by changing
 'dirs_to_backup' in configure.sh, which is also convenient because it's easy

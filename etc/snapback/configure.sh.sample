@@ -197,10 +197,11 @@ declare -i backup_period_for_update=0	 # default to the same
 declare -i max_backup_period_for_pruning=0    # default to the same
   drv_name2max_backup_period_for_pruning[X]=4 # updating New disk, slow bkps
 
-# ----------------------------------------------------------------------------
-# Variables that control prune-drives.  NOTE: backup_period, extra_excludes, #
-#    and excluded_backup_hours (above) are also used in pruning.	     #
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Variables that control prune-drives.  NOTE: *backup_period, extra_excludes, #
+#    and excluded_backup_hours (above) are also used in pruning.  To see the  #
+#    impact of any changes, run: snapback predict-pruning [-f span] name(s)   #
+# -----------------------------------------------------------------------------
 
 # Maximum acceptable FileSystem usage (before make pruning highest priority).
 declare -i max_FS_usage_percent=95	# for "df" and "df -i"
@@ -225,6 +226,8 @@ hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
 #    snapback -d -T 5 prune-drives |& less
 # and study the 'prune_drive' function.
 
+# NOTE: To see the impact of changes: snapback predict-pruning [-f span] name(s)
+
 # Skip 'span' days of the newest snapshots, rm half the older ones; repeat this
 # loop until all the oldest snapshots are only *,00 (i.e. one per day),
 # which encompasses 1.5 months for an hourly 'span' of 7 days.
@@ -245,6 +248,8 @@ declare -i years_per_span_for_month_prune=5	# 'prune-drive -f day' will skip
 # until all the oldest snapshots are only ?0-01-01,00 (i.e. one per decade).
 declare -i decades_per_span_for_year_prune=5	# 'prune-drive -f month' skips
   drv_name2decades_per_span_for_year_prune[Z]=1	# for action test-prune
+
+# NOTE: To see the impact of changes: snapback predict-pruning [-f span] name(s)
 
 # You can use this variable to change all 4 of the previous variables at once,
 # or to scale all 4 of the previous variables for a drive of a different size.
