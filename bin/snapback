@@ -5406,7 +5406,9 @@ predict-prune() {
 	    abort-with-action-Usage
 
 	$our_path -d prune-drives "$@" > $tmp_1 || exit $?
-	set -- $(egrep -c '^(mv|rm) ' $tmp_1); rm $tmp_1
+	sed -n -r '/^(mv|rm) /s@.*[/ ]@@p' $tmp_1 > $tmp_2 || abort-function sed
+	sort $tmp_2
+	set -- $(wc -l < $tmp_2); rm $tmp_1 $tmp_2
 
 	echo -e "
 	With current *prun* variable values in $config_file,
