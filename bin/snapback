@@ -5258,7 +5258,8 @@ mon-maybe-launch-ls() {
 	local partial_file=$non_empty_partial_dir/$drive_name
 	_set-drive_dir $drive_name
 	cd $drive_dir || return
-	( /bin/ls -ld *.partial 2> $dev_null | # detect subdirs with link count
+	# snapshot is non-empty if has subdirectories, so check link count
+	( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
 	     awk '$2 > 2 { print $(NF) }' > $partial_file.new &&
 					 mv $partial_file.new $partial_file ) &
 	ls_drive_name2PID[$drive_name]=$!
@@ -5278,6 +5279,7 @@ mon-launch-globs() {
 		cd $drive_dir || continue
 		local glob_file=$_mon_globs_dir/$drive_name
 		local -i now_msecs=$(date +%s%3N) # takes ~1 msec to fork+exec
+		# if $ls_drive_name2PID[$drive_name] still alive, will slow this:
 		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
 		drive_name2PID[$drive_name]=$!
 		drive_name2msecs[$drive_name]=$now_msecs
