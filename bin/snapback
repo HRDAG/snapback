@@ -5770,7 +5770,7 @@ check-lost+found() {
 		[[ -d $lost_found ]] || continue
 		set -- $(sudo ls $lost_found)
 		[[ $# == 0 ]] && continue
-		warn "$lost_found/ contains $# files: mv them to correct place;
+		warn "$lost_found/ contains $# entries: mv them to correct place;
 	else delete them and run: $_our_name redo $dir/*,??
 	then rebuild snapshots with: $_our_name update-drive ${dir##*/}"
 	done
