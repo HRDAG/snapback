@@ -360,7 +360,7 @@ function sudo-lockpid() {
 
 	# we're used when locks maybe stale (sudo-lockpid $lock &> $dev_null);
 	# but they usuaully aren't, so "$IfRun lockpid" would only show release
-	[[ $debug_opt && $is_optional ]] && return 1
+	[[ $debug_opt && $is_optional ]] && return 0
 
 	is-set can_sudo_lockpid ||
 	if $IfRun sudo -n lockpid -h &> $dev_null
