@@ -1047,8 +1047,8 @@ readonly -f list-drive-dirs
 # ----------------------
 
 function set-drive_names() {
-	set -- $(list-drive-dirs "$@" | sed 's@.*/@@')
-	drive_names=$*
+
+	drive_names=$(list-drive-dirs "$@" | sed 's@.*/@@')
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names
