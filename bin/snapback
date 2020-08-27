@@ -1536,7 +1536,7 @@ validate-config-variables() {
 	[[ $drive_dir_prefix == *[^$allowed_drive_name_dir_chars/]* ]] &&
 	   abort "drive_dir_prefix has disallowed chars (ask $coder to allow)"
 
-	(( $drive_response_averaging_window_secs > $mon_check_period_secs )) ||
+	[[ $drive_response_averaging_window_secs > $mon_check_period_secs ]] ||
 	    abort "drive_response_averaging_window_secs too small"
 
 	# these config file(s) will be mentioned in the following error msg
@@ -2269,8 +2269,8 @@ readonly backup_period2minimal_snapshot_regex
 set-date_span--scaled() {
 	local _date_span=${1:-$date_span}
 
-	date_span=$( echo "$_date_span $pruning_span_scale_factor" |
-		     awk '{ printf "%.0f\n", $1 * $2 }' )
+	set-product $_date_span $pruning_span_scale_factor
+	date_span=$product
 	(( $date_span <= 0 )) && date_span=1
 
 	[[ ${type-} == hour ]] && local trace_level=2 || local trace_level=3
