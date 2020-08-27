@@ -82,6 +82,17 @@ drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 	 is_multi_writer_drive=$false	# non-striped rotational disk drive
 drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 
+# ----------------------------------
+# Variables used by nonitor-drives #
+# ----------------------------------
+
+# how long monitor-drives sleeps between checks to see if a drive responded
+# msec_increment=5			# might want < 10 for SSDs
+
+# minimum time period over which we calculate a running-average of drive_response
+declare -i average_the_drive_response_over_msecs=2000
+  drv_name2average_the_drive_response_over_msecs[X]=1000 # SSD
+
 # -----------------------
 # monitoring swapout rate
 # -----------------------

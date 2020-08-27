@@ -4128,7 +4128,12 @@ set-drive_response() {
 	local drive_dir drive_name responses=
 	for drive_dir in $all_drive_dirs
 	    do	_set-drive_name $drive_dir
-		local -i msecs=$(< $drive_msecs_dir/$drive_name)
+
+		set -- $(< $drive_msecs_dir/$drive_name)
+		local samples=$*
+		local -i count=$#
+		local -i msecs=$(( ( ${samples// /+} + ($count/2) ) / $count ))
+
 		if (( $msecs <= 99999 ))
 		   then set-division 2 $msecs 1000
 			set-padded_number $division
@@ -5296,13 +5301,16 @@ mon-process-finished-glob() {
 	local -i      now_msecs=$(date +%s%3N)
 	local -i    start_msecs=${drive_name2msecs[$drive_name]}
 	local -i response_msecs=now_msecs-start_msecs
+
+	local snapshots_dir=$snapshots_replica_dir/$drive_name
+	local -i sample_count=$(< $snapshots_dir/.samples)
 	local msecs_file=$drive_msecs_dir/$drive_name
-	echo $response_msecs > $msecs_file.new &&
-	    mv $msecs_file.new $msecs_file
+	set -- $(< $msecs_file) $response_msecs
+	while (( $# > $sample_count )) ; do shift; done
+	echo $* > $msecs_file.new && mv $msecs_file.new $msecs_file
 
 	mon-maybe-launch-ls
 
-	local  snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
 	cd_   $snapshots_dir
 	local glob_file=$_mon_globs_dir/$drive_name
@@ -5354,6 +5362,34 @@ readonly -f mon-look-for-finished-globs
 
 # ----------------------------------------------------------------------------
 
+monitor-drive-update() {
+	[[ ${1-} == -c ]] && local do_check=$true || local do_check=$false
+
+	cd_ $snapshots_replica_dir
+	[[ $do_check ]] || mkdir -p $(list-drive-dirs -a | sed 's@.*/@@')
+
+	local drive_name customized_value
+	for drive_name in *
+	    do	[[ -d $drive_name ]] || continue
+		local samples=$drive_name/.samples
+
+		if [[ $do_check ]]
+		   then is-newer $samples $config_file && continue
+			$our_path monitor-drive-update # so re-read configure.sh
+			return
+		fi
+
+		set-customized_value--for-config-var-name \
+		    average_the_drive_response_over_msecs
+		local -i count=$customized_value/$check_period_msecs
+		(( $count <= 0 )) && count=1
+		echo $count > $samples.new && mv $samples.new $samples
+	done
+}
+readonly -f monitor-drive-update
+
+# ----------------------------------------------------------------------------
+
 readonly drive_monitor_lock_path=$lock_dir/monitor.pid
 
 monitor-drives() {
@@ -5363,6 +5399,7 @@ monitor-drives() {
 
 	create-status_dir &&
 	create-monitor-dirs || abort-function "couldn't create dirs"
+	monitor-drive-update
 
 	exec &> $_monitor_dir/monitor.log # to catch problems
 
@@ -5372,6 +5409,7 @@ monitor-drives() {
 	while true			# monitor forever
 	    do	mon-launch-globs ${dirs:-$(list-drive-dirs -a)} # new drive?
 		mon-look-for-finished-globs
+		monitor-drive-update -c	# check if confgure.sh was updated
 	done
 }
 readonly -f monitor-drives
@@ -6886,7 +6924,8 @@ function regression-test() {
 	continue-jobs backup
 	[[ ${killed_dst-} ]] &&
 	warn "remember to restart your copy/update job on drive $killed_dst"
-	}
+	true
+	} || tests=${tests/ u/}
 
 	if [[ $failed_tests ]]
 	   then warn "ERROR: regressions in these tests: ${failed_tests% }"
@@ -7086,6 +7125,10 @@ case $action in
    # filesystem maintenance actions
    ###########################################################################
 
+   # monitor-drive-update: use configure.sh average_the_drive_response_over_msecs
+   ( mon*u* | mu ) undo-action-abbrev monitor-drive-update; $Trace
+	monitor-drive-update
+	;;
    # monitor-drives: start run-forever monitor of drive response time
    ( mon* | m ) undo-action-abbrev monitor-drives
 	if [[ ${1-} == -r ]]
