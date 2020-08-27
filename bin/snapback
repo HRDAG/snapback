@@ -1046,24 +1046,21 @@ readonly -f list-drive-dirs
 
 # ----------------------
 
+function set-drive_dirs() {
+
+	drive_dirs=$(list-drive-dirs "$@")
+	[[ $drive_dirs ]]
+}
+readonly -f set-drive_dirs
+
+# ----------------------
+
 function set-drive_names() {
 
 	drive_names=$(list-drive-dirs "$@" | sed 's@.*/@@')
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names
-
-# ----------------------
-
-is-set   darwin_drive_dir ||		# can set custom value in $config_file
-readonly darwin_drive_dir=/var/local/snapback
-
-function set-drive_dirs() {
-	set -- $(list-drive-dirs "$@")
-	drive_dirs=$*
-	[[ $drive_dirs ]]
-}
-readonly -f set-drive_dirs
 
 # ---------------------------------
 
@@ -1337,6 +1334,9 @@ function set-decryption_dev() {
 readonly -f set-decryption_dev
 
 # ----------------------
+
+is-set   darwin_drive_dir ||		# can set custom value in $config_file
+readonly darwin_drive_dir=/var/local/snapback
 
 function set-drive_dir() {
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
@@ -7512,6 +7512,9 @@ case $action in
 
 	set-drive_name ${1:-J}
 	fastest-snapshots /backup/E/2020-05-08,00 /backup/X/2020-05-08,00;_exit
+
+	# takes 2 ms w/1 SSD, 4.5 ms with 4 disks
+	for (( i=0; i < 2000; i++ )); do list-drive-dirs; done > $dev_null; _exit
 
 	signal-job -KILL $drive_monitor_lock_path; abort $?
 
