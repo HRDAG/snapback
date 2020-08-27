@@ -4516,7 +4516,7 @@ exec-watch-snapback-w() {
 		all_opts+=" -N ${drive_names// /,}"
 	fi
 	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
-	local n=$check_period_secs
+	local n=$mon_check_period_secs
 	exec watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 	abort-function "exec failed"
 }
@@ -5134,16 +5134,16 @@ readonly -f show-copy-cmds-with-full-details
 _start-monitor-drives-if-needed() {
 
 	if ! is-active-lock $drive_monitor_lock_path
-           then sleep 0.1	      # another process will probably start it
+           then sleep 0.11	      # another process will probably start it
 		is-active-lock $drive_monitor_lock_path && return
 
 		sudo $our_path monitor-drives || abort-function monitor-drives
 		until [[ -d $(dirname $drive_monitor_initialized_lock_path) ]]
-		   do	sleep 0.1
+		   do	sleep 0.12
 		done
 		while   lockpid    $drive_monitor_initialized_lock_path
 		   do	lockpid -r $drive_monitor_initialized_lock_path
-			sleep 0.1
+			sleep 0.13
 		done > $dev_null
 	fi
 }
@@ -5262,7 +5262,7 @@ readonly -f create-monitor-dirs
 
 lock-replica-of-snapshots() {
 
-	local sleep_msecs=$lock_replica_sleep_msecs
+	local sleep_msecs=$_lock_replica_sleep_msecs
 	local lock_file=${FUNCNAME#*lock-}.pid
 
 	umask 0				# so watch doesn't need sudo-lockpid
@@ -5320,19 +5320,19 @@ mon-process-finished-glob() {
 
 	local -i      now_msecs=$(date +%s%3N)
 	local -i    start_msecs=${drive_name2msecs[$drive_name]}
-	local -i response_msecs=now_msecs-start_msecs
+	local -i response_msecs=$now_msecs-$start_msecs-2 # -2 for overhead
 
 	local -i window_msecs=$(< $window_msecs_dir/$drive_name)
-	local -i sample_count=$window_msecs/$check_period_msecs
+	local -i sample_count=$window_msecs/$mon_check_period_msecs
 	(( $sample_count <= 0 )) && sample_count=1
 
-	if (( $response_msecs <= $check_period_msecs ))
+	if (( $response_msecs <= $mon_check_period_msecs ))
 	   then local samples=$response_msecs
 	   else # repeat $response_msecs if it spans multiple check-periods
 		local samples=
 		for ((  span=0, i=0;
 		       $span < $response_msecs && $i < $sample_count;
-			span+=$check_period_msecs, i++ ))
+			span+=$mon_check_period_msecs, i++ ))
 		    do	samples+="$response_msecs "
 		done
 	fi
@@ -5361,27 +5361,31 @@ readonly -f mon-process-finished-glob
 
 # -------------------------------------------------
 
-# check_period_msecs=200 & msec_increment=5 uses 25% of 1.8 GHz qi7-8565U core
-is-set          check_period_msecs ||	# can set custom value in $config_file
-declare -r -i   check_period_msecs=500	# when look for newly-attached drives
-set-division 2 $check_period_msecs 1000
-readonly        check_period_secs=$division
+is-set          mon_check_period_msecs ||  # can set custom value in $config_file
+declare -r -i   mon_check_period_msecs=500 # when look for newly-attached drives
+set-division 2 $mon_check_period_msecs 1000
+readonly        mon_check_period_secs=$division
 #
-is-set		msec_increment ||	# can set custom value in $config_file
-declare -r -i   msec_increment=10	# period for checking if drive responded
-set-division 3 $msec_increment 1000
-readonly         sec_increment=$division
+is-set		mon_msec_increment ||	# can set custom value in $config_file
+declare -r -i   mon_msec_increment=10	# period for checking if drive responded
+set-division 3 $mon_msec_increment 1000
+readonly         mon_sec_increment=$division
 #
-set-division 2 $msec_increment 10
+set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
-readonly lock_replica_sleep_msecs=$division
+readonly _lock_replica_sleep_msecs=$division
 
 mon-look-for-finished-globs() {
 
 	local -i  msecs=0
-	while (( $msecs < $check_period_msecs )) # not waited long?
-	   do	set -- ${drive_name2PID[*]}	 # any backgrounded globbing?
-		[[ $# == 0 ]] && break		 # if not, time to re-test
+	while (( $msecs < $mon_check_period_msecs )) # not waited long?
+	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
+		if [[ $# == 0 ]]	    # if not, stop looking
+		   then local -i remaining_msecs=$mon_check_period_msecs-$msecs
+			set-division 3 $remaining_msecs 1000
+			sleep $division
+			return
+		fi
 
 		local drive_name
 		for drive_name in ${!drive_name2PID[*]}
@@ -5393,8 +5397,8 @@ mon-look-for-finished-globs() {
 			mon-process-finished-glob $drive_name
 		done
 
-		sleep   $sec_increment
-		msecs+=$msec_increment
+		sleep   $mon_sec_increment
+		msecs+=$mon_msec_increment
 	done
 }
 readonly -f mon-look-for-finished-globs
