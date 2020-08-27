@@ -4374,8 +4374,7 @@ setup-snapshot-stats() {
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
-	echo "$drive_dirs" > $cached_drive_dirs_file.new &&
-	    mv $cached_drive_dirs_file.new $cached_drive_dirs_file
+	echo_to_file "$drive_dirs" $cached_drive_dirs_file
 	echo "$stats_number"	 >     $number_cache_file ; [[ $dates ]] && {
 	echo "$stats_oldest_age" > $oldest_age_cache_file
 	echo "$stats_newest_age" > $newest_age_cache_file		  ; }
@@ -5285,8 +5284,8 @@ mon-maybe-launch-ls() {
 	cd $drive_dir || return
 	# snapshot is non-empty if has subdirectories, so check link count
 	( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
-	     awk '$2 > 2 { print $(NF) }' > $partial_file.new &&
-					 mv $partial_file.new $partial_file ) &
+	     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
+					 mv $partial_file.$$ $partial_file ) &
 	ls_drive_name2PID[$drive_name]=$!
 	cd $OLDPWD
 }
@@ -5343,7 +5342,7 @@ mon-process-finished-glob() {
 	   else set --			$samples
 	fi
 	while (( $# > $sample_count )) ; do shift; done
-	echo $* > $msecs_file.new && mv $msecs_file.new $msecs_file
+	echo_to_file "$*" $msecs_file
 
 	mon-maybe-launch-ls
 
@@ -5427,8 +5426,7 @@ monitor-drive-update() {
 		set-customized_value--for-config-var-name \
 		    drive_response_averaging_window_msecs
 		local -i msecs=$customized_value
-		echo $msecs > $window_msecs_file.new &&
-			   mv $window_msecs_file.new $window_msecs_file
+		echo_to_file $msecs $window_msecs_file
 	done
 
 	[[ $do_check ]] &&
@@ -6526,9 +6524,8 @@ search-syslog-for-big-swapouts() {
 	_set-big_swapouts_record--from-syslog-file $log
 
 	create-status_dir
-	[[ ! $big_swapouts_record ]] && > $big_swapouts_file && return
-	echo $big_swapouts_record       > $big_swapouts_file.new &&
-	  mv $big_swapouts_file.new       $big_swapouts_file
+	[[ ! $big_swapouts_record ]]  &&  > $big_swapouts_file && return
+	echo_to_file "$big_swapouts_record" $big_swapouts_file
 }
 readonly -f search-syslog-for-big-swapouts
 
@@ -6697,8 +6694,8 @@ search-syslog-for-errors() {
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
 	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
-	    uniq -c > $cnt_msg_file.new &&
-		   mv $cnt_msg_file.new $cnt_msg_file ||
+	    uniq -c > $cnt_msg_file.$BASHPID &&
+		   mv $cnt_msg_file.$BASHPID $cnt_msg_file ||
 		       { ls -ld . $cnt_msg_file*; print-call-stack; }
 }
 readonly -f search-syslog-for-errors
