@@ -4178,12 +4178,12 @@ readonly -f count-snapshots-being-created-on-drive
 _set-age() {
 	local snapshot=$1
 
-	set-seconds--from-snapshot $snapshot
-	local -i snap_secs=$seconds
 	if [[ ${hour_ages-} ]]
-	   then age=$(( ($SECONDS - $snap_secs)/(60*60   ) ))
-	   else age=$(( ($SECONDS - $snap_secs)/(60*60*24) ))
+	   then local -i denominator=60*60    # seconds/hour
+	   else local -i denominator=60*60*24 # seconds/day
 	fi
+	set-seconds--from-snapshot $snapshot
+	age=$(( ( $SECONDS - $seconds + ($denominator/2) ) / $denominator ))
 }
 readonly -f _set-age
 
