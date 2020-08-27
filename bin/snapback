@@ -5366,8 +5366,8 @@ readonly -f mon-process-finished-glob
 # -------------------------------------------------
 
 is-set		mon_check_period_secs ||  # can set custom value in $config_file
-readonly	mon_check_period_secs=0.5 # when look for newly-attached drives
-set-product    $mon_check_period_secs 1000
+readonly	mon_check_period_secs=0.5 # when look for newly-attached drives,
+set-product    $mon_check_period_secs 1000 # and also used for watch -n period
 declare -r -i	mon_check_period_msecs=$product
 #
 is-set		mon_msec_increment ||	# can set custom value in $config_file
