@@ -4129,14 +4129,16 @@ readonly -f set-drive_usage
 
 # ----------------------------------------------------------------------------
 
-is-set	      drive_response_warning_msecs || # custom value in $config_file?
-declare -r -i drive_response_warning_msecs=1000
+is-set   drive_response_warning_secs || # custom value in $config_file?
+readonly drive_response_warning_secs=1.0
 
 set-drive_response() {
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
 
+	set-product $drive_response_warning_secs 1000
+	local drive_response_warning_msecs=$product
 	local drive_dir drive_name responses=
 	for drive_dir in $all_drive_dirs
 	    do	_set-drive_name $drive_dir
@@ -5360,15 +5362,15 @@ readonly -f mon-process-finished-glob
 
 # -------------------------------------------------
 
-is-set          mon_check_period_msecs ||  # can set custom value in $config_file
-declare -r -i   mon_check_period_msecs=500 # when look for newly-attached drives
-set-division 2 $mon_check_period_msecs 1000
-readonly        mon_check_period_secs=$division
+is-set		mon_check_period_secs ||  # can set custom value in $config_file
+readonly	mon_check_period_secs=0.5 # when look for newly-attached drives
+set-product    $mon_check_period_secs 1000
+declare -r -i	mon_check_period_msecs=$product
 #
 is-set		mon_msec_increment ||	# can set custom value in $config_file
-declare -r -i   mon_msec_increment=10	# period for checking if drive responded
+declare -r -i	mon_msec_increment=10	# period for checking if drive responded
 set-division 3 $mon_msec_increment 1000
-readonly         mon_sec_increment=$division
+readonly	mon_sec_increment=$division
 #
 set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
@@ -5425,9 +5427,9 @@ monitor-drive-update() {
 
 		local customized_value
 		set-customized_value--for-config-var-name \
-		    drive_response_averaging_window_msecs
-		local -i msecs=$customized_value
-		echo_to_file $msecs $window_msecs_file
+		    drive_response_averaging_window_secs
+		set-product $customized_value 1000
+		echo_to_file $product $window_msecs_file
 	done
 }
 readonly -f monitor-drive-update
@@ -7167,7 +7169,7 @@ case $action in
    # filesystem maintenance actions
    ###########################################################################
 
-   # monitor-drive-update: use configure.sh drive_response_averaging_window_msecs
+   # monitor-drive-update: configure.sh's drive_response_averaging_window_secs
    ( mon*u* | mu ) undo-action-abbrev monitor-drive-update; $Trace
 	monitor-drive-update
 	;;
