@@ -1536,6 +1536,9 @@ validate-config-variables() {
 	[[ $drive_dir_prefix == *[^$allowed_drive_name_dir_chars/]* ]] &&
 	   abort "drive_dir_prefix has disallowed chars (ask $coder to allow)"
 
+	(( $drive_response_averaging_window_secs > $mon_check_period_secs )) ||
+	    abort "drive_response_averaging_window_secs too small"
+
 	# these config file(s) will be mentioned in the following error msg
 	set -- $config_file ${drive_specific_config_file-}
 
