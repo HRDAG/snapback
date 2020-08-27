@@ -4516,7 +4516,7 @@ exec-watch-snapback-w() {
 		all_opts+=" -N ${drive_names// /,}"
 	fi
 	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
-	[[ ${SSH_TTY-} ]] && local n=1.0 || local n=0.5
+	local n=$check_period_secs
 	exec watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 	abort-function "exec failed"
 }
@@ -5362,8 +5362,10 @@ readonly -f mon-process-finished-glob
 # -------------------------------------------------
 
 # check_period_msecs=200 & msec_increment=5 uses 25% of 1.8 GHz qi7-8565U core
-is-set        check_period_msecs ||	# can set custom value in $config_file
-declare -r -i check_period_msecs=200	# when look for newly-attached drives
+is-set          check_period_msecs ||	# can set custom value in $config_file
+declare -r -i   check_period_msecs=500	# when look for newly-attached drives
+set-division 2 $check_period_msecs 1000
+readonly        check_period_secs=$division
 #
 is-set		msec_increment ||	# can set custom value in $config_file
 declare -r -i   msec_increment=10	# period for checking if drive responded
