@@ -89,9 +89,9 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # how long monitor-drives sleeps between checks to see if a drive responded
 # msec_increment=5			# might want < 10 for SSDs
 
-# minimum time period over which we calculate a running-average of drive_response
-declare -i average_the_drive_response_over_msecs=2000
-  drv_name2average_the_drive_response_over_msecs[X]=1000 # SSD
+# time period over which we calculate a moving-average of drive_response
+declare -i drive_response_averaging_window_msecs=2000
+  drv_name2drive_response_averaging_window_msecs[X]=1000 # SSD
 
 # -----------------------
 # monitoring swapout rate

@@ -5380,7 +5380,7 @@ monitor-drive-update() {
 		fi
 
 		set-customized_value--for-config-var-name \
-		    average_the_drive_response_over_msecs
+		    drive_response_averaging_window_msecs
 		local -i count=$customized_value/$check_period_msecs
 		(( $count <= 0 )) && count=1
 		echo $count > $samples.new && mv $samples.new $samples
@@ -7125,7 +7125,7 @@ case $action in
    # filesystem maintenance actions
    ###########################################################################
 
-   # monitor-drive-update: use configure.sh average_the_drive_response_over_msecs
+   # monitor-drive-update: use configure.sh drive_response_averaging_window_msecs
    ( mon*u* | mu ) undo-action-abbrev monitor-drive-update; $Trace
 	monitor-drive-update
 	;;
