@@ -5374,13 +5374,16 @@ set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
 readonly _lock_replica_sleep_msecs=$division
 
+readonly drive_monitor_initialized_lock_path=$_mon_lock_dir/initialized.pid
+
 mon-look-for-finished-globs() {
 
 	local -i  msecs=0
 	while (( $msecs < $mon_check_period_msecs )) # not waited long?
 	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
 		if [[ $# == 0 ]]	    # if not, stop looking
-		   then local -i remaining_msecs=$mon_check_period_msecs-$msecs
+		   then lockpid -q --wait $drive_monitor_initialized_lock_path
+			local -i remaining_msecs=$mon_check_period_msecs-$msecs
 			set-division 3 $remaining_msecs 1000
 			sleep $division
 			return
@@ -5404,8 +5407,6 @@ readonly -f mon-look-for-finished-globs
 
 # ----------------------------------------------------------------------------
 
-readonly drive_monitor_initialized_lock_path=$_mon_lock_dir/initialized.pid
-
 monitor-drive-update() {
 	[[ ${1-} == -c ]] && { shift; local do_check=$true; } || local do_check=
 	[[ $# == 0 ]] && set-drive_names -a && set -- $drive_names
@@ -5428,9 +5429,6 @@ monitor-drive-update() {
 		local -i msecs=$customized_value
 		echo_to_file $msecs $window_msecs_file
 	done
-
-	[[ $do_check ]] &&
-	lockpid --wait $drive_monitor_initialized_lock_path > $dev_null
 }
 readonly -f monitor-drive-update
 
