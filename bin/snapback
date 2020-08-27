@@ -5326,13 +5326,16 @@ mon-process-finished-glob() {
 	local -i sample_count=$window_msecs/$check_period_msecs
 	(( $sample_count <= 0 )) && sample_count=1
 
-	# repeat $response_msecs if it spans multiple check-periods
-	local samples=
-	for ((  span=0, i=0;
-	       $span < $response_msecs && $i < $sample_count;
-	        span+=$check_period_msecs, i++ ))
-	    do	samples+="$response_msecs "
-	done
+	if (( $response_msecs <= $check_period_msecs ))
+	   then local samples=$response_msecs
+	   else # repeat $response_msecs if it spans multiple check-periods
+		local samples=
+		for ((  span=0, i=0;
+		       $span < $response_msecs && $i < $sample_count;
+			span+=$check_period_msecs, i++ ))
+		    do	samples+="$response_msecs "
+		done
+	fi
 
 	local msecs_file=$drive_msecs_dir/$drive_name
 	if [[ -s $msecs_file ]]
