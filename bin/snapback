@@ -3899,7 +3899,7 @@ readonly -f set-drive_names--from-user-args
 
 # ---------------------------------
 
-_set-function-exe-writer_type() {
+_set-function-our_exe-writer_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
@@ -3910,10 +3910,10 @@ _set-function-exe-writer_type() {
 	   ( copy   ) function=copy-snapshots	writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
-	local  exe_varname=${function/-/_}_exe
-	exe=${!exe_varname}
+	local our_exe_varname=${function/-/_}_exe
+	our_exe=${!our_exe_varname}
 }
-readonly -f _set-function-exe-writer_type
+readonly -f _set-function-our_exe-writer_type
 
 # ---------------------------------
 
@@ -3960,7 +3960,7 @@ create-jobs() {
 	[[ ! $debug_opt ]] && set-reversed_words $* &&
 	   set -- $reversed_words	# 'ps' shows newest process first
 
-	_set-function-exe-writer_type $type
+	_set-function-our_exe-writer_type $type
 
 	if [[ $are_recursing ]]
 	   then $Trace
@@ -3984,8 +3984,8 @@ create-jobs() {
 		   then trap '' HUP
 			# Want new process-group so can ps/kill independently.
 			setsid \
-			$exe $opts -r $name &
-		   else $exe $opts -r $name # run in foreground, for testing
+			$our_exe $opts -r $name &
+		   else $our_exe $opts -r $name # run in foreground, for testing
 			echo
 		fi
 		set +x			# uncomment to just debug one drive
