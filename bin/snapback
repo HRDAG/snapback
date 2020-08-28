@@ -969,9 +969,10 @@ function kill-job-on-drives() {
 			signal-job $signal $path && status=0
 			[[ $signal_is_stop && $type != b* ]] || continue
 
-			local coder_msg="\nask $coder to fix this"
-			local  cron_msg="cron (default is every 5 minutes)"
-			warn "$cron_msg could un-suspend $path; $coder_msg"
+			local lock=$(basename $path)
+			local coder_msg="can ask $coder to fix this."
+			local  cron_msg="cron (runs every 5 minutes by default)"
+			warn "$cron_msg could un-suspend\n   $lock; $coder_msg"
 
 		fi
 	done
