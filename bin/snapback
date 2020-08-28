@@ -5668,7 +5668,7 @@ filesystem-geometry() {
 	run-lsblk $drive_dirs
 	echo
 
-	[[ $UID == 0 ]] || return
+	[[ $UID == 0 || $action == df ]] || return
 
 	local dash="------" dsh="---------------" # alternate header
 	local dash="======" dsh="==============="
@@ -5679,7 +5679,6 @@ filesystem-geometry() {
       printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
 	local drive_dir			# protect caller's value
-# [[ $is_cron ]] && echoEV  drive_dirs
 	for drive_dir in $drive_dirs
 	    do	set-FS_type--from-path $drive_dir
 		set-FS_device--from-path $drive_dir
@@ -5690,7 +5689,7 @@ filesystem-geometry() {
 		case $FS_type in
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
-			RunCmd sudo tune2fs -l $FS_device > $tmp_1
+			sudo -n tune2fs -l $FS_device > $tmp_1 || return
 			[[ ! $dev ]] && sector= ||
 			sector=$(< /sys/block/$dev/queue/physical_block_size)
 			inode=$(sed -n 's/^Inode size:.* //p' $tmp_1)
