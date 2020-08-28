@@ -2764,7 +2764,7 @@ set-hours--from-minutes 10
 
 # ----------------------
 
-set-seconds--from-msecs() {
+set-secs--from-msecs() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  msecs=$2
 	   else local decimal_digits_opt=-2  msecs=$1
@@ -2772,9 +2772,9 @@ set-seconds--from-msecs() {
 
 	local division
 	set-division $decimal_digits_opt $msecs 1000
-	seconds=$division
+	secs=$division
 }
-readonly -f set-seconds--from-msecs
+readonly -f set-secs--from-msecs
 
 # ---------------------------------
 
@@ -4153,8 +4153,8 @@ set-drive_response() {
 		local -i msecs=$average
 
 		if (( $msecs <= 99999 ))
-		   then set-seconds--from-msecs $msecs
-			set-padded_number $seconds
+		   then set-secs--from-msecs $msecs
+			set-padded_number $secs
 			local secs=$padded_number
 			if (( $msecs >= $drive_response_warning_msecs ))
 			   then set-warning_string warning $secs
@@ -5371,8 +5371,8 @@ declare -r -i	mon_check_period_msecs=$product
 #
 is-set		mon_msec_increment ||	# can set custom value in $config_file
 declare -r -i	mon_msec_increment=10	# period for checking if drive responded
-set-seconds--from-msecs -3 $mon_msec_increment
-readonly	mon_sec_increment=$seconds
+set-secs--from-msecs -3 $mon_msec_increment
+readonly	mon_sec_increment=$secs
 #
 set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
@@ -5388,8 +5388,8 @@ mon-look-for-finished-globs() {
 		if [[ $# == 0 ]]	    # if not, stop looking
 		   then lockpid --wait $mon_initialized_lock_path > $dev_null
 			local -i remaining_msecs=$mon_check_period_msecs-$msecs
-			set-seconds--from-msecs -3 $remaining_msecs
-			sleep $seconds
+			set-secs--from-msecs -3 $remaining_msecs
+			sleep $secs
 			return
 		fi
 
