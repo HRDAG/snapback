@@ -2814,9 +2814,9 @@ readonly stats_dir=$log_dir/stats
 readonly rsync_time_basename=rsync-minutes
 
 function set-rsync_time_subdir() {
-	local _writer_type=${1:-$writer_type}
+	local  writer_type=${1:-$writer_type}
 
-	rsync_time_subdir=stats/$_writer_type/$rsync_time_basename
+	rsync_time_subdir=stats/$writer_type/$rsync_time_basename
 	[[ -d $rsync_time_subdir ]]
 }
 readonly -f set-rsync_time_subdir
@@ -2887,15 +2887,14 @@ record-rsync-time() {
 	   else eval "$cmd"
 	fi || return 1
 
-	local -i number_files_per_day=24/$backup_period
-	local -i number_files_to_keep=$number_files_per_day*$days_to_keep
 	set -- ${file%/*}/$snapshot_glob.txt
 	[[ $# != 0 ]] || return
 	# copy'ed snapshots aren't copied in date,time order, so use file time
-	set -- $(ls -t -r $*)		# oldest (by file time) first
-	while (( $# > $number_files_to_keep ))
-	    do	$IfRun rm $1
-		shift
+	local min_date_TS=$tmp_1
+	local old_date=$(date -d "-$days_to_keep days")
+	touch --date="$old_date" $min_date_TS
+	for file
+	    do	[[ $file -ot $min_date_TS ]] && $IfRun rm $file
 	done
 }
 readonly -f record-rsync-time
