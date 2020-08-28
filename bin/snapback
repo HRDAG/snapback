@@ -588,7 +588,7 @@ _set-wait_opt() {
 	[[ $do_wait ]] || { wait_opt= ; return; }
 	wait_opt=--wait
 	[[ ! $is_cron ]] && return	# interactive user waits for lock
-	[[ $type == backup && ! $is_copy ]] || return # we're for backup-drive
+	[[ $writer_type == backup ]] || return # only backup-drive is fancy
 
 	[[ $is_cron ]] && continue-jobs $type # user suspended earlier backup?
 
@@ -657,14 +657,12 @@ declare -A _lock_type_name2lock_path
 # Usage: lock [-w [-c]] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed;
-#    if -c also, it's a Copy (or update) not backup, so no trickiness.
 #    If -P, called by Prevent-Pruning, doesn't matter if backup running.
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 #	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -w ]] && { shift; local  do_wait=$true;} || local  do_wait=
-	[[ ${1-} == -c ]] && { shift; local  is_copy=$true;} || local  is_copy=
 	[[ ${1-} == -P ]] && { shift; local no_prune=$true;} || local no_prune=
 	assert-not-option "${1-}"
 	[[ $# == [12] ]] || abort-function "[-w [-c]] type resource"
@@ -2776,13 +2774,12 @@ readonly -f set-seconds--from-msecs
 readonly stats_dir=$log_dir/stats
 
 readonly rsync_time_basename=rsync-minutes
-readonly backup_rsync_time_subdir=stats/backup/$rsync_time_basename
-readonly   copy_rsync_time_subdir=stats/copy/$rsync_time_basename
 
-set-rsync_time_subdir() {
+function set-rsync_time_subdir() {
+	local _writer_type=${1:-$writer_type}
 
-	[[ ${is_copy_snapshot-} ]] && local type=copy || local type=backup
-	rsync_time_subdir=stats/$type/$rsync_time_basename
+	rsync_time_subdir=stats/$_writer_type/$rsync_time_basename
+	[[ $rsync_time_subdir ]]
 }
 readonly -f set-rsync_time_subdir
 
@@ -2804,21 +2801,20 @@ readonly -f rm-dangling-symlinks
 
 archive-rsync-time-data() {
 
-	is_copy_snapshot=
-	while true
-	    do	set-rsync_time_subdir
+	local type
+	for type in $writer_types
+	    do	set-rsync_time_subdir $type || continue
 		local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
-		mkdir -p $rsync_time_dir
-		cd $rsync_time_dir && {
-		set -- *.txt &&
+
+		cd_ $rsync_time_dir
+		set -- *.txt
 		if [[ $# != 0 ]]
 		   then set-date_time -r .
-			dir=$PWD/.${date_time%,*} # absolute path, for $and -v
+			dir=$PWD/.${date_time%,*} # absolute path, for -v
 			$IfRun mkdir -p    $dir
 			$IfRun mv -v *.txt $dir/
-		fi; true; } && cd $OLDPWD
-		[[ $is_copy_snapshot ]] && break
-		    is_copy_snapshot=$true
+		fi
+		cd $OLDPWD
 	done
 }
 readonly -f archive-rsync-time-data
@@ -2979,7 +2975,7 @@ function _run-rsync-cmd() {
 
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
-	[[ ! $is_copy_snapshot ]] &&
+	[[ $writer_type != copy ]] &&
 	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
 	set -- $partial_dst/*
@@ -3008,11 +3004,6 @@ readonly -f _run-rsync-cmd
 # -------------------------------------------------------
 
 function run-rsync() {
-	if [[ $1 == -c ]]
-	   then shift
-		local is_copy_snapshot=$true
-	   else local is_copy_snapshot=$false
-	fi
 	assert-not-option "${1-}"
 	local dst_snapshot=${!#}
 	local src_dirs=${*%$dst_snapshot}
@@ -3024,7 +3015,7 @@ function run-rsync() {
 
 	set-partial_dst $dst_snapshot
 
-	[[ ! $is_copy_snapshot ]] &&   # copy keeps original mtime
+	[[ $writer_type != copy ]] &&  # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
 	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
 	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
@@ -3033,7 +3024,7 @@ function run-rsync() {
 	} &
 
 	suspend-tracing
-	if [[ ! $is_copy_snapshot ]]
+	if [[ $writer_type != copy ]]
 	   then set-link_dest_opts--for-backup-drive  $dst_snapshot
 	   else set-link_dest_opts--for-copy-snapshot $dst_snapshot
 	fi
@@ -3042,13 +3033,12 @@ function run-rsync() {
 	_run-rsync-cmd
 	local status=$?
 
-	[[ ! $is_copy_snapshot ]] &&
+	[[ $writer_type != copy ]] &&
 	$IfRun touch $partial_dst	# 'when we finished', not mdate of src
 
 	_handle-rsync-results $dst_snapshot $status $log
 
-	[[ $is_copy_snapshot ]] && local our_lock=copy || local our_lock=backup
-	sync-drive-unless-writers $our_lock
+	sync-drive-unless-writers $writer_type
 
 	return $status
 }
@@ -3408,7 +3398,7 @@ function copy-snapshots() {
 
 	lock -w copy || exit-normally 1
 
-	[[ $lock_bkp ]] && lock -w -c backup
+	[[ $lock_bkp ]] && lock -w backup
 	local status=0
 	for src_snapshot in $src_snapshots
 	    do	copy-snapshot $quiet_opt $src_snapshot $drive_name ||
@@ -3432,8 +3422,8 @@ function copy-snapshot-rsync() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then if [[ ! ${lock_bkp-} ]]
-		   then lock -w -c backup || return 1 # wait for backup ...
-			unlock     backup	      # ... but don't hold lock
+		   then lock -w backup || return 1 # wait for backup ...
+			unlock  backup		   # ... but don't hold lock
 		fi
 
 		set-copy_PGID--if-copy-src || # 2 drives copying to each other?
@@ -3450,7 +3440,7 @@ function copy-snapshot-rsync() {
 	set-priority copy
 
 	cd_ ${dst_snapshot%/*}	     # can kill job with: fuser -k -M $dst_dir
-	run-rsync -c $src_snapshot/. $dst_snapshot; local status=$?
+	run-rsync $src_snapshot/. $dst_snapshot; local status=$?
 	cd_ $OLDPWD
 	previously_copied_snapshot=$dst_snapshot
 
@@ -3892,21 +3882,21 @@ readonly -f set-drive_names--from-user-args
 
 # ---------------------------------
 
-_set-function-exe-lock_type() {
+_set-function-exe-writer_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
-	   ( backup ) readonly function=backup-drive   lock_type=backup ;;
-	   ( prune  ) readonly function=prune-drive    lock_type=prune  ;;
-	   ( update ) readonly function=update-drive   lock_type=copy   ;;
-	   ( copy   ) readonly function=copy-snapshots lock_type=copy   ;;
+	   ( backup ) readonly function=backup-drive   writer_type=backup ;;
+	   ( prune  ) readonly function=prune-drive    writer_type=prune  ;;
+	   ( update ) readonly function=update-drive   writer_type=copy   ;;
+	   ( copy   ) readonly function=copy-snapshots writer_type=copy   ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
 	local  exe_varname=${function/-/_}_exe
 	readonly exe=${!exe_varname}
 }
-readonly -f _set-function-exe-lock_type
+readonly -f _set-function-exe-writer_type
 
 # ---------------------------------
 
@@ -3953,7 +3943,7 @@ create-jobs() {
 	[[ ! $debug_opt ]] && set-reversed_words $* &&
 	   set -- $reversed_words	# 'ps' shows newest process first
 
-	_set-function-exe-lock_type $type
+	_set-function-exe-writer_type $type
 
 	if [[ $are_recursing ]]
 	   then $Trace
@@ -4078,11 +4068,6 @@ readonly -f set-hour_avg-hour_max--from-files-of-minutes
 # --------------------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
-	if [[ ${1-} == -c ]]
-	   then shift
-		local is_copy_snapshot=$true
-	   else local is_copy_snapshot=$false
-	fi
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
