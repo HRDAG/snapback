@@ -654,7 +654,7 @@ readonly -f _set-wait_opt
 
 declare -A _lock_type_name2lock_path
 
-# Usage: lock [-w [-c]] type resource
+# Usage: lock [-w] [-P] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
 #    If -w and lock is held by other job, Wait for lock to be freed;
 #    If -P, called by Prevent-Pruning, doesn't matter if backup running.
@@ -665,7 +665,7 @@ function lock() {
 	[[ ${1-} == -w ]] && { shift; local  do_wait=$true;} || local  do_wait=
 	[[ ${1-} == -P ]] && { shift; local no_prune=$true;} || local no_prune=
 	assert-not-option "${1-}"
-	[[ $# == [12] ]] || abort-function "[-w [-c]] type resource"
+	[[ $# == [12] ]] || abort-function "[-w] [-P] type resource"
 	local type name
 	 _set-type-name "$@"
 	local drive_name=$name
@@ -2779,7 +2779,7 @@ function set-rsync_time_subdir() {
 	local _writer_type=${1:-$writer_type}
 
 	rsync_time_subdir=stats/$_writer_type/$rsync_time_basename
-	[[ $rsync_time_subdir ]]
+	[[ -d $rsync_time_subdir ]]
 }
 readonly -f set-rsync_time_subdir
 
