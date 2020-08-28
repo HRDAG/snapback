@@ -7115,10 +7115,11 @@ case $action in
 	;;
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
-   # df [-a][-A]: show filesystem details; -A adds non-backup drives
+   # df [-A]: show filesystem details; -A adds non-backup drives
    ( l*s*dr*v* | ld | ll | ls | lw | df )
 	case $action in
-	    ( lw | df )	filesystem-geometry "$@" ;;
+	    ( lw | df )	[[ ${1-} == -[aA] ]] || set -- -a "$@"
+			filesystem-geometry "$@" ;;
 	    ( * )	list-drive-dirs     "$@" ;;
 	esac
 	;;
