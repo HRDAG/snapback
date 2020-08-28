@@ -3887,14 +3887,14 @@ _set-function-exe-writer_type() {
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
-	   ( backup ) readonly function=backup-drive   writer_type=backup ;;
-	   ( prune  ) readonly function=prune-drive    writer_type=prune  ;;
-	   ( update ) readonly function=update-drive   writer_type=copy   ;;
-	   ( copy   ) readonly function=copy-snapshots writer_type=copy   ;;
+	   ( backup ) function=backup-drive	writer_type=backup  ;;
+	   ( prune  ) function=prune-drive	writer_type=prune   ;;
+	   ( update ) function=update-drive	writer_type=copy    ;;
+	   ( copy   ) function=copy-snapshots	writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
 	local  exe_varname=${function/-/_}_exe
-	readonly exe=${!exe_varname}
+	exe=${!exe_varname}
 }
 readonly -f _set-function-exe-writer_type
 
@@ -5136,21 +5136,20 @@ readonly -f show-copy-cmds-with-full-details
 
 _start-monitor-drives-if-needed() {
 
-	if ! is-active-lock $drive_monitor_lock_path
-           then sleep 0.11	      # another process will probably start it
-		is-active-lock $drive_monitor_lock_path && return
+	is-active-lock $drive_monitor_lock_path && return
 
-		sudo $our_path monitor-drives || abort-function monitor-drives
-		until [[ -d $(dirname $drive_monitor_initialized_lock_path) ]]
-		   do	sleep 0.12
-		done
-		while   lockpid    $drive_monitor_initialized_lock_path
-		   do	lockpid -r $drive_monitor_initialized_lock_path
-			sleep 0.13
-		done > $dev_null
-	fi
+	sudo $our_path monitor-drives || abort-function monitor-drives
+	until [[ -d $(dirname $mon_initialized_lock_path) ]]
+	   do	sleep 0.12
+	done
+	while   lockpid    $mon_initialized_lock_path
+	   do	lockpid -r $mon_initialized_lock_path
+		sleep 0.13
+	done > $dev_null
 }
 readonly -f _start-monitor-drives-if-needed
+
+# ------------------------------------------------------------------
 
 watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
@@ -5378,7 +5377,7 @@ set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
 readonly _lock_replica_sleep_msecs=$division
 
-readonly drive_monitor_initialized_lock_path=$_mon_lock_dir/initialized.pid
+readonly mon_initialized_lock_path=$_mon_lock_dir/initialized.pid
 
 mon-look-for-finished-globs() {
 
@@ -5386,7 +5385,7 @@ mon-look-for-finished-globs() {
 	while (( $msecs < $mon_check_period_msecs )) # not waited long?
 	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
 		if [[ $# == 0 ]]	    # if not, stop looking
-		   then lockpid -q --wait $drive_monitor_initialized_lock_path
+		   then lockpid --wait $mon_initialized_lock_path > $dev_null
 			local -i remaining_msecs=$mon_check_period_msecs-$msecs
 			set-division 3 $remaining_msecs 1000
 			sleep $division
