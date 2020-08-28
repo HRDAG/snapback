@@ -5341,10 +5341,15 @@ mon-launch-globs() {
 		drive_name2PID[$drive_name]=$!
 		drive_name2msecs[$drive_name]=$now_msecs
 
-		[[ $drive_name != $mon_overhead_drive_name ]] || continue
+		if [[ $drive_name == $mon_overhead_drive_name ]]
+		   then local mon_msec_increment=2  mon_sec_increment=0.002
+			mon-look-for-finished-globs $drive_name
+			continue	# don't need *.partial code
+		fi
+
 		local  PID=${ls_drive_name2PID[$drive_name]-}
 		[[ $PID ]] && kill -0 $PID 2> $dev_null && continue # running?
-
+		#
 		local partial_file=$non_empty_partial_dir/$drive_name
 		# snapshot is non-empty if has subdirectories: check link count
 		( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
@@ -5412,9 +5417,9 @@ set-msecs--from-secs $mon_check_period_secs # and also used for watch -n period
 declare -r -i	mon_check_period_msecs=$msecs
 #
 is-set		mon_msec_increment ||	# can set custom value in $config_file
-declare -r -i	mon_msec_increment=10	# period for checking if drive responded
+declare -i	mon_msec_increment=10	# period for checking if drive responded
 set-secs--from-msecs -3 $mon_msec_increment
-readonly	mon_sec_increment=$secs
+		mon_sec_increment=$secs
 #
 set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
@@ -5422,13 +5427,17 @@ readonly _lock_replica_sleep_msecs=$division
 
 readonly mon_initialized_lock_path=$_mon_lock_dir/initialized.pid
 
+# pass a single drive_name for "solitary" processing (to measure overhead)
 mon-look-for-finished-globs() {
+	[[ $# == [01] ]] || abort-function "[drive_name]"
+	local _drive_name=${1-}
 
 	local -i  msecs=0
 	while (( $msecs < $mon_check_period_msecs )) # not waited long?
 	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
 		if [[ $# == 0 ]]	    # if not, stop looking
-		   then lockpid --wait $mon_initialized_lock_path > $dev_null
+		   then [[ $_drive_name ]] && abort-function "logic error"
+			lockpid --wait $mon_initialized_lock_path > $dev_null
 			local -i remaining_msecs=$mon_check_period_msecs-$msecs
 			set-secs--from-msecs -3 $remaining_msecs
 			sleep $secs
@@ -5436,13 +5445,15 @@ mon-look-for-finished-globs() {
 		fi
 
 		local drive_name
-		for drive_name in ${!drive_name2PID[*]}
+		for drive_name in ${_drive_name:-${!drive_name2PID[*]}}
 		    do	local  PID=${drive_name2PID[$drive_name]}
-			[[ $PID ]] || continue		      # already done?
-			kill -0 $PID 2> $dev_null && continue # still running?
-			drive_name2PID[$drive_name]=	      # just finished
+			[[ $PID ]] && kill -0 $PID 2> $dev_null &&
+			    continue			    # hasn't finished
+			drive_name2PID[$drive_name]=	    # just finished
+			unset "drive_name2PID[$drive_name]" # (might not work)
 
 			mon-process-finished-glob $drive_name &
+			[[ $_drive_name ]] && wait $! && return
 		done
 
 		sleep   $mon_sec_increment
@@ -5499,7 +5510,7 @@ monitor-drives() {
 	local -A ls_drive_name2PID	# ditto
 	while true			# monitor forever
 	    do	set-drive_names -a	# see if a new drive appeared
-		# $mon_overhead_drive_name first, else "absorbs" other overhead
+		# $mon_overhead_drive_name *must* be first, see $_drive_name code
 		drive_names="$mon_overhead_drive_name $drive_names"
 		monitor-drive-update -c $drive_names # was confgure.sh updated?
 		mon-launch-globs $drive_names
