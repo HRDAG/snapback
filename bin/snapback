@@ -4068,6 +4068,8 @@ readonly -f set-hour_avg-hour_max--from-files-of-minutes
 # --------------------------------------------
 
 set-rsync_hour_avgs-rsync_hour_maxs() {
+	local writer_type=$1
+
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
@@ -4093,6 +4095,7 @@ readonly -f set-rsync_hour_avgs-rsync_hour_maxs
 # ----------------------------------------------------------------------------
 
 set-drive_usage() {
+
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
@@ -4127,6 +4130,7 @@ is-set   drive_response_warning_secs || # custom value in $config_file?
 readonly drive_response_warning_secs=1.0
 
 set-drive_response() {
+
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
 
 	set-stats_format $all_drive_dirs
@@ -4883,7 +4887,7 @@ show-stats-section-1() {
 
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
-	set-rsync_hour_avgs-rsync_hour_maxs
+	set-rsync_hour_avgs-rsync_hour_maxs backup
 	echo "Average hours to create backup snapshot:  $rsync_hour_avgs"
 	echo "Maximum hours to create backup snapshot:  $rsync_hour_maxs"
 	setup-snapshot-stats -h ''
@@ -4898,7 +4902,7 @@ show-stats-section-1() {
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
 	echo " Number empty .partial dirs, for update:  $stats_number"
-	set-rsync_hour_avgs-rsync_hour_maxs -c
+	set-rsync_hour_avgs-rsync_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
 }
 readonly -f show-stats-section-1
