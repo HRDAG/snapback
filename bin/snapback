@@ -4152,15 +4152,20 @@ set-drive_response() {
 
 	set-stats_format $all_drive_dirs
 
+	local -i average
+	set-average $drive_msecs_dir/$mon_overhead_drive_name
+	local -i overhead_msecs=$average
+
 	set-msecs--from-secs $drive_response_warning_secs
 	local drive_response_warning_msecs=$msecs
+
 	local drive_dir drive_name responses=
 	for drive_dir in $all_drive_dirs
 	    do	_set-drive_name $drive_dir
 
-		local -i average
 		set-average $drive_msecs_dir/$drive_name
-		local -i msecs=$average
+		local -i msecs=$average-$overhead_msecs
+		(( $msecs < 0 )) && msecs=0
 
 		if (( $msecs <= 99999 ))
 		   then set-secs--from-msecs $msecs
