@@ -811,6 +811,19 @@ readonly -f set-signal_is_kill
 
 # ----------------------
 
+function set-signal_is_stop() {
+	local signal=${1#-}
+
+	case ${signal^^} in
+	   ( SIGSTOP | STOP | 19 )
+		signal_is_stop=$true  ; return 0 ;;
+	   ( *)	signal_is_stop=$false ; return 1 ;;
+	esac
+}
+readonly -f set-signal_is_stop
+
+# ----------------------
+
 function is-active-lock() {
 	set-lock_paths "$@"
 
@@ -927,6 +940,7 @@ function kill-job-on-drives() {
 	set-lock_paths "$@" || return 1
 
 	set-signal_is_kill $signal
+	set-signal_is_stop $signal
 	local path status=1		# assume nothing we're allowed to kill
 	for path in $lock_paths
 	    do	if [[ $path == $drive_monitor_lock_path ]]
@@ -953,6 +967,12 @@ function kill-job-on-drives() {
 			status=0
 		   else [[ $is_monitor_lock ]] && continue
 			signal-job $signal $path && status=0
+			[[ $signal_is_stop && $type != b* ]] || continue
+
+			local coder_msg="\nask $coder to fix this"
+			local  cron_msg="cron (default is every 5 minutes)"
+			warn "$cron_msg could un-suspend $path; $coder_msg"
+
 		fi
 	done
 
