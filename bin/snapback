@@ -4055,6 +4055,7 @@ set-average-maximum--from-files-of-numbers() {
 		(( maximum<number )) &&
 		   maximum=number
 	done
+	(( $sum > 0 )) || maximum=0
 	declare -g -i average=$(( ($sum+($#/2)) / $# ))
 }
 readonly -f set-average-maximum--from-files-of-numbers
@@ -4172,9 +4173,13 @@ set-drive_response() {
 
 	set-stats_format $all_drive_dirs
 
-	local -i average
-	set-average $drive_msecs_dir/$mon_overhead_drive_name
-	local -i overhead_msecs=$average
+	local overhead_msecs_file=$drive_msecs_dir/$mon_overhead_drive_name
+	if [[ -s $overhead_msecs_file ]]
+	   then local -i average
+		set-average $overhead_msecs_file
+		local -i overhead_msecs=$average
+	   else local -i overhead_msecs=0
+	fi
 
 	set-msecs--from-secs $drive_response_warning_secs
 	local drive_response_warning_msecs=$msecs
@@ -4187,7 +4192,7 @@ set-drive_response() {
 		local -i msecs=$average-$overhead_msecs
 		(( $msecs < 0 )) && msecs=0
 
-		if (( $msecs <= 99999 ))
+		if (( $msecs <= 99999 )) # fits in alloted format?
 		   then set-secs--from-msecs $msecs
 			set-padded_number $secs
 			local secs=$padded_number
