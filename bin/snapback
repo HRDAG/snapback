@@ -4148,10 +4148,9 @@ set-drive_response() {
 	for drive_dir in $all_drive_dirs
 	    do	_set-drive_name $drive_dir
 
-		set -- $(< $drive_msecs_dir/$drive_name)
-		local samples=$*
-		local -i count=$#
-		local -i msecs=$(( ( ${samples// /+} + ($count/2) ) / $count ))
+		local -i average
+		set-average $drive_msecs_dir/$drive_name
+		local -i msecs=$average
 
 		if (( $msecs <= 99999 ))
 		   then set-seconds--from-msecs $msecs
