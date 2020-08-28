@@ -1320,7 +1320,10 @@ readonly -f set-drive_name
 function _set-drive_dir() {
 	local name=${1:-$drive_name}
 
-	drive_dir=$drive_dir_prefix$name
+	if [[ $name == $mon_overhead_drive_name ]]
+	   then drive_dir=$mon_overhead_drive_dir
+	   else drive_dir=$drive_dir_prefix$name
+	fi
 	[[ -d $drive_dir ]] || warn "'$name' not mounted"
 }
 readonly -f _set-drive_dir
@@ -4151,8 +4154,8 @@ set-drive_response() {
 		local -i msecs=$(( ( ${samples// /+} + ($count/2) ) / $count ))
 
 		if (( $msecs <= 99999 ))
-		   then set-division 2 $msecs 1000
-			set-padded_number $division
+		   then set-seconds--from-msecs $msecs
+			set-padded_number $seconds
 			local secs=$padded_number
 			if (( $msecs >= $drive_response_warning_msecs ))
 			   then set-warning_string warning $secs
@@ -5280,25 +5283,8 @@ readonly -f lock-replica-of-snapshots
 
 # ----------------------------------------------------------------------------
 
-mon-maybe-launch-ls() {
-	local drive_name=${1:-$drive_name}
-
-	local PID=${ls_drive_name2PID[$drive_name]-}
-	[[ $PID ]] && kill -0 $PID 2> $dev_null && return # still running?
-
-	local partial_file=$non_empty_partial_dir/$drive_name
-	_set-drive_dir $drive_name
-	cd $drive_dir || return
-	# snapshot is non-empty if has subdirectories, so check link count
-	( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
-	     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
-					 mv $partial_file.$$ $partial_file ) &
-	ls_drive_name2PID[$drive_name]=$!
-	cd $OLDPWD
-}
-readonly -f mon-maybe-launch-ls
-
-# ------------------------------------------------------------------
+readonly mon_overhead_drive_name=_RAM_
+readonly mon_overhead_drive_dir=$snapshots_replica_dir
 
 mon-launch-globs() {
 
@@ -5308,14 +5294,27 @@ mon-launch-globs() {
 		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
 
 		cd $drive_dir || continue
+
 		local glob_file=$_mon_globs_dir/$drive_name
 		local -i now_msecs=$(date +%s%3N) # takes ~1 msec to fork+exec
 		# if $ls_drive_name2PID[$drive_name] still alive, will slow this:
 		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
 		drive_name2PID[$drive_name]=$!
 		drive_name2msecs[$drive_name]=$now_msecs
-		cd $tmp_dir	  # in case user tries to unmount $drive_dir
+
+		[[ $drive_name != $mon_overhead_drive_name ]] || continue
+		local  PID=${ls_drive_name2PID[$drive_name]-}
+		[[ $PID ]] && kill -0 $PID 2> $dev_null && continue # running?
+
+		local partial_file=$non_empty_partial_dir/$drive_name
+		# snapshot is non-empty if has subdirectories: check link count
+		( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
+		     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
+				mv $partial_file.$$ $partial_file ) &
+		ls_drive_name2PID[$drive_name]=$!
 	done
+
+	cd $tmp_dir		    # in case user tries to unmount $drive_dir
 }
 readonly -f mon-launch-globs
 
@@ -5326,7 +5325,7 @@ mon-process-finished-glob() {
 
 	local -i      now_msecs=$(date +%s%3N)
 	local -i    start_msecs=${drive_name2msecs[$drive_name]}
-	local -i response_msecs=$now_msecs-$start_msecs-2 # -2 for overhead
+	local -i response_msecs=$now_msecs-$start_msecs
 
 	local -i window_msecs=$(< $window_msecs_dir/$drive_name)
 	local -i sample_count=$window_msecs/$mon_check_period_msecs
@@ -5351,16 +5350,15 @@ mon-process-finished-glob() {
 	while (( $# > $sample_count )) ; do shift; done
 	echo_to_file "$*" $msecs_file
 
-	mon-maybe-launch-ls
-
 	local  snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
 	cd_   $snapshots_dir
 	local glob_file=$_mon_globs_dir/$drive_name
 	lock-replica-of-snapshots --wait # 'w' action uses same locking
 	rm -f *
-	touch $(< $glob_file)
-	touch -r  $glob_file .
+	local subdirs=$(< $glob_file)
+	[[ $subdirs ]] && touch $subdirs
+	touch -r $glob_file .
 	lock-replica-of-snapshots --release
 }
 readonly -f mon-process-finished-glob
@@ -5374,8 +5372,8 @@ declare -r -i	mon_check_period_msecs=$product
 #
 is-set		mon_msec_increment ||	# can set custom value in $config_file
 declare -r -i	mon_msec_increment=10	# period for checking if drive responded
-set-division 3 $mon_msec_increment 1000
-readonly	mon_sec_increment=$division
+set-seconds--from-msecs -3 $mon_msec_increment
+readonly	mon_sec_increment=$seconds
 #
 set-division 2 $mon_msec_increment 10
 [[ $division == 0.00 ]] && division=0.01
@@ -5391,19 +5389,19 @@ mon-look-for-finished-globs() {
 		if [[ $# == 0 ]]	    # if not, stop looking
 		   then lockpid --wait $mon_initialized_lock_path > $dev_null
 			local -i remaining_msecs=$mon_check_period_msecs-$msecs
-			set-division 3 $remaining_msecs 1000
-			sleep $division
+			set-seconds--from-msecs -3 $remaining_msecs
+			sleep $seconds
 			return
 		fi
 
 		local drive_name
 		for drive_name in ${!drive_name2PID[*]}
-		    do	local PID=${drive_name2PID[$drive_name]}
+		    do	local  PID=${drive_name2PID[$drive_name]}
 			[[ $PID ]] || continue		      # already done?
 			kill -0 $PID 2> $dev_null && continue # still running?
 			drive_name2PID[$drive_name]=	      # just finished
 
-			mon-process-finished-glob $drive_name
+			mon-process-finished-glob $drive_name &
 		done
 
 		sleep   $mon_sec_increment
@@ -5416,7 +5414,8 @@ readonly -f mon-look-for-finished-globs
 
 monitor-drive-update() {
 	[[ ${1-} == -c ]] && { shift; local do_check=$true; } || local do_check=
-	[[ $# == 0 ]] && set-drive_names -a && set -- $drive_names
+	[[ $# == 0 ]] &&
+	    set-drive_names -a && set -- $drive_names $mon_overhead_drive_name
 
 	cd_ $window_msecs_dir
 
@@ -5430,6 +5429,8 @@ monitor-drive-update() {
 			break
 		fi
 
+		[[ $drive_name == $mon_overhead_drive_name ]] &&
+		    drive_name=$1	# need a valid drive_name
 		local customized_value
 		set-customized_value--for-config-var-name \
 		    drive_response_averaging_window_secs
@@ -5457,6 +5458,8 @@ monitor-drives() {
 	local -A ls_drive_name2PID	# ditto
 	while true			# monitor forever
 	    do	set-drive_names -a	# see if a new drive appeared
+		# $mon_overhead_drive_name first, else "absorbs" other overhead
+		drive_names="$mon_overhead_drive_name $drive_names"
 		monitor-drive-update -c $drive_names # was confgure.sh updated?
 		mon-launch-globs $drive_names
 		mon-look-for-finished-globs
@@ -7507,9 +7510,6 @@ case $action in
 	lock-replica-of-snapshots --wait; _exit $?
 	IfRun=echo lock-replica-of-snapshots; _exit
 	set-division 2 1 1000; echo $division; _exit
-	_set-drive_name ${1:-F}; declare -A ls_drive_name2PID
-	    mon-maybe-launch-ls; wait;
-	    head -v $non_empty_partial_dir/$drive_name; _exit
 	foo= ; is-arg1-in-arg2 x $foo && abort badness; _exit
 
 	for n in E F J X; do
