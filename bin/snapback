@@ -4916,7 +4916,8 @@ readonly -f show-stats-section-1
 show-stats-section-2-if-it-fits() {
 
 	local -i rows_used=7		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
+	    [[ $stats_opt ]] || return
 
 	echo				# first row used
 	setup-snapshot-stats .rm
@@ -4941,7 +4942,8 @@ readonly -f show-stats-section-2-if-it-fits
 show-stats-section-3-if-it-fits() {
 
 	local -i rows_used=6		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) || return
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
+	    [[ $stats_opt ]] || return
 
 	echo				# first row used
 	setup-snapshot-stats ''
