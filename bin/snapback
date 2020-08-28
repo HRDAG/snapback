@@ -2718,7 +2718,8 @@ function _is-time-to-backup-drive {
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
-	   ( $our_path w > $log_dir/cron-w.txt ) &
+	   ( cd $log_dir && $our_path w > cron-w.txt.$BASHPID &&
+		   mv cron-w.txt.$BASHPID cron-w.txt ) &
 
 	# we're called more than hourly (to reset priorities, and to prune)
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
