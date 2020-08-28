@@ -296,10 +296,10 @@ readonly pruned_timestamp=.pruned.ts
 
 readonly our_opts=${our_opts% }
 # need to fork and exec ourselves for session control with 'setsid'
-readonly  backup_drive_exe="$our_path $our_opts backup-drive"
-readonly   prune_drive_exe="$our_path $our_opts  prune-drive"
-readonly  update_drive_exe="$our_path $our_opts update-drive"
-readonly copy_snapshot_exe="$our_path $our_opts copy-snapshot"
+readonly   backup_drive_exe="$our_path $our_opts backup-drive"
+readonly    prune_drive_exe="$our_path $our_opts  prune-drive"
+readonly   update_drive_exe="$our_path $our_opts update-drive"
+readonly copy_snapshots_exe="$our_path $our_opts copy-snapshots"
 
 readonly hostname=${HOSTNAME%%.*}
 
@@ -3892,19 +3892,21 @@ readonly -f set-drive_names--from-user-args
 
 # ---------------------------------
 
-_set-function-exe() {
+_set-function-exe-lock_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	case $type in
-	   ( backup ) function=backup-drive   exe=$backup_drive_exe  ;;
-	   ( prune  ) function=prune-drive     exe=$prune_drive_exe  ;;
-	   ( update ) function=update-drive   exe=$update_drive_exe  ;;
-	   ( copy   ) function=copy-snapshots exe=$copy_snapshot_exe ;;
-	   (   *    ) abort "action '$type' is not supported" ;;
+	   ( backup ) readonly function=backup-drive   lock_type=backup ;;
+	   ( prune  ) readonly function=prune-drive    lock_type=prune  ;;
+	   ( update ) readonly function=update-drive   lock_type=copy   ;;
+	   ( copy   ) readonly function=copy-snapshots lock_type=copy   ;;
+	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
+	local  exe_varname=${function/-/_}_exe
+	readonly exe=${!exe_varname}
 }
-readonly -f _set-function-exe
+readonly -f _set-function-exe-lock_type
 
 # ---------------------------------
 
@@ -3951,7 +3953,7 @@ create-jobs() {
 	[[ ! $debug_opt ]] && set-reversed_words $* &&
 	   set -- $reversed_words	# 'ps' shows newest process first
 
-	_set-function-exe $type
+	_set-function-exe-lock_type $type
 
 	if [[ $are_recursing ]]
 	   then $Trace
@@ -4007,7 +4009,7 @@ set-stats_format() {
 		format_width=${#drive_name}+$field_width
 		format+="%-${format_width}s  "
 	done
-	stats_format=${format% }
+	stats_format=${format%  }
 	TraceV 1 stats_format
 	$xtrace
 }
@@ -4099,8 +4101,7 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
 	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
 	fix-padded-colorized-string-vars rsync_hour_avgs
-	rsync_hour_avgs=${rsync_hour_avgs% }
-	rsync_hour_maxs=${rsync_hour_maxs% }
+	strip-trailing-whitespace rsync_hour_avgs rsync_hour_maxs
 }
 readonly -f set-rsync_hour_avgs-rsync_hour_maxs
 
@@ -4131,6 +4132,7 @@ set-drive_usage() {
 		percents+="$drive_name=$percent "
 	done
 	printf -v drive_usage "$stats_format" $percents
+	strip-trailing-whitespace drive_usage
 }
 readonly -f set-drive_usage
 
@@ -4169,6 +4171,7 @@ set-drive_response() {
 		responses+="$drive_name=$secs "
 	done
 	printf -v drive_response "$stats_format" $responses
+	strip-trailing-whitespace drive_response
 }
 readonly -f set-drive_response
 
@@ -4303,8 +4306,9 @@ _recalculate-snapshot-stats-vars() {
 	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
 	printf -v stats_oldest_age "$stats_format" $oldies
 	printf -v stats_newest_age "$stats_format" $newies		    ; }
-	fix-padded-colorized-string-vars \
-	    stats_number stats_oldest_age stats_newest_age # done with printf
+	local vars="stats_number stats_oldest_age stats_newest_age"
+	fix-padded-colorized-string-vars $vars # done with printf
+	strip-trailing-whitespace $vars
 }
 readonly -f _recalculate-snapshot-stats-vars
 
