@@ -2764,6 +2764,16 @@ set-hours--from-minutes 10
 
 # ----------------------
 
+set-msecs--from-secs() {
+
+	local -i product
+	set-product $1 1000
+	msecs=$product
+}
+readonly -f set-msecs--from-secs
+
+# ----------------------
+
 set-secs--from-msecs() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  msecs=$2
@@ -4142,8 +4152,8 @@ set-drive_response() {
 
 	set-stats_format $all_drive_dirs
 
-	set-product $drive_response_warning_secs 1000
-	local drive_response_warning_msecs=$product
+	set-msecs--from-secs $drive_response_warning_secs
+	local drive_response_warning_msecs=$msecs
 	local drive_dir drive_name responses=
 	for drive_dir in $all_drive_dirs
 	    do	_set-drive_name $drive_dir
@@ -5364,10 +5374,12 @@ readonly -f mon-process-finished-glob
 
 # -------------------------------------------------
 
+declare -i msecs
+
 is-set		mon_check_period_secs ||  # can set custom value in $config_file
 readonly	mon_check_period_secs=0.5 # when look for newly-attached drives,
-set-product    $mon_check_period_secs 1000 # and also used for watch -n period
-declare -r -i	mon_check_period_msecs=$product
+set-msecs--from-secs $mon_check_period_secs # and also used for watch -n period
+declare -r -i	mon_check_period_msecs=$msecs
 #
 is-set		mon_msec_increment ||	# can set custom value in $config_file
 declare -r -i	mon_msec_increment=10	# period for checking if drive responded
@@ -5433,8 +5445,8 @@ monitor-drive-update() {
 		local customized_value
 		set-customized_value--for-config-var-name \
 		    drive_response_averaging_window_secs
-		set-product $customized_value 1000
-		echo_to_file $product $window_msecs_file
+		set-msecs--from-secs $customized_value
+		echo_to_file $msecs $window_msecs_file
 	done
 }
 readonly -f monitor-drive-update
