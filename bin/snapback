@@ -5362,11 +5362,12 @@ mon-launch-globs() {
 		cd $drive_dir || continue
 
 		local glob_file=$_mon_globs_dir/$drive_name
-		local -i now_msecs=$(date +%s%3N) # takes ~1 msec to fork+exec
+		local -i epoch_msecs
+		set-epoch_msecs # takes ~1 msec to fork+exec (not if bash-5)
 		# if $ls_drive_name2PID[$drive_name] still alive, will slow this:
 		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
 		drive_name2PID[$drive_name]=$!
-		drive_name2msecs[$drive_name]=$now_msecs
+		drive_name2msecs[$drive_name]=$epoch_msecs
 
 		if [[ $drive_name == $mon_overhead_drive_name ]]
 		   then local mon_msec_increment=2  mon_sec_increment=0.002
@@ -5394,9 +5395,9 @@ readonly -f mon-launch-globs
 mon-process-finished-glob() {
 	local drive_name=$1
 
-	local -i      now_msecs=$(date +%s%3N)
+	set-epoch_msecs
 	local -i    start_msecs=${drive_name2msecs[$drive_name]}
-	local -i response_msecs=$now_msecs-$start_msecs
+	local -i response_msecs=$epoch_msecs-$start_msecs
 
 	local -i window_msecs=$(< $window_msecs_dir/$drive_name)
 	local -i sample_count=$window_msecs/$mon_check_period_msecs
