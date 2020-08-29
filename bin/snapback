@@ -1975,7 +1975,7 @@ rm-pruned-snapshots() {
 	update-snapshots-ls
 
 	[[ $rm_count != 0 && ! $is_update ]] &&
-	if (( $log_level >= 2 ))
+	if (( $log_level >= 3 ))
 	   then [[ $debug_opt ]] ||
 		log "will prune these snapshots: " $rm_snapshots
 	   else local -i n=$rm_count
@@ -2049,9 +2049,13 @@ rm-pruned-snapshots() {
 		${rm_snapshot_post_hook-} # could update database
 		if (( $SECONDS >= 0 ))
 		   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
+			set-hours--from-minutes $minutes
 			$IfRun setup-df-data-from-fields -BM $drive_dir used
 			local -i used_MB=${used%M}-$starting_MB
+			local stats=" in $hours hours; used $used_MB MB"
+		   else local stats=
 		fi
+		(( $log_level >= 2 )) && log "deleted $snapshot$stats"
 		suspend-tracing
 	done
 	restore-tracing

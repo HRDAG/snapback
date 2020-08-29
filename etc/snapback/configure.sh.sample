@@ -114,8 +114,8 @@ readonly sysadmin_email_addresses=
 
 # level 0: log when create *,00 snapshot; log # pruned & also # *.rm deleted
 # level 1: log every backup (plus above)
-# level 2: log the new snapshots that will be pruned (plus above)
-# level 3: log the deleted snapshots (plus above); misses deletions before kill
+# level 2: log each deleted snapshots (plus above)
+# level 3: log the new snapshots that will-be or were pruned (plus above)
 declare -i log_level=0		     # verbosity of logs in /var/log/snapback/
 
 # ---------------------------------------------------------
