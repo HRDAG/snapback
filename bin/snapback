@@ -7162,7 +7162,7 @@ case $action in
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # update-drives  [-s src-names-glob] dst-names: copy missing snapshots
-   ( upd*dr*v* | u*d* ) undo-action-abbrev update-drives
+   ( upd*dr*v* | ud ) undo-action-abbrev update-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 == -S ]] && {     ignore_slow_sources_opt=$1    ; shift  ; }
 	[[ $1 == -s ]] && {          src_names_glob_opt="$1$2"; shift 2; }
@@ -7174,22 +7174,8 @@ case $action in
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
-   # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
-   # check-snapshot-hard-links names: find snapshots with broken hard links
-   ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
-	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 != -r  ]] && assert-not-option $1
-	[[ $# != 0   ]] || abort-with-action-Usage
-	set-drive_names--from-user-args "$@"
-
-	status=0
-	for name in $drive_names
-	    do	check-snapshot-hard-links $name || status=$?
-	done
-	exit-normally $status
-	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
-   ( c*p*s*s* | cs* | cp* ) undo-action-abbrev copy-snapshots # cpss
+   ( c*p*s*s* | cs | cp* ) undo-action-abbrev copy-snapshots # cpss
 	[[ $# != 0  ]] || abort-with-action-Usage
 	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit-normally $?; }
 
@@ -7220,7 +7206,7 @@ case $action in
 	done
 	;;
    # redo snapshots: rename      snapshots to *.partial (update-drive restores)
-   ( redo )
+   ( redo | undo )
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] || warn "can't redo *.rm; see unrm" ||
 		    continue
@@ -7385,6 +7371,21 @@ case $action in
    ###########################################################################
    # Actions for regression tests.
    ###########################################################################
+
+   # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
+   # check-snapshot-hard-links names: find snapshots with broken hard links
+   ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
+	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $1 != -r  ]] && assert-not-option $1
+	[[ $# != 0   ]] || abort-with-action-Usage
+	set-drive_names--from-user-args "$@"
+
+	status=0
+	for name in $drive_names
+	    do	check-snapshot-hard-links $name || status=$?
+	done
+	exit-normally $status
+	;;
 
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
    ( mk*[Zz] | mkz ) undo-action-abbrev mk-Z
