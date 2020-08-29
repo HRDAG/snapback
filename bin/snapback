@@ -2040,7 +2040,7 @@ rm-pruned-snapshots() {
 		   then SECONDS=-1123456789 # then don't time it
 		   else SECONDS=0	    # else do
 			$IfRun setup-df-data-from-fields -BM $drive_dir used
-			starting_MB=$used
+			starting_MB=${used%M}
 		fi
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
 		$IfRun touch $pruning_flag && # .rm suffix maybe removed
@@ -2049,7 +2049,7 @@ rm-pruned-snapshots() {
 		if (( $SECONDS >= 0 ))
 		   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
 			$IfRun setup-df-data-from-fields -BM $drive_dir used
-			local -i used_MB=used-$starting_MB
+			local -i used_MB=${used%M}-$starting_MB
 		fi
 		suspend-tracing
 	done
@@ -2886,8 +2886,9 @@ record-rsync-time() {
 	set-hours--from-minutes $minutes
 	rsync_hours=$hours
 	#
+	local -i used=0
 	$IfRun setup-df-data-from-fields -BM $drive_dir used
-	used_MB=${used-0}-$starting_MB
+	used_MB=${used%M}-$starting_MB
 
 	set-rsync_time_subdir
 	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
@@ -3036,8 +3037,9 @@ function _run-rsync-cmd() {
 	if [[ $# != 0 ]]		# snapshot not empty?
 	   then SECONDS=-1123456789	# then don't time it, partially done
 	   else SECONDS=0		# then time the rsync
+		local -i used=0
 		$IfRun setup-df-data-from-fields -BM $drive_dir used
-		starting_MB=${used-0}
+		starting_MB=${used%M}
 	fi
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
@@ -6684,6 +6686,57 @@ find-and-print-big-swapouts() {
 readonly -f find-and-print-big-swapouts
 
 # ----------------------------------------------------------------------------
+
+measure-swapout-MBps() {
+	local swap_dev=${1-}
+	[[ $# == 1 && ( -b $swap_dev || -s $swap_dev ) ]] ||
+	    abort-function swap-device
+
+	for cmd in swapon swapoff mkswap
+	    do	have-cmd $cmd && continue
+		$IfRun \ 
+		abort "only works with Linux (but run with -d option for clues)"
+	done
+
+	shopt -u nullglob		# so can use ? in debug mode
+	set -f				# won't do any globbing
+
+	local args="--raw --bytes --show=name,size,uuid,label"
+	$IfRun swapon $args > $tmp_1 || 
+	    abort "need a 'swapon' that supports $args"
+	if [[ ! $debug_opt ]]
+	   then set -- $(grep "^$swap_dev " $tmp_1)
+		(( $# >= 2 )) || abort "need to first run: sudo swapon $swap_dev"
+		local bytes=$2 UUID=$3 label=${4-}
+		local -i MB=$bytes/1024/1024
+		local -i MB_1=MB-1
+		(( $MB_1 > 0 )) || MB_1=1
+	   else local MB=? MB_1=?
+		local UUID=UUID label=label
+		cat $tmp_1
+	fi
+
+	$IfRun sudo swapoff $swap_dev || 
+	    abort "add temporary swap: 'dd', 'mkswap', 'chmod', 'swapon'"
+	$IfRun sudo dd if=/dev/zero of=$swap_dev bs=1M count=$MB_1 &> $tmp_1
+	if [[ ! $debug_opt ]]
+	   then local bw=$(sed -n '$s/.*, *//p' $tmp_1)
+		warn "swapout bandwidth is $bw"
+	   else cat $tmp_1
+	fi
+
+	[[ $label ]] && label_opt="--label $label"
+	local args="$label_opt --uuid $UUID $swap_dev"
+	$IfRun mkswap $args || abort "mkswap $args -> $?"
+
+	$IfRun swapon $swap_dev
+	$IfRun swapon --show
+
+	set +x
+}
+readonly -f measure-swapout-MBps
+
+# ----------------------------------------------------------------------------
 # check syslog for FS and OS errors
 # ----------------------------------------------------------------------------
 
@@ -7184,6 +7237,10 @@ case $action in
    # big-swapouts: search syslog files for warnings about high swapout rates
    ( big*swapouts | bs | so ) undo-action-abbrev big-swapouts
 	find-and-print-big-swapouts
+	;;
+   # measure-swapout-bandwith swap-dev: measure bandwidth of swap-dev
+   ( m*swap*b*w* ) undo-action-abbrev measure-swapout-bandwith
+	measure-swapout-MBps "$@"
 	;;
 
    # check-logs: update error cache: run this if dashboard fails with I/O error

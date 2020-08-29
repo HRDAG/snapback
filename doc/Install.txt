@@ -430,6 +430,7 @@ of max_swapout_MBps:
     swap_dev=/dev/???		# from swapon -s
     swap_label=????		# from LABEL=???? in /etc/fstab
 
+    # if swapoff fails, add a temporary swap with dd and mkswap
     $IfRun swapoff $swap_dev &&
     $IfRun dd if=/dev/zero of=$swap_dev bs=1M count=20480
 
