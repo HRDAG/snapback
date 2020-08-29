@@ -959,7 +959,7 @@ function kill-job-on-drives() {
 			local did_loop=$false
 			until signal-job $signal $path
 			   do	echo -n .
-				sleep 0.1
+				env sleep 0.1
 				did_loop=$true
 			done
 			[[ $did_loop ]] && echo
@@ -1029,7 +1029,7 @@ function ps-locks() {
 	local status=1			# assume all locks are missing/stale
 	for lock in $lock_paths
 	    do	# race: lockpid has created file but not yet written pid
-		[[ -s  $lock ]] || sleep 0.01
+		[[ -s  $lock ]] || env sleep 0.01
 		[[ -e  $lock ]] || continue
 		header $lock
 		[[ -s  $lock ]] ||
@@ -3081,7 +3081,7 @@ function run-rsync() {
 	[[ $writer_type != copy ]] &&  # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
 	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
-	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do sleep 9; done
+	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do env sleep 9; done
 	[[ -d $partial_dst ]] && $IfRun \
 	touch $partial_dst		# in case we crash before next 'touch'
 	} &
@@ -3215,7 +3215,7 @@ prevent-pruning() {
 			print-call-stack "warning: awaiting $drive_name lock" |
 			    tee -a $file_for_logging
 		fi
-		$IfRun sleep 1
+		$IfRun env sleep 1.0
 	done
 	did_prevent_pruning_print_stack=$false # for future call
 }
@@ -3531,7 +3531,7 @@ wait-for-full-snapshots() {
 		set -- $drive_dir/$snapshot_glob
 		restore-tracing
 		(( $# > $min_full_snapshots )) && return # an extra one: safety
-		sleep 1h
+		env sleep 1h
 	done
 }
 readonly -f wait-for-full-snapshots
@@ -3829,7 +3829,7 @@ fill-in-unpruned-empty-snapshots() {
 		[[   $force_opt || $ignore_slow_sources ]] ||
 		    { force_opt=-f; continue; }
 		[[ ! $debug_opt ]] || warn "no work to do" || break
-		sleep 5m		# wait for source(s) to become unbusy
+		env sleep 5m		# wait for source(s) to become unbusy
 	done
 	$IfRun rm $copy_args_file $skipped_copy_args_file |
 	    sed 's/-[0-9]*$/-PID/'
@@ -3989,7 +3989,7 @@ create-jobs() {
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 		if [[ $is_cron && $type == backup ]]
 		   then $IfRun do-chores & # echo appears whenever, unless ...
-			[[ $is_regression_test ]] && sleep 0.05 # wait for it
+			[[ $is_regression_test ]] && env sleep 0.05 # wait for it
 		fi
 	   else if set-drive_names--from-user-args "$@"
 		   then set -- $drive_names
@@ -5214,11 +5214,11 @@ _start-monitor-drives-if-needed() {
 
 	sudo $our_path monitor-drives || abort-function monitor-drives
 	until [[ -d $(dirname $mon_initialized_lock_path) ]]
-	   do	sleep 0.12
+	   do	env sleep 0.12
 	done
 	while   lockpid    $mon_initialized_lock_path
 	   do	lockpid -r $mon_initialized_lock_path
-		sleep 0.13
+		env sleep 0.13
 	done > $dev_null
 }
 readonly -f _start-monitor-drives-if-needed
@@ -5468,7 +5468,7 @@ mon-look-for-finished-globs() {
 			lockpid --wait $mon_initialized_lock_path > $dev_null
 			local -i remaining_msecs=$mon_check_period_msecs-$msecs
 			set-secs--from-msecs -3 $remaining_msecs
-			sleep $secs
+			env sleep $secs
 			return
 		fi
 
@@ -5560,7 +5560,7 @@ re-start-monitor-drives-if-needed() {
 	     is-newer $our_path $drive_monitor_lock_path )
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
 		until signal-job -KILL $drive_monitor_lock_path
-		   do	$IfRun sleep 0.09 # wait for globs/etc; but 'watch' hangs
+		   do	$IfRun env sleep 0.09 # wait for globs/etc; 'watch' hangs
 		done
 		lock-replica-of-snapshots --release
 	fi
@@ -5832,7 +5832,7 @@ function unmount-drives() {
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
-			$IfRun sleep 0.15
+			$IfRun env sleep 0.15
 		done &> $output
 		is-drive-mounted $drive_dir || continue
 		$umount_cmd || status=$? # this time, show the error message
@@ -6376,7 +6376,7 @@ copy-backup-drive() {
 	"
 	nohup $cmd > $output_file &
 	local copy_PID=$!
-	sleep 0.2; set -x; exec tail --pid=$copy_PID -f $output_file
+	env sleep 0.2; set -x; exec tail --pid=$copy_PID -f $output_file
 }
 readonly -f copy-backup-drive
 
@@ -7277,7 +7277,7 @@ case $action in
 		while true
 		    do	kill-job-on-drives -s "$@"
 			set +x
-			sleep 1
+			env sleep 1
 		done
 	   else $Trace
 		kill-job-on-drives -s "$@"
