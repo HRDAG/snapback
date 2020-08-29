@@ -2765,8 +2765,7 @@ function _is-time-to-backup-drive {
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
-	   ( cd $log_dir && $our_path w > cron-w.txt.$BASHPID &&
-		   mv cron-w.txt.$BASHPID cron-w.txt ) &
+	   ( cd $log_dir && $our_path w | echo-to-file - cron-w.txt ) &
 
 	# we're called more than hourly (to reset priorities, and to prune)
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
@@ -6834,9 +6833,8 @@ search-syslog-for-errors() {
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
 	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
-	    uniq -c > $cnt_msg_file.$$ &&
-		   mv $cnt_msg_file.$$ $cnt_msg_file ||
-		       { ls -ld . $cnt_msg_file*; print-call-stack; }
+	    uniq -c | echo-to-file - $cnt_msg_file ||
+		          { ls -ld . $cnt_msg_file*; print-call-stack; }
 }
 readonly -f search-syslog-for-errors
 
