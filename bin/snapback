@@ -2035,6 +2035,7 @@ rm-pruned-snapshots() {
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
 	    do	local -i starting_MB=0
+		local used=0
 		local pruning_flag=$snapshot/.pruning
 		if [[ -e $pruning_flag ]]   # already half-pruned?
 		   then SECONDS=-1123456789 # then don't time it
@@ -2886,7 +2887,7 @@ record-rsync-time() {
 	set-hours--from-minutes $minutes
 	rsync_hours=$hours
 	#
-	local -i used=0
+	local used=0
 	$IfRun setup-df-data-from-fields -BM $drive_dir used
 	used_MB=${used%M}-$starting_MB
 
@@ -3037,7 +3038,7 @@ function _run-rsync-cmd() {
 	if [[ $# != 0 ]]		# snapshot not empty?
 	   then SECONDS=-1123456789	# then don't time it, partially done
 	   else SECONDS=0		# then time the rsync
-		local -i used=0
+		local used=0
 		$IfRun setup-df-data-from-fields -BM $drive_dir used
 		starting_MB=${used%M}
 	fi
