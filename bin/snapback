@@ -1985,7 +1985,7 @@ rm-pruned-snapshots() {
 
 	if [[ $is_update ]]
 	   then set -- *.partial.rm	# some from update, some from pruning
-		[[ $# != 0 ]] && $sudo rmdir --ignore-fail-on-non-empty $*
+		[[ $# != 0 ]] && $sudo env rmdir --ignore-fail-on-non-empty $*
 		restore-tracing
 		return
 	fi
@@ -3702,8 +3702,9 @@ mkdir-missing-snapshots-then-print-copy-args() {
 		basename=${dst_snapshot##*/}
 		[[ -d $dst_snapshot.links ]] && continue # have upgradable dst?
 
-		# create a .partial dir for pruning (unless it has a /.keep)
-		$sudo mkdir $verbose_opt -p $dst_snapshot.partial >&2
+		# create a .partial dir for pruning (unless it has a /.keep).
+		# use env to avoid 'mkdir' builtin (which doesn't handle -v)
+		$sudo env mkdir $verbose_opt -p $dst_snapshot.partial >&2
 		[[ ${basename2is_keep[$basename]-} ]] &&
 		    echo > $dst_snapshot.partial/.keep && [[ $verbose_opt ]] &&
 		echo touch $dst_snapshot.partial/.keep >&2
@@ -3858,7 +3859,7 @@ function update-drive() {
 	IfRun= lock $lock_opt copy > $dev_null || exit-normally 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
-	rmdir --ignore-fail-on-non-empty *.partial &> $dev_null # in case crash
+	rmdir *.partial &> $dev_null	# in case crashed
 
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
@@ -3875,7 +3876,7 @@ function update-drive() {
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
 	local status=$?
 
-	rmdir --ignore-fail-on-non-empty *.partial &> $dev_null
+	rmdir *.partial &> $dev_null
 
 	IfRun= unlock copy
 	return $status
