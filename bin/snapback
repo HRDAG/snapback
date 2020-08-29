@@ -4450,7 +4450,7 @@ setup-snapshot-stats() {
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
-	echo_to_file "$drive_dirs" $cached_drive_dirs_file
+	echo-to-file "$drive_dirs" $cached_drive_dirs_file
 	echo "$stats_number"	 >     $number_cache_file ; [[ $dates ]] && {
 	echo "$stats_oldest_age" > $oldest_age_cache_file
 	echo "$stats_newest_age" > $newest_age_cache_file		  ; }
@@ -5420,7 +5420,7 @@ mon-process-finished-glob() {
 	   else set --			$samples
 	fi
 	while (( $# > $sample_count )) ; do shift; done
-	echo_to_file "$*" $msecs_file
+	echo-to-file "$*" $msecs_file
 
 	local  snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
@@ -5515,7 +5515,7 @@ monitor-drive-update() {
 		set-customized_value--for-config-var-name \
 		    drive_response_averaging_window_secs
 		set-msecs--from-secs $customized_value
-		echo_to_file $msecs $window_msecs_file
+		echo-to-file $msecs $window_msecs_file
 	done
 }
 readonly -f monitor-drive-update
@@ -6612,7 +6612,7 @@ search-syslog-for-big-swapouts() {
 
 	create-status_dir
 	[[ ! $big_swapouts_record ]]  &&  > $big_swapouts_file && return
-	echo_to_file "$big_swapouts_record" $big_swapouts_file
+	echo-to-file "$big_swapouts_record" $big_swapouts_file
 }
 readonly -f search-syslog-for-big-swapouts
 
