@@ -2024,7 +2024,7 @@ rm-pruned-snapshots() {
 	    do	local subdir
 		for subdir in $hard_link_dirs
 		    do	${rm_snapshot_pre_hook-} # could set snapshot= to block
-			$IfRun rm -rf $snapshot$subdir
+			$IfRun env rm -rf $snapshot$subdir
 			${rm_snapshot_post_hook-} # could update database
 		done
 		suspend-tracing
@@ -2045,7 +2045,7 @@ rm-pruned-snapshots() {
 		fi
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
 		$IfRun touch $pruning_flag && # .rm suffix maybe removed
-		$IfRun rm -rf $snapshot || continue
+		$IfRun env rm -rf $snapshot || continue
 		${rm_snapshot_post_hook-} # could update database
 		if (( $SECONDS >= 0 ))
 		   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
