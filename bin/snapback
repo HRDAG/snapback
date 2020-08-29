@@ -3080,7 +3080,10 @@ function run-rsync() {
 	[[ $writer_type != copy ]] &&  # copy keeps original mtime
 	{		     # ensure $dst_snapshot has current time
 	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
-	until [[ -e $partial_dst || -e $dst_snapshot ]] ; do env sleep 9; done
+	for (( n = 0; n < 20; n++ ))
+	    do [[ -e $partial_dst || -e $dst_snapshot ]] && break
+	       env sleep 9
+	done
 	[[ -d $partial_dst ]] && $IfRun \
 	touch $partial_dst		# in case we crash before next 'touch'
 	} &
@@ -5454,6 +5457,8 @@ mon-look-for-finished-globs() {
 	[[ $# == [01] ]] || abort-function "[drive_name]"
 	local _drive_name=${1-}
 
+	set-epoch_msecs
+	local -i start_msecs=$epoch_msecs
 	local -i sleep_msecs  slept_msecs
 	for (( sleep_msecs=0, slept_msecs=0;
 	       slept_msecs + sleep_msecs < $mon_check_period_msecs;
@@ -5462,9 +5467,11 @@ mon-look-for-finished-globs() {
 		if [[ $# == 0 ]]	    # if not, stop looking
 		   then [[ $_drive_name ]] && abort-function "logic error"
 			lockpid --wait $mon_initialized_lock_path > $dev_null
-			local -i left_msecs=$mon_check_period_msecs-$slept_msecs
+			set-epoch_msecs
+			local -i used_msecs=$epoch_msecs-$start_msecs
+			local -i left_msecs=$mon_check_period_msecs-$used_msecs
 			set-secs--from-msecs -3 $left_msecs
-			env sleep $secs
+			env sleep $secs	# want to appear in ps
 			return
 		fi
 
@@ -6703,8 +6710,12 @@ measure-swapout-MBps() {
 	set -f				# won't do any globbing
 
 	local args="--raw --bytes --show=name,size,uuid,label"
-	$IfRun swapon $args > $tmp_1 || 
-	    abort "need a 'swapon' that supports $args"
+	if [[ ! $debug_opt ]]
+	   then swapon $args > $tmp_1 ||
+		   abort "need a 'swapon' that supports $args"
+	   else echo swapon $args
+	fi
+	#
 	if [[ ! $debug_opt ]]
 	   then set -- $(grep "^$swap_dev " $tmp_1)
 		(( $# >= 2 )) || abort "need to first run: sudo swapon $swap_dev"
