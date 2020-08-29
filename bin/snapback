@@ -6688,7 +6688,9 @@ readonly -f find-and-print-big-swapouts
 # ----------------------------------------------------------------------------
 
 is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
+# first is google-chrome error
 readonly OS_ignorable_error_strings="\
+:ERROR:mcs_client.cc
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
 is-set   OS_error_strings || 		# can set custom value in $config_file
@@ -6773,8 +6775,8 @@ search-syslog-for-errors() {
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
 	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
-	    uniq -c > $cnt_msg_file.$BASHPID &&
-		   mv $cnt_msg_file.$BASHPID $cnt_msg_file ||
+	    uniq -c > $cnt_msg_file.$$ &&
+		   mv $cnt_msg_file.$$ $cnt_msg_file ||
 		       { ls -ld . $cnt_msg_file*; print-call-stack; }
 }
 readonly -f search-syslog-for-errors
