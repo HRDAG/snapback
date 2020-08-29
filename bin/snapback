@@ -710,8 +710,8 @@ unlock() {
 	local lock_path=${_lock_type_name2lock_path[$type,$name]-}
 	[[   $lock_path ]] || abort "don't hold lock: type=$type, name=$name"
 	sudo-lockpid --release $lock_path
-	_lock_type_name2lock_path[$type,$name]=	     # in case unset fails ...
-	unset _lock_type_name2lock_path[$type,$name] # this sometimes fails?!
+	_lock_type_name2lock_path[$type,$name]=	       # in case unset fails ...
+	unset "_lock_type_name2lock_path[$type,$name]" # this sometimes fails?!
 
 #	$xtrace
 }
@@ -2034,9 +2034,23 @@ rm-pruned-snapshots() {
 
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
-	    do	${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
-		$IfRun rm -rf $snapshot
+	    do	local -i starting_MB=0
+		local pruning_flag=$snapshot/.pruning
+		if [[ -e $pruning_flag ]]   # already half-pruned?
+		   then SECONDS=-1123456789 # then don't time it
+		   else SECONDS=0	    # else do
+			$IfRun setup-df-data-from-fields -BM $drive_dir used
+			starting_MB=$used
+		fi
+		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
+		$IfRun touch $pruning_flag && # .rm suffix maybe removed
+		$IfRun rm -rf $snapshot || continue
 		${rm_snapshot_post_hook-} # could update database
+		if (( $SECONDS >= 0 ))
+		   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
+			$IfRun setup-df-data-from-fields -BM $drive_dir used
+			local -i used_MB=used-$starting_MB
+		fi
 		suspend-tracing
 	done
 	restore-tracing
@@ -2871,6 +2885,9 @@ record-rsync-time() {
 	local -i minutes=$(( ($SECONDS + 30) / 60 ))
 	set-hours--from-minutes $minutes
 	rsync_hours=$hours
+	#
+	$IfRun setup-df-data-from-fields -BM $drive_dir used
+	used_MB=${used-0}-$starting_MB
 
 	set-rsync_time_subdir
 	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
@@ -2953,8 +2970,8 @@ _handle-rsync-results() {
 		record-rsync-time $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
-		$IfRun log \
-	  "created $new_snapshot (at $priority priority) in $rsync_hours hours"
+		local stats="in $rsync_hours hours; used $used_MB MB" &&
+		$IfRun log "created $new_snapshot (at $priority priority) $stats"
 	   else set -- $(bzcat $log 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
@@ -3016,9 +3033,11 @@ function _run-rsync-cmd() {
 	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
 					   --exclude-from=$exclude_file"
 	set -- $partial_dst/*
-	if [[ $# == 0 ]]		# snapshot starting out empty?
-	   then SECONDS=0		# then time the rsync
-	   else SECONDS=-1123456789	# don't, destination partially done
+	if [[ $# != 0 ]]		# snapshot not empty?
+	   then SECONDS=-1123456789	# then don't time it, partially done
+	   else SECONDS=0		# then time the rsync
+		$IfRun setup-df-data-from-fields -BM $drive_dir used
+		starting_MB=${used-0}
 	fi
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
@@ -3067,6 +3086,7 @@ function run-rsync() {
 	fi
 	restore-tracing link_dest_opts
 
+	local -i starting_MB=0 used_MB=0 # _run-rsync-cmd & _handle-rsync-results
 	_run-rsync-cmd
 	local status=$?
 
