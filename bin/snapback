@@ -5337,7 +5337,7 @@ readonly -f create-monitor-dirs
 
 lock-replica-of-snapshots() {
 
-	local sleep_msecs=$_lock_replica_sleep_msecs
+	local sleep_msecs=0.5		# less than mon_* resolution
 	local lock_file=${FUNCNAME#*lock-}.pid
 
 	umask 0				# so watch doesn't need sudo-lockpid
@@ -5348,6 +5348,8 @@ lock-replica-of-snapshots() {
 readonly -f lock-replica-of-snapshots
 
 # ----------------------------------------------------------------------------
+
+declare -i msecs epoch_msecs
 
 readonly mon_overhead_drive_name=_RAM_
 readonly mon_overhead_drive_dir=$snapshots_replica_dir
@@ -5437,21 +5439,13 @@ readonly -f mon-process-finished-glob
 
 # -------------------------------------------------
 
-declare -i msecs
-
 is-set		mon_check_period_secs ||  # can set custom value in $config_file
 readonly	mon_check_period_secs=0.5 # when look for newly-attached drives,
 set-msecs--from-secs $mon_check_period_secs # and also used for watch -n period
 declare -r -i	mon_check_period_msecs=$msecs
 #
-is-set		mon_msec_increment ||	# can set custom value in $config_file
-declare -i	mon_msec_increment=10	# period for checking if drive responded
-set-secs--from-msecs -3 $mon_msec_increment
-		mon_sec_increment=$secs
-#
-set-division 2 $mon_msec_increment 10
-[[ $division == 0.00 ]] && division=0.01
-readonly _lock_replica_sleep_msecs=$division
+is-set        mon_msecs_increment || # can set custom value in $config_file
+declare -r -i mon_msecs_increment=1  # lower -> more precision, more CPU usage
 
 readonly mon_initialized_lock_path=$_mon_lock_dir/initialized.pid
 
@@ -5460,14 +5454,16 @@ mon-look-for-finished-globs() {
 	[[ $# == [01] ]] || abort-function "[drive_name]"
 	local _drive_name=${1-}
 
-	local -i  msecs=0
-	while (( $msecs < $mon_check_period_msecs )) # not waited long?
+	local -i sleep_msecs  slept_msecs
+	for (( sleep_msecs=0, slept_msecs=0;
+	       slept_msecs + sleep_msecs < $mon_check_period_msecs;
+	       slept_msecs+=$sleep_msecs, sleep_msecs+=$mon_msecs_increment ))
 	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
 		if [[ $# == 0 ]]	    # if not, stop looking
 		   then [[ $_drive_name ]] && abort-function "logic error"
 			lockpid --wait $mon_initialized_lock_path > $dev_null
-			local -i remaining_msecs=$mon_check_period_msecs-$msecs
-			set-secs--from-msecs -3 $remaining_msecs
+			local -i left_msecs=$mon_check_period_msecs-$slept_msecs
+			set-secs--from-msecs -3 $left_msecs
 			env sleep $secs
 			return
 		fi
@@ -5484,8 +5480,7 @@ mon-look-for-finished-globs() {
 			[[ $_drive_name ]] && wait $! && return
 		done
 
-		sleep   $mon_sec_increment
-		msecs+=$mon_msec_increment
+		msleep $sleep_msecs
 	done
 }
 readonly -f mon-look-for-finished-globs

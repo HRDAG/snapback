@@ -86,10 +86,11 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # Variables used by nonitor-drives #
 # ----------------------------------
 
-# how long monitor-drives sleeps between checks to see if a drive responded
-# msec_increment=5			# might want < 10 for SSDs
+# How long monitor-drives sleeps between checks to see if a drive responded; this
+# period is also the 'watch' period, i.e. default value for watch's -n option.
+# readonly mon_check_period_secs=1.0 # uncomment if want slower 'watch' refresh
 
-# time period over which we calculate a moving-average of drive_response
+# Time period over which we calculate a moving-average of drive_response.
 	   drive_response_averaging_window_secs=2.0
   drv_name2drive_response_averaging_window_secs[X]=1.0 # SSD
 
