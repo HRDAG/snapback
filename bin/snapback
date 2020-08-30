@@ -2152,20 +2152,26 @@ readonly -f save-stats-file
 is-set	      days_to_keep ||		# can set custom value in $config_file
 declare -r -i days_to_keep=3		# ensure more than weekend-only data
 
+is-set	      min_files_to_keep ||	# can set custom value in $config_file
+declare -r -i min_files_to_keep=5
+
 prune-stats-files() {
 	local stats_subdir=$1
 
 	cd_ $drive_log_dir
 
-	set -- $stats_subdir/$snapshot_glob.txt
+	set -- $stats_subdir/$snapshot_glob.txt # duplicated in 'for' loop, below
 	[[ $# != 0 ]] && {
 
 	# copy'ed snapshots aren't copied in date,time order, so use file time
 	local min_date_TS=$tmp_1
 	local old_date=$(date -d "-$days_to_keep days")
 	touch --date="$old_date" $min_date_TS
-	for file
-	    do	[[ $file -ot $min_date_TS ]] && $IfRun rm $file
+	for file in $*
+	    do	[[ $file -ot $min_date_TS  ]] || continue
+		set -- $stats_subdir/$snapshot_glob.txt
+		(( $# > $min_files_to_keep )) || break
+		$IfRun rm $file
 	done
 	}
 
@@ -7732,12 +7738,6 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	IfRun=echo debug_opt=$true
-	drive_name=L; drive_log_dir=$drives_log_dir/$drive_name
-	writer_time_dir=$drive_log_dir/stats/backup/rsync-minutes
-	create-stats_subdir-and-symlink-to-it $writer_time_dir; _exit
-	prune-stats-files $writer_time_dir; _exit
-
 	_set-drive_name ${1:-I}
 	for n in I X Z; do set-backup_type $n; done;
 	   echo; echo ${drive_name2backup_type[*]}; echo
