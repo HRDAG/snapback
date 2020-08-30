@@ -2087,20 +2087,6 @@ readonly    MB_used_basename=MB-changes
 
 # ---------------------------------
 
-function set-writer_time_subdir() {
-	local  writer_type=${1:-$writer_type}
-
-	if [[ $writer_type == prune ]]
-	   then local basename=$rm_time_basename
-	   else local basename=$rsync_time_basename
-	fi
-	writer_time_subdir=stats/$writer_type/$basename
-	[[ -d $writer_time_subdir ]]
-}
-readonly -f set-writer_time_subdir
-
-# ----------------------------------------------------------------------------
-
 rm-dangling-stats-symlinks() {
 
 	cd $stats_dir &> $dev_null || return
@@ -2112,6 +2098,20 @@ rm-dangling-stats-symlinks() {
 	cd $OLDPWD
 }
 readonly -f rm-dangling-stats-symlinks
+
+# ----------------------------------------------------------------------------
+
+function set-writer_time_subdir() {
+	local  writer_type=${1:-$writer_type}
+
+	if [[ $writer_type == prune ]]
+	   then local basename=$rm_time_basename
+	   else local basename=$rsync_time_basename
+	fi
+	writer_time_subdir=stats/$writer_type/$basename
+	[[ -d $writer_time_subdir ]]
+}
+readonly -f set-writer_time_subdir
 
 # ----------------------------------------------------------------------------
 
@@ -2146,8 +2146,8 @@ record-writer-stats() {
 	[[ $writer_type != prune ]] || return
 
 	set-writer_time_subdir
-	local rsync_time_subdir=$drive_log_dir/$writer_time_subdir
-	local file=$rsync_time_subdir/$snapshot.txt
+	local rsync_time_dir=$drive_log_dir/$writer_time_subdir
+	local file=$rsync_time_dir/$snapshot.txt
 	$IfRun mkdir -p ${file%/*}
 	local link=$log_dir/$writer_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
