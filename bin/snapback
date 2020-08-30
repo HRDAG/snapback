@@ -2181,7 +2181,7 @@ record-writer-stats() {
 	setup-stats-subdirs-and-symlinks $writer_time_dir
 
 	local file=$writer_time_dir/$snapshot.txt
-	local cmd="echo $minutes > $file"
+	local cmd="echo $writer_minutes > $file"
 	if [[ $debug_opt ]]
 	   then echo "$cmd"
 	   else eval "$cmd"
@@ -2215,19 +2215,20 @@ set-writer_stats--as-record-writer-stats() {
 	writer_stats="(at $priority priority)" # for regression test
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
-	   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
+	   then local -i writer_minutes=$(( ($SECONDS + 30) / 60 ))
 		local hours
-		set-hours--from-minutes $minutes
+		set-hours--from-minutes $writer_minutes
+		local writer_hours=$hours
 
 		local used=0
 		$IfRun setup-df-data-from-fields -BM $drive_dir used
-		local -i used_MB=${used%M}-$starting_MB
-		set-division -2 $used_MB 1000
-		used_GB=$division
+		local -i writer_MB=${used%M}-$starting_MB
+		set-division -2 $writer_MB 1000
+		writer_GB=$division
 
 		record-writer-stats $snapshot
 
-		writer_stats+=" in $hours hours; used $used_GB GB"
+		writer_stats+=" in $writer_hours hours; used $writer_GB GB"
 	   else writer_stats+=": earlier attempt aborted"
 	fi
 }
