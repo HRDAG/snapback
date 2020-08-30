@@ -2105,6 +2105,7 @@ setup-stats-subdirs-and-symlinks() {
 	local writer_time_dir=$1
 
 	$IfRun mkdir -p $writer_time_dir
+	local writer_time_subdir=${writer_time_dir#$drive_log_dir/}
 	local link=$log_dir/$writer_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
@@ -7705,6 +7706,12 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	IfRun=echo debug_opt=$true
+	drive_name=L; drive_log_dir=$drives_log_dir/$drive_name
+	writer_time_dir=$drive_log_dir/stats/backup/rsync-minutes
+	setup-stats-subdirs-and-symlinks $writer_time_dir; _exit
+	prune-stats-files $writer_time_dir; _exit
+
 	_set-drive_name ${1:-I}
 	for n in I X Z; do set-backup_type $n; done;
 	   echo; echo ${drive_name2backup_type[*]}; echo
