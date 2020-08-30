@@ -603,11 +603,11 @@ function lock-PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
-	   else $xtrace; return 1
+	   else $xtrace; return $status
 	fi >&2
 	print-call-stack ${drive_name-} >&2
 	$xtrace
-	return 1
+	return $status
 }
 readonly -f lock-PID
 
@@ -725,7 +725,8 @@ function lock() {
 	 _set-wait_opt $do_wait
 
 	# be sure to grab primary lock first, so job appears on dashboard
-	lock-PID $wait_opt $type "$lock_msg" || { $xtrace; return 1; }
+	lock-PID $wait_opt $type "$lock_msg" ||
+	    { local status=$?; $xtrace; return $status; }
 	local primary_lock_path=$lock_path # lock-PID sets lock_path
 
 	! [[ $action == update* && $debug_opt ]] && # not regression-test?
@@ -734,7 +735,8 @@ function lock() {
 	   then true
 	   else lock-PID $wait_opt backup "$extra_lock_msg" &&
 		lock-PID --release backup "$extra_lock_msg" ||
-		   { sudo-lockpid -r $primary_lock_path; $xtrace; return 1; }
+		   { local status=$?; sudo-lockpid -r $primary_lock_path;
+		     $xtrace; return $status; }
 	fi
 
 	_lock_type_name2lock_path[$type,$name]=$primary_lock_path
