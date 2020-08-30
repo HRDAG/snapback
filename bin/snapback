@@ -2146,8 +2146,8 @@ record-writer-stats() {
 	[[ $writer_type != prune ]] || return
 
 	set-writer_time_subdir
-	local rsync_time_dir=$drive_log_dir/$writer_time_subdir
-	local file=$rsync_time_dir/$snapshot.txt
+	local writer_time_dir=$drive_log_dir/$writer_time_subdir
+	local file=$writer_time_dir/$snapshot.txt
 	$IfRun mkdir -p ${file%/*}
 	local link=$log_dir/$writer_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
