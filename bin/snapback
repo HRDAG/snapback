@@ -2080,29 +2080,38 @@ readonly -f reset-priority
 
 readonly stats_dir=$log_dir/stats
 
+# first letter of each basename is used in rm-dangling-stats-symlinks
 readonly rsync_time_basename=rsync-minutes
+readonly    rm_time_basename=rm-minutes
+readonly    MB_used_basename=MB-changes
 
-function set-rsync_time_subdir() {
+# ---------------------------------
+
+function set-writer_time_subdir() {
 	local  writer_type=${1:-$writer_type}
 
-	rsync_time_subdir=stats/$writer_type/$rsync_time_basename
-	[[ -d $rsync_time_subdir ]]
+	if [[ $writer_type == prune ]]
+	   then local basename=$rm_time_basename
+	   else local basename=$rsync_time_basename
+	fi
+	writer_time_subdir=stats/$writer_type/$basename
+	[[ -d $writer_time_subdir ]]
 }
-readonly -f set-rsync_time_subdir
+readonly -f set-writer_time_subdir
 
 # ----------------------------------------------------------------------------
 
-rm-dangling-symlinks() {
+rm-dangling-stats-symlinks() {
 
 	cd $stats_dir &> $dev_null || return
 
-	for drive in */$rsync_time_basename/*
+	for drive in */[rM]*/*
 	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
 	done
 
 	cd $OLDPWD
 }
-readonly -f rm-dangling-symlinks
+readonly -f rm-dangling-stats-symlinks
 
 # ----------------------------------------------------------------------------
 
@@ -2110,8 +2119,8 @@ archive-rsync-time-data() {
 
 	local type
 	for type in $writer_types
-	    do	set-rsync_time_subdir $type || continue
-		local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+	    do	set-writer_time_subdir $type || continue
+		local rsync_time_dir=$drive_log_dir/$writer_time_subdir
 
 		cd_ $rsync_time_dir
 		set -- *.txt
@@ -2131,17 +2140,19 @@ readonly -f archive-rsync-time-data
 is-set	      days_to_keep ||		# can set custom value in $config_file
 declare -r -i days_to_keep=3		# ensure more than weekend-only data
 
-record-rsync-time() {
+record-writer-stats() {
 	local snapshot=${1##*/}
 
-	set-rsync_time_subdir
-	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
-	local file=$rsync_time_dir/$snapshot.txt
+	[[ $writer_type != prune ]] || return
+
+	set-writer_time_subdir
+	local rsync_time_subdir=$drive_log_dir/$writer_time_subdir
+	local file=$rsync_time_subdir/$snapshot.txt
 	$IfRun mkdir -p ${file%/*}
-	local link=$log_dir/$rsync_time_subdir/$drive_name
+	local link=$log_dir/$writer_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
-	$IfRun ln -s ../../../drives/$drive_name/$rsync_time_subdir $link
+	$IfRun ln -s ../../../drives/$drive_name/$writer_time_subdir $link
 
 	local cmd="echo $minutes > $file"
 	if [[ $debug_opt ]]
@@ -2159,7 +2170,7 @@ record-rsync-time() {
 	    do	[[ $file -ot $min_date_TS ]] && $IfRun rm $file
 	done
 }
-readonly -f record-rsync-time
+readonly -f record-writer-stats
 
 # ----------------------------------------------------------------------------
 
@@ -2195,8 +2206,7 @@ set-writer_stats--as-record-writer-stats() {
 		set-division -2 $used_MB 1000
 		used_GB=$division
 
-		[[ $writer_type != prune ]] &&
-		record-rsync-time $snapshot
+		record-writer-stats $snapshot
 
 		writer_stats+=" in $hours hours; used $used_GB GB"
 	   else writer_stats+=": earlier attempt aborted"
@@ -4193,7 +4203,7 @@ readonly -f update-drive
 do-chores() {
 
 	check-logs			# create data for 'watch'
-	rm-dangling-symlinks
+	rm-dangling-stats-symlinks
 	rm-stale-locks			# do before ...
 	re-start-monitor-drives-if-needed
 	# log "$FUNCNAME finished"	# for debugging
@@ -4444,8 +4454,8 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	local dir drive_name
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
-		set-rsync_time_subdir
-		local   dir=$drives_log_dir/$drive_name/$rsync_time_subdir
+		set-writer_time_subdir
+		local   dir=$drives_log_dir/$drive_name/$writer_time_subdir
 		set -- $dir/$snapshot_glob.txt
 		set-hour_avg-hour_max--from-files-of-minutes $*
 		hour_avgs+="$drive_name=$hour_avg "
@@ -7719,13 +7729,9 @@ case $action in
 	fill-in-unpruned-empty-snapshots $arg_file; _exit
 
 	set-drive_name ${1:-F}
-	SECONDS=0; set-drive_dir $drive_name
-	record-rsync-time 2000-01-01,00; _exit
-
-	set-drive_name ${1:-F}
 	set-drive_dir $drive_name; sync-drive-unless-writers prune; _exit
 
-	cd_ $log_dir/$rsync_time_subdir/I
+	cd_ $log_dir/$writer_time_subdir/I
 	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
 	set-average-maximum--from-files-of-numbers *.txt
 	TraceV 0 average maximum; _exit
