@@ -1767,6 +1767,43 @@ readonly -f reset-priority
 
 ##############################################################################
 ##############################################################################
+# Functions and variables used to record writer stats
+##############################################################################
+##############################################################################
+
+set-SECONDS-starting_MB--for-record-writer-stats() {
+	local is_a_restart=$1
+
+	if [[ $is_a_restart ]]		# already half-done
+	   then SECONDS=-1123456789	# our signal to not record stats
+	   else SECONDS=0		# else do
+		local used=0
+		$IfRun setup-df-data-from-fields -BM $drive_dir used
+		starting_MB=${used%M}
+	fi
+}
+readonly -f set-SECONDS-starting_MB--for-record-writer-stats
+
+# -------------------------------------------------------
+
+set-writer_stats--as-record-writer-stats() {
+
+	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
+	   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
+		set-hours--from-minutes $minutes
+
+		local used=0
+		$IfRun setup-df-data-from-fields -BM $drive_dir used
+		local -i used_MB=${used%M}-$starting_MB
+
+		writer_stats=" in $hours hours; used $used_MB MB"
+	   else writer_stats=
+	fi
+}
+readonly -f set-writer_stats--as-record-writer-stats
+
+##############################################################################
+##############################################################################
 # Functions and variables used to prune old backup snapshots.
 ##############################################################################
 ##############################################################################
@@ -2035,28 +2072,21 @@ rm-pruned-snapshots() {
 
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
-	    do	local -i starting_MB=0
-		local used=0
-		local pruning_flag=$snapshot/.pruning
+	    do	local pruning_flag=$snapshot/.pruning
 		if [[ -e $pruning_flag ]]   # already half-pruned?
-		   then SECONDS=-1123456789 # then don't time it
-		   else SECONDS=0	    # else do
-			$IfRun setup-df-data-from-fields -BM $drive_dir used
-			starting_MB=${used%M}
+		   then local is_a_restart=$true
+		   else local is_a_restart=$false
 		fi
+		local  -i   starting_MB=0
+		set-SECONDS-starting_MB--for-record-writer-stats $is_a_restart
+
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
 		$IfRun touch $pruning_flag && # .rm suffix maybe removed
 		$IfRun env rm -rf $snapshot || continue
 		${rm_snapshot_post_hook-} # could update database
-		if (( $SECONDS >= 0 ))
-		   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
-			set-hours--from-minutes $minutes
-			$IfRun setup-df-data-from-fields -BM $drive_dir used
-			local -i used_MB=${used%M}-$starting_MB
-			local stats=" in $hours hours; used $used_MB MB"
-		   else local stats=
-		fi
-		(( $log_level >= 2 )) && log "deleted $snapshot$stats"
+
+		set-writer_stats--as-record-writer-stats
+		(( $log_level >= 2 )) && log "deleted $snapshot$writer_stats"
 		suspend-tracing
 	done
 	restore-tracing
@@ -3096,7 +3126,7 @@ function run-rsync() {
 	fi
 	restore-tracing link_dest_opts
 
-	local -i starting_MB=0 used_MB=0 # _run-rsync-cmd & _handle-rsync-results
+	local -i starting_MB=0		# for *-record-writer-stats
 	_run-rsync-cmd
 	local status=$?
 
