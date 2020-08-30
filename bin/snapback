@@ -3500,11 +3500,13 @@ did_prevent_pruning_print_stack=$false
 prevent-pruning() {
 	local resource=$1
 
-	until lock -P prune $resource
-	    do	kill-job-on-drives prune $resource
+	until lock -P prune $resource > $dev_null
+	    do	local status=$?
+		kill-job-on-drives prune $resource
 		if [[ ! $did_prevent_pruning_print_stack ]]
 		   then  did_prevent_pruning_print_stack=$true
-			print-call-stack "warning: awaiting $drive_name lock" |
+			local lock_msg="lock returned $status"
+			print-call-stack "$lock_msg: awaiting $drive_name lock" |
 			    tee -a $file_for_logging
 		fi
 		$IfRun env sleep 1.0
