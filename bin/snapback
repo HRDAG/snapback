@@ -2025,10 +2025,10 @@ readonly -f set-priority
 
 function reset-drive-jobs-priorities {
 
-	local type job_PGID priority status=1
+	local type job_PGID status=1
 	for type in $writer_types
 	    do	set-job_PGID $type || continue
-		set-priority $type $job_PGID
+		set-priority $type $job_PGID # *-record-writer-stats uses var
 		status=0
 	done
 	return $status
