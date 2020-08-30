@@ -2162,11 +2162,13 @@ set-writer_stats--as-record-writer-stats() {
 		local used=0
 		$IfRun setup-df-data-from-fields -BM $drive_dir used
 		local -i used_MB=${used%M}-$starting_MB
+		set-division -2 $used_MB 1000
+		used_GB=$division
 
 		[[ $writer_type != prune ]] &&
 		record-rsync-time $snapshot
 
-		writer_stats+=" in $hours hours; used $used_MB MB"
+		writer_stats+=" in $hours hours; used $used_GB GB"
 	   else writer_stats+=": earlier attempt aborted"
 	fi
 }
