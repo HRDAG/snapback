@@ -98,7 +98,7 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # monitoring swapout rate
 # -----------------------
 
-# see J. in doc/Install.txt for a method to find the value of this variable
+# set this by running: snapback measure-swapout-bandwith $swap_device
 # declare -r -i max_swapout_MBps=50
 
 # --------------------------------------------------

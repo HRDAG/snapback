@@ -414,7 +414,7 @@ Then you want to run the 'pmie' command, typically by installing the 'pcp'
 package.
 
 If you make vm.vfs_cache_pressure too low, pmie will write a message to syslog
-tht that looks like:
+that that looks like:
 
     pcp-pmie[PID]: Severe demand for real memory N.Mpgsout/s@HOST
 
@@ -425,20 +425,14 @@ If you set max_swapout_MBps= in configure.sh, 'snapback watch' will report the
 percentage of swap bandwidth that's used.  Here's how to determine the value
 of max_swapout_MBps:
 
-    IfRun=echo		# comment-out to not debug
+    snapback measure-swapout-bandwith $swap_device
 
-    swap_dev=/dev/???		# from swapon -s
-    swap_label=????		# from LABEL=???? in /etc/fstab
+If you're not running GNU/Linux, the above probably won't work, but you'll get
+a hint about what to do by running:
 
-    # if swapoff fails, add a temporary swap with dd and mkswap
-    $IfRun swapoff $swap_dev &&
-    $IfRun dd if=/dev/zero of=$swap_dev bs=1M count=20480
+    snapback -d measure-swapout-bandwith $swap_device
 
-    $IfRun mkswap --label $swap_label $swap_dev &&
-    $IfRun swapon -a &&
-    $IfRun swapon --show
-
-So, first assess how often this happens with the default value of
+So, first assess how often swapping happens with the default value of
 vm.vfs_cache_pressure, by checking all the older syslog files:
 
     snapback big-swapouts

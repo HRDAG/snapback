@@ -172,9 +172,10 @@ Usage: $our_name [options] action [options] [args]
     w: show full details on all jobs and drives
     watch [-s][-C][-N names] [watch-opts]: dashboard (-s: stats; -C: cron jobs)
     big-swapouts: search syslog files for warnings about high swapout rates
+    measure-swapout-bandwith swap-dev: to set max_swapout_MBps in configure.sh
     check-logs: update error cache: run this if dashboard fails with I/O error
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
-    df [-a][-A]: show filesystem details; -A adds non-backup drives
+    df [-A]: show filesystem details; -A adds non-backup drives
 
     # -signal defaults to -KILL (-9), i.e. terminates job & deletes lock;
     # a glob can be a comma-separated list, a shell glob pattern, or 'all'.
@@ -6709,28 +6710,29 @@ measure-swapout-MBps() {
 	shopt -u nullglob		# so can use ? in debug mode
 	set -f				# won't do any globbing
 
-	local args="--raw --bytes --show=name,size,uuid,label"
-	if [[ ! $debug_opt ]]
-	   then swapon $args > $tmp_1 ||
-		   abort "need a 'swapon' that supports $args"
-	   else echo swapon $args
+	local swapon_args="--raw --bytes --show=name,size,used,uuid,label"
+	if have-cmd swapon || [[ ! $debug_opt ]]
+	   then swapon $swapon_args > $tmp_1 ||
+		   abort "need a 'swapon' that supports $swapon_args"
+	   else echo swapon $swapon_args
 	fi
 	#
-	if [[ ! $debug_opt ]]
+	if [[ -s $tmp_1 || ! $debug_opt ]]
 	   then set -- $(grep "^$swap_dev " $tmp_1)
 		(( $# >= 2 )) || abort "need to first run: sudo swapon $swap_dev"
-		local bytes=$2 UUID=$3 label=${4-}
-		local -i MB=$bytes/1024/1024
-		local -i MB_1=MB-1
-		(( $MB_1 > 0 )) || MB_1=1
-	   else local MB=? MB_1=?
+		local size_B=$2 used_B=$3 UUID=$4 label=${5-}
+		local -i size_MB=$size_B/1024/1024   used_MB=$used_B/1024/1024
+		local -i size_MB_1=size_MB-1
+		(( $size_MB_1 >   0 )) || size_MB_1=1
+		(( $size_MB_1 > 999 )) && size_MB_1=999
+	   else local size_MB=? size_MB_1=?
 		local UUID=UUID label=label
 		cat $tmp_1
 	fi
 
 	$IfRun sudo swapoff $swap_dev || 
 	    abort "add temporary swap: 'dd', 'mkswap', 'chmod', 'swapon'"
-	$IfRun sudo dd if=/dev/zero of=$swap_dev bs=1M count=$MB_1 &> $tmp_1
+	$IfRun sudo dd if=/dev/zero of=$swap_dev bs=1M count=$size_MB_1 &> $tmp_1
 	if [[ ! $debug_opt ]]
 	   then local bw=$(sed -n '$s/.*, *//p' $tmp_1)
 		warn "swapout bandwidth is $bw"
@@ -6738,11 +6740,11 @@ measure-swapout-MBps() {
 	fi
 
 	[[ $label ]] && label_opt="--label $label"
-	local args="$label_opt --uuid $UUID $swap_dev"
+	local args="${label_opt-} --uuid $UUID $swap_dev"
 	$IfRun mkswap $args || abort "mkswap $args -> $?"
 
-	$IfRun swapon $swap_dev
-	$IfRun swapon --show
+	$IfRun sudo swapon $swap_dev
+	echo; swapon --show=${swapon_args/*--show=/},prio
 
 	set +x
 }
