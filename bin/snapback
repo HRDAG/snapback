@@ -1771,6 +1771,63 @@ readonly -f reset-priority
 ##############################################################################
 ##############################################################################
 
+archive-rsync-time-data() {
+
+	local type
+	for type in $writer_types
+	    do	set-rsync_time_subdir $type || continue
+		local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+
+		cd_ $rsync_time_dir
+		set -- *.txt
+		if [[ $# != 0 ]]
+		   then set-date_time -r .
+			dir=$PWD/.${date_time%,*} # absolute path, for -v
+			$IfRun mkdir -p    $dir
+			$IfRun mv -v *.txt $dir/
+		fi
+		cd $OLDPWD
+	done
+}
+readonly -f archive-rsync-time-data
+
+# ----------------------
+
+is-set	      days_to_keep ||		# can set custom value in $config_file
+declare -r -i days_to_keep=3		# ensure more than weekend-only data
+
+record-rsync-time() {
+	local snapshot=${1##*/}
+
+	set-rsync_time_subdir
+	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
+	local file=$rsync_time_dir/$snapshot.txt
+	$IfRun mkdir -p ${file%/*}
+	local link=$log_dir/$rsync_time_subdir/$drive_name
+	$IfRun mkdir -p ${link%/*}
+	[[ -e $link ]] ||
+	$IfRun ln -s ../../../drives/$drive_name/$rsync_time_subdir $link
+
+	local cmd="echo $minutes > $file"
+	if [[ $debug_opt ]]
+	   then echo "$cmd"
+	   else eval "$cmd"
+	fi || return 1
+
+	set -- ${file%/*}/$snapshot_glob.txt
+	[[ $# != 0 ]] || return
+	# copy'ed snapshots aren't copied in date,time order, so use file time
+	local min_date_TS=$tmp_1
+	local old_date=$(date -d "-$days_to_keep days")
+	touch --date="$old_date" $min_date_TS
+	for file
+	    do	[[ $file -ot $min_date_TS ]] && $IfRun rm $file
+	done
+}
+readonly -f record-rsync-time
+
+# ----------------------------------------------------------------------------
+
 set-SECONDS-starting_MB--for-record-writer-stats() {
 	local is_a_restart=${1-}
 
@@ -1787,17 +1844,24 @@ readonly -f set-SECONDS-starting_MB--for-record-writer-stats
 # -------------------------------------------------------
 
 set-writer_stats--as-record-writer-stats() {
+	local snapshot=$1
+
+	writer_stats="(priority=$priority)"
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
 	   then local -i minutes=$(( ($SECONDS + 30) / 60 ))
+		local hours
 		set-hours--from-minutes $minutes
 
 		local used=0
 		$IfRun setup-df-data-from-fields -BM $drive_dir used
 		local -i used_MB=${used%M}-$starting_MB
 
-		writer_stats=" in $hours hours; used $used_MB MB"
-	   else writer_stats=" (earlier attempt aborted)"
+		[[ $writer_type != prune ]] &&
+		record-rsync-time $snapshot
+
+		writer_stats+=" in $hours hours; used $used_MB MB"
+	   else writer_stats+=": earlier attempt aborted"
 	fi
 }
 readonly -f set-writer_stats--as-record-writer-stats
@@ -2085,7 +2149,7 @@ rm-pruned-snapshots() {
 		$IfRun env rm -rf $snapshot || continue
 		${rm_snapshot_post_hook-} # could update database
 
-		set-writer_stats--as-record-writer-stats
+		set-writer_stats--as-record-writer-stats $snapshot
 		(( $log_level >= 2 )) && log "deleted $snapshot$writer_stats"
 		suspend-tracing
 	done
@@ -2886,74 +2950,6 @@ readonly -f rm-dangling-symlinks
 
 # ----------------------------------------------------------------------------
 
-archive-rsync-time-data() {
-
-	local type
-	for type in $writer_types
-	    do	set-rsync_time_subdir $type || continue
-		local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
-
-		cd_ $rsync_time_dir
-		set -- *.txt
-		if [[ $# != 0 ]]
-		   then set-date_time -r .
-			dir=$PWD/.${date_time%,*} # absolute path, for -v
-			$IfRun mkdir -p    $dir
-			$IfRun mv -v *.txt $dir/
-		fi
-		cd $OLDPWD
-	done
-}
-readonly -f archive-rsync-time-data
-
-# ----------------------
-
-is-set	      days_to_keep ||		# can set custom value in $config_file
-declare -r -i days_to_keep=3		# ensure more than weekend-only data
-
-record-rsync-time() {
-	local snapshot=${1##*/}
-
-	rsync_hours='<unknown>'
-	(( $SECONDS >= 0 )) || return	# did snapshot start non-empty?
-
-	local -i minutes=$(( ($SECONDS + 30) / 60 ))
-	set-hours--from-minutes $minutes
-	rsync_hours=$hours
-	#
-	local used=0
-	$IfRun setup-df-data-from-fields -BM $drive_dir used
-	used_MB=${used%M}-$starting_MB
-
-	set-rsync_time_subdir
-	local rsync_time_dir=$drive_log_dir/$rsync_time_subdir
-	local file=$rsync_time_dir/$snapshot.txt
-	$IfRun mkdir -p ${file%/*}
-	local link=$log_dir/$rsync_time_subdir/$drive_name
-	$IfRun mkdir -p ${link%/*}
-	[[ -e $link ]] ||
-	$IfRun ln -s ../../../drives/$drive_name/$rsync_time_subdir $link
-
-	local cmd="echo $minutes > $file"
-	if [[ $debug_opt ]]
-	   then echo "$cmd"
-	   else eval "$cmd"
-	fi || return 1
-
-	set -- ${file%/*}/$snapshot_glob.txt
-	[[ $# != 0 ]] || return
-	# copy'ed snapshots aren't copied in date,time order, so use file time
-	local min_date_TS=$tmp_1
-	local old_date=$(date -d "-$days_to_keep days")
-	touch --date="$old_date" $min_date_TS
-	for file
-	    do	[[ $file -ot $min_date_TS ]] && $IfRun rm $file
-	done
-}
-readonly -f record-rsync-time
-
-# -------------------------------------------
-
 _links-error-msg() {
 	local msg=$*
 
@@ -3003,11 +2999,10 @@ _handle-rsync-results() {
 		set -- $snapshot_glob && [[ $# != 0 ]] &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update-snapshots-ls
-		record-rsync-time $new_snapshot
+		set-writer_stats--as-record-writer-stats $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
-		local stats="in $rsync_hours hours; used $used_MB MB" &&
-		$IfRun log "created $new_snapshot (at $priority priority) $stats"
+		$IfRun log "created $new_snapshot $writer_stats"
 	   else set -- $(bzcat $log 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
@@ -3020,7 +3015,7 @@ _handle-rsync-results() {
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links-error-msg "$error_msg")
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
-			record-rsync-time $new_snapshot
+			set-writer_stats--as-record-writer-stats $new_snapshot
 		fi
 		if is-arg1-in-arg2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
@@ -3070,12 +3065,11 @@ function _run-rsync-cmd() {
 					   --exclude-from=$exclude_file"
 	set -- $partial_dst/*
 	if [[ $# != 0 ]]		# snapshot not empty?
-	   then SECONDS=-1123456789	# then don't time it, partially done
-	   else SECONDS=0		# then time the rsync
-		local used=0
-		$IfRun setup-df-data-from-fields -BM $drive_dir used
-		starting_MB=${used%M}
+	   then local is_a_restart=$true
+	   else local is_a_restart=$false
 	fi
+	local  -i   starting_MB=0
+	set-SECONDS-starting_MB--for-record-writer-stats $is_a_restart
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
