@@ -2133,9 +2133,9 @@ archive-rsync-time-data() {
 	local type
 	for type in $writer_types
 	    do	set-writer_time_subdir $type || continue
-		local rsync_time_dir=$drive_log_dir/$writer_time_subdir
+		local time_dir=$drive_log_dir/$writer_time_subdir
 
-		cd_ $rsync_time_dir
+		cd_ $time_dir
 		set -- *.txt
 		if [[ $# != 0 ]]
 		   then set-date_time -r .
