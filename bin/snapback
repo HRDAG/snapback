@@ -2076,6 +2076,34 @@ readonly -f reset-priority
 ##############################################################################
 ##############################################################################
 
+readonly stats_dir=$log_dir/stats
+
+readonly rsync_time_basename=rsync-minutes
+
+function set-rsync_time_subdir() {
+	local  writer_type=${1:-$writer_type}
+
+	rsync_time_subdir=stats/$writer_type/$rsync_time_basename
+	[[ -d $rsync_time_subdir ]]
+}
+readonly -f set-rsync_time_subdir
+
+# ----------------------------------------------------------------------------
+
+rm-dangling-symlinks() {
+
+	cd $stats_dir &> $dev_null || return
+
+	for drive in */$rsync_time_basename/*
+	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
+	done
+
+	cd $OLDPWD
+}
+readonly -f rm-dangling-symlinks
+
+# ----------------------------------------------------------------------------
+
 archive-rsync-time-data() {
 
 	local type
@@ -3188,34 +3216,6 @@ readonly -f _is-time-to-backup-drive
 # -----------------------------------------------------
 # the following functions support _handle-rsync-results
 # -----------------------------------------------------
-
-readonly stats_dir=$log_dir/stats
-
-readonly rsync_time_basename=rsync-minutes
-
-function set-rsync_time_subdir() {
-	local  writer_type=${1:-$writer_type}
-
-	rsync_time_subdir=stats/$writer_type/$rsync_time_basename
-	[[ -d $rsync_time_subdir ]]
-}
-readonly -f set-rsync_time_subdir
-
-# ---------------------------------
-
-rm-dangling-symlinks() {
-
-	cd $stats_dir &> $dev_null || return
-
-	for drive in */$rsync_time_basename/*
-	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
-	done
-
-	cd $OLDPWD
-}
-readonly -f rm-dangling-symlinks
-
-# ----------------------------------------------------------------------------
 
 _links-error-msg() {
 	local msg=$*
