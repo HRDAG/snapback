@@ -351,6 +351,49 @@ assert-drive_dir-writable() {
 }
 readonly -f assert-drive_dir-writable
 
+# ----------------------------------------------------------------------------
+# functions to switch between msecs (milliseconds), secs, minutes, hours
+# ----------------------------------------------------------------------------
+
+set-secs--from-msecs() {
+	if [[ $1 == -* ]]
+	   then local decimal_digits_opt=$1  msecs=$2
+	   else local decimal_digits_opt=-2  msecs=$1
+	fi
+
+	local division
+	set-division $decimal_digits_opt $msecs 1000
+	secs=$division
+}
+readonly -f set-secs--from-msecs
+
+# ----------------------------------------------------------------------------
+
+set-msecs--from-secs() {
+
+	local -i product
+	set-product $1 1000
+	msecs=$product
+}
+readonly -f set-msecs--from-secs
+
+# ----------------------------------------------------------------------------
+
+set-hours--from-minutes() {
+	if [[ $1 == -* ]]
+	   then local decimal_digits_opt=$1  minutes=$2
+	   else local decimal_digits_opt=-2  minutes=$1
+	fi
+
+	local division
+	set-division $decimal_digits_opt $minutes 60
+	hours=$division
+}
+readonly -f set-hours--from-minutes
+
+set-hours--from-minutes 10
+[[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
+
 ##############################################################################
 # lock management
 ##############################################################################
@@ -1620,6 +1663,266 @@ customize-and-validate-configuration-variables() {
 }
 readonly -f customize-and-validate-configuration-variables
 
+############################################################################
+# functions to implement an independent process that monitors disk speed,
+# and creates fast replicas of each drive's snapshots (so 'w' doesn't hang).
+############################################################################
+
+readonly _monitor_dir=$status_dir/drives
+
+readonly    _mon_lock_dir=$_monitor_dir/lock	       # world-writable,for 'w'
+readonly   _mon_globs_dir=$_monitor_dir/globs	       # where list snapshots
+readonly  drive_msecs_dir=$_monitor_dir/msecs	       # response time, for 'w'
+readonly window_msecs_dir=$_monitor_dir/window-msecs   # msec sample periods
+readonly snapshots_replica_dir=$_monitor_dir/snapshots # 'w' uses, avoids hangs
+readonly non_empty_partial_dir=$_monitor_dir/partials  # for stats's -e and -E
+
+function create-monitor-dirs() {
+
+	local dirs="$_mon_globs_dir $drive_msecs_dir $window_msecs_dir
+		    $snapshots_replica_dir $non_empty_partial_dir"
+	mkdir -p $dirs $_mon_lock_dir &&
+	chmod ugo+rwx  $_mon_lock_dir	# so don't need sudo-lockpid
+}
+readonly -f create-monitor-dirs
+
+# ----------------------------------------------------------------------------
+
+lock-replica-of-snapshots() {
+
+	local sleep_msecs=0.5		# less than mon_* resolution
+	local lock_file=${FUNCNAME#*lock-}.pid
+
+	umask 0				# so watch doesn't need sudo-lockpid
+	$IfRun \
+	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file
+	umask $umask
+}
+readonly -f lock-replica-of-snapshots
+
+# ----------------------------------------------------------------------------
+
+declare -i msecs epoch_msecs
+
+readonly mon_overhead_drive_name=_RAM_
+readonly mon_overhead_drive_dir=$snapshots_replica_dir
+
+mon-launch-globs() {
+
+	local drive_name drive_dir
+	for drive_name
+	    do	 _set-drive_dir $drive_name || abort "bad $drive_name"
+		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
+
+		cd $drive_dir || continue
+
+		local glob_file=$_mon_globs_dir/$drive_name
+		local -i epoch_msecs
+		set-epoch_msecs # takes ~1 msec to fork+exec (not if bash-5)
+		# if $ls_drive_name2PID[$drive_name] still alive, will slow this:
+		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
+		drive_name2PID[$drive_name]=$!
+		drive_name2msecs[$drive_name]=$epoch_msecs
+
+		if [[ $drive_name == $mon_overhead_drive_name ]]
+		   then local mon_msec_increment=2  mon_sec_increment=0.002
+			mon-look-for-finished-globs $drive_name
+			continue	# don't need *.partial code
+		fi
+
+		local  PID=${ls_drive_name2PID[$drive_name]-}
+		[[ $PID ]] && kill -0 $PID 2> $dev_null && continue # running?
+		#
+		local partial_file=$non_empty_partial_dir/$drive_name
+		# snapshot is non-empty if has subdirectories: check link count
+		( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
+		     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
+				mv $partial_file.$$ $partial_file ) &
+		ls_drive_name2PID[$drive_name]=$!
+	done
+
+	cd $tmp_dir		    # in case user tries to unmount $drive_dir
+}
+readonly -f mon-launch-globs
+
+# ----------------------
+
+mon-process-finished-glob() {
+	local drive_name=$1
+
+	set-epoch_msecs
+	local -i    start_msecs=${drive_name2msecs[$drive_name]}
+	local -i response_msecs=$epoch_msecs-$start_msecs
+
+	local -i window_msecs=$(< $window_msecs_dir/$drive_name)
+	local -i sample_count=$window_msecs/$mon_check_period_msecs
+	(( $sample_count <= 0 )) && sample_count=1
+
+	if (( $response_msecs <= $mon_check_period_msecs ))
+	   then local samples=$response_msecs
+	   else # repeat $response_msecs if it spans multiple check-periods
+		local samples=
+		for ((  span=0, i=0;
+		       $span < $response_msecs && $i < $sample_count;
+			span+=$mon_check_period_msecs, i++ ))
+		    do	samples+="$response_msecs "
+		done
+	fi
+
+	local msecs_file=$drive_msecs_dir/$drive_name
+	if [[ -s $msecs_file ]]
+	   then set -- $(< $msecs_file) $samples
+	   else set --			$samples
+	fi
+	while (( $# > $sample_count )) ; do shift; done
+	echo-to-file "$*" $msecs_file
+
+	local  snapshots_dir=$snapshots_replica_dir/$drive_name
+	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
+	cd_   $snapshots_dir
+	local glob_file=$_mon_globs_dir/$drive_name
+	lock-replica-of-snapshots --wait # 'w' action uses same locking
+	rm -f *
+	local subdirs=$(< $glob_file)
+	[[ $subdirs ]] && touch $subdirs
+	touch -r $glob_file .
+	lock-replica-of-snapshots --release
+}
+readonly -f mon-process-finished-glob
+
+# -------------------------------------------------
+
+is-set		mon_check_period_secs ||  # can set custom value in $config_file
+readonly	mon_check_period_secs=0.5 # when look for newly-attached drives,
+set-msecs--from-secs $mon_check_period_secs # and also used for watch -n period
+declare -r -i	mon_check_period_msecs=$msecs
+#
+is-set        mon_msecs_increment || # can set custom value in $config_file
+declare -r -i mon_msecs_increment=1  # lower -> more precision, more CPU usage
+
+readonly mon_initialized_lock_path=$_mon_lock_dir/initialized.pid
+
+# pass a single drive_name for "solitary" processing (to measure overhead)
+mon-look-for-finished-globs() {
+	[[ $# == [01] ]] || abort-function "[drive_name]"
+	local _drive_name=${1-}
+
+	set-epoch_msecs
+	local -i start_msecs=$epoch_msecs
+	local -i sleep_msecs  slept_msecs
+	for (( sleep_msecs=0, slept_msecs=0;
+	       slept_msecs + sleep_msecs < $mon_check_period_msecs;
+	       slept_msecs+=$sleep_msecs, sleep_msecs+=$mon_msecs_increment ))
+	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
+		if [[ $# == 0 ]]	    # if not, stop looking
+		   then [[ $_drive_name ]] && abort-function "logic error"
+			lockpid --wait $mon_initialized_lock_path > $dev_null
+			set-epoch_msecs
+			local -i used_msecs=$epoch_msecs-$start_msecs
+			local -i left_msecs=$mon_check_period_msecs-$used_msecs
+			set-secs--from-msecs -3 $left_msecs
+			env sleep $secs	# want to appear in ps
+			return
+		fi
+
+		local drive_name
+		for drive_name in ${_drive_name:-${!drive_name2PID[*]}}
+		    do	local  PID=${drive_name2PID[$drive_name]}
+			[[ $PID ]] && kill -0 $PID 2> $dev_null &&
+			    continue			    # hasn't finished
+			drive_name2PID[$drive_name]=	    # just finished
+			unset "drive_name2PID[$drive_name]" # (might not work)
+
+			mon-process-finished-glob $drive_name &
+			[[ $_drive_name ]] && wait $! && return
+		done
+
+		msleep $sleep_msecs
+	done
+}
+readonly -f mon-look-for-finished-globs
+
+# ----------------------------------------------------------------------------
+
+monitor-drive-update() {
+	[[ ${1-} == -c ]] && { shift; local do_check=$true; } || local do_check=
+	[[ $# == 0 ]] &&
+	    set-drive_names -a && set -- $drive_names $mon_overhead_drive_name
+
+	cd_ $window_msecs_dir
+
+	local drive_name
+	for drive_name
+	    do	local window_msecs_file=$drive_name
+
+		if [[ $do_check ]]
+		   then is-newer $window_msecs_file $config_file && continue
+			$our_path monitor-drive-update # so re-read configure.sh
+			break
+		fi
+
+		[[ $drive_name == $mon_overhead_drive_name ]] &&
+		    drive_name=$1	# need a valid drive_name
+		local customized_value
+		set-customized_value--for-config-var-name \
+		    drive_response_averaging_window_secs
+		set-msecs--from-secs $customized_value
+		echo-to-file $msecs $window_msecs_file
+	done
+}
+readonly -f monitor-drive-update
+
+# ----------------------------------------------------------------------------
+
+readonly drive_monitor_lock_path=$lock_dir/monitor.pid
+
+monitor-drives() {
+
+	lockpid -q $drive_monitor_lock_path || exit-normally 0
+
+	create-status_dir &&
+	create-monitor-dirs || abort-function "couldn't create dirs"
+
+	exec &> $_monitor_dir/monitor.log # to catch problems
+
+	local -A -i drive_name2msecs	# drive response time in millliseconds
+	local -A    drive_name2PID	# don't use -i: set to '' when PID dies
+	local -A ls_drive_name2PID	# ditto
+	while true			# monitor forever
+	    do	set-drive_names -a	# see if a new drive appeared
+		# $mon_overhead_drive_name *must* be first, see $_drive_name code
+		drive_names="$mon_overhead_drive_name $drive_names"
+		monitor-drive-update -c $drive_names # was confgure.sh updated?
+		mon-launch-globs $drive_names
+		mon-look-for-finished-globs
+	done
+}
+readonly -f monitor-drives
+
+# ----------------------------------------------------------------------------
+
+re-start-monitor-drives-if-needed() {
+	[[ ${1-} == -f ]] && { shift;local do_force=$true; } || local do_force=
+
+	[[ $UID == 0 ]] || { sudo -n kill && sudo -n $our_path; } &> $dev_null ||
+	    return
+
+	if [[ $do_force ]] ||
+	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
+	     is-newer $our_path $drive_monitor_lock_path )
+	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
+		until signal-job -KILL $drive_monitor_lock_path
+		   do	$IfRun env sleep 0.09 # wait for globs/etc; 'watch' hangs
+		done
+		lock-replica-of-snapshots --release
+	fi
+
+	is-active-lock $drive_monitor_lock_path ||
+	    sudo $our_path monitor-drives > $dev_null
+}
+readonly -f re-start-monitor-drives-if-needed
+
+
 ##############################################################################
 # Manage priorities for backup and prune and update/copy.
 ##############################################################################
@@ -2880,47 +3183,6 @@ readonly -f _is-time-to-backup-drive
 # -----------------------------------------------------
 # the following functions support _handle-rsync-results
 # -----------------------------------------------------
-
-set-hours--from-minutes() {
-	if [[ $1 == -* ]]
-	   then local decimal_digits_opt=$1  minutes=$2
-	   else local decimal_digits_opt=-2  minutes=$1
-	fi
-
-	local division
-	set-division $decimal_digits_opt $minutes 60
-	hours=$division
-}
-readonly -f set-hours--from-minutes
-
-set-hours--from-minutes 10
-[[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
-
-# ----------------------
-
-set-msecs--from-secs() {
-
-	local -i product
-	set-product $1 1000
-	msecs=$product
-}
-readonly -f set-msecs--from-secs
-
-# ----------------------
-
-set-secs--from-msecs() {
-	if [[ $1 == -* ]]
-	   then local decimal_digits_opt=$1  msecs=$2
-	   else local decimal_digits_opt=-2  msecs=$1
-	fi
-
-	local division
-	set-division $decimal_digits_opt $msecs 1000
-	secs=$division
-}
-readonly -f set-secs--from-msecs
-
-# ---------------------------------
 
 readonly stats_dir=$log_dir/stats
 
@@ -5340,266 +5602,6 @@ readonly -f watch
 ##############################################################################
 
 # ----------------------------------------------------------------------------
-# functions to implement independent process that monitors disk speed,
-# and create fast replicas of each drive's snapshots (so 'w' doesn't hang)
-# ----------------------------------------------------------------------------
-
-readonly _monitor_dir=$status_dir/drives
-
-readonly    _mon_lock_dir=$_monitor_dir/lock	       # world-writable,for 'w'
-readonly   _mon_globs_dir=$_monitor_dir/globs	       # where list snapshots
-readonly  drive_msecs_dir=$_monitor_dir/msecs	       # response time, for 'w'
-readonly window_msecs_dir=$_monitor_dir/window-msecs   # msec sample periods
-readonly snapshots_replica_dir=$_monitor_dir/snapshots # 'w' uses, avoids hangs
-readonly non_empty_partial_dir=$_monitor_dir/partials  # for stats's -e and -E
-
-function create-monitor-dirs() {
-
-	local dirs="$_mon_globs_dir $drive_msecs_dir $window_msecs_dir
-		    $snapshots_replica_dir $non_empty_partial_dir"
-	mkdir -p $dirs $_mon_lock_dir &&
-	chmod ugo+rwx  $_mon_lock_dir	# so don't need sudo-lockpid
-}
-readonly -f create-monitor-dirs
-
-# ----------------------------------------------------------------------------
-
-lock-replica-of-snapshots() {
-
-	local sleep_msecs=0.5		# less than mon_* resolution
-	local lock_file=${FUNCNAME#*lock-}.pid
-
-	umask 0				# so watch doesn't need sudo-lockpid
-	$IfRun \
-	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file
-	umask $umask
-}
-readonly -f lock-replica-of-snapshots
-
-# ----------------------------------------------------------------------------
-
-declare -i msecs epoch_msecs
-
-readonly mon_overhead_drive_name=_RAM_
-readonly mon_overhead_drive_dir=$snapshots_replica_dir
-
-mon-launch-globs() {
-
-	local drive_name drive_dir
-	for drive_name
-	    do	 _set-drive_dir $drive_name || abort "bad $drive_name"
-		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
-
-		cd $drive_dir || continue
-
-		local glob_file=$_mon_globs_dir/$drive_name
-		local -i epoch_msecs
-		set-epoch_msecs # takes ~1 msec to fork+exec (not if bash-5)
-		# if $ls_drive_name2PID[$drive_name] still alive, will slow this:
-		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
-		drive_name2PID[$drive_name]=$!
-		drive_name2msecs[$drive_name]=$epoch_msecs
-
-		if [[ $drive_name == $mon_overhead_drive_name ]]
-		   then local mon_msec_increment=2  mon_sec_increment=0.002
-			mon-look-for-finished-globs $drive_name
-			continue	# don't need *.partial code
-		fi
-
-		local  PID=${ls_drive_name2PID[$drive_name]-}
-		[[ $PID ]] && kill -0 $PID 2> $dev_null && continue # running?
-		#
-		local partial_file=$non_empty_partial_dir/$drive_name
-		# snapshot is non-empty if has subdirectories: check link count
-		( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
-		     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
-				mv $partial_file.$$ $partial_file ) &
-		ls_drive_name2PID[$drive_name]=$!
-	done
-
-	cd $tmp_dir		    # in case user tries to unmount $drive_dir
-}
-readonly -f mon-launch-globs
-
-# ----------------------
-
-mon-process-finished-glob() {
-	local drive_name=$1
-
-	set-epoch_msecs
-	local -i    start_msecs=${drive_name2msecs[$drive_name]}
-	local -i response_msecs=$epoch_msecs-$start_msecs
-
-	local -i window_msecs=$(< $window_msecs_dir/$drive_name)
-	local -i sample_count=$window_msecs/$mon_check_period_msecs
-	(( $sample_count <= 0 )) && sample_count=1
-
-	if (( $response_msecs <= $mon_check_period_msecs ))
-	   then local samples=$response_msecs
-	   else # repeat $response_msecs if it spans multiple check-periods
-		local samples=
-		for ((  span=0, i=0;
-		       $span < $response_msecs && $i < $sample_count;
-			span+=$mon_check_period_msecs, i++ ))
-		    do	samples+="$response_msecs "
-		done
-	fi
-
-	local msecs_file=$drive_msecs_dir/$drive_name
-	if [[ -s $msecs_file ]]
-	   then set -- $(< $msecs_file) $samples
-	   else set --			$samples
-	fi
-	while (( $# > $sample_count )) ; do shift; done
-	echo-to-file "$*" $msecs_file
-
-	local  snapshots_dir=$snapshots_replica_dir/$drive_name
-	[[ -d $snapshots_dir ]] || mkdir $snapshots_dir
-	cd_   $snapshots_dir
-	local glob_file=$_mon_globs_dir/$drive_name
-	lock-replica-of-snapshots --wait # 'w' action uses same locking
-	rm -f *
-	local subdirs=$(< $glob_file)
-	[[ $subdirs ]] && touch $subdirs
-	touch -r $glob_file .
-	lock-replica-of-snapshots --release
-}
-readonly -f mon-process-finished-glob
-
-# -------------------------------------------------
-
-is-set		mon_check_period_secs ||  # can set custom value in $config_file
-readonly	mon_check_period_secs=0.5 # when look for newly-attached drives,
-set-msecs--from-secs $mon_check_period_secs # and also used for watch -n period
-declare -r -i	mon_check_period_msecs=$msecs
-#
-is-set        mon_msecs_increment || # can set custom value in $config_file
-declare -r -i mon_msecs_increment=1  # lower -> more precision, more CPU usage
-
-readonly mon_initialized_lock_path=$_mon_lock_dir/initialized.pid
-
-# pass a single drive_name for "solitary" processing (to measure overhead)
-mon-look-for-finished-globs() {
-	[[ $# == [01] ]] || abort-function "[drive_name]"
-	local _drive_name=${1-}
-
-	set-epoch_msecs
-	local -i start_msecs=$epoch_msecs
-	local -i sleep_msecs  slept_msecs
-	for (( sleep_msecs=0, slept_msecs=0;
-	       slept_msecs + sleep_msecs < $mon_check_period_msecs;
-	       slept_msecs+=$sleep_msecs, sleep_msecs+=$mon_msecs_increment ))
-	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
-		if [[ $# == 0 ]]	    # if not, stop looking
-		   then [[ $_drive_name ]] && abort-function "logic error"
-			lockpid --wait $mon_initialized_lock_path > $dev_null
-			set-epoch_msecs
-			local -i used_msecs=$epoch_msecs-$start_msecs
-			local -i left_msecs=$mon_check_period_msecs-$used_msecs
-			set-secs--from-msecs -3 $left_msecs
-			env sleep $secs	# want to appear in ps
-			return
-		fi
-
-		local drive_name
-		for drive_name in ${_drive_name:-${!drive_name2PID[*]}}
-		    do	local  PID=${drive_name2PID[$drive_name]}
-			[[ $PID ]] && kill -0 $PID 2> $dev_null &&
-			    continue			    # hasn't finished
-			drive_name2PID[$drive_name]=	    # just finished
-			unset "drive_name2PID[$drive_name]" # (might not work)
-
-			mon-process-finished-glob $drive_name &
-			[[ $_drive_name ]] && wait $! && return
-		done
-
-		msleep $sleep_msecs
-	done
-}
-readonly -f mon-look-for-finished-globs
-
-# ----------------------------------------------------------------------------
-
-monitor-drive-update() {
-	[[ ${1-} == -c ]] && { shift; local do_check=$true; } || local do_check=
-	[[ $# == 0 ]] &&
-	    set-drive_names -a && set -- $drive_names $mon_overhead_drive_name
-
-	cd_ $window_msecs_dir
-
-	local drive_name
-	for drive_name
-	    do	local window_msecs_file=$drive_name
-
-		if [[ $do_check ]]
-		   then is-newer $window_msecs_file $config_file && continue
-			$our_path monitor-drive-update # so re-read configure.sh
-			break
-		fi
-
-		[[ $drive_name == $mon_overhead_drive_name ]] &&
-		    drive_name=$1	# need a valid drive_name
-		local customized_value
-		set-customized_value--for-config-var-name \
-		    drive_response_averaging_window_secs
-		set-msecs--from-secs $customized_value
-		echo-to-file $msecs $window_msecs_file
-	done
-}
-readonly -f monitor-drive-update
-
-# ----------------------------------------------------------------------------
-
-readonly drive_monitor_lock_path=$lock_dir/monitor.pid
-
-monitor-drives() {
-
-	lockpid -q $drive_monitor_lock_path || exit-normally 0
-
-	create-status_dir &&
-	create-monitor-dirs || abort-function "couldn't create dirs"
-
-	exec &> $_monitor_dir/monitor.log # to catch problems
-
-	local -A -i drive_name2msecs	# drive response time in millliseconds
-	local -A    drive_name2PID	# don't use -i: set to '' when PID dies
-	local -A ls_drive_name2PID	# ditto
-	while true			# monitor forever
-	    do	set-drive_names -a	# see if a new drive appeared
-		# $mon_overhead_drive_name *must* be first, see $_drive_name code
-		drive_names="$mon_overhead_drive_name $drive_names"
-		monitor-drive-update -c $drive_names # was confgure.sh updated?
-		mon-launch-globs $drive_names
-		mon-look-for-finished-globs
-	done
-}
-readonly -f monitor-drives
-
-# ----------------------------------------------------------------------------
-
-re-start-monitor-drives-if-needed() {
-	[[ ${1-} == -f ]] && { shift;local do_force=$true; } || local do_force=
-
-	[[ $UID == 0 ]] || { sudo -n kill && sudo -n $our_path; } &> $dev_null ||
-	    return
-
-	if [[ $do_force ]] ||
-	   ( [[ $our_path == /usr/* ]] &&   # are we the installed command?
-	     is-newer $our_path $drive_monitor_lock_path )
-	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
-		until signal-job -KILL $drive_monitor_lock_path
-		   do	$IfRun env sleep 0.09 # wait for globs/etc; 'watch' hangs
-		done
-		lock-replica-of-snapshots --release
-	fi
-
-	is-active-lock $drive_monitor_lock_path ||
-	    sudo $our_path monitor-drives > $dev_null
-}
-readonly -f re-start-monitor-drives-if-needed
-
-
-# ----------------------------------------------------------------------------
 # function to predict impact of changing pruning vriables in configure.sh
 # ----------------------------------------------------------------------------
 
@@ -7757,7 +7759,6 @@ case $action in
 	set-drive_dir $drive_name
 	is-copy-higher-priority-than-prune; echo $?; _exit
 
-	date "$log_date_format"
 	print-call-stack test
 	print-call-stack; _exit
 
