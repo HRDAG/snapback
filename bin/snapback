@@ -2113,13 +2113,23 @@ function set-writer_time_subdir() {
 }
 readonly -f set-writer_time_subdir
 
+# ---------------------------------
+
+function set-writer_MB_subdir() {
+	local  writer_type=${1:-$writer_type}
+
+	writer_MB_subdir=stats/$writer_type/$MB_used_basename
+	[[ -d $writer_MB_subdir ]]
+}
+readonly -f set-writer_MB_subdir
+
 # --------------------------------------------
 
 setup-stats-subdirs-and-symlinks() {
-	local writer_time_dir=$1
+	local writer_time_subdir=$1
 
+	local writer_time_dir=$drive_log_dir/$writer_time_subdir
 	$IfRun mkdir -p $writer_time_dir
-	local writer_time_subdir=${writer_time_dir#$drive_log_dir/}
 	local link=$log_dir/$writer_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
@@ -2190,10 +2200,10 @@ record-writer-stats() {
 	local snapshot=${1##*/}
 
 	set-writer_time_subdir
+
+	setup-stats-subdirs-and-symlinks $writer_time_subdir
+
 	local writer_time_dir=$drive_log_dir/$writer_time_subdir
-
-	setup-stats-subdirs-and-symlinks $writer_time_dir
-
 	 save-stats-file  $writer_time_dir $snapshot &&
 	prune-stats-files $writer_time_dir
 }
