@@ -2235,7 +2235,6 @@ set-writer_stats--as-record-writer-stats() {
 	local snapshot=$1
 
 	writer_stats="(priority=$priority)"
-	writer_stats="(at $priority priority)" # for regression test
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
 	   then # use names writer_{data_type}; see stats_data_types=
