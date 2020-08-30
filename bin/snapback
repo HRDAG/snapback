@@ -3123,8 +3123,8 @@ function backup-drive-rsync() {
 	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
 
 	suspend-tracing
-	eval "run-rsync $dirs_to_backup $new_snapshot" # might need globbing
-	restore-tracing				       # this preserves $?
+	run-rsync $dirs_to_backup $new_snapshot
+	restore-tracing			# this preserves $?
 }
 readonly -f backup-drive-rsync
 
