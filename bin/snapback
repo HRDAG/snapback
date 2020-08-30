@@ -4181,14 +4181,15 @@ set-drive_usage() {
 			percent=$warning_string
 		elif [[ $warn && $watch_opt ]]
 		   then [[ $percent == 99 ]] && _type=error || _type=warning
-			set-warning_string $_type $percent%_$type
+			set-warning_string $_type $percent%-$type
 			percent=$warning_string
-		   else percent=$percent%_$type
+		   else percent=$percent%-$type
 		fi
 		_set-drive_name $drive_dir
 		percents+="$drive_name=$percent "
 	done
 	printf -v drive_usage "$stats_format" $percents
+	fix-padded-colorized-string-vars drive_usage # done with printf
 	strip-trailing-whitespace drive_usage
 }
 readonly -f set-drive_usage
