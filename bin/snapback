@@ -2149,6 +2149,20 @@ archive-rsync-time-data() {
 }
 readonly -f archive-rsync-time-data
 
+# ----------------------------------------------------------------------------
+
+save-stats-file() {
+	local writer_time_dir=$1 snapshot=$2
+
+	local file=$writer_time_dir/$snapshot.txt
+	local cmd="echo $writer_minutes > $file"
+	if [[ $debug_opt ]]
+	   then echo "$cmd"
+	   else eval "$cmd"
+	fi || return 1
+}
+readonly -f save-stats-file
+
 # ---------------------------------
 
 is-set	      days_to_keep ||		# can set custom value in $config_file
@@ -2180,13 +2194,7 @@ record-writer-stats() {
 
 	setup-stats-subdirs-and-symlinks $writer_time_dir
 
-	local file=$writer_time_dir/$snapshot.txt
-	local cmd="echo $writer_minutes > $file"
-	if [[ $debug_opt ]]
-	   then echo "$cmd"
-	   else eval "$cmd"
-	fi || return 1
-
+	 save-stats-file  $writer_time_dir $snapshot &&
 	prune-stats-files $writer_time_dir
 }
 readonly -f record-writer-stats
