@@ -2101,20 +2101,6 @@ readonly -f rm-dangling-stats-symlinks
 
 # --------------------------------------------
 
-setup-stats-subdirs-and-symlinks() {
-	local writer_time_dir=$1
-
-	$IfRun mkdir -p $writer_time_dir
-	local writer_time_subdir=${writer_time_dir#$drive_log_dir/}
-	local link=$log_dir/$writer_time_subdir/$drive_name
-	$IfRun mkdir -p ${link%/*}
-	[[ -e $link ]] ||
-	$IfRun ln -s ../../../drives/$drive_name/$writer_time_subdir $link
-}
-readonly -f setup-stats-subdirs-and-symlinks
-
-# ----------------------------------------------------------------------------
-
 function set-writer_time_subdir() {
 	local  writer_type=${1:-$writer_type}
 
@@ -2127,27 +2113,19 @@ function set-writer_time_subdir() {
 }
 readonly -f set-writer_time_subdir
 
-# ----------------------------------------------------------------------------
+# --------------------------------------------
 
-archive-rsync-time-data() {
+setup-stats-subdirs-and-symlinks() {
+	local writer_time_dir=$1
 
-	local type
-	for type in $writer_types
-	    do	set-writer_time_subdir $type || continue
-		local time_dir=$drive_log_dir/$writer_time_subdir
-
-		cd_ $time_dir
-		set -- *.txt
-		if [[ $# != 0 ]]
-		   then set-date_time -r .
-			dir=$PWD/.${date_time%,*} # absolute path, for -v
-			$IfRun mkdir -p    $dir
-			$IfRun mv -v *.txt $dir/
-		fi
-		cd $OLDPWD
-	done
+	$IfRun mkdir -p $writer_time_dir
+	local writer_time_subdir=${writer_time_dir#$drive_log_dir/}
+	local link=$log_dir/$writer_time_subdir/$drive_name
+	$IfRun mkdir -p ${link%/*}
+	[[ -e $link ]] ||
+	$IfRun ln -s ../../../drives/$drive_name/$writer_time_subdir $link
 }
-readonly -f archive-rsync-time-data
+readonly -f setup-stats-subdirs-and-symlinks
 
 # ----------------------------------------------------------------------------
 
@@ -2184,7 +2162,29 @@ prune-stats-files() {
 }
 readonly -f prune-stats-files
 
-# -------------------------------------------------------
+# ----------------------------------------------------------------------------
+
+archive-rsync-time-data() {
+
+	local type
+	for type in $writer_types
+	    do	set-writer_time_subdir $type || continue
+		local time_dir=$drive_log_dir/$writer_time_subdir
+
+		cd_ $time_dir
+		set -- *.txt
+		if [[ $# != 0 ]]
+		   then set-date_time -r .
+			dir=$PWD/.${date_time%,*} # absolute path, for -v
+			$IfRun mkdir -p    $dir
+			$IfRun mv -v *.txt $dir/
+		fi
+		cd $OLDPWD
+	done
+}
+readonly -f archive-rsync-time-data
+
+# ----------------------------------------------------------------------------
 
 record-writer-stats() {
 	local snapshot=${1##*/}
