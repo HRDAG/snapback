@@ -380,6 +380,15 @@ readonly -f set-secs--from-msecs
 
 # ----------------------------------------------------------------------------
 
+set-minutes--from-secs() {
+	local secs=$1
+
+	minutes=$(( ($secs + 30) / 60 ))
+}
+readonly -f set-minutes--from-secs
+
+# ----------------------------------------------------------------------------
+
 set-hours--from-minutes() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  minutes=$2
@@ -2244,7 +2253,9 @@ set-writer_stats--as-record-writer-stats() {
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
 	   then # use names writer_{data_type}; see stats_data_types=
-		local -i writer_minutes=$(( ($SECONDS + 30) / 60 ))
+		local -i minutes
+		set-minutes--from-secs $SECONDS
+		local -i writer_minutes=$minutes
 		local hours
 		set-hours--from-minutes $writer_minutes
 		local writer_hours=$hours
