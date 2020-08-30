@@ -2454,7 +2454,7 @@ rm-pruned-snapshots() {
 		${rm_snapshot_post_hook-} # could update database
 
 		set-writer_stats--as-record-writer-stats $snapshot
-		(( $log_level >= 2 )) && log "deleted $snapshot$writer_stats"
+		(( $log_level >= 2 )) && log "deleted $snapshot $writer_stats"
 		suspend-tracing
 	done
 	restore-tracing
