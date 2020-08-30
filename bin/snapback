@@ -2080,10 +2080,12 @@ readonly -f reset-priority
 
 readonly stats_dir=$log_dir/stats
 
+readonly stats_data_types="MB minutes"
+
 # first letter of each basename is used in rm-dangling-stats-symlinks
-readonly rsync_time_basename=rsync-minutes
-readonly    rm_time_basename=rm-minutes
 readonly    MB_used_basename=MB-changes
+readonly    rm_time_basename=rm-minutes
+readonly rsync_time_basename=rsync-minutes
 
 # ---------------------------------
 
@@ -2091,7 +2093,7 @@ rm-dangling-stats-symlinks() {
 
 	cd $stats_dir &> $dev_null || return
 
-	for drive in */[rM]*/*
+	for drive in [bcp]*/[Mr]*/*	# {backup,copy,prune}/{*-minutes,MB*}/*
 	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
 	done
 
@@ -2101,53 +2103,47 @@ readonly -f rm-dangling-stats-symlinks
 
 # --------------------------------------------
 
-function set-writer_time_subdir() {
-	local  writer_type=${1:-$writer_type}
+function set-stats_subdir() {
+	local  data_type=$1
 
-	if [[ $writer_type == prune ]]
-	   then local basename=$rm_time_basename
-	   else local basename=$rsync_time_basename
+	if [[ $data_type == MB ]]
+	   then basename=$MB_used_basename
+	   else if [[ $writer_type == prune ]]
+		   then local basename=$rm_time_basename
+		   else local basename=$rsync_time_basename
+		fi
 	fi
-	writer_time_subdir=stats/$writer_type/$basename
-	[[ -d $writer_time_subdir ]]
+
+	stats_subdir=stats/$writer_type/$basename
+	[[ -d  $stats_subdir ]]
 }
-readonly -f set-writer_time_subdir
+readonly -f set-stats_subdir
 
-# ---------------------------------
+# ----------------------------------------------------------------------------
 
-function set-writer_MB_subdir() {
-	local  writer_type=${1:-$writer_type}
+create-stats_subdir-and-symlink-to-it() {
+	local stats_subdir=$1
 
-	writer_MB_subdir=stats/$writer_type/$MB_used_basename
-	[[ -d $writer_MB_subdir ]]
-}
-readonly -f set-writer_MB_subdir
-
-# --------------------------------------------
-
-setup-stats-subdirs-and-symlinks() {
-	local writer_time_subdir=$1
-
-	local writer_time_dir=$drive_log_dir/$writer_time_subdir
-	$IfRun mkdir -p $writer_time_dir
-	local link=$log_dir/$writer_time_subdir/$drive_name
+	local dir=$drive_log_dir/$stats_subdir
+	$IfRun mkdir -p $dir
+	local link=$log_dir/$stats_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
-	$IfRun ln -s ../../../drives/$drive_name/$writer_time_subdir $link
+	$IfRun ln -s ../../../drives/$drive_name/$stats_subdir $link
 }
-readonly -f setup-stats-subdirs-and-symlinks
+readonly -f create-stats_subdir-and-symlink-to-it
 
 # ----------------------------------------------------------------------------
 
 save-stats-file() {
-	local writer_time_dir=$1 snapshot=$2
+	local stats_subdir=$1 snapshot=$2 data=$3
 
-	local file=$writer_time_dir/$snapshot.txt
-	local cmd="echo $writer_minutes > $file"
+	local file=$drive_log_dir/$stats_subdir/$snapshot.txt
+	local cmd="echo $data > $file"
 	if [[ $debug_opt ]]
 	   then echo "$cmd"
 	   else eval "$cmd"
-	fi || return 1
+	fi
 }
 readonly -f save-stats-file
 
@@ -2157,10 +2153,12 @@ is-set	      days_to_keep ||		# can set custom value in $config_file
 declare -r -i days_to_keep=3		# ensure more than weekend-only data
 
 prune-stats-files() {
-	local writer_time_dir=$1
+	local stats_subdir=$1
 
-	set -- $writer_time_dir/$snapshot_glob.txt
-	[[ $# != 0 ]] || return
+	cd_ $drive_log_dir
+
+	set -- $stats_subdir/$snapshot_glob.txt
+	[[ $# != 0 ]] && {
 
 	# copy'ed snapshots aren't copied in date,time order, so use file time
 	local min_date_TS=$tmp_1
@@ -2169,43 +2167,50 @@ prune-stats-files() {
 	for file
 	    do	[[ $file -ot $min_date_TS ]] && $IfRun rm $file
 	done
+	}
+
+	cd $OLDPWD
 }
 readonly -f prune-stats-files
 
 # -------------------------------------------------------
 
-archive-writer-time-data() {
+archive-writer-stats-data() {
 
-	local type
-	for type in $writer_types
-	    do	set-writer_time_subdir $type || continue
-		local time_dir=$drive_log_dir/$writer_time_subdir
+	local data_type
+	for data_type in $stats_data_types
+	    do	local writer_type
+		for writer_type in $writer_types
+		    do	set-stats_subdir $data_type || continue
+			local stats_dir=$drive_log_dir/$stats_subdir
 
-		cd_ $time_dir
-		set -- *.txt
-		if [[ $# != 0 ]]
-		   then set-date_time -r .
-			dir=$PWD/.${date_time%,*} # absolute path, for -v
-			$IfRun mkdir -p    $dir
-			$IfRun mv -v *.txt $dir/
-		fi
-		cd $OLDPWD
+			cd_ $stats_dir
+			set -- *.txt
+			if [[ $# != 0 ]]
+			   then set-date_time -r .
+				dir=$PWD/.${date_time%,*} # absolute path, for -v
+				$IfRun mkdir -p    $dir
+				$IfRun mv -v *.txt $dir/
+			fi
+			cd $OLDPWD
+		done
 	done
 }
-readonly -f archive-writer-time-data
+readonly -f archive-writer-stats-data
 
 # ----------------------------------------------------------------------------
 
 record-writer-stats() {
-	local snapshot=${1##*/}
+	local snapshot=$(basename $1)
 
-	set-writer_time_subdir
-
-	setup-stats-subdirs-and-symlinks $writer_time_subdir
-
-	local writer_time_dir=$drive_log_dir/$writer_time_subdir
-	 save-stats-file  $writer_time_dir $snapshot &&
-	prune-stats-files $writer_time_dir
+	local data_type
+	for data_type in $stats_data_types
+	    do	set-stats_subdir $data_type
+		create-stats_subdir-and-symlink-to-it $stats_subdir
+		eval "local data=\$writer_$data_type"
+		 save-stats-file  $stats_subdir $snapshot $data &&
+		prune-stats-files $stats_subdir
+	done
 }
 readonly -f record-writer-stats
 
@@ -2233,7 +2238,8 @@ set-writer_stats--as-record-writer-stats() {
 	writer_stats="(at $priority priority)" # for regression test
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
-	   then local -i writer_minutes=$(( ($SECONDS + 30) / 60 ))
+	   then # use names writer_{data_type}; see stats_data_types=
+		local -i writer_minutes=$(( ($SECONDS + 30) / 60 ))
 		local hours
 		set-hours--from-minutes $writer_minutes
 		local writer_hours=$hours
@@ -3388,7 +3394,6 @@ function _run-rsync-cmd() {
 	   then local is_a_restart=$true
 	   else local is_a_restart=$false
 	fi
-	local  -i   starting_MB=0
 	set-SECONDS-starting_MB--for-record-writer-stats $is_a_restart
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
@@ -3587,7 +3592,7 @@ function backup-drive() {
 	   then $IfRun create-jobs prune
 		return
 	fi
-	if [[ $is_multi_writer_drive ]]
+	if [[ $is_multi_writer_drive && $is_cron ]]
 	   then $IfRun create-jobs prune
 	fi
 
@@ -4330,6 +4335,8 @@ create-jobs() {
 	while [[ ${1-} == -[^r]* ]] ; do opts+="$1 "; shift; done
 	[[ ${1-} == -r ]] && { are_recursing=$true; shift; }
 
+	[[ $action == $type* ]] && local do_warn=$true || local do_warn=$false
+
 	if [[ $# == 0 ]]
 	   then set -- ${drive_name-}
 	elif [[ $1 == all || $1 == '*' ]]
@@ -4357,7 +4364,8 @@ create-jobs() {
 	[[ ! $debug_opt ]] && set-reversed_words $* &&
 	   set -- $reversed_words	# 'ps' shows newest process first
 
-	_set-function-our_exe-writer_type $type
+	local function our_exe writer_type # backup creates prune job
+	 _set-function-our_exe-writer_type $type
 
 	if [[ $are_recursing ]]
 	   then $Trace
@@ -4367,7 +4375,7 @@ create-jobs() {
 
 	[[ $UID == 0 || $* == [zZ] ]] || $IfRun abort "run with sudo"
 
-	[[ ! $debug_opt && $* != [Zz] && -t 1 ]] && echo -e "
+	[[ ! $debug_opt && $* != [Zz] && -t 1 && $do_warn ]] && echo -e "
 	NOTE: your $action command will run as a separate, disconnected job;
 	      and it might wait for a lock before it can start.  See it with:
 
@@ -4492,8 +4500,8 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	local dir drive_name
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
-		set-writer_time_subdir
-		local   dir=$drives_log_dir/$drive_name/$writer_time_subdir
+		set-stats_subdir time
+		local   dir=$drives_log_dir/$drive_name/$stats_subdir
 		set -- $dir/$snapshot_glob.txt
 		set-hour_avg-hour_max--from-files-of-minutes $*
 		hour_avgs+="$drive_name=$hour_avg "
@@ -6231,7 +6239,7 @@ _create-and-mount-filesystem() {
 	header "$cmd"
 	RunCmd  $cmd
 	set-drive_log_dir-file_for_logging-is_regression_test $drive_name
-	archive-writer-time-data
+	archive-writer-stats-data
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p $drive_dir
 	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
@@ -7728,7 +7736,7 @@ case $action in
 	IfRun=echo debug_opt=$true
 	drive_name=L; drive_log_dir=$drives_log_dir/$drive_name
 	writer_time_dir=$drive_log_dir/stats/backup/rsync-minutes
-	setup-stats-subdirs-and-symlinks $writer_time_dir; _exit
+	create-stats_subdir-and-symlink-to-it $writer_time_dir; _exit
 	prune-stats-files $writer_time_dir; _exit
 
 	_set-drive_name ${1:-I}
