@@ -259,12 +259,13 @@ exit-normally() {
 }
 _exit() { exit-normally "$@"; }		# short form, for test action
 
-# $tmp_1 and $tmp_2 are used then deleted in the same function
-readonly tmp_1=$tmp_dir/$our_name-1-$$ ; tmp=$tmp_1 # only used inside function
-readonly tmp_2=$tmp_dir/$our_name-2-$$		    # only used inside function
-readonly tmp_3=$tmp_dir/$our_name-3-$$
-readonly tmp_4=$tmp_dir/$our_name-4-$$
-readonly tmp_5=$tmp_dir/$our_name-5-$$
+# $tmp_1 and $tmp_2 are used then deleted in the same function. so don't
+# need to check the whole script to see if someone else is using them.
+readonly tmp_1=$tmp_dir/$our_name-1-$BASHPID ; tmp=$tmp_1 # only inside function
+readonly tmp_2=$tmp_dir/$our_name-2-$BASHPID		  # only inside function
+readonly tmp_3=$tmp_dir/$our_name-3-$BASHPID
+readonly tmp_4=$tmp_dir/$our_name-4-$BASHPID
+readonly tmp_5=$tmp_dir/$our_name-5-$BASHPID
 
 have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
 
@@ -587,9 +588,10 @@ function lock-PID() {
 
 	if [[ $status == 0 ]]
 	   then if [[ $lockpid_output ]]
-		   then if [[ $is_regression_test ]]
-			   then echo "$lockpid_output" | sed "s/--pid=[0-9]*/--pid=PID/"
-			   else echo "$lockpid_output"
+		   then if [[ ! $is_regression_test ]]
+			   then echo "$lockpid_output"
+			   else echo "$lockpid_output" |
+				   sed "s/--pid=[0-9]*/--pid=PID/"
 			fi
 		fi
 		$xtrace
@@ -2313,7 +2315,10 @@ function _should-run-prune {
 	fi
 
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	lock $lock_opt prune 2> $dev_null || # prune probably already running
+	lock $lock_opt prune > $tmp_2
+	local status=$?
+	egrep -v 'process [0-9]+ holds [^ ]* lock for' $tmp_2
+	[[ $status != 0 ]] &&		# prune probably already running
 	    { is-copy-higher-priority-than-prune; return 1; }
 
 	if [[ $is_cron ]]
