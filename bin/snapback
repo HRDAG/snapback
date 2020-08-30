@@ -2143,17 +2143,17 @@ declare -r -i days_to_keep=3		# ensure more than weekend-only data
 record-writer-stats() {
 	local snapshot=${1##*/}
 
-	[[ $writer_type != prune ]] || return
-
 	set-writer_time_subdir
 	local writer_time_dir=$drive_log_dir/$writer_time_subdir
-	local file=$writer_time_dir/$snapshot.txt
-	$IfRun mkdir -p ${file%/*}
+
+	# setup-stats-subdirs-and-symlinks $file $writer_time_dir
+	$IfRun mkdir -p $writer_time_dir
 	local link=$log_dir/$writer_time_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
 	$IfRun ln -s ../../../drives/$drive_name/$writer_time_subdir $link
 
+	local file=$writer_time_dir/$snapshot.txt
 	local cmd="echo $minutes > $file"
 	if [[ $debug_opt ]]
 	   then echo "$cmd"
