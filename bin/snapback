@@ -1772,7 +1772,7 @@ readonly -f reset-priority
 ##############################################################################
 
 set-SECONDS-starting_MB--for-record-writer-stats() {
-	local is_a_restart=$1
+	local is_a_restart=${1-}
 
 	if [[ $is_a_restart ]]		# already half-done
 	   then SECONDS=-1123456789	# our signal to not record stats
@@ -1797,7 +1797,7 @@ set-writer_stats--as-record-writer-stats() {
 		local -i used_MB=${used%M}-$starting_MB
 
 		writer_stats=" in $hours hours; used $used_MB MB"
-	   else writer_stats=
+	   else writer_stats=" (earlier attempt aborted)"
 	fi
 }
 readonly -f set-writer_stats--as-record-writer-stats
