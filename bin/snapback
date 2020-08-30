@@ -356,6 +356,16 @@ readonly -f assert-drive_dir-writable
 # functions to switch between msecs (milliseconds), secs, minutes, hours
 # ----------------------------------------------------------------------------
 
+set-msecs--from-secs() {
+
+	local -i product
+	set-product $1 1000
+	msecs=$product
+}
+readonly -f set-msecs--from-secs
+
+# ----------------------------------------------------------------------------
+
 set-secs--from-msecs() {
 	if [[ $1 == -* ]]
 	   then local decimal_digits_opt=$1  msecs=$2
@@ -367,16 +377,6 @@ set-secs--from-msecs() {
 	secs=$division
 }
 readonly -f set-secs--from-msecs
-
-# ----------------------------------------------------------------------------
-
-set-msecs--from-secs() {
-
-	local -i product
-	set-product $1 1000
-	msecs=$product
-}
-readonly -f set-msecs--from-secs
 
 # ----------------------------------------------------------------------------
 
