@@ -5585,8 +5585,8 @@ readonly -f show-copy-cmds-with-full-details
 _start-monitor-drives-if-needed() {
 
 	is-active-lock $drive_monitor_lock_path && return
-	sudo -n $our_path -h &> $dev_null || { # avoid asking for sudo pwd ...
-	sleep 0.21			# wait for another process to start it
+	sudo -n $our_path -h &> $dev_null || { # need sudo password?
+	sleep 0.21			# wait for another process to start mon
 	is-active-lock $drive_monitor_lock_path && return
 	}
 
