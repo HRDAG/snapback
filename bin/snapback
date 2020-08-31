@@ -2041,7 +2041,7 @@ function reset-drive-jobs-priorities {
 	local type job_PGID status=1
 	for type in $writer_types
 	    do	set-job_PGID $type || continue
-		set-priority $type $job_PGID # *-record-writer-stats uses var
+		set-priority $type $job_PGID  # *-save-writer-stats uses var
 		status=0
 	done
 	return $status
@@ -2215,7 +2215,7 @@ readonly -f archive-writer-stats-data
 
 # ----------------------------------------------------------------------------
 
-record-writer-stats() {
+save-writer-stats() {
 	local snapshot=$(basename $1)
 
 	local data_type
@@ -2227,11 +2227,11 @@ record-writer-stats() {
 		prune-stats-files $stats_subdir
 	done
 }
-readonly -f record-writer-stats
+readonly -f save-writer-stats
 
 # ----------------------------------------------------------------------------
 
-set-SECONDS-starting_MB--for-record-writer-stats() {
+set-SECONDS-starting_MB--for-save-writer-stats() {
 	local is_a_restart=${1-}
 
 	if [[ $is_a_restart ]]		# already half-done
@@ -2242,14 +2242,14 @@ set-SECONDS-starting_MB--for-record-writer-stats() {
 		starting_MB=${used%M}
 	fi
 }
-readonly -f set-SECONDS-starting_MB--for-record-writer-stats
+readonly -f set-SECONDS-starting_MB--for-save-writer-stats
 
 # -------------------------------------------------------
 
-set-writer_stats--as-record-writer-stats() {
+set-writer_stats_msg--as-save-writer-stats() {
 	local snapshot=$1
 
-	writer_stats="(priority=$priority)"
+	writer_stats_msg="(priority=$priority)"
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
 	   then # use names writer_{data_type}; see stats_data_types=
@@ -2266,13 +2266,13 @@ set-writer_stats--as-record-writer-stats() {
 		set-division -2 $writer_MB 1000
 		writer_GB=$division
 
-		record-writer-stats $snapshot
+		save-writer-stats $snapshot
 
-		writer_stats+=" in $writer_hours hours; used $writer_GB GB"
-	   else writer_stats+=": earlier attempt aborted"
+		writer_stats_msg+=" in $writer_hours hours; used $writer_GB GB"
+	   else writer_stats_msg+=": earlier attempt aborted"
 	fi
 }
-readonly -f set-writer_stats--as-record-writer-stats
+readonly -f set-writer_stats_msg--as-save-writer-stats
 
 ##############################################################################
 ##############################################################################
@@ -2553,15 +2553,15 @@ rm-pruned-snapshots() {
 		   else local is_a_restart=$false
 		fi
 		local  -i   starting_MB=0
-		set-SECONDS-starting_MB--for-record-writer-stats $is_a_restart
+		set-SECONDS-starting_MB--for-save-writer-stats $is_a_restart
 
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
 		$IfRun touch $pruning_flag && # .rm suffix maybe removed
 		$IfRun env rm -rf $snapshot || continue
 		${rm_snapshot_post_hook-} # could update database
 
-		set-writer_stats--as-record-writer-stats $snapshot
-		(( $log_level >= 2 )) && log "deleted $snapshot $writer_stats"
+		set-writer_stats_msg--as-save-writer-stats $snapshot
+		(( $log_level >= 2 )) &&log "deleted $snapshot $writer_stats_msg"
 		suspend-tracing
 	done
 	restore-tracing
@@ -3341,10 +3341,10 @@ _handle-rsync-results() {
 		set -- $snapshot_glob && [[ $# != 0 ]] &&
 		$IfRun rm -f latest && $IfRun ln -s ${!#} latest &&
 		update-snapshots-ls
-		set-writer_stats--as-record-writer-stats $new_snapshot
+		set-writer_stats_msg--as-save-writer-stats $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] &&
-		$IfRun log "created $new_snapshot $writer_stats"
+		$IfRun log "created $new_snapshot $writer_stats_msg"
 	   else set -- $(bzcat $log 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
@@ -3357,7 +3357,7 @@ _handle-rsync-results() {
 		   else error_msg="$link_fail_count 'Too many links'"
 			error_msg=$(_links-error-msg "$error_msg")
 			$IfRun mv $new_snapshot.partial $new_snapshot.links
-			set-writer_stats--as-record-writer-stats $new_snapshot
+			set-writer_stats_msg--as-save-writer-stats $new_snapshot
 		fi
 		if is-arg1-in-arg2 $status "$no_log_rsync_exit_statuses" ||
 		   (( $(bzcat $log | wc -l) == 0 ))
@@ -3410,7 +3410,7 @@ function _run-rsync-cmd() {
 	   then local is_a_restart=$true
 	   else local is_a_restart=$false
 	fi
-	set-SECONDS-starting_MB--for-record-writer-stats $is_a_restart
+	set-SECONDS-starting_MB--for-save-writer-stats $is_a_restart
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
@@ -3461,7 +3461,7 @@ function run-rsync() {
 	fi
 	restore-tracing link_dest_opts
 
-	local -i starting_MB=0		# for *-record-writer-stats
+	local -i starting_MB=0		# for *-save-writer-stats
 	_run-rsync-cmd
 	local status=$?
 
