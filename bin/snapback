@@ -1708,7 +1708,8 @@ lock-replica-of-snapshots() {
 
 	umask 0				# so watch doesn't need sudo-lockpid
 	$IfRun \
-	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file
+	lockpid --dir=$_mon_lock_dir "$@" --sleep-msecs $sleep_msecs $lock_file||
+	    print-call-stack
 	umask $umask
 }
 readonly -f lock-replica-of-snapshots
@@ -1837,6 +1838,7 @@ mon-look-for-finished-globs() {
 			local -i used_msecs=$epoch_msecs-$start_msecs
 			local -i left_msecs=$mon_check_period_msecs-$used_msecs
 			set-secs--from-msecs -3 $left_msecs
+			[[ $secs != *-* ]] && # avoid negative values
 			env sleep $secs	# want to appear in ps
 			return
 		fi
