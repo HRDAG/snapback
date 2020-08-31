@@ -5380,9 +5380,11 @@ show-stats-section-2-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats .rm
+				[[ $stats_newest_age == *=[0-9]* ]] &&
 	echo "   Age of newest pending prune, in days:  $stats_newest_age"
 	setup-snapshot-stats .links
 	echo "  Number .links (failed 'ln') snapshots:  $stats_number"
+				[[ $stats_newest_age == *=[0-9]* ]] &&
 	echo " Days since newest 'Too many links' err:  $stats_newest_age"
 	setup-snapshot-stats -E .partial
 	echo " Number of aborted snapshots (.partial):  $stats_number"
