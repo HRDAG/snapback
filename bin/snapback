@@ -5585,6 +5585,10 @@ readonly -f show-copy-cmds-with-full-details
 _start-monitor-drives-if-needed() {
 
 	is-active-lock $drive_monitor_lock_path && return
+	sudo -n $our_path -h &> $dev_null || { # avoid asking for sudo pwd ...
+	sleep 0.21			# wait for another process to start it
+	is-active-lock $drive_monitor_lock_path && return
+	}
 
 	sudo $our_path monitor-drives || abort-function monitor-drives
 	until [[ -d $(dirname $mon_initialized_lock_path) ]]
