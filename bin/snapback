@@ -5359,7 +5359,7 @@ show-stats-section-1() {
 	echo " Maximum drive (b)lock or (i)node usage:  $drive_usage"
 	set-drive_response
 	echo "      Seconds to list drive's snapshots:  $drive_response"
-	setup-snapshot-stats ''	      # was in show-stats-section-2-if-it-fits
+	setup-snapshot-stats ''	      # was in show-stats-section-3-if-it-fits
 	echo " Number complete & successful snapshots:  $stats_number"
 	setup-snapshot-stats .rm
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
@@ -5373,6 +5373,20 @@ readonly -f show-stats-section-1
 # --------------------------------------------
 
 show-stats-section-2-if-it-fits() {
+
+	local -i rows_used=1		# stats plus 1 blank line
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
+	    [[ $stats_opt ]] || return
+
+	echo				# first row used
+
+	let rows_left-=$rows_used
+}
+readonly -f show-stats-section-2-if-it-fits
+
+# --------------------------------------------
+
+show-stats-section-3-if-it-fits() {
 
 	local -i rows_used=7		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
@@ -5396,11 +5410,11 @@ show-stats-section-2-if-it-fits() {
 
 	let rows_left-=$rows_used
 }
-readonly -f show-stats-section-2-if-it-fits
+readonly -f show-stats-section-3-if-it-fits
 
 # --------------------------------------------
 
-show-stats-section-3-if-it-fits() {
+show-stats-section-4-if-it-fits() {
 
 	local -i rows_used=6		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
@@ -5420,7 +5434,7 @@ show-stats-section-3-if-it-fits() {
 
 	let rows_left-=$rows_used
 }
-readonly -f show-stats-section-3-if-it-fits
+readonly -f show-stats-section-4-if-it-fits
 
 # --------------------------------------------
 
@@ -5678,6 +5692,7 @@ watch() {
 	show-stats-section-1
 	show-stats-section-2-if-it-fits
 	show-stats-section-3-if-it-fits
+	show-stats-section-4-if-it-fits
 
 	show-filesystem-info-that-fits $drive_dirs
 
