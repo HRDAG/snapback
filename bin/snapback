@@ -1823,6 +1823,9 @@ mon-look-for-finished-globs() {
 	set-epoch_msecs
 	local -i start_msecs=$epoch_msecs
 	local -i sleep_msecs  slept_msecs
+	# Sleep progressively longer as wait for slower drives: this keeps
+	# the precision-rate relatively constant, while using less CPU
+	# (even though the precision is much higher at the beginning).
 	for (( sleep_msecs=0, slept_msecs=0;
 	       slept_msecs + sleep_msecs < $mon_check_period_msecs;
 	       slept_msecs+=$sleep_msecs, sleep_msecs+=$mon_msecs_increment ))
