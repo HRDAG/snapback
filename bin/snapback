@@ -2231,15 +2231,25 @@ readonly -f save-writer-stats
 
 # ----------------------------------------------------------------------------
 
+set-drive_MB() {
+	local drive_dir=${1:-$drive_dir}
+
+	local used=0
+	setup-df-data-from-fields -BM $drive_dir used
+	drive_MB=${used%M}
+}
+
+# --------------------------------------------
+
 set-SECONDS-starting_MB--for-save-writer-stats() {
 	local is_a_restart=${1-}
 
 	if [[ $is_a_restart ]]		# already half-done
 	   then SECONDS=-1123456789	# our signal to not record stats
 	   else SECONDS=0		# else do
-		local used=0
-		$IfRun setup-df-data-from-fields -BM $drive_dir used
-		starting_MB=${used%M}
+		local drive_MB
+		set-drive_MB
+		starting_MB=$drive_MB
 	fi
 }
 readonly -f set-SECONDS-starting_MB--for-save-writer-stats
@@ -2252,19 +2262,18 @@ set-writer_stats_msg--as-save-writer-stats() {
 	writer_stats_msg="(priority=$priority)"
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
-	   then # use names writer_{data_type}; see stats_data_types=
-		local -i minutes
+	   then local -i minutes
+		local hours drive_MB division
+		# we use varnames writer_{data_type}; see stats_data_types=
 		set-minutes--from-secs $SECONDS
 		local -i writer_minutes=$minutes
-		local hours
 		set-hours--from-minutes $writer_minutes
 		local writer_hours=$hours
 
-		local used=0
-		$IfRun setup-df-data-from-fields -BM $drive_dir used
-		local -i writer_MB=${used%M}-$starting_MB
+		set-drive_MB
+		local -i writer_MB=$drive_MB-$starting_MB
 		set-division -2 $writer_MB 1000
-		writer_GB=$division
+		local writer_GB=$division
 
 		save-writer-stats $snapshot
 
