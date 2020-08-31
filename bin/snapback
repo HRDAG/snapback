@@ -2560,7 +2560,8 @@ rm-pruned-snapshots() {
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
 	    do	local pruning_flag=$snapshot/.pruning
-		if [[ -e $pruning_flag ]]   # already half-pruned?
+		# already half-pruned, or not a full snapshot?
+		if [[ -e $pruning_flag || $snapshot == *.partial* ]]
 		   then local is_a_restart=$true
 		   else local is_a_restart=$false
 		fi
