@@ -1494,7 +1494,7 @@ readonly -f set-customized_drv_names
 
 # ---------------------------------
 
-declare -g custom_config_vars=
+	   custom_config_vars=
 declare -A custom_config_var2default_value
 
 set-custom_config_vars-custom_config_var2default_value() {
@@ -2791,9 +2791,10 @@ declare -r -A type2date_span_var=(
 
 # ---------------
 
+declare -A type2date_span
+
 function set-type2date_span {
 
-	declare -g -A type2date_span
 	local _type
 	for _type in ${!type2date_span_var[*]}
 	    do	local var=${type2date_span_var[$_type]}
@@ -2876,11 +2877,13 @@ readonly -f set-prune_types
 
 # --------------------------------------------
 
+declare -i date_span_diff
+
 # if short date span, want to skip over the same dates as would default span
 set-date_span_diff() {
 	local type=$1
 
-	declare -g -i date_span_diff=0
+	date_span_diff=0
 
 	local span_var=${type2date_span_var[$type]}
 	local default_date_span=${custom_config_var2default_value[$span_var]-}
@@ -3073,14 +3076,16 @@ readonly -f _have-full-snapshot
 
 # ---------------------------------
 
+declare -i num_full_link_dests
+
 set-num_full_link_dests() {
 
 	# need at least 2 --link-dest args in case the sysadmnin borked one,
 	# and a few hours worth in case a file was deleted then recovered;
 	# don't make this too large, it slows recovery from "Too many links"
 	if (( $backup_period == 1 ))
-	   then declare -g -i num_full_link_dests=4
-	   else declare -g -i num_full_link_dests=2
+	   then num_full_link_dests=4
+	   else num_full_link_dests=2
 	fi
 
 	# if a file is new or modified,  we'll  check $num_full_link_dests
@@ -3088,7 +3093,7 @@ set-num_full_link_dests() {
 	# is 4 instead of 2, that's 4 extra dir-cache accesses (which
 	# require disk accesses on a cache miss) for no good reason,
 	# which can flush more useful entries from the cache: not worth it
-	declare -g -i num_full_link_dests=2
+	num_full_link_dests=2
 }
 readonly -f set-num_full_link_dests
 
@@ -4034,11 +4039,11 @@ readonly -f src_dirs-for-update
 
 # ----------------------------------------------------------------------------
 
+declare -A basename2dirs basename2is_keep
+
 # this is a group-by: group snapshots on different drives by snapshot basename
 set-basename2dirs-basename2is_keep() {
 	local dirs_generator=${1:-src_dirs-for-update}
-
-	declare -g -A basename2dirs basename2is_keep
 
 	local name_glob
 	set-name_glob "${excluded_src_names_glob-}"
@@ -4460,9 +4465,9 @@ readonly -f set-stats_format
 
 # ----------------------------------------------------------------------------
 
-set-average-maximum--from-files-of-numbers() {
+set-average-count-maximum--from-files-of-numbers() {
 
-	declare -g -i maximum=-999999
+	maximum=-999999
 	local -i sum=0
 	local file
 	for file
@@ -4471,10 +4476,11 @@ set-average-maximum--from-files-of-numbers() {
 		(( maximum<number )) &&
 		   maximum=number
 	done
+	count=$#
+	average=$(( ($sum+($count/2)) / $count ))
 	(( $sum > 0 )) || maximum=0
-	declare -g -i average=$(( ($sum+($#/2)) / $# ))
 }
-readonly -f set-average-maximum--from-files-of-numbers
+readonly -f set-average-count-maximum--from-files-of-numbers
 
 # ---------------------------------
 
@@ -4492,7 +4498,9 @@ readonly -f set-padded_number
 
 set-hour_avg-hour_max--from-files-of-minutes() {
 	if [[ $# != 0 ]]
-	   then set-average-maximum--from-files-of-numbers $*
+	   then local -i \
+		    average count maximum
+		set-average-count-maximum--from-files-of-numbers $*
 		set-hours--from-minutes -2 $average # 2 decimal points
 		set-padded_number $hours
 		hour_avg=$padded_number
@@ -4533,8 +4541,10 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	    do	_set-drive_name $dir
 		set-stats_subdir time
 		local dir=$drives_log_dir/$drive_name/$stats_subdir
-		cd $dir || continue
-		set -- $snapshot_glob.txt
+		if [[ -d $dir ]] && cd $dir
+		   then set -- $snapshot_glob.txt
+		   else set --
+		fi
 		set-hour_avg-hour_max--from-files-of-minutes $*
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
@@ -4852,10 +4862,12 @@ readonly -f setup-snapshot-stats
 
 # ----------------------------------------------------------------------------
 
+declare -i max_drive_name_len
+
 set-max_drive_name_len() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
-	declare -g -i max_drive_name_len=0
+	max_drive_name_len=0
 
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
@@ -5013,26 +5025,29 @@ readonly -f set-drive_dirs-names_msg-names_glob
 
 # --------------------------------------------
 
+declare -i rows columns rows_left
+
 set-rows-columns-COLUMNS() {
 
 	if [[ ${watch_opt-} ]]
 	   then set -f; set -- $(stty -a); set +f
-		declare -g -i rows=${5%;} columns=${7%;}
-	   else declare -g -i rows=999999 columns=9999
+		rows=${5%;} columns=${7%;}
+	   else rows=999999 columns=9999
 	fi
-	declare -g -i rows_left=$rows
+	rows_left=$rows
 	export COLUMNS=9999	     # for 'ps' (we shorten the COMMAND value)
 }
 readonly -f set-rows-columns-COLUMNS
 
 # --------------------------------------------
 
+declare -i max_ps_width
+
 set-max_ps_width() {
 	local ps_header=$1 rsync_ps_out=$2
 
 	ps_header=${ps_header%COMMAND}
 	set-max_drive_name_len ${drive_dirs-$drive_dir}
-	declare -g -i \
 	max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
 	let max_ps_width+=1    # 'watch' executable requires blank last column
 }
@@ -5084,9 +5099,11 @@ readonly -f setup-ps-variables-and-ps_-function
 
 # --------------------------------------------
 
+declare -i num_drives=
+
 set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
-	declare -g -i num_drives=$#
+	num_drives=$#
 
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null  |
@@ -5137,17 +5154,18 @@ readonly -f _set-cron_PGIDs
 
 # ---------------------------------
 
+widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
+widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
+widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
+readonly widest_wchan_value
+
+is-set	   max_ps_wchan_width ||	# can set custom value in $config_file
+declare -i max_ps_wchan_width=${#widest_wchan_value}+1
+is-set	   min_ps_wchan_width ||	# can set custom value in $config_file
+declare -i min_ps_wchan_width=10	# minimum useful value
+
 _set-sudo-wchan-max_ps_wchan_width-ps_keywords() {
 	local ps_min_keywords=$*
-
-	local \
-	widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
-	widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
-	widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
-is-set		      max_ps_wchan_width || # custom value in $config_file?
-	declare -g -i max_ps_wchan_width=${#widest_wchan_value}+1
-is-set		      min_ps_wchan_width || # custom value in $config_file?
-	declare -g -i min_ps_wchan_width=10 # min useful value
 
 	ps_keywords=${ps_min_keywords/,%mem,stat,*time*,/,%mem,%cpu,state,}
 	local ps_header="  PID  PGID %MEM %CPU S COMMAND"
@@ -5222,9 +5240,10 @@ readonly -f set-cron_cmds
 
 # --------------------------------------------
 
+declare -i rows_for_one_detailed_rsync min_rows min_rows_with_df
+
 set-min_rows-min_rows_with_df-rows_left() {
 
-	declare -g -i \
 	rows_for_one_detailed_rsync=5	# full details section + 1 rsync
 	rows_for_one_detailed_rsync+=2	# full rsync wraps across lines
 	#  prune-drive (PD) includes parent of  'rm'   process (also in -C)
@@ -5244,10 +5263,9 @@ set-min_rows-min_rows_with_df-rows_left() {
 	# min rows: 1 watch line, 1 blank line, 9+1 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
-	declare -g -i \
 	min_rows=$(( 1 + 1 + 9+1 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
-	declare -g -i min_rows_with_df=$((min_rows + 2 + num_drives))
+	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
 	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
 	TraceV 1 rows_left
@@ -5445,9 +5463,11 @@ readonly -f show-stats-section-4-if-it-fits
 is-set   FS_repair_cmd_regex ||		# can set custom value in $config_file
 readonly FS_repair_cmd_regex='[x]fs_repair|[f]sck(\.[^ ]+)?'
 
+declare -i FS_repair_cmds_lines
+
 set-FS_repair_cmds_file() {
 
-	declare -g -i FS_repair_cmds_lines=0
+	FS_repair_cmds_lines=0
 	FS_repair_cmds_file=$tmp_3
 	ps -o $ps_keywords -U root |
 	   egrep -e '%[M]EM' \
@@ -6114,6 +6134,8 @@ readonly -f check-lost+found
 
 # To find your actual average directory size, see section E. in doc/Install.txt
 
+declare -i block_size blocks_per_inode bytes_per_inode
+
 _set-blocks_per_inode-bytes_per_inode--for-extN() {
 
 	# On my Ubuntu laptop, and on HRDAG's server (when don't count our
@@ -6129,7 +6151,7 @@ _set-blocks_per_inode-bytes_per_inode--for-extN() {
 	# rsync's --preallocate), but probably won't affect performance on an
 	# SSD or flash memory stick (unless most files have indirect blocks??).
 
-	declare -g -i block_size=1024	# optimal, see above comments
+	block_size=1024			# optimal, see above comments
 	set -f; set -- $opts; set +f
 	while [[ $# != 0 ]]
 	   do	[[ $1 == -b       ]] && block_size=${2-}
@@ -6141,8 +6163,8 @@ _set-blocks_per_inode-bytes_per_inode--for-extN() {
 	is-arg1-in-arg2 $block_size $valid_block_sizes ||
 	   abort "extN block size must be one of: $valid_block_sizes"
 
-	declare -g -i blocks_per_inode=1
-	declare -g -i bytes_per_inode=$blocks_per_inode*$block_size
+	blocks_per_inode=1
+	 bytes_per_inode=$blocks_per_inode*$block_size
 	TraceV 2 block_size bytes_per_inode && echo
 }
 readonly -f _set-blocks_per_inode-bytes_per_inode--for-extN
@@ -7835,7 +7857,7 @@ case $action in
 
 	cd_ $log_dir/$writer_time_subdir/I
 	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
-	set-average-maximum--from-files-of-numbers *.txt
+	set-average-count-maximum--from-files-of-numbers *.txt
 	TraceV 0 average maximum; _exit
 
 	set-drive_name ${1:-J}; set-drive_dir $drive_name
