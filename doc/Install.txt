@@ -278,7 +278,7 @@ file in ~/etc/snapack/ else /usr/local/etc/snapback/ else /etc/snapback/ .
 
 Some of the configure.sh variables are quite abstract, you'll need to
 carefully read the comments.  And it's probably best to leave the tuning
-variables alone (see 'K. snapback tuning'), and re-read those variable's
+variables alone (see 'L. snapback tuning'), and re-read those variable's
 comments after you've let cron create a lot of snapshots and you start to run
 out of resources on some drives.
 
@@ -446,7 +446,56 @@ which will find errors in yesterday's (if /etc/logrotate.conf contains
 'dateext' and 'delaycompress') and today's syslog files.
 
 
-K. snapback tuning
+K. acronyms and shorcuts (for those who don't type well)
+
+Virtually all the actions in snapback can be specified by their acronyms,
+i.e. the first letter of each word in the acronym name.  Here's some examples:
+
+    bd ... -> backup-drives ...
+    pd ... ->  prune-drives ...
+    ud ... -> update-drives ...
+
+    wa -> watch
+    cl -> check-logs
+
+    k p ... -> kill prune ...
+    s b ... -> suspend  backup ...
+    c b ... -> continue backup ...
+
+    pp -> predict-prune
+
+    rt -> regression-test
+
+Also, I have a couple of shortcuts in my ~/.bashrc :
+
+    alias sb=snapback
+    alias sc=snapcrypt
+
+and a bunch of shortcuts in my ~/.bash_profile :
+
+    # export these variables: 1. 'cd' and 'pushd' won't need to prefix with '$';
+    # 2. makes them accessible in an editor.
+    export \
+	 vlsbl=/var/lock/snapback				\
+	  vlsc=/var/log/snapcrypt				\
+	  vlsb=/var/log/snapback				\
+	 vlsbc=/var/log/snapback/cron.log			\
+	vlsbcw=/var/log/snapback/cron-w.txt			\
+	vlsbds=/var/log/snapback/dir-sizes			\
+	 vlsbd=/var/log/snapback/drives				\
+	 vlsbs=/var/log/snapback/stats				\
+	vlsbsb=/var/log/snapback/stats/backups			\
+	vlsbsc=/var/log/snapback/stats/copy			\
+	vlsbsp=/var/log/snapback/stats/prune			\
+	 vlsbw=/var/log/snapback/stats/watch			\
+								\
+	    rs=/run/snapback					\
+	   rss=/run/snapback/syslog-errors			\
+	   rsd=/run/snapback/drives				\
+	  rsdm=/run/snapback/drives/monitor.log
+
+
+L. snapback tuning
 
 There's two kinds of problems that will require tuning: you're running out
 of drive space or inodes, or you're getting "Too many links" errors.  If you
