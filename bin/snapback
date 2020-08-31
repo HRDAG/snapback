@@ -4532,11 +4532,13 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 	for dir in $all_drive_dirs
 	    do	_set-drive_name $dir
 		set-stats_subdir time
-		local   dir=$drives_log_dir/$drive_name/$stats_subdir
-		set -- $dir/$snapshot_glob.txt
+		local dir=$drives_log_dir/$drive_name/$stats_subdir
+		cd $dir || continue
+		set -- $snapshot_glob.txt
 		set-hour_avg-hour_max--from-files-of-minutes $*
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
+		cd $OLDPWD
 	done
 
 	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
@@ -5379,6 +5381,8 @@ show-stats-section-2-if-it-fits() {
 	    [[ $stats_opt ]] || return
 
 	echo				# first row used
+
+	local yesterday=$(date "+%Y-%m-%d" -d "-1 day")
 
 	let rows_left-=$rows_used
 }
