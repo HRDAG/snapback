@@ -283,6 +283,8 @@ FUNCNEST=100				# abort on infinite recursion
 fgrep -q -x "# version=$version" $config_file_sample ||
   $IfRun abort "$config_file_sample version= does not match $our_path"
 
+append-to-PATH-var PATH /usr/local/bin /usr/sbin /sbin # mkfs, tune2fs, etc
+
 need-cmds fuser setsid
 
 $TraceAll
@@ -409,7 +411,7 @@ set-hours--from-minutes 10
 ##############################################################################
 
 readonly lock_dir=/var/lock/$our_name
-declare -x -r LOCKPID_DIR=$lock_dir
+readonly LOCKPID_DIR=$lock_dir
 
 # use this instead of 'lockpid' when want/need to replace stale lock
 function sudo-lockpid() {
@@ -2139,7 +2141,7 @@ create-stats_subdir-and-symlink-to-it() {
 	local stats_subdir=$1
 
 	local dir=$drive_log_dir/$stats_subdir
-	$IfRun mkdir -p $dir
+	mkdir -p $dir # even for pseudo-drive Z, makes regression tests readable
 	local link=$log_dir/$stats_subdir/$drive_name
 	$IfRun mkdir -p ${link%/*}
 	[[ -e $link ]] ||
@@ -2152,13 +2154,15 @@ readonly -f create-stats_subdir-and-symlink-to-it
 save-stats-file() {
 	local stats_subdir=$1 snapshot=$2 data=$3
 
-	cd_ $drive_log_dir
+	cd $drive_log_dir || abort cd
+
 	local file=$stats_subdir/$snapshot.txt
 	local cmd="echo $data > $file"
 	if [[ $debug_opt ]]
 	   then echo "$cmd"
 	   else eval "$cmd"
 	fi
+
 	cd $OLDPWD
 }
 readonly -f save-stats-file
@@ -2174,7 +2178,7 @@ declare -r -i min_files_to_keep=5
 prune-stats-files() {
 	local stats_subdir=$1
 
-	cd_ $drive_log_dir
+	cd $drive_log_dir || abort cd
 
 	set -- $stats_subdir/$snapshot_glob.txt # duplicated in 'for' loop, below
 	[[ $# != 0 ]] && {
@@ -2200,7 +2204,8 @@ readonly -f prune-stats-files
 
 archive-writer-stats-data() {
 
-	cd_ $drive_log_dir
+	cd $drive_log_dir || abort cd
+
 	local data_type
 	for data_type in $stats_data_types
 	    do	local writer_type
@@ -2215,6 +2220,7 @@ archive-writer-stats-data() {
 			fi |   sed "s@named '$stats_subdir/@@"
 		done
 	done
+
 	cd $OLDPWD
 }
 readonly -f archive-writer-stats-data
@@ -2225,6 +2231,7 @@ save-writer-stats() {
 	local snapshot=$(basename $1)
 
 	cd_ $drive_log_dir
+
 	local data_type
 	for data_type in $stats_data_types
 	    do	   set-stats_subdir $data_type ||
@@ -2233,6 +2240,7 @@ save-writer-stats() {
 		 save-stats-file  $stats_subdir $snapshot $data &&
 		prune-stats-files $stats_subdir
 	done
+
 	cd $OLDPWD
 }
 readonly -f save-writer-stats
@@ -4447,17 +4455,16 @@ readonly default_padded_colorized_string_field_width=5
 
 set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local drive_dirs=$*
+	local drive_names=$*
 
 	[[ ${stats_format-} ]] && { $xtrace; return; }
 
 	local -i format_width
 	local -i field_width=$default_padded_colorized_string_field_width+1
 	local format=
-	local drive_dir drive_name
-	for drive_dir in $drive_dirs
-	    do	_set-drive_name $drive_dir
-		format_width=${#drive_name}+$field_width
+	local drive_name
+	for drive_name in $drive_names
+	    do	format_width=${#drive_name}+$field_width
 		format+="%-${format_width}s  "
 	done
 	stats_format=${format%  }
@@ -4536,7 +4543,6 @@ set-writer_hour_avgs-writer_hour_maxs() {
 	local writer_type=$1
 
 	cd_ $drives_log_dir
-	set-stats_format $all_drive_dirs
 	set-stats_subdir time
 	local drive_name hour_avgs= hour_maxs=
 	for drive_name in $all_drive_names
@@ -4557,10 +4563,6 @@ readonly -f set-writer_hour_avgs-writer_hour_maxs
 # ----------------------------------------------------------------------------
 
 set-drive_usage() {
-
-	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
-
-	set-stats_format $all_drive_dirs
 
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
@@ -4594,10 +4596,6 @@ readonly drive_response_warning_secs=1.0
 
 set-drive_response() {
 
-	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
-
-	set-stats_format $all_drive_dirs
-
 	local overhead_msecs_file=$drive_msecs_dir/$mon_overhead_drive_name
 	if [[ -s $overhead_msecs_file ]]
 	   then local -i average
@@ -4609,11 +4607,9 @@ set-drive_response() {
 	set-msecs--from-secs $drive_response_warning_secs
 	local drive_response_warning_msecs=$msecs
 
-	local drive_dir drive_name responses=
-	for drive_dir in $all_drive_dirs
-	    do	_set-drive_name $drive_dir
-
-		set-average $drive_msecs_dir/$drive_name
+	local drive_name responses=
+	for drive_name in $all_drive_names
+	    do	set-average $drive_msecs_dir/$drive_name
 		local -i msecs=$average-$overhead_msecs
 		(( $msecs < 0 )) && msecs=0
 
@@ -4707,12 +4703,10 @@ readonly -f _set-colorized_new
 
 _recalculate-snapshot-stats-vars() {
 
-	set-stats_format $all_drive_dirs
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
-	local dir drive_name nums= oldies= newies=
-	for dir in $all_drive_dirs
-	    do	_set-drive_name $dir
-		local dir=$snapshots_replica_dir/$drive_name
+	local drive_name nums= oldies= newies=
+	for drive_name in $all_drive_names
+	    do	local dir=$snapshots_replica_dir/$drive_name
 		cd_  $dir
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
@@ -4775,22 +4769,21 @@ readonly -f _recalculate-snapshot-stats-vars
 # ----------------------
 
 readonly watch_cache_dir=$stats_dir/watch
-readonly cached_drive_dirs_file=$watch_cache_dir/drive-dirs.txt
+readonly cached_drive_names_file=$watch_cache_dir/drive-names.txt
 
 function _is-stats-cache-fresh {
 	local cache_file=$1
 
 	[[ -s $cache_file ]] || return 1
 
-	if [[ $drive_dirs != "$(< $cached_drive_dirs_file)" ]]
-	   then rm -f $cached_drive_dirs_file $watch_cache_dir/*/*,*.txt
+	if [[ $drive_names != "$(< $cached_drive_names_file)" ]]
+	   then rm -f $cached_drive_names_file $watch_cache_dir/*/*,*.txt
 		return 1
 	fi
 
-	local dir drive_name
-	for dir in $all_drive_dirs
-	    do	_set-drive_name $dir
-		local replica_dir=$snapshots_replica_dir/$drive_name
+	local drive_name
+	for drive_name in $all_drive_names
+	    do	local replica_dir=$snapshots_replica_dir/$drive_name
 		[[ $cache_file -nt $replica_dir/. ]] || return 1
 	done
 
@@ -4823,7 +4816,7 @@ setup-snapshot-stats() {
 	local     number_cache_file=$watch_cache_dir/number/$cache_name
 	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
 	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
-	local drive_dirs=$all_drive_dirs
+	local drive_names=$all_drive_names
 	# the cache files in number/ are a pure superset of the files in *-age/
 	if _is-stats-cache-fresh $number_cache_file && [[ $watch_opt ]]
 	   then stats_number=$(< $number_cache_file)
@@ -4847,7 +4840,7 @@ setup-snapshot-stats() {
 
 	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
 					 ${newest_age_cache_file%/*}
-	echo-to-file "$drive_dirs" $cached_drive_dirs_file
+	echo-to-file "$drive_names" $cached_drive_names_file
 	echo "$stats_number"	 >     $number_cache_file ; [[ $dates ]] && {
 	echo "$stats_oldest_age" > $oldest_age_cache_file
 	echo "$stats_newest_age" > $newest_age_cache_file		  ; }
@@ -4861,14 +4854,13 @@ readonly -f setup-snapshot-stats
 declare -i max_drive_name_len
 
 set-max_drive_name_len() {
-	local drive_dirs=${*:-$(list-drive-dirs -a)}
+	local drive_names=${*:-$drive_names}
 
 	max_drive_name_len=0
 
-	local drive_dir drive_name
-	for drive_dir in $drive_dirs
-	    do	_set-drive_name $drive_dir
-		(( max_drive_name_len<${#drive_name} )) &&
+	local drive_name
+	for drive_name in $drive_names
+	    do	(( max_drive_name_len<${#drive_name} )) &&
 		   max_drive_name_len=${#drive_name}
 	done
 }
@@ -4998,26 +4990,28 @@ readonly -f exec-watch-snapback-w
 
 # --------------------------------------------
 
-set-drive_dirs-names_msg-names_glob() {
+set-drive_names-names_msg-names_glob-drive_dirs() {
 	local names=$*
 
-	local name_list=
+	drive_dirs=
+	local drive_names= drive_dir
 	if [[ $names ]]
 	   then for name in ${names//,/ }
 		    do	_set-drive_name $name
-			_set-drive_dir
-			drive_dirs+="$drive_dir "
-			name_list=$name_list,$drive_name
+			_set-drive_dir  $drive_name
+			drive_names+="$drive_name "
+			 drive_dirs+="$drive_dirs "
 		done
-		name_list=${name_list#,}
-	   else drive_dirs=$all_drive_dirs
+	   else drive_names=$all_drive_names drive_dirs=$all_drive_dirs
 	fi
+	drive_names=${drive_names% }
+	local  name_list=${drive_names// /,}
 	if [[ $name_list ]]
 	   then names_glob="{$name_list}"  names_msg=" for $name_list "
 	   else names_glob=		   names_msg=
 	fi
 }
-readonly -f set-drive_dirs-names_msg-names_glob
+readonly -f set-drive_names-names_msg-names_glob-drive_dirs
 
 # --------------------------------------------
 
@@ -5043,7 +5037,7 @@ set-max_ps_width() {
 	local ps_header=$1 rsync_ps_out=$2
 
 	ps_header=${ps_header%COMMAND}
-	set-max_drive_name_len ${drive_dirs-$drive_dir}
+	set-max_drive_name_len ${drive_names-$drive_name}
 	max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
 	let max_ps_width+=1    # 'watch' executable requires blank last column
 }
@@ -5327,7 +5321,7 @@ show-errors-in-syslog() {
 
 	}
 
-	[[ $all_drive_dirs ]] && return
+	[[ $all_drive_names ]] && return
 
 	create-status_dir		# in case we just did an install
 	# run the functions at start of show-filesystem-info-that-fits
@@ -5668,10 +5662,12 @@ watch() {
 
 	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
 
-	set -- $(list-drive-dirs -a)
-	local all_drive_dirs=$* drive_dirs=
 	set-drive_names -a
 	local all_drive_names=$drive_names
+	set-stats_format $all_drive_names
+	local all_drive_dirs=" $all_drive_names"
+	set -- ${all_drive_dirs// / $drive_dir_prefix}
+	all_drive_dirs=$*
 
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
@@ -5681,14 +5677,14 @@ watch() {
 
 	SECONDS=$(date '+%s')		# for _set-age()
 
-	set-drive_dirs-names_msg-names_glob $names # names_glob: set-lock_PGIDs
-	TraceV 1 drive_dirs names_glob ps_opt cron_opt show_all
+	set-drive_names-names_msg-names_glob-drive_dirs $names # set-lock_PGIDs
+	TraceV 1 drive_names names_glob ps_opt cron_opt show_all
 
 	set-rows-columns-COLUMNS
 
 	setup-ps-variables-and-ps_-function
 
-	set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds $drive_dirs
+	set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds $drive_names
 
 	[[ $cron_opt && $prune_cmds$bkp_rsync_cmds$copy_rsync_cmds ]] &&
 	    set-cron_cmds || cron_cmds=
