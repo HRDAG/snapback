@@ -1135,14 +1135,12 @@ readonly -f set-drive_dirs
 
 # ----------------------
 
+escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
+
 function set-drive_names() {
 
-	drive_names=
-	local dir
-	for dir in $(list-drive-dirs "$@")
-	    do	drive_names+="${dir##*/} "
-	done
-	drive_names=${drive_names% }
+	drive_names=$(list-drive-dirs "$@")
+	drive_names=${drive_names//$escaped_drive_dir_prefix/}
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names
@@ -5390,6 +5388,8 @@ show-stats-section-2-if-it-fits() {
 
 	local yesterday=$(date "+%Y-%m-%d" -d "-1 day")
 
+	set-writer_hour_avgs-writer_hour_maxs prune
+	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
