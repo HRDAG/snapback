@@ -2129,7 +2129,7 @@ function set-stats_subdir() {
 	fi
 
 	stats_subdir=stats/$writer_type/$basename
-	[[ -d  $stats_subdir ]]
+	[[ -d $stats_subdir ]]	     # only relevant if $PWD == $drive_log_dir
 }
 readonly -f set-stats_subdir
 
@@ -2152,12 +2152,14 @@ readonly -f create-stats_subdir-and-symlink-to-it
 save-stats-file() {
 	local stats_subdir=$1 snapshot=$2 data=$3
 
-	local file=$drive_log_dir/$stats_subdir/$snapshot.txt
+	cd_ $drive_log_dir
+	local file=$stats_subdir/$snapshot.txt
 	local cmd="echo $data > $file"
 	if [[ $debug_opt ]]
 	   then echo "$cmd"
 	   else eval "$cmd"
 	fi
+	cd $OLDPWD
 }
 readonly -f save-stats-file
 
@@ -2187,6 +2189,7 @@ prune-stats-files() {
 		(( $# > $min_files_to_keep )) || break
 		$IfRun rm $file
 	done
+
 	}
 
 	cd $OLDPWD
@@ -2197,24 +2200,22 @@ readonly -f prune-stats-files
 
 archive-writer-stats-data() {
 
+	cd_ $drive_log_dir
 	local data_type
 	for data_type in $stats_data_types
 	    do	local writer_type
 		for writer_type in $writer_types
 		    do	set-stats_subdir $data_type || continue
-			local stats_dir=$drive_log_dir/$stats_subdir
-
-			cd_ $stats_dir
-			set -- *.txt
+			set -- $stats_subdir/*.txt
 			if [[ $# != 0 ]]
-			   then set-date_time -r .
-				dir=$PWD/.${date_time%,*} # absolute path, for -v
-				$IfRun mkdir -p    $dir
-				$IfRun mv -v *.txt $dir/
-			fi
-			cd $OLDPWD
+			   then set-date_time -r $stats_subdir
+				local dst_subdir=$stats_subdir/.${date_time%,*}
+				$IfRun mkdir -p    $dst_subdir
+				$IfRun mv -v $stats_subdir/*.txt $dst_subdir/
+			fi |   sed "s@named '$stats_subdir/@@"
 		done
 	done
+	cd $OLDPWD
 }
 readonly -f archive-writer-stats-data
 
@@ -2223,14 +2224,16 @@ readonly -f archive-writer-stats-data
 save-writer-stats() {
 	local snapshot=$(basename $1)
 
+	cd_ $drive_log_dir
 	local data_type
 	for data_type in $stats_data_types
-	    do	set-stats_subdir $data_type
+	    do	   set-stats_subdir $data_type ||
 		create-stats_subdir-and-symlink-to-it $stats_subdir
 		eval "local data=\$writer_$data_type"
 		 save-stats-file  $stats_subdir $snapshot $data &&
 		prune-stats-files $stats_subdir
 	done
+	cd $OLDPWD
 }
 readonly -f save-writer-stats
 
@@ -4532,24 +4535,17 @@ readonly -f set-hour_avg-hour_max--from-files-of-minutes
 set-writer_hour_avgs-writer_hour_maxs() {
 	local writer_type=$1
 
-	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
-
+	cd_ $drives_log_dir
 	set-stats_format $all_drive_dirs
-	local hour_avgs= hour_maxs=
-	local dir drive_name
-	for dir in $all_drive_dirs
-	    do	_set-drive_name $dir
-		set-stats_subdir time
-		local dir=$drives_log_dir/$drive_name/$stats_subdir
-		if [[ -d $dir ]] && cd $dir
-		   then set -- $snapshot_glob.txt
-		   else set --
-		fi
+	set-stats_subdir time
+	local drive_name hour_avgs= hour_maxs=
+	for drive_name in $all_drive_names
+	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
 		set-hour_avg-hour_max--from-files-of-minutes $*
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
-		cd $OLDPWD
 	done
+	cd $OLDPWD
 
 	printf -v writer_hour_avgs "$stats_format" $hour_avgs
 	printf -v writer_hour_maxs "$stats_format" $hour_maxs
@@ -5260,10 +5256,10 @@ set-min_rows-min_rows_with_df-rows_left() {
 	[[ $stats_opt ]] && PD=0 CS=0 BD=0
 	TraceV 1 PD CS BD && let rows_left-=3
 
-	# min rows: 1 watch line, 1 blank line, 9+1 lines of section-1 stats,
+	# min rows: 1 watch line, 1 blank line, 8+1 lines of section-1 stats,
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
-	min_rows=$(( 1 + 1 + 9+1 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
+	min_rows=$(( 1 + 1 + 8+1 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
@@ -5385,8 +5381,6 @@ show-stats-section-1() {
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
 	echo " Number empty .partial dirs, for update:  $stats_number"
-	set-writer_hour_avgs-writer_hour_maxs copy
-	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 }
 readonly -f show-stats-section-1
 
@@ -5401,6 +5395,9 @@ show-stats-section-2-if-it-fits() {
 	echo				# first row used
 
 	local yesterday=$(date "+%Y-%m-%d" -d "-1 day")
+
+	set-writer_hour_avgs-writer_hour_maxs copy
+	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
 	let rows_left-=$rows_used
 }
@@ -5673,6 +5670,8 @@ watch() {
 
 	set -- $(list-drive-dirs -a)
 	local all_drive_dirs=$* drive_dirs=
+	set-drive_names -a
+	local all_drive_names=$drive_names
 
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
