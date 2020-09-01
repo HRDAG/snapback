@@ -4991,10 +4991,10 @@ readonly -f exec-watch-snapback-w
 set-drive_names-names_msg-names_glob-drive_dirs() {
 	local names=$*
 
-	drive_dirs=
-	local drive_names= drive_dir
+	drive_names= drive_dirs=
 	if [[ $names ]]
-	   then for name in ${names//,/ }
+	   then local name drive_name drive_dir
+		for name in ${names//,/ }
 		    do	_set-drive_name $name
 			_set-drive_dir  $drive_name
 			drive_names+="$drive_name "
@@ -5003,9 +5003,9 @@ set-drive_names-names_msg-names_glob-drive_dirs() {
 	   else drive_names=$all_drive_names drive_dirs=$all_drive_dirs
 	fi
 	drive_names=${drive_names% }
-	local  name_list=${drive_names// /,}
-	if [[ $name_list ]]
-	   then names_glob="{$name_list}"  names_msg=" for $name_list "
+	if [[ $names ]]
+	   then local name_list=${drive_names// /,}
+		names_glob="{$name_list}"  names_msg=" for $name_list "
 	   else names_glob=		   names_msg=
 	fi
 }
