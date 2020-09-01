@@ -1139,8 +1139,8 @@ escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
 
 function set-drive_names() {
 
-	drive_names=$(list-drive-dirs "$@")
-	drive_names=${drive_names//$escaped_drive_dir_prefix/}
+	set -- $(list-drive-dirs "$@")
+	drive_names=${*//$escaped_drive_dir_prefix/}
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names
