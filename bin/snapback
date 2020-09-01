@@ -4529,7 +4529,7 @@ readonly -f set-hour_avg-hour_max--from-files-of-minutes
 
 # --------------------------------------------
 
-set-rsync_hour_avgs-rsync_hour_maxs() {
+set-writer_hour_avgs-writer_hour_maxs() {
 	local writer_type=$1
 
 	local all_drive_dirs=${all_drive_dirs:=$(list-drive-dirs -a)}
@@ -4551,12 +4551,12 @@ set-rsync_hour_avgs-rsync_hour_maxs() {
 		cd $OLDPWD
 	done
 
-	printf -v rsync_hour_avgs "$stats_format" $hour_avgs
-	printf -v rsync_hour_maxs "$stats_format" $hour_maxs
-	fix-padded-colorized-string-vars rsync_hour_avgs
-	strip-trailing-whitespace rsync_hour_avgs rsync_hour_maxs
+	printf -v writer_hour_avgs "$stats_format" $hour_avgs
+	printf -v writer_hour_maxs "$stats_format" $hour_maxs
+	fix-padded-colorized-string-vars writer_hour_avgs
+	strip-trailing-whitespace writer_hour_avgs writer_hour_maxs
 }
-readonly -f set-rsync_hour_avgs-rsync_hour_maxs
+readonly -f set-writer_hour_avgs-writer_hour_maxs
 
 # ----------------------------------------------------------------------------
 
@@ -5370,9 +5370,9 @@ show-stats-section-1() {
 
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
-	set-rsync_hour_avgs-rsync_hour_maxs backup
-	echo "Average hours to create backup snapshot:  $rsync_hour_avgs"
-	echo "Maximum hours to create backup snapshot:  $rsync_hour_maxs"
+	set-writer_hour_avgs-writer_hour_maxs backup
+	echo "Average hours to create backup snapshot:  $writer_hour_avgs"
+	echo "Maximum hours to create backup snapshot:  $writer_hour_maxs"
 	setup-snapshot-stats -h ''
 	echo "  Age of newest good snapshot, in hours:  $stats_newest_age"
 	set-drive_usage
@@ -5385,8 +5385,8 @@ show-stats-section-1() {
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
 	setup-snapshot-stats -e .partial
 	echo " Number empty .partial dirs, for update:  $stats_number"
-	set-rsync_hour_avgs-rsync_hour_maxs copy
-	echo "  Average hours to copy/update snapshot:  $rsync_hour_avgs"
+	set-writer_hour_avgs-writer_hour_maxs copy
+	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 }
 readonly -f show-stats-section-1
 
