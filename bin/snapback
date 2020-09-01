@@ -1135,7 +1135,7 @@ readonly -f set-drive_dirs
 
 # ----------------------
 
-escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
+readonly escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
 
 function set-drive_names() {
 
@@ -2226,7 +2226,7 @@ readonly -f archive-writer-stats-data
 # ----------------------------------------------------------------------------
 
 save-writer-stats() {
-	local snapshot=$(basename $1)
+	local snapshot=$(basename ${1%.rm})
 
 	cd_ $drive_log_dir
 
