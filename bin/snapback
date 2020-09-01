@@ -4998,7 +4998,7 @@ set-drive_names-names_msg-names_glob-drive_dirs() {
 		    do	_set-drive_name $name
 			_set-drive_dir  $drive_name
 			drive_names+="$drive_name "
-			 drive_dirs+="$drive_dirs "
+			 drive_dirs+="$drive_dir "
 		done
 	   else drive_names=$all_drive_names drive_dirs=$all_drive_dirs
 	fi
