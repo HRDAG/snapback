@@ -4473,10 +4473,12 @@ readonly -f set-stats_format
 
 # ----------------------------------------------------------------------------
 
-set-average-count-maximum--from-files-of-numbers() {
+function set-average-count-maximum-sum--from-files-of-numbers() {
+
+	sum=0 count=$#
+	[[ $count != 0 ]] || { average=0 maximum=0 ; return 1; }
 
 	maximum=-999999
-	local -i sum=0
 	local file
 	for file
 	    do	local -i number=$(< $file)
@@ -4484,11 +4486,9 @@ set-average-count-maximum--from-files-of-numbers() {
 		(( maximum<number )) &&
 		   maximum=number
 	done
-	count=$#
 	average=$(( ($sum+($count/2)) / $count ))
-	(( $sum > 0 )) || maximum=0
 }
-readonly -f set-average-count-maximum--from-files-of-numbers
+readonly -f set-average-count-maximum-sum--from-files-of-numbers
 
 # ---------------------------------
 
@@ -4507,8 +4507,8 @@ readonly -f set-padded_number
 set-hour_avg-hour_max--from-files-of-minutes() {
 	if [[ $# != 0 ]]
 	   then local -i \
-		    average count maximum
-		set-average-count-maximum--from-files-of-numbers $*
+		    average count maximum sum
+		set-average-count-maximum-sum--from-files-of-numbers $*
 		set-hours--from-minutes -2 $average # 2 decimal points
 		set-padded_number $hours
 		hour_avg=$padded_number
@@ -4557,6 +4557,86 @@ set-writer_hour_avgs-writer_hour_maxs() {
 	strip-trailing-whitespace writer_hour_avgs writer_hour_maxs
 }
 readonly -f set-writer_hour_avgs-writer_hour_maxs
+
+# ----------------------------------------------------------------------------
+
+set-GB_avg-GB_sum--from-files-of-MBs() {
+	if [[ $# != 0 ]]
+	   then [[ $writer_type == prune ]] && local sign=- || local sign=
+		local -i \
+		    average count maximum sum
+		set-average-count-maximum-sum--from-files-of-numbers $*
+		set-division -2 $sign$average 1000 # 2 decimal points
+		set-padded_number $division
+		GB_avg=$padded_number
+		set-division -2 $sign$sum 1000 # 2 decimal points
+		set-padded_number $division
+		GB_max=$padded_number
+	   else GB_max= GB_avg=
+	fi
+}
+readonly -f set-GB_avg-GB_sum--from-files-of-MBs
+
+# --------------------------------------------
+
+set-count_per_day-writer_GB_per_day() {
+	local writer_type=$1
+
+	cd_ $drives_log_dir
+	local stats_subdir
+	set-stats_subdir MB
+	[[ $writer_type == prune ]] && local sign=- || local sign=
+	count_per_day= GB_per_day=
+	local drive_name
+	for drive_name in $all_drive_names
+	    do	local -i days_old total_MB=0 day_count=0 file_count=0
+		for ((days_old=-1; days_old > -$days_to_keep_stats; days_old--))
+		    do	local day=$(date "+%Y-%m-%d" -d "$days_old days")
+			set -- $drive_name/$stats_subdir/$day,??.txt
+			local -i \
+			    average count maximum sum
+			set-average-count-maximum-sum--from-files-of-numbers $*
+			file_count+=$count
+			 total_MB+=$sum; (( $count > 0 )) &&
+			day_count+=1
+		done
+
+		local -i MB_per_day=$total_MB/$day_count
+		set-division -2 $sign$MB_per_day 1000 # 2 decimal points
+		set-padded_number $division
+		GB_per_day+="$drive_name=$padded_number "
+		local -i daily_count=$file_count/$day_count
+		set-padded_number $daily_count
+		count_per_day+="$drive_name=$padded_number "
+	done
+
+	printf -v writer_GB_per_day "$stats_format" $GB_per_day
+	printf -v     count_per_day "$stats_format" $count_per_day
+	strip-trailing-whitespace writer_GB_per_day
+}
+readonly -f set-count_per_day-writer_GB_per_day
+
+# ------------------------------------------------------------------
+
+set-writer_GB_avgs-writer_GB_maxs() {
+	local writer_type=$1
+
+	cd_ $drives_log_dir
+	set-stats_subdir MB
+	local drive_name GB_avgs= GB_maxs=
+	for drive_name in $all_drive_names
+	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
+		set-GB_avg-GB_sum--from-files-of-MBs $*
+		GB_avgs+="$drive_name=$GB_avg "
+		GB_maxs+="$drive_name=$GB_max "
+	done
+	cd $OLDPWD
+
+	printf -v writer_GB_avgs "$stats_format" $GB_avgs
+	printf -v writer_GB_maxs "$stats_format" $GB_maxs
+	strip-trailing-whitespace writer_GB_avgs writer_GB_maxs
+}
+readonly -f set-writer_GB_avgs-writer_GB_maxs
 
 # ----------------------------------------------------------------------------
 
@@ -5380,16 +5460,31 @@ readonly -f show-stats-section-1
 
 show-stats-section-2-if-it-fits() {
 
-	local -i rows_used=1		# stats plus 1 blank line
+	local -i rows_used=10		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
 	    [[ $stats_opt ]] || return
 
 	echo				# first row used
 
-	local yesterday=$(date "+%Y-%m-%d" -d "-1 day")
+	Echo() { set-warning_string stale "$*"; echo "$warning_string"; }
 
+	set-count_per_day-writer_GB_per_day backup
+	Echo "Number of backups/day (usually by cron):  $count_per_day"
+	set-writer_GB_avgs-writer_GB_maxs backup
+	echo " Average GB used when create new backup:  $writer_GB_avgs"
+	echo "    Average GB used per day for backups:  $writer_GB_per_day"
+
+	setup-snapshot-stats .rm
+	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
+	set-writer_GB_avgs-writer_GB_maxs prune
+	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
+
+	setup-snapshot-stats -e .partial
+	Echo " Number empty .partial dirs, for update:  $stats_number"
+	set-writer_GB_avgs-writer_GB_maxs prune
+	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
@@ -7852,7 +7947,7 @@ case $action in
 
 	cd_ $log_dir/$writer_time_subdir/I
 	[[ $HOSTNAME == scott-X1 ]] && cd_ /tmp/scott/num-files
-	set-average-count-maximum--from-files-of-numbers *.txt
+	set-average-count-maximum-sum--from-files-of-numbers *.txt
 	TraceV 0 average maximum; _exit
 
 	set-drive_name ${1:-J}; set-drive_dir $drive_name
