@@ -2167,11 +2167,11 @@ readonly -f save-stats-file
 
 # ---------------------------------
 
-is-set	      days_to_keep ||		# can set custom value in $config_file
-declare -r -i days_to_keep=3		# ensure more than weekend-only data
+is-set	      days_to_keep_stats ||	# can set custom value in $config_file
+declare -r -i days_to_keep_stats=3	# ensure more than weekend-only data
 
-is-set	      min_files_to_keep ||	# can set custom value in $config_file
-declare -r -i min_files_to_keep=5
+is-set	      min_stats_files_to_keep || # can set custom value in $config_file
+declare -r -i min_stats_files_to_keep=5
 
 prune-stats-files() {
 	local stats_subdir=$1
@@ -2183,12 +2183,12 @@ prune-stats-files() {
 
 	# copy'ed snapshots aren't copied in date,time order, so use file time
 	local min_date_TS=$tmp_1
-	local old_date=$(date -d "-$days_to_keep days")
+	local old_date=$(date -d "-$days_to_keep_stats days")
 	touch --date="$old_date" $min_date_TS
 	for file in $*
 	    do	[[ $file -ot $min_date_TS  ]] || continue
 		set -- $stats_subdir/$snapshot_glob.txt
-		(( $# > $min_files_to_keep )) || break
+		(( $# > $min_stats_files_to_keep )) || break
 		$IfRun rm $file
 	done
 
