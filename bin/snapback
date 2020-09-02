@@ -4951,9 +4951,9 @@ setup-snapshot-stats() {
 	mkdir -p ${numbers_cache_file%/*} ${oldest_ages_cache_file%/*} \
 					  ${newest_ages_cache_file%/*}
 	echo-to-file "$drive_names" $cached_drive_names_file
-	echo "$stats_numbers"	  >     $numbers_cache_file ; [[ $dates ]] && {
-	echo "$stats_oldest_ages" > $oldest_ages_cache_file
-	echo "$stats_newest_ages" > $newest_ages_cache_file		  ; }
+	echo-to-file "$stats_numbers"     $numbers_cache_file ; [[ $dates ]] && {
+	echo-to-file "$stats_oldest_ages" $oldest_ages_cache_file
+	echo-to-file "$stats_newest_ages" $newest_ages_cache_file	      ; }
 
 	lockpid --release $lockpid_args
 }
@@ -7002,7 +7002,7 @@ find-and-print-big-swapouts() {
 		set-cat_cmd $log
 		set -- $($cat_cmd $log | sed -n -r "s/$regex/\1/p" | sort -nr)
 		[[ $# != 0 ]] && echo $*
-		} > $cache_file
+		} | echo-to-file - $cache_file
 		print-big-swapouts-file -a $cache_file
 	done
 }
@@ -7119,8 +7119,8 @@ search-syslog-for-errors() {
 	local var_name
 	for var_name in $syslog_search_string_var_names
 	    do	echo "${!var_name}"
-	done > $search_str_file
-	echo "$OS_ignorable_error_strings" > $ignorable_str_file
+	done | echo-to-file - $search_str_file
+	echo "$OS_ignorable_error_strings" | echo-to-file - $ignorable_str_file
 
 	# in case /etc/logrotate.conf contains 'dateext' & 'delaycompress'
 	set -- $syslog_path-????????	# have yesterday's file?
@@ -7128,7 +7128,7 @@ search-syslog-for-errors() {
 	    syslog_file+=" $1"
 	create-status_dir
 	fgrep --text -f    $search_str_file $syslog_file |
-	    fgrep -v -f $ignorable_str_file > $search_file
+	    fgrep -v -f $ignorable_str_file | echo-to-file - $search_file
 	rm $search_str_file $ignorable_str_file
 
 	# blk_update_request: I/O error, dev sda, sector B op 0x1:(WRITE) ...
