@@ -4589,7 +4589,7 @@ set-GB_avg-GB_sum--from-files-of-MBs() {
 		set-padded_number $division
 		GB_avg=$padded_number
 
-		is-set drive_name2stats_number || return
+		[[ $writer_type != backup ]] || return
 		sum=$average*${drive_name2stats_number[$drive_name]}
 		set-division -2 $sign$sum 1000 # 2 decimal points
 		set-padded_number $division
