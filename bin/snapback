@@ -1975,8 +1975,8 @@ function is-drive-usage-too-high() {
 	setup-df-data-from-fields $drive_dir pcent ipcent
 	local -i block_percent=$pcent inode_percent=$ipcent
 	if (( $block_percent > $inode_percent ))
-	   then max_drive_usage_percent=b$block_percent
-	   else max_drive_usage_percent=i$inode_percent
+	   then max_drive_usage_percent=$block_percent-blk
+	   else max_drive_usage_percent=$inode_percent-ind
 	fi
 	restore-tracing
 
@@ -4449,7 +4449,8 @@ readonly -f create-jobs
 ##############################################################################
 ##############################################################################
 
-readonly default_padded_colorized_string_field_width=5
+# -* suffix on max_drive_usage_percent in is-drive-usage-too-high: adjusted for:
+readonly default_padded_colorized_string_field_width=5+1 # +1 for units
 
 set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -4473,6 +4474,21 @@ readonly -f set-stats_format
 
 # ----------------------------------------------------------------------------
 
+have-cmd \
+set-units ||			   # can define custom version in $config_file
+set-units() {			   # a stylistic function
+	local letter=$1
+
+	set-warning_string stale $letter
+	units=$warning_string		# doesn't work, confuses printf
+	units=${letter,}
+	case $units in
+	   ( g ) : units=${units^} ;;	# didn't like it
+	esac
+}
+
+# ----------------------------------------------------------------------------
+
 function set-average-count-maximum-sum--from-files-of-numbers() {
 
 	sum=0 count=$#
@@ -4493,12 +4509,13 @@ readonly -f set-average-count-maximum-sum--from-files-of-numbers
 # ---------------------------------
 
 set-padded_number() {
-	local number=$1
+	local number=${1-}
 
 	if [[ $number == ?.* ]]
 	   then padded_number=0$number
 	   else padded_number=$number
 	fi
+	[[ $padded_number ]]
 }
 readonly -f set-padded_number
 
@@ -4506,15 +4523,16 @@ readonly -f set-padded_number
 
 set-hour_avg-hour_max--from-files-of-minutes() {
 	if [[ $# != 0 ]]
-	   then local -i \
+	   then set-units h
+		local -i \
 		    average count maximum sum
 		set-average-count-maximum-sum--from-files-of-numbers $*
 		set-hours--from-minutes -2 $average # 2 decimal points
 		set-padded_number $hours
-		hour_avg=$padded_number
+		hour_avg=${padded_number}$units
 		set-hours--from-minutes -2 $maximum
 		set-padded_number $hours
-		hour_max=$padded_number
+		hour_max=${padded_number}$units
 
 		# drv_name2backup_period_for_update -> localize period
 		set-customized_value--for-config-var-name backup_period &&
@@ -4582,6 +4600,7 @@ readonly -f set-GB_avg-GB_sum--from-files-of-MBs
 set-count_per_day-writer_GB_per_day() {
 	local writer_type=$1
 
+	set-units G
 	cd_ $drives_log_dir
 	local stats_subdir
 	set-stats_subdir MB
@@ -4603,7 +4622,7 @@ set-count_per_day-writer_GB_per_day() {
 
 		local -i MB_per_day=$total_MB/$day_count
 		set-division -2 $sign$MB_per_day 1000 # 2 decimal points
-		set-padded_number $division
+		set-padded_number $division && padded_number+=$units
 		GB_per_day+="$drive_name=$padded_number "
 		local -i daily_count=$file_count/$day_count
 		set-padded_number $daily_count
@@ -4621,14 +4640,17 @@ readonly -f set-count_per_day-writer_GB_per_day
 set-writer_GB_avgs-writer_GB_maxs() {
 	local writer_type=$1
 
+	set-units G
 	cd_ $drives_log_dir
 	set-stats_subdir MB
 	local drive_name GB_avgs= GB_maxs=
 	for drive_name in $all_drive_names
 	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
 		set-GB_avg-GB_sum--from-files-of-MBs $*
-		GB_avgs+="$drive_name=$GB_avg "
-		GB_maxs+="$drive_name=$GB_max "
+		set-padded_number $GB_avg && padded_number+=$units
+		GB_avgs+="$drive_name=$padded_number "
+		set-padded_number $GB_max && padded_number+=$units
+		GB_maxs+="$drive_name=$padded_number "
 	done
 	cd $OLDPWD
 
@@ -4646,17 +4668,17 @@ set-drive_usage() {
 	for drive_dir in $all_drive_dirs
 	    do	# is-drive-usage-too-high sets max_drive_usage_percent
 		is-drive-usage-too-high && local warn=$true || local warn=
-		local     type=${max_drive_usage_percent:0:1}
-		local  percent=${max_drive_usage_percent#?}    _type
+		local     type=${max_drive_usage_percent#*-}    _type
+		local  percent=${max_drive_usage_percent%-*}
 		((  ${#percent} ==   1 )) && percent=0$percent
 		if [[ $percent  == 100 && $watch_opt ]]
 		   then set-warning_string error FULL!
 			percent=$warning_string
 		elif [[ $warn && $watch_opt ]]
 		   then [[ $percent == 99 ]] && _type=error || _type=warning
-			set-warning_string $_type $percent%-$type
+			set-warning_string $_type $percent%$type
 			percent=$warning_string
-		   else percent=$percent%-$type
+		   else percent=$percent%$type
 		fi
 		_set-drive_name $drive_dir
 		percents+="$drive_name=$percent "
@@ -4674,6 +4696,7 @@ readonly drive_response_warning_secs=1.0
 
 set-drive_response() {
 
+	set-units s
 	local overhead_msecs_file=$drive_msecs_dir/$mon_overhead_drive_name
 	if [[ -s $overhead_msecs_file ]]
 	   then local -i average
@@ -4702,7 +4725,7 @@ set-drive_response() {
 		   else set-warning_string error HUNG!
 			local secs=$warning_string
 		fi
-		responses+="$drive_name=$secs "
+		responses+="$drive_name=${secs}$units "
 	done
 	printf -v drive_response "$stats_format" $responses
 	strip-trailing-whitespace drive_response
@@ -4781,6 +4804,8 @@ readonly -f _set-colorized_new
 
 _recalculate-snapshot-stats-vars() {
 
+	[[ ${hour_ages-} ]] && local units=H || local units=D
+	set-units $units
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
 	local drive_name nums= oldies= newies=
 	for drive_name in $all_drive_names
@@ -4829,8 +4854,8 @@ _recalculate-snapshot-stats-vars() {
 		   then _set-colorized_new $new	 # warn if newest not today
 			new=$colorized_new
 		fi
-		oldies+="$drive_name=$old "
-		newies+="$drive_name=$new "
+		oldies+="$drive_name=$old$units "
+		newies+="$drive_name=$new$units "
 	done
 	cd $OLDPWD || abort "cd $OLDPWD"
 	lock-replica-of-snapshots --release
