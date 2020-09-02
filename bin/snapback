@@ -1107,6 +1107,9 @@ readonly -f ps-locks
 # miscellaneous
 ##############################################################################
 
+is-set   df_exclude_type_options ||	# can set custom value in $config_file
+readonly df_exclude_type_options="-x devtmpfs -x tmpfs -x squashfs"
+
 list-drive-dirs() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -a ]] &&
@@ -1118,7 +1121,7 @@ list-drive-dirs() {
 	   else local regex=$drive_name_regex # for cron & nohup
 	fi
 	[[ ${1-} == -A ]] && regex=/ || regex="^$drive_dir_prefix$regex$"
-	df --output=target --no-sync -x devtmpfs -x tmpfs -x squashfs |
+	df --output=target $df_exclude_type_options --no-sync |
 	   egrep "$regex" | sort -u
 	$xtrace
 }
@@ -4992,7 +4995,9 @@ function run-df() {
 				  -e "s@$drive_dir_prefix@ @" ; }
 		df_fields=${df_fields/,size/}
 	fi
-	df --block-size=G --output=$df_fields --no-sync $drive_dirs | filter-df
+	local df_opts="--block-size=G --output=$df_fields
+		       $df_exclude_type_options --no-sync"
+	df $df_opts $drive_dirs | filter-df
 }
 readonly -f run-df
 
@@ -5001,7 +5006,7 @@ readonly -f run-df
 function run-lsblk() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
 
-	have-cmd lsblk || return 1
+	have-cmd lsblk && [[ $drive_dirs ]] || return 1
 
 	local dir devices=
 	for dir in $drive_dirs
@@ -6080,7 +6085,8 @@ readonly -f dir-sizes
 
 filesystem-geometry() {
 	local drive_dirs
-	set-drive_dirs--from-user-args "$@"
+	set-drive_dirs--from-user-args "$@" ||
+	    warn "No mounted backup drives found." || return
 
 	run-df    $drive_dirs
 	run-lsblk $drive_dirs
@@ -6088,6 +6094,7 @@ filesystem-geometry() {
 
 	[[ $UID == 0 || $action == df ]] || return
 
+	[[ $drive_dirs ]] || return
 	local dash="------" dsh="---------------" # alternate header
 	local dash="======" dsh="==============="
 	local    format="%-15s   %-8s%8s %8s %8s %8s %8s %8s\n"

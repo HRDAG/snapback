@@ -7,6 +7,7 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
       redundancy); separate logs & policies for each flexibly-named drive ...
    Any config variable can have (per-drive or per-drive-class) custom values;
       can use smaller drives (e.g. flash memory) to backup subset of system.
+      "Stylistic" constants/functions in the code can be overridden in config.
    Code calls hooks if they're set to functions (all defined in config file).
    When an offsite drive is returned and online, missing snapshots can be
      copied from all other drives (with minimal impact on regular backups).
