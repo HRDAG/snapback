@@ -783,7 +783,7 @@ readonly -f unlock
 function set-PID_ps_fields--in-process-groups() {
 	local columns_opt=$1; shift
 
-	setup-ps-variables-and-ps_-function
+	setup-ps-options
 	PID_ps_fields=
 
 	local PGID
@@ -1078,7 +1078,8 @@ function ps-locks() {
 	   do ps_opts+="$1 "; shift; done
 	set-drive_dirs
 	set-rows-columns-COLUMNS
-	setup-ps-variables-and-ps_-function
+	set-ps_keywords-ps_header
+	setup-ps-options
 	[[ $ps_opts ]] || ps_opts="-o $ps_keywords $ps_opt_H"
 
 	set-lock_paths "$@"
@@ -5129,7 +5130,9 @@ declare -i rows columns rows_left
 
 set-rows-columns-COLUMNS() {
 
-	if [[ ${watch_opt-} ]]
+	[[ ${rows-} ]] && return
+
+	if [[ ${watch_opt-} || -t 1 || -t 2 ]]
 	   then set -f; set -- $(stty -a); set +f
 		rows=${5%;} columns=${7%;}
 	   else rows=999999 columns=9999
@@ -5155,14 +5158,16 @@ readonly -f set-max_ps_width
 
 # ----------------------
 
-# dynamically determine 'ps' fields based on screen column width
-setup-ps-variables-and-ps_-function() {
+declare cputime
+
+set-ps_keywords-ps_header() {
 
 	[[ ${cputime-} ]] && return
 
+	set-rows-columns-COLUMNS
+
 	cputime=cputime				 # global
 	[[ ! $is_darwin ]] && cputime=$cputime:9 # Darwin's is wider
-	readonly cputime
 
 	# min fits in 80-column screen; grep's expect ends with cputime,command
 	ps_min_keywords=pid,pgid,%mem,stat,$cputime,command # cron_opt uses
@@ -5170,16 +5175,6 @@ setup-ps-variables-and-ps_-function() {
 	#
 	ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,$cputime,command
 	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
-
-	setup-ps-options
-
-	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
-	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
-	[[ $ps_opt_H ]] || {
-	    [[ max_rsync_ps_out =~ rsync.* ]] &&
-	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip leading SPACEs
-	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
-	local min_full_columns=$max_ps_width
 
 	if (( ${columns-0} >= $min_full_columns )) || [[ ${ps_opt-} == -f ]]
 	   then readonly is_wide=$true
@@ -5190,6 +5185,24 @@ setup-ps-variables-and-ps_-function() {
 	   then ps_keywords=$ps_max_keywords  ps_header=$ps_max_header
 	   else ps_keywords=$ps_min_keywords  ps_header=$ps_min_header
 	fi
+}
+readonly -f set-ps_keywords-ps_header
+
+# ----------------------
+
+# dynamically determine 'ps' fields based on screen column width
+setup-ps-variables-and-ps_-function() {
+
+	set-ps_keywords-ps_header
+	setup-ps-options
+
+	# trim-ps trims 2 SPACEs from front of rsync command, so fit in 80 cols
+	max_rsync_ps_out="  rsync X/.snap/. /2019-03-30,00.links.partial/"
+	[[ $ps_opt_H ]] || {
+	    [[ max_rsync_ps_out =~ rsync.* ]] &&
+	       max_rsync_ps_out=${BASE_REMATCH[0]} ; } # strip leading SPACEs
+	set-max_ps_width "$ps_max_header" "$max_rsync_ps_out"
+	local min_full_columns=$max_ps_width
 
 	# all field-names followed by '=' means "don't print header"
 	ps_() { ps $ps_opt_H -o ${ps_keywords//,/=,}= "$@"; }
