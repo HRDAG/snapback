@@ -4,7 +4,7 @@ If you run
 
 or
 
-    ssh -t <the-server> snapback watch
+    ssh -t {the-server} snapback watch
 
 you'll see a lot of info.  If you decrease/increase the width of your screen,
 you'll see less/more info from 'ps'.  If you decrease/increase the height of
@@ -18,6 +18,12 @@ when the filesystem usage threshold ('min_FS_usage_percent' in
 /etc/snapback/configure.sh.sample) is exceeded, this priority is inverted
 ... so the pruning will proceed faster than the backups); see Install.txt for
 details on such tuning.
+
+There are now more stats sections than can fit on a typical screen with a
+readable font.  To see _all_ the stats sections, run one of:
+
+    snapback watch -s
+    ssh -t {the-server} snapback watch -s
 
 I spent a couple of hours trying to include the output of 'rsync --progress',
 but it was never reliable, so I gave up.  The only sign of activity (besides
