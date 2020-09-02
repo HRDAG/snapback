@@ -5524,19 +5524,21 @@ show-stats-section-2-if-it-fits() {
 	echo				# first row used
 
 	if [[ ${watch_opt-} ]]
-	   then Echo() { set-warning_string stale "$*"; echo "$warning_string"; }
-	   else Echo() { echo "$*"; }
+	  then Echo() { set-warning_string stale "$*";echo "$warning_string"; }
+	  else Echo() { echo "$*"; }
 	fi
+	declare -A drive_name2stats_number
 
 	set-counts_per_day-writer_GBs_per_day backup
+				[[ $counts_per_day == *=[1-9]* ]] && {
 	Echo "Number of backups/day (usually by cron):  $counts_per_day"
 	set-writer_GB_avgs-writer_TB_sums backup
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
-
-	declare -A drive_name2stats_number
-
+	let rows_left-=3
+	}
 	setup-snapshot-stats .rm
+				[[ $stats_numbers == *=[1-9]* ]] && {
 	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
@@ -5544,8 +5546,10 @@ show-stats-section-2-if-it-fits() {
 	set-writer_GB_avgs-writer_TB_sums prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $writer_TB_sums"
-
+	let rows_left-=3
+	}
 	setup-snapshot-stats -e .partial
+				[[ $stats_numbers == *=[1-9]* ]] && {
 	Echo " Number empty .partial dirs, for update:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
@@ -5553,8 +5557,8 @@ show-stats-section-2-if-it-fits() {
 	set-writer_GB_avgs-writer_TB_sums copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be added:  $writer_TB_sums"
-
-	let rows_left-=$rows_used
+	let rows_left-=3
+	}
 }
 readonly -f show-stats-section-2-if-it-fits
 
