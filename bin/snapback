@@ -4560,7 +4560,7 @@ set-writer_hour_avgs-writer_hour_maxs() {
 
 	cd_ $drives_log_dir
 	set-stats_subdir time
-	local drive_name hour_avgs= hour_maxs=
+	local drive_name hour_avg hour_max hour_avgs= hour_maxs=
 	for drive_name in $all_drive_names
 	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
 		set-hour_avg-hour_max--from-files-of-minutes $*
@@ -4584,13 +4584,17 @@ set-GB_avg-GB_sum--from-files-of-MBs() {
 		local -i \
 		    average count maximum sum
 		set-average-count-maximum-sum--from-files-of-numbers $*
+
 		set-division -2 $sign$average 1000 # 2 decimal points
 		set-padded_number $division
 		GB_avg=$padded_number
+
+		is-set drive_name2stats_number || return
+		sum=$average*${drive_name2stats_number[$drive_name]}
 		set-division -2 $sign$sum 1000 # 2 decimal points
 		set-padded_number $division
-		GB_max=$padded_number
-	   else GB_max= GB_avg=
+		GB_sum=$padded_number
+	   else GB_sum= GB_avg=
 	fi
 }
 readonly -f set-GB_avg-GB_sum--from-files-of-MBs
@@ -4637,28 +4641,29 @@ readonly -f set-count_per_day-writer_GB_per_day
 
 # ------------------------------------------------------------------
 
-set-writer_GB_avgs-writer_GB_maxs() {
+set-writer_GB_avgs-writer_GB_sums() {
 	local writer_type=$1
 
 	set-units G
 	cd_ $drives_log_dir
 	set-stats_subdir MB
-	local drive_name GB_avgs= GB_maxs=
+	local drive_name GB_avg GB_sum padded_number GB_avgs= GB_sums=
 	for drive_name in $all_drive_names
 	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
 		set-GB_avg-GB_sum--from-files-of-MBs $*
 		set-padded_number $GB_avg && padded_number+=$units
 		GB_avgs+="$drive_name=$padded_number "
-		set-padded_number $GB_max && padded_number+=$units
-		GB_maxs+="$drive_name=$padded_number "
+		[[ $writer_type != backup ]] || continue
+		set-padded_number $GB_sum && padded_number+=$units
+		GB_sums+="$drive_name=$padded_number "
 	done
 	cd $OLDPWD
 
 	printf -v writer_GB_avgs "$stats_format" $GB_avgs
-	printf -v writer_GB_maxs "$stats_format" $GB_maxs
-	strip-trailing-whitespace writer_GB_avgs writer_GB_maxs
+	printf -v writer_GB_sums "$stats_format" $GB_sums
+	strip-trailing-whitespace writer_GB_avgs writer_GB_sums
 }
-readonly -f set-writer_GB_avgs-writer_GB_maxs
+readonly -f set-writer_GB_avgs-writer_GB_sums
 
 # ----------------------------------------------------------------------------
 
@@ -4702,13 +4707,13 @@ set-drive_response() {
 	   then local -i average
 		set-average $overhead_msecs_file
 		local -i overhead_msecs=$average
-	   else local -i overhead_msecs=0
+	   else local -i overhead_msecs=0  average
 	fi
 
 	set-msecs--from-secs $drive_response_warning_secs
 	local drive_response_warning_msecs=$msecs
 
-	local drive_name responses=
+	local drive_name secs padded_number responses=
 	for drive_name in $all_drive_names
 	    do	set-average $drive_msecs_dir/$drive_name
 		local -i msecs=$average-$overhead_msecs
@@ -5483,6 +5488,16 @@ readonly -f show-stats-section-1
 
 # --------------------------------------------
 
+set-drive_name2stats_number() {
+	local  stats_number=" $*"
+	local  init=${stats_number// / [}
+	init=${init//=/]=}
+	eval "drive_name2stats_number=( $init )"
+}
+readonly -f set-drive_name2stats_number
+
+# ---------------------------------
+
 show-stats-section-2-if-it-fits() {
 
 	local -i rows_used=10		# stats plus 1 blank line
@@ -5491,27 +5506,36 @@ show-stats-section-2-if-it-fits() {
 
 	echo				# first row used
 
-	Echo() { set-warning_string stale "$*"; echo "$warning_string"; }
+	if [[ ${watch_opt-} ]]
+	   then Echo() { set-warning_string stale "$*"; echo "$warning_string"; }
+	   else Echo() { echo "$*"; }
+	fi
 
 	set-count_per_day-writer_GB_per_day backup
 	Echo "Number of backups/day (usually by cron):  $count_per_day"
-	set-writer_GB_avgs-writer_GB_maxs backup
+	set-writer_GB_avgs-writer_GB_sums backup
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GB_per_day"
 
+	declare -A drive_name2stats_number
+
 	setup-snapshot-stats .rm
 	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
-	set-writer_GB_avgs-writer_GB_maxs prune
-	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
+	set-drive_name2stats_number $stats_number
+	set-writer_GB_avgs-writer_GB_sums prune
+	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
+	echo "     ... predicted total GB to be freed:  $writer_GB_sums"
 
 	setup-snapshot-stats -e .partial
 	Echo " Number empty .partial dirs, for update:  $stats_number"
-	set-writer_GB_avgs-writer_GB_maxs prune
-	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
+	set-drive_name2stats_number $stats_number
+	set-writer_GB_avgs-writer_GB_sums copy
+	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
+	echo "     ... predicted total GB to be added:  $writer_GB_sums"
 
 	let rows_left-=$rows_used
 }
