@@ -4603,7 +4603,7 @@ readonly -f set-GB_avg-TB_sum--from-files-of-MBs
 
 # --------------------------------------------
 
-set-count_per_day-writer_GB_per_day() {
+set-counts_per_day-writer_GBs_per_day() {
 	local writer_type=$1
 
 	set-units G
@@ -4611,7 +4611,7 @@ set-count_per_day-writer_GB_per_day() {
 	local stats_subdir
 	set-stats_subdir MB
 	[[ $writer_type == prune ]] && local sign=- || local sign=
-	count_per_day= GB_per_day=
+	counts_per_day= GB_per_day=
 	local drive_name
 	for drive_name in $all_drive_names
 	    do	local -i days_old total_MB=0 day_count=0 file_count=0
@@ -4632,14 +4632,14 @@ set-count_per_day-writer_GB_per_day() {
 		GB_per_day+="$drive_name=$padded_number "
 		local -i daily_count=$file_count/$day_count
 		set-padded_number $daily_count
-		count_per_day+="$drive_name=$padded_number "
+		counts_per_day+="$drive_name=$padded_number "
 	done
 
-	printf -v writer_GB_per_day "$stats_format" $GB_per_day
-	printf -v     count_per_day "$stats_format" $count_per_day
-	strip-trailing-whitespace writer_GB_per_day
+	printf -v writer_GBs_per_day "$stats_format" $GB_per_day
+	printf -v     counts_per_day "$stats_format" $counts_per_day
+	strip-trailing-whitespace writer_GBs_per_day
 }
-readonly -f set-count_per_day-writer_GB_per_day
+readonly -f set-counts_per_day-writer_GBs_per_day
 
 # ------------------------------------------------------------------
 
@@ -4669,7 +4669,7 @@ readonly -f set-writer_GB_avgs-writer_TB_sums
 
 # ----------------------------------------------------------------------------
 
-set-drive_usage() {
+set-drive_usages() {
 
 	local max_drive_usage_percent warning_string
 	for drive_dir in $all_drive_dirs
@@ -4690,18 +4690,18 @@ set-drive_usage() {
 		_set-drive_name $drive_dir
 		percents+="$drive_name=$percent "
 	done
-	printf -v drive_usage "$stats_format" $percents
-	fix-padded-colorized-string-vars drive_usage # done with printf
-	strip-trailing-whitespace drive_usage
+	printf -v drive_usages "$stats_format" $percents
+	fix-padded-colorized-string-vars drive_usages # done with printf
+	strip-trailing-whitespace drive_usages
 }
-readonly -f set-drive_usage
+readonly -f set-drive_usages
 
 # ----------------------------------------------------------------------------
 
 is-set   drive_response_warning_secs || # custom value in $config_file?
 readonly drive_response_warning_secs=1.0
 
-set-drive_response() {
+set-drive_responses() {
 
 	set-units s
 	local overhead_msecs_file=$drive_msecs_dir/$mon_overhead_drive_name
@@ -4734,10 +4734,10 @@ set-drive_response() {
 		fi
 		responses+="$drive_name=${secs}$units "
 	done
-	printf -v drive_response "$stats_format" $responses
-	strip-trailing-whitespace drive_response
+	printf -v drive_responses "$stats_format" $responses
+	strip-trailing-whitespace drive_responses
 }
-readonly -f set-drive_response
+readonly -f set-drive_responses
 
 # ----------------------------------------------------------------------------
 
@@ -4867,10 +4867,10 @@ _recalculate-snapshot-stats-vars() {
 	cd $OLDPWD || abort "cd $OLDPWD"
 	lock-replica-of-snapshots --release
 
-	printf -v stats_number     "$stats_format" $nums    ; [[ $dates ]] && {
-	printf -v stats_oldest_age "$stats_format" $oldies
-	printf -v stats_newest_age "$stats_format" $newies		    ; }
-	local vars="stats_number stats_oldest_age stats_newest_age"
+	printf -v stats_numbers     "$stats_format" $nums    ; [[ $dates ]] && {
+	printf -v stats_oldest_ages "$stats_format" $oldies
+	printf -v stats_newest_ages "$stats_format" $newies		     ; }
+	local vars="stats_numbers stats_oldest_ages stats_newest_ages"
 	fix-padded-colorized-string-vars $vars # done with printf
 	strip-trailing-whitespace $vars
 }
@@ -4923,16 +4923,16 @@ setup-snapshot-stats() {
 	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
 	   local dates=$true || local dates=$false
 
-	local     number_cache_file=$watch_cache_dir/number/$cache_name
-	local oldest_age_cache_file=$watch_cache_dir/oldest-age/$cache_name
-	local newest_age_cache_file=$watch_cache_dir/newest-age/$cache_name
+	local     numbers_cache_file=$watch_cache_dir/number/$cache_name
+	local oldest_ages_cache_file=$watch_cache_dir/oldest-age/$cache_name
+	local newest_ages_cache_file=$watch_cache_dir/newest-age/$cache_name
 	local drive_names=$all_drive_names
 	# the cache files in number/ are a pure superset of the files in *-age/
-	if _is-stats-cache-fresh $number_cache_file && [[ $watch_opt ]]
-	   then stats_number=$(< $number_cache_file)
+	if _is-stats-cache-fresh  $numbers_cache_file && [[ $watch_opt ]]
+	   then stats_numbers=$(< $numbers_cache_file)
 		[[ $dates ]] && {
-		stats_oldest_age=$(< $oldest_age_cache_file)
-		stats_newest_age=$(< $newest_age_cache_file)
+		stats_oldest_ages=$(< $oldest_ages_cache_file)
+		stats_newest_ages=$(< $newest_ages_cache_file)
 		}
 		# echo -n C:		# uncomment to ensure cache is working
 		return
@@ -4948,12 +4948,12 @@ setup-snapshot-stats() {
 	local lockpid_args="--dir=$lock_dir $lock_name"
 	lockpid $lockpid_args > $dev_null || return
 
-	mkdir -p ${number_cache_file%/*} ${oldest_age_cache_file%/*} \
-					 ${newest_age_cache_file%/*}
+	mkdir -p ${numbers_cache_file%/*} ${oldest_ages_cache_file%/*} \
+					  ${newest_ages_cache_file%/*}
 	echo-to-file "$drive_names" $cached_drive_names_file
-	echo "$stats_number"	 >     $number_cache_file ; [[ $dates ]] && {
-	echo "$stats_oldest_age" > $oldest_age_cache_file
-	echo "$stats_newest_age" > $newest_age_cache_file		  ; }
+	echo "$stats_numbers"	  >     $numbers_cache_file ; [[ $dates ]] && {
+	echo "$stats_oldest_ages" > $oldest_ages_cache_file
+	echo "$stats_newest_ages" > $newest_ages_cache_file		  ; }
 
 	lockpid --release $lockpid_args
 }
@@ -5474,17 +5474,17 @@ show-stats-section-1() {
 	echo "Average hours to create backup snapshot:  $writer_hour_avgs"
 	echo "Maximum hours to create backup snapshot:  $writer_hour_maxs"
 	setup-snapshot-stats -h ''
-	echo "  Age of newest good snapshot, in hours:  $stats_newest_age"
-	set-drive_usage
-	echo " Maximum drive (b)lock or (i)node usage:  $drive_usage"
-	set-drive_response
-	echo "      Seconds to list drive's snapshots:  $drive_response"
+	echo "  Age of newest good snapshot, in hours:  $stats_newest_ages"
+	set-drive_usages
+	echo " Maximum drive (b)lock or (i)node usage:  $drive_usages"
+	set-drive_responses
+	echo "      Seconds to list drive's snapshots:  $drive_responses"
 	setup-snapshot-stats ''	      # was in show-stats-section-3-if-it-fits
-	echo " Number complete & successful snapshots:  $stats_number"
+	echo " Number complete & successful snapshots:  $stats_numbers"
 	setup-snapshot-stats .rm
-	echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
+	echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 	setup-snapshot-stats -e .partial
-	echo " Number empty .partial dirs, for update:  $stats_number"
+	echo " Number empty .partial dirs, for update:  $stats_numbers"
 }
 readonly -f show-stats-section-1
 
@@ -5513,28 +5513,28 @@ show-stats-section-2-if-it-fits() {
 	   else Echo() { echo "$*"; }
 	fi
 
-	set-count_per_day-writer_GB_per_day backup
-	Echo "Number of backups/day (usually by cron):  $count_per_day"
+	set-counts_per_day-writer_GBs_per_day backup
+	Echo "Number of backups/day (usually by cron):  $counts_per_day"
 	set-writer_GB_avgs-writer_TB_sums backup
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
-	echo "    Average GB used per day for backups:  $writer_GB_per_day"
+	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
 
 	declare -A drive_name2stats_number
 
 	setup-snapshot-stats .rm
-	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_number"
+	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
-	set-drive_name2stats_number $stats_number
+	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-writer_TB_sums prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $writer_TB_sums"
 
 	setup-snapshot-stats -e .partial
-	Echo " Number empty .partial dirs, for update:  $stats_number"
+	Echo " Number empty .partial dirs, for update:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
-	set-drive_name2stats_number $stats_number
+	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-writer_TB_sums copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be added:  $writer_TB_sums"
@@ -5553,19 +5553,19 @@ show-stats-section-3-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats .rm
-				[[ $stats_newest_age == *=[0-9]* ]] &&
-	echo "   Age of newest pending prune, in days:  $stats_newest_age"
+				[[ $stats_newest_ages == *=[0-9]* ]] &&
+	echo "   Age of newest pending prune, in days:  $stats_newest_ages"
 	setup-snapshot-stats .links
-	echo "  Number .links (failed 'ln') snapshots:  $stats_number"
-				[[ $stats_newest_age == *=[0-9]* ]] &&
-	echo " Days since newest 'Too many links' err:  $stats_newest_age"
+	echo "  Number .links (failed 'ln') snapshots:  $stats_numbers"
+				[[ $stats_newest_ages == *=[0-9]* ]] &&
+	echo " Days since newest 'Too many links' err:  $stats_newest_ages"
 	setup-snapshot-stats -E .partial
-	echo " Number of aborted snapshots (.partial):  $stats_number"
-	echo "    Days since newest .partial snapshot:  $stats_newest_age"
-	setup-snapshot-stats /.keep	# doesn't set oldest/newest_age
-	echo "Number snaps never pruned (have /.keep):  $stats_number"
+	echo " Number of aborted snapshots (.partial):  $stats_numbers"
+	echo "    Days since newest .partial snapshot:  $stats_newest_ages"
+	setup-snapshot-stats /.keep	# doesn't set oldest/newest_ages
+	echo "Number snaps never pruned (have /.keep):  $stats_numbers"
 #	setup-snapshot-stats ''		# moved to show-stats-section-1
-#	echo "  Number complete/successful snapshots:  $stats_number"
+#	echo "  Number complete/successful snapshots:  $stats_numbers"
 
 	let rows_left-=$rows_used
 }
@@ -5581,15 +5581,15 @@ show-stats-section-4-if-it-fits() {
 
 	echo				# first row used
 	setup-snapshot-stats ''
-	echo "   Age of oldest good snapshot, in days:  $stats_oldest_age"
+	echo "   Age of oldest good snapshot, in days:  $stats_oldest_ages"
 	setup-snapshot-stats '' hour
-	echo "   Total number  days  w/good snapshots:  $stats_number"
+	echo "   Total number  days  w/good snapshots:  $stats_numbers"
 	setup-snapshot-stats '' day
-	echo "   Total number months w/good snapshots:  $stats_number"
+	echo "   Total number months w/good snapshots:  $stats_numbers"
 	setup-snapshot-stats '' month
-	echo "   Total number years  w/good snapshots:  $stats_number"
+	echo "   Total number years  w/good snapshots:  $stats_numbers"
 	setup-snapshot-stats '*'
-	echo "TOTAL snapshots (good+links+partial+rm):  $stats_number"
+	echo "TOTAL snapshots (good+links+partial+rm):  $stats_numbers"
 
 	let rows_left-=$rows_used
 }
