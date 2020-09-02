@@ -5160,6 +5160,8 @@ readonly -f set-max_ps_width
 
 declare cputime
 
+have-cmd \
+set-ps_keywords-ps_header ||	   # can define custom version in $config_file
 set-ps_keywords-ps_header() {
 
 	[[ ${cputime-} ]] && return
