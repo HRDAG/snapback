@@ -2421,7 +2421,7 @@ function _should-run-prune {
 	fi
 
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
-	lock $lock_opt prune > $tmp_2
+	lock $lock_opt prune &> $tmp_2
 	local status=$?
 	egrep -v 'process [0-9]+ holds [^ ]* lock for' $tmp_2
 	[[ $status != 0 ]] &&		# prune probably already running
