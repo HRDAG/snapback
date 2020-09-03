@@ -86,8 +86,8 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # Variables used by nonitor-drives #
 # ----------------------------------
 
-# How long monitor-drives sleeps between checks to see if a drive responded; this
-# period is also the 'watch' period, i.e. default value for watch's -n option.
+# How long monitor-drives sleeps between checks to see if a drive responded;
+# this period is also 'watch' period, i.e. default value for watch's -n option.
 # readonly mon_check_period_secs=1.0 # uncomment if want slower 'watch' refresh
 
 # Time period over which we calculate a moving-average of drive_response.
@@ -238,7 +238,7 @@ hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
 #    snapback -d -T 5 prune-drives |& less
 # and study the 'prune_drive' function.
 
-# NOTE: To see the impact of changes: snapback predict-pruning [-f span] name(s)
+# NOTE: To see the impact of changes: snapback predict-pruning [-f span] names
 
 # Skip 'span' days of the newest snapshots, rm half the older ones; repeat this
 # loop until all the oldest snapshots are only *,00 (i.e. one per day),
@@ -248,12 +248,12 @@ declare -i days_per_span_for_hour_prune=7
 #
 # At date where hour_prune rm's all but *,00, repeat algorithm for months,
 # until all the oldest snapshots are only *-01,00 (i.e. one per month).
-declare -i months_per_span_for_day_prune=3	# 'prune-drive -f hour' will skip
+declare -i months_per_span_for_day_prune=3	# 'prune-drive -f hour' skips
   drv_name2months_per_span_for_day_prune[Z]=1	# for action test-prune
 #
 # At date where the day_prune rm's all but *-01,00, repeat algorithm for years,
 # until all the oldest snapshots are only *-01-01,00 (i.e. one per year).
-declare -i years_per_span_for_month_prune=5	# 'prune-drive -f day' will skip
+declare -i years_per_span_for_month_prune=5	# 'prune-drive -f day' skips
   drv_name2years_per_span_for_month_prune[Z]=1	# for action test-prune
 
 # At date where month_prune rm's all but *-01-01,00, do algorithm for decades,
@@ -261,7 +261,7 @@ declare -i years_per_span_for_month_prune=5	# 'prune-drive -f day' will skip
 declare -i decades_per_span_for_year_prune=5	# 'prune-drive -f month' skips
   drv_name2decades_per_span_for_year_prune[Z]=1	# for action test-prune
 
-# NOTE: To see the impact of changes: snapback predict-pruning [-f span] name(s)
+# NOTE: To see the impact of changes: snapback predict-pruning [-f span] names
 
 # You can use this variable to change all 4 of the previous variables at once,
 # or to scale all 4 of the previous variables for a drive of a different size.
@@ -271,7 +271,7 @@ drv_name2pruning_span_scale_factor[Z]=1	  # Z: for pruning regression test
 
 # ----------------------------------------------------------------------------
 # End of variables that control prune-drives.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # Can optionally specify often-slow drive(s) to leave out of regression tests.
 flakey_drive_names_regex=
@@ -283,7 +283,7 @@ readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 # The regression-test action won't test update-drives unless this is defined.
 # readonly update_test_args=
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # Action 'check-snapshot-hard-links' uses this optional list to find the
 # first (and subsequent) snapshot that has a different inode for all
@@ -334,7 +334,7 @@ readonly is_drive_name_upper_cased=$false
 
 readonly drive_name_regex admin_drive_name_regex drive_class_regex
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # Emacs variables: if this doesn't work, use: M-x shell-script-mode
 # Local Variables:
