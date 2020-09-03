@@ -24,7 +24,7 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
    Built-in statistical tool to optimize filesystem inode-size and block-size.
    Efficiently uses directory and inode VFS caches, without abusing them.
    Has adaptable, comprehensive, real-time dashboard (can dump full snapshot);
-      dashboard shows big swapout rates (for VFS tuning), OS/drive errors,
+      dashboard also shows big swapout rates (for VFS tuning), OS/drive errors,
       drive response times; dashboard doesn't hang if any of the drives hang.
    Can safely/easily kill/suspend/continue backup, copy, update, prune job(s).
    Maintains history of snapshots on each ejected drive (for offsite requests).
