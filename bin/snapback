@@ -617,9 +617,9 @@ function lock-PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
+		print-call-stack ${drive_name-} >&2
 	   else $xtrace; return $status
 	fi >&2
-	print-call-stack ${drive_name-} >&2
 	$xtrace
 	return $status
 }
@@ -4994,9 +4994,9 @@ function setup-snapshot-stats() {
 	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
 	   local dates=$true || local dates=$false
 
-	local     numbers_cache_file=$watch_cache_dir/number/$cache_name
-	local oldest_ages_cache_file=$watch_cache_dir/oldest-age/$cache_name
-	local newest_ages_cache_file=$watch_cache_dir/newest-age/$cache_name
+	local     numbers_cache_file=$watch_cache_dir/numbers/$cache_name
+	local oldest_ages_cache_file=$watch_cache_dir/oldest-ages/$cache_name
+	local newest_ages_cache_file=$watch_cache_dir/newest-ages/$cache_name
 	local drive_names=$all_drive_names
 	# the cache files in number/ are a pure superset of the files in *-age/
 	if _is-stats-cache-fresh  $numbers_cache_file && [[ $watch_opt ]]
