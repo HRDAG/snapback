@@ -4651,7 +4651,7 @@ readonly -f \
 
 # --------------------------------------------
 
-set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
+function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	local writer_type=$1
 
 	set-units G
@@ -4659,6 +4659,7 @@ set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	local stats_subdir
 	set-stats_subdir MB
 	[[ $writer_type == prune ]] && local sign=- || local sign=
+	local all_file_count=0
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
 	for drive_name in $all_drive_names
@@ -4674,6 +4675,7 @@ set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 			 total_MB+=$sum
 			day_count+=1
 		done
+		all_file_count+=1
 
 		local -i daily_count=$file_count/$day_count
 		set-padded_number $daily_count
@@ -4697,6 +4699,7 @@ set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	printf -v percent_usages_per_day "$stats_format" $percents_per_day
 	strip-trailing-whitespace \
 	    jobs_per_day writer_GBs_per_day percent_usages_per_day
+	(( $all_file_count > 0 ))
 }
 readonly -f set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day
 
@@ -4971,7 +4974,7 @@ readonly -f _is-stats-cache-fresh
 
 # ----------------------
 
-setup-snapshot-stats() {
+function setup-snapshot-stats() {
 	[[ $1 == -? ]] && local option=$1 || local option=
 	[[ $1 == -h ]] && { shift;local  hour_ages=$true; } ||local  hour_ages=
 	[[ $1 == -e ]] && { shift;local only_empty=$true; } ||local only_empty=
@@ -5003,18 +5006,21 @@ setup-snapshot-stats() {
 		stats_newest_ages=$(< $newest_ages_cache_file)
 		}
 		# echo -n C:		# uncomment to ensure cache is working
-		return
+		[[ $stats_numbers == *=[1-9]* ]] # have some snapshots?
+		return $?
 	fi
 
 	_recalculate-snapshot-stats-vars
+	[[ $stats_numbers == *=[1-9]* ]] # have some snapshots?
+	local status=$?
 
-	[[ $watch_opt ]] || return	# don't cache non-colorized 'w' data
+	[[ $watch_opt ]] || return 0	# don't cache non-colorized 'w' data
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
-	[[ -w $log_dir  ]] || return # might not have write access to the cache
+	[[ -w $log_dir  ]] || return $status # need write access to the cache
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	local lockpid_args="--dir=$lock_dir $lock_name"
-	lockpid $lockpid_args > $dev_null || return
+	lockpid $lockpid_args > $dev_null || return $status
 
 	mkdir -p ${numbers_cache_file%/*} ${oldest_ages_cache_file%/*} \
 					  ${newest_ages_cache_file%/*}
@@ -5024,6 +5030,7 @@ setup-snapshot-stats() {
 	echo-to-file "$stats_newest_ages" $newest_ages_cache_file	    ; }
 
 	lockpid --release $lockpid_args
+	return $status
 }
 readonly -f setup-snapshot-stats
 
@@ -5601,16 +5608,15 @@ show-stats-section-2-if-it-fits() {
 	declare -A drive_name2stats_number
 
 	set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day backup
-				[[ $jobs_per_day == *=[1-9]* ]] && {
+				[[ $jobs_per_day == *=[1-9]* ]] &&
 	Echo "Number of backups/day (usually by cron):  $jobs_per_day"
-	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages backup
+	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages backup&&{
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
 	echo " Daily percentage point change in usage:  $percent_usages_per_day"
 	let rows_left-=5
 	}
-	setup-snapshot-stats .rm
-				[[ $stats_numbers == *=[1-9]* ]] && {
+	setup-snapshot-stats .rm && {
 	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
@@ -5621,8 +5627,7 @@ show-stats-section-2-if-it-fits() {
 	echo "           ... predicted % point change:  $predicted_percent_usages"
 	let rows_left-=5
 	}
-	setup-snapshot-stats -e .partial
-				[[ $stats_numbers == *=[1-9]* ]] && {
+	setup-snapshot-stats -e .partial && {
 	Echo " Number empty .partial dirs, for update:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
