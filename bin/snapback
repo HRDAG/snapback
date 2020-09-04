@@ -5460,6 +5460,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
+	[[ $show_all ]] && rows_left=1222333444
 	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
 	TraceV 1 rows_left
 }
