@@ -5919,8 +5919,7 @@ show-generated-output() {
 	for (( job_num=0; $job_num <= $max_job_num; job_num++ ))
 	    do	local  PID=${job_num2PID[$job_num]}
 		wait  $PID
-		# head is loadable builtin
-		head -n 99999 $generate_output_files_dir/out-$job_num
+		cat $generate_output_files_dir/out-$job_num
 	done
 	rm -r $generate_output_files_dir
 }
@@ -5955,8 +5954,6 @@ watch() {
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 	[[ $watch_opt || $UID != 0 ]] || check-logs
 	(( $Trace_level > 0 )) && bg_opt=-P
-
-	bg_opt=-P			# parallelism didn't make this faster
 
 	SECONDS=$(date '+%s')		# for _set-age()
 
