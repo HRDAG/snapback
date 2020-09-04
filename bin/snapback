@@ -5172,7 +5172,7 @@ exec-watch-snapback-w() {
 	fi
 	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
 	local n=$mon_check_period_secs
-	exec watch -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
+	exec watch -x -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
 	abort-function "exec failed"
 }
 readonly -f exec-watch-snapback-w
