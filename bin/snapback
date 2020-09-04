@@ -2013,6 +2013,10 @@ readonly -f is-drive-usage-too-high
 
 # ----------------------
 
+# For XFS, it's best to set max_drive_usage_percent low, to keep
+# the filesystem fast; but, when there's no more pruning to be done,
+# you might decide it's OK to do more (slower) copy'ing.
+
 is-set   max_drive_usage_percent_for_copy || # custom value in $config_file?
 readonly max_drive_usage_percent_for_copy=95
 
