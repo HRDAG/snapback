@@ -1810,6 +1810,21 @@ mon-process-finished-glob() {
 }
 readonly -f mon-process-finished-glob
 
+# ----------------------
+
+function do-have-snapshots-of-type() {
+	local suffix=$1 drive_name=${2:-$drive_name}
+
+	lock-replica-of-snapshots --wait
+	cd $snapshots_replica_dir/$drive_name || return 1
+	set -- *$suffix
+	lock-replica-of-snapshots --release
+	cd $OLDPWD
+
+	[[ $# != 0 ]]
+}
+readonly -f do-have-snapshots-of-type
+
 # -------------------------------------------------
 
 is-set		mon_check_period_secs || # can set custom value in $config_file
@@ -1996,6 +2011,24 @@ function is-drive-usage-too-high() {
 }
 readonly -f is-drive-usage-too-high
 
+# ----------------------
+
+is-set   max_drive_usage_percent_for_copy || # custom value in $config_file?
+readonly max_drive_usage_percent_for_copy=95
+
+function is-drive-usage-too-high-for-copy() {
+	local drive_dir=${1:-$drive_dir}
+
+	is-drive-usage-too-high $drive_dir || return 1
+
+	prune-drive -m		       # just rename snapshots needing pruning
+	$IfRun sleep_msecs $mon_check_period_msecs # await replica update
+	do-have-snapshots-of-type .rm && return 0  # pruning takes priority
+
+	(( $highest_drive_usage > $max_drive_usage_percent_for_copy ))
+}
+readonly -f is-drive-usage-too-high-for-copy
+
 # --------------------------------------
 
 declare -A job_type2priority_level
@@ -2070,7 +2103,7 @@ function is-copy-higher-priority-than-prune() {
 	have-job copy || { continue-jobs prune; return 1; }
 
 	local copy_PGID
-	if is-drive-usage-too-high
+	if is-drive-usage-too-high-for-copy
 	   then suspend-jobs copy
 		if set-copy_PGID--if-copy-src #2 drives copying to each other?
 		   then local lock_paths
@@ -2410,7 +2443,7 @@ readonly -f _is-time-to-prune-drive
 
 function _should-run-prune {
 
-	[[ ! $is_update ]] || return 0	# for update, we just rmdir empty dirs
+	[[ ! $only_do_mv ]] || return 0	# only 'mv' (and rmdir empty dirs)?
 
 	# the following logic is odd, it ensures real-user's request is honored
 
@@ -2496,7 +2529,7 @@ rm-pruned-snapshots() {
 	remember-tracing		# in case comment-out next line ...
 	suspend-tracing
 
-	# sort snapshots for regression-test
+	# sort snapshots, for regression-test
 	set -- $(tr ' ' '\n' < $snapshots_file | sort -u)
 	rm $snapshots_file
 
@@ -2532,7 +2565,7 @@ rm-pruned-snapshots() {
 		log "pruning $n snapshots: will rename to *.rm for deletion"
 	fi
 
-	if [[ $is_update ]]
+	if [[ $only_do_mv ]]
 	   then set -- *.partial.rm	# some from update, some from pruning
 		[[ $# != 0 ]] && $sudo env rmdir --ignore-fail-on-non-empty $*
 		restore-tracing
@@ -3014,6 +3047,11 @@ readonly -f prune-snapshots-not-matching-backup_period
 
 # for the goals of this function, see prune-variable comments in configure.sh
 function prune-drive() {
+	if [[ ${1-} == -m ]]
+	   then shift
+		local only_do_mv=$true
+	   else local only_do_mv=$is_update
+	fi
 	assert-not-option "${1-}"
 	local drive_name=$1 drive_dir
 
@@ -3022,7 +3060,7 @@ function prune-drive() {
 	set-drive_dir  $drive_name || return 1
 	restore-tracing
 
-	_should-run-prune || return 1 # calls 'lock prune' (unless $is_update)
+	_should-run-prune || return 1 # calls 'lock prune' (unless $only_do_mv)
 
 	local -i backup_period=$backup_period
 	    _set-backup_period--for-prune
@@ -3045,7 +3083,7 @@ function prune-drive() {
 	rm-pruned-snapshots $snapshots_to_prune_file # it deletes the file
 	rm -f $snapshots_to_prune_file
 
-	[[ $is_update ]] && return 0
+	[[ $only_do_mv ]] && return 0
 
 	[[ ! $debug_opt ]] &&	     # did rm-pruned-snapshots actually prune?
 	if is-drive-usage-too-high
