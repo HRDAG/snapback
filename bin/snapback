@@ -5176,7 +5176,7 @@ exec-watch-snapback-w() {
 	fi
 	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
 	local n=$mon_check_period_secs
-	exec watch -x -c -d -p ${*:- -n $n} $our_path $our_opts w -w $all_opts
+	exec watch -c -d -p -x ${*:- -n $n} $our_path $our_opts w -w $all_opts
 	abort-function "exec failed"
 }
 readonly -f exec-watch-snapback-w
@@ -5543,7 +5543,7 @@ readonly -f show-errors-in-syslog
 
 # --------------------------------------------
 
-show-sudo-config-warning-if-it-fits() {
+show-sudo-config-warning() {
 
 	local -i min_for_rare=$(( min_rows_with_df + 6 + 7 + 6 ))
 	[[ ! -s /etc/sudoers.d/$_our_name &&
@@ -5559,7 +5559,7 @@ show-sudo-config-warning-if-it-fits() {
 	echo
 	let rows_left-=6		# only adjust for optional sections
 }
-readonly -f show-sudo-config-warning-if-it-fits
+readonly -f show-sudo-config-warning
 
 # --------------------------------------------
 
@@ -5577,7 +5577,7 @@ show-stats-section-1() {
 	echo " Maximum drive (b)lock or (i)node usage:  $drive_usages"
 	set-drive_responses
 	echo "      Seconds to list drive's snapshots:  $drive_responses"
-	setup-snapshot-stats ''	      # was in show-stats-section-3-if-it-fits
+	setup-snapshot-stats ''	      # was in show-stats-section-3
 	echo " Number complete & successful snapshots:  $stats_numbers"
 	setup-snapshot-stats .rm
 	echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
@@ -5598,7 +5598,7 @@ readonly -f set-drive_name2stats_number
 
 # ---------------------------------
 
-show-stats-section-2-if-it-fits() {
+show-stats-section-2() {
 
 	local -i rows_used=3*5+1	# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
@@ -5644,11 +5644,11 @@ show-stats-section-2-if-it-fits() {
 	let rows_left-=5
 	}
 }
-readonly -f show-stats-section-2-if-it-fits
+readonly -f show-stats-section-2
 
 # --------------------------------------------
 
-show-stats-section-3-if-it-fits() {
+show-stats-section-3() {
 
 	local -i rows_used=7		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
@@ -5672,11 +5672,11 @@ show-stats-section-3-if-it-fits() {
 
 	let rows_left-=$rows_used
 }
-readonly -f show-stats-section-3-if-it-fits
+readonly -f show-stats-section-3
 
 # --------------------------------------------
 
-show-stats-section-4-if-it-fits() {
+show-stats-section-4() {
 
 	local -i rows_used=6		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
@@ -5696,7 +5696,7 @@ show-stats-section-4-if-it-fits() {
 
 	let rows_left-=$rows_used
 }
-readonly -f show-stats-section-4-if-it-fits
+readonly -f show-stats-section-4
 
 # --------------------------------------------
 
@@ -5995,12 +5995,12 @@ watch() {
 
 	_start-monitor-drives-if-needed
 
-	generate show-sudo-config-warning-if-it-fits
+	generate show-sudo-config-warning
 
 	generate show-stats-section-1
-	generate show-stats-section-2-if-it-fits
-	generate show-stats-section-3-if-it-fits
-	generate show-stats-section-4-if-it-fits
+	generate show-stats-section-2
+	generate show-stats-section-3
+	generate show-stats-section-4
 
 	generate show-filesystem-info-that-fits $drive_dirs
 
