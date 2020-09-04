@@ -5165,7 +5165,7 @@ readonly -f trim-copy-update-ps
 
 exec-watch-snapback-w() {
 
-	local all_opts="$ps_opt $no_errors $stats_opt $cron_opt"
+	local all_opts="$ps_opt $no_errors $stats_opt $cron_opt $bg_opt"
 	if [[ $names ]]
 	   then set-drive_names--from-user-args $names
 		all_opts+=" -N ${drive_names// /,}"
@@ -5893,15 +5893,51 @@ readonly -f _start-monitor-drives-if-needed
 
 # ------------------------------------------------------------------
 
+readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
+[[ ! -d $generate_output_files_dir ]] || rm -r $generate_output_files_dir
+
+generate() {
+	local function=$*
+
+	[[ $bg_opt == -P ]] && { $function; return; }
+
+	[[ -d $generate_output_files_dir ]] ||
+	mkdir $generate_output_files_dir || abort-function mkdir
+	local output_file=$generate_output_files_dir/out-$job_num
+	$function &> $output_file &
+	job_num2PID[job_num++]=$!
+}
+readonly -f generate
+
+# ----------------------
+
+show-generated-output() {
+
+	[[ $bg_opt == -P ]] && return
+
+	local -i max_job_num=$job_num-1
+	for (( job_num=0; $job_num <= $max_job_num; job_num++ ))
+	    do	local  PID=${job_num2PID[$job_num]}
+		wait  $PID
+		# head is loadable builtin
+		head -n 99999 $generate_output_files_dir/out-$job_num
+	done
+	rm -r $generate_output_files_dir
+}
+readonly -f show-generated-output
+
+# ---------------------------------
+
 watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
-	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= names=
+	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
 	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
 	[[ ${1-} == -E ]] && { no_errors=-E; shift; }
 	[[ ${1-} == -s ]] && { stats_opt=-s; shift; }
 	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
 	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
+	[[ ${1-} == -P ]] && {    bg_opt=-P; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 
 	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
@@ -5918,6 +5954,9 @@ watch() {
 	[[ $watch_opt ]] || trap '' HUP
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 	[[ $watch_opt || $UID != 0 ]] || check-logs
+	(( $Trace_level > 0 )) && bg_opt=-P
+
+	bg_opt=-P			# parallelism didn't make this faster
 
 	SECONDS=$(date '+%s')		# for _set-age()
 
@@ -5940,6 +5979,10 @@ watch() {
 
 	set-min_rows-min_rows_with_df-rows_left
 
+	# these are for generate and show-generated-output
+	local -i job_num=0
+	local -a job_num2PID
+
 	# --------------------------------------------------
 	# now we're ready to start showing stuff to the user
 	# --------------------------------------------------
@@ -5950,31 +5993,33 @@ watch() {
 
 	_start-monitor-drives-if-needed
 
-	show-sudo-config-warning-if-it-fits
+	generate show-sudo-config-warning-if-it-fits
 
-	show-stats-section-1
-	show-stats-section-2-if-it-fits
-	show-stats-section-3-if-it-fits
-	show-stats-section-4-if-it-fits
+	generate show-stats-section-1
+	generate show-stats-section-2-if-it-fits
+	generate show-stats-section-3-if-it-fits
+	generate show-stats-section-4-if-it-fits
 
-	show-filesystem-info-that-fits $drive_dirs
+	generate show-filesystem-info-that-fits $drive_dirs
 
-	[[ $stats_opt ]] && return
+	[[ $stats_opt ]] && { show-generated-output; return; }
 
 	[[ ! $cron_cmds || $show_all ]] &&
-	show-prune-cmds
+	generate show-prune-cmds
 	[[ ! $cron_cmds || $show_all ]] &&
-	show-copy-cmds
+	generate show-copy-cmds
 
 	set-rsync_abbrev_msg
 
 	[[ ! $cron_cmds || $show_all ]] &&
-	show-backup-cmds
+	generate show-backup-cmds
 
-	show-cron-jobs
+	generate show-cron-jobs
 
-	show-backup-cmds-with-full-details
-	show-copy-cmds-with-full-details
+	generate show-backup-cmds-with-full-details
+	generate show-copy-cmds-with-full-details
+
+	show-generated-output
 }
 readonly -f watch
 
