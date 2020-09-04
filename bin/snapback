@@ -617,9 +617,9 @@ function lock-PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
-		print-call-stack ${drive_name-} >&2
+		print-call-stack ${drive_name-}
 	   else $xtrace; return $status
-	fi >&2
+	fi >&2				# echo problems to stderr
 	$xtrace
 	return $status
 }
@@ -4664,6 +4664,7 @@ set-percent_usage() {
 	set-used_MB-size_MB
 	local -i  MB_100=MB*100
 	set-division -2 $MB_100 $size_MB
+	[[ $division == -0.00 ]] && division=${division#-}
 	percent_usage=$division%
 }
 readonly -f set-percent_usage
@@ -4734,8 +4735,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		all_file_count+=$file_count
 
 		local -i daily_count=$file_count/$day_count
-		set-padded_number $daily_count
-		jobs_per_day+="$drive_name=$padded_number "
+		jobs_per_day+="$drive_name=$daily_count "
 
 		if [[ $writer_type == prune && $total_MB != 0 ]]
 		   then local sign=-
