@@ -2194,17 +2194,51 @@ readonly -f create-stats_subdir-and-symlink-to-it
 
 # ----------------------------------------------------------------------------
 
+manage-multi-writer-stats() {
+	local snapshot=$(basename ${1%%.*})
+
+	[[ $is_multi_writer_drive ]] || return
+
+	cd $drive_log_dir/stats || abort cd
+	local  our_MB_stats_subdir=$writer_type/$MB_used_basename
+	[[ -d $our_MB_stats_subdir ]] || mkdir -p $our_MB_stats_subdir ||
+	    abort-function ": mkdir $PWD/$our_MB_stats_subdir -> $?"
+
+	local multi_msg="multiple writers during this job, MB change unknown"
+
+	local lock_file did_find_multiple_writers=$false
+	for lock_file in */$MB_used_basename/*.pid
+	    do	lockpid -q $lock_file && lockpid -r $lock_file && continue
+		echo-to-file "$multi_msg" ${lock_file%.pid}.txt
+		did_find_multiple_writers=$true
+	done
+
+	local lock_file=$our_MB_stats_subdir/$snapshot.pid
+	local lock_cmd="lockpid $lock_file"
+	$IfRun $lock_cmd || abort-function ": $lock_cmd -> $?"
+	[[ ! $did_find_multiple_writers ]] ||
+	echo-to-file "$multi_msg" ${lock_file%.pid}.txt
+
+	cd $OLDPWD
+}
+readonly -f manage-multi-writer-stats
+
+# --------------------------------------------
+
 save-stats-file() {
 	local stats_subdir=$1 snapshot=$2 data=$3
 
 	cd $drive_log_dir || abort cd
 
-	local file=$stats_subdir/$snapshot.txt
-	local cmd="echo $data > $file"
-	if [[ $debug_opt ]]
-	   then echo "$cmd"
-	   else eval "$cmd"
+	local  data_file=$stats_subdir/$snapshot.txt
+	if [[ $data_type == MB && $is_multi_writer_drive ]]
+	   then local  lock_file=${data_file%.txt}.pid
+		[[ -s $lock_file ]] && lockpid -H $lock_file > $dev_null &&
+				       lockpid -r $lock_file # was stale lock
+		[[ -s $lock_file ]] && lockpid -r $lock_file &&
+		    cd $OLDPWD && return # $data_file contains $multi_msg
 	fi
+	echo-to-file "$data" $data_file
 
 	cd $OLDPWD
 }
@@ -2309,7 +2343,7 @@ set-SECONDS-starting_MB--for-save-writer-stats() {
 		local is_a_restart=$true
 	   else local is_a_restart=$false
 	fi
-	local snapshot=${1%%.*}
+	local snapshot=$1
 
 	if [[ $is_a_restart ]]		# already half-done?
 	   then SECONDS=-1123456789	# our signal to not record stats
@@ -2318,6 +2352,8 @@ set-SECONDS-starting_MB--for-save-writer-stats() {
 		set-used_MB-size_MB
 		starting_MB=$used_MB
 	fi
+
+	manage-multi-writer-stats $snapshot
 }
 readonly -f set-SECONDS-starting_MB--for-save-writer-stats
 
@@ -4564,18 +4600,24 @@ set-units() {			   # a stylistic function
 function set-average-count-maximum-sum--from-files-of-numbers() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
+	# $count should be the number of files, not $useful_file_count,
+	# since it's used to count the number of jobs_per_day
 	sum=0 count=$#
 	[[ $count != 0 ]] || { average=0 maximum=0 ; $xtrace; return 1; }
 
 	maximum=-999999
+	local -i useful_file_count=0
 	local file
 	for file
-	    do	local -i number=$(< $file)
+	    do	local file_contents=$(< $file)
+		[[ $file_contents == [0-9]* ]] || continue
+		local -i number=$file_contents
 		sum+=$number
+		useful_file_count+=1
 		(( maximum<number )) &&
 		   maximum=number
 	done
-	average=$(( ( $sum + ($count/2) ) / $count ))
+	average=$(( ( $sum + ($useful_file_count/2) ) / $useful_file_count ))
 	$xtrace
 	return 0
 }
