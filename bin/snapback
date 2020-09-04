@@ -2025,9 +2025,11 @@ function is-drive-usage-too-high-for-copy() {
 
 	is-drive-usage-too-high $drive_dir || return 1
 
+	do-have-snapshots-of-type .rm && return 0 # pruning takes priority
+
 	prune-drive -m $drive_name     # just rename snapshots needing pruning
 	$IfRun sleep_msecs $mon_check_period_msecs # await replica update
-	do-have-snapshots-of-type .rm && return 0  # pruning takes priority
+	do-have-snapshots-of-type .rm && return 0
 
 	(( $highest_drive_usage > $max_drive_usage_percent_for_copy ))
 }
