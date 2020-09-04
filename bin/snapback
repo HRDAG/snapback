@@ -4715,7 +4715,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	cd_ $drives_log_dir
 	local stats_subdir
 	set-stats_subdir MB
-	local all_file_count=0
+	local -i all_file_count=0
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
 	for drive_name in $all_drive_names
@@ -4731,7 +4731,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 			 total_MB+=$sum
 			day_count+=1
 		done
-		all_file_count+=1
+		all_file_count+=$file_count
 
 		local -i daily_count=$file_count/$day_count
 		set-padded_number $daily_count
@@ -5660,23 +5660,22 @@ show-stats-section-2() {
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
 	[[ $stats_opt ]] || return
 
-	echo				# first row used
-
 	if [[ ${watch_opt-} ]]
 	  then Echo() { set-warning_string stale "$*";echo "$warning_string"; }
 	  else Echo() { echo "$*"; }
 	fi
 	declare -A drive_name2stats_number
 
-	set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day backup
-				[[ $jobs_per_day == *=[1-9]* ]] &&
+	set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day backup && {
+	echo				# first row used
 	Echo "Number of backups/day (usually by cron):  $jobs_per_day"
+	let rows_left-=1+1		# include blank line
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages backup&&{
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
 	echo " Daily percentage point change in usage:  $percent_usages_per_day"
-	let rows_left-=5
-	}
+	let rows_left-=3
+	}; }
 	setup-snapshot-stats .rm && {
 	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 	set-writer_hour_avgs-writer_hour_maxs prune
