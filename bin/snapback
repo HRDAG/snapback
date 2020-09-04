@@ -4465,8 +4465,12 @@ readonly -f create-jobs
 ##############################################################################
 ##############################################################################
 
-# matches -* suffix width on max_drive_usage_percent in is-drive-usage-too-high
-readonly default_padded_colorized_string_field_width=5+1 # +1 for units
+# If change this value, adjust the width of the -* suffix on
+# max_drive_usage_percent's value in is-drive-usage-too-high() .
+readonly watch_field_width=5+1		# +1 for 'unit' suffix
+
+# this is used by set-padded_colorized_string--for-printf in libsnap.sh
+readonly default_padded_colorized_string_field_width=$watch_field_width
 
 set-stats_format() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -4475,11 +4479,11 @@ set-stats_format() {
 	[[ ${stats_format-} ]] && { $xtrace; return; }
 
 	local -i format_width
-	local -i field_width=$default_padded_colorized_string_field_width+1
+	local -i field_width=$watch_field_width
 	local format=
 	local drive_name
 	for drive_name in $drive_names
-	    do	format_width=${#drive_name}+$field_width
+	    do	format_width=${#drive_name}+1+$field_width # +1 for '='
 		format+="%-${format_width}s  "
 	done
 	stats_format=${format%  }
