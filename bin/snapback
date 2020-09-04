@@ -4776,20 +4776,29 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		done
 		all_file_count+=$file_count
 
-		local -i daily_count=$file_count/$day_count
+		if (( $day_count > 0 ))
+		   then local -i daily_count=$file_count/$day_count
+			local -i MB_per_day=$total_MB/$day_count
+		   else local -i MB_per_day=0  daily_count=0
+		fi
 		jobs_per_day+="$drive_name=$daily_count "
 
 		if [[ $writer_type == prune && $total_MB != 0 ]]
 		   then local sign=-
 		   else local sign=
 		fi
-		local -i MB_per_day=$total_MB/$day_count
-		set-division -2 $sign$MB_per_day 1024 # 2 decimal points
-		set-padded_number $division && padded_number+=$units
+		if (( $MB_per_day > 0 ))
+		   then set-division -2 $sign$MB_per_day 1024
+			set-padded_number $division && padded_number+=$units
+		   else padded_number=
+		fi
 		GBs_per_day+="$drive_name=$padded_number "
 
-		set-percent_usage $MB_per_day
-		set-padded_number $percent_usage
+		if (( $MB_per_day > 0 ))
+		   then set-percent_usage $MB_per_day
+			set-padded_number $percent_usage
+		   else padded_number=
+		fi
 		percents_per_day+="$drive_name=$padded_number "
 
 		TraceV 1 file_count total_MB day_count \
