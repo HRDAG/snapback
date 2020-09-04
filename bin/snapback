@@ -2304,9 +2304,14 @@ readonly -f set-used_MB-size_MB
 # --------------------------------------------
 
 set-SECONDS-starting_MB--for-save-writer-stats() {
-	local is_a_restart=${1-}
+	if [[ $1 == -r ]]
+	   then shift
+		local is_a_restart=$true
+	   else local is_a_restart=$false
+	fi
+	local snapshot=${1%%.*}
 
-	if [[ $is_a_restart ]]		# already half-done
+	if [[ $is_a_restart ]]		# already half-done?
 	   then SECONDS=-1123456789	# our signal to not record stats
 	   else SECONDS=0		# else do
 		local used_MB size_MB
@@ -2340,6 +2345,7 @@ set-writer_stats_msg--as-save-writer-stats() {
 		local -i writer_MB=$used_MB-$starting_MB
 		set-division -2 $writer_MB 1024
 		local writer_GB=$division
+		[[ $writer_GB == -0.00 ]] && writer_GB=${writer_GB#-}
 
 		save-writer-stats $snapshot
 
@@ -2625,11 +2631,12 @@ rm-pruned-snapshots() {
 	    do	local pruning_flag=$snapshot/.pruning
 		# already half-pruned, or not a full snapshot?
 		if [[ -e $pruning_flag || $snapshot == *.partial* ]]
-		   then local is_a_restart=$true
-		   else local is_a_restart=$false
+		   then local restart_opt=-r
+		   else local restart_opt=
 		fi
 		local  -i   starting_MB=0
-		set-SECONDS-starting_MB--for-save-writer-stats $is_a_restart
+		set-SECONDS-starting_MB--for-save-writer-stats \
+		    $restart_opt $snapshot
 
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
 		$IfRun touch $pruning_flag && # .rm suffix maybe removed
@@ -3495,10 +3502,11 @@ function _run-rsync-cmd() {
 					   --exclude-from=$exclude_file"
 	set -- $partial_dst/*
 	if [[ $# != 0 ]]		# snapshot not empty?
-	   then local is_a_restart=$true
-	   else local is_a_restart=$false
+	   then local restart_opt=-r
+	   else local restart_opt=
 	fi
-	set-SECONDS-starting_MB--for-save-writer-stats $is_a_restart
+	set-SECONDS-starting_MB--for-save-writer-stats \
+	    $restart_opt $partial_dst
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
@@ -4673,7 +4681,8 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs() {
 		    average count maximum sum
 		set-average-count-maximum-sum--from-files-of-numbers $*
 
-		set-division -2 $sign$average 1024 # 2 decimal points
+		(( $average != 0 )) && average=$sign$average
+		set-division -2 $average 1024 # 2 decimal points
 		set-padded_number $division
 		GB_avg=$padded_number$g_units
 
@@ -4681,7 +4690,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs() {
 		local -i stats_number=${drive_name2stats_number[$drive_name]}
 		if (( $stats_number > 0 ))
 		   then local -i predicted_sum=$average*$stats_number
-			set-division -2 $sign$predicted_sum $((1024*1024))
+			set-division -2 $predicted_sum $((1024*1024))
 			set-padded_number $division
 			predicted_TB_sum=$padded_number$t_units
 
@@ -4706,7 +4715,6 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	cd_ $drives_log_dir
 	local stats_subdir
 	set-stats_subdir MB
-	[[ $writer_type == prune ]] && local sign=- || local sign=
 	local all_file_count=0
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
@@ -4729,6 +4737,10 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		set-padded_number $daily_count
 		jobs_per_day+="$drive_name=$padded_number "
 
+		if [[ $writer_type == prune && $total_MB != 0 ]]
+		   then local sign=-
+		   else local sign=
+		fi
 		local -i MB_per_day=$total_MB/$day_count
 		set-division -2 $sign$MB_per_day 1024 # 2 decimal points
 		set-padded_number $division && padded_number+=$units
