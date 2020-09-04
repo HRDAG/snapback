@@ -4976,7 +4976,7 @@ _set-colorized_new() {
 	local warning_string=
 	if [[ ! $new ]]
 	   then set-warning_string error NONE!
-	elif (( $new < $max_age ))
+	elif (( ${new%[a-zA-Z]} < $max_age ))
 	   then true
 	   else set-warning_string warning $new
 	fi
@@ -5036,15 +5036,17 @@ _recalculate-snapshot-stats-vars() {
 		[[ $dates ]] || continue
 		if [[ $# != 0 ]]
 		   then set-oldest_age-newest_age $*
-			local old=$oldest_age	new=$newest_age
+			local old=$oldest_age	new=$newest_age$units
+			(( ${#old} < $watch_field_width )) &&
+			      old+=$units
 		   else local old=		new=
 		fi
 		if [[ ! $suffix && $watch_opt ]] # checking complete snapshots?
 		   then _set-colorized_new $new	 # warn if newest not today
 			new=$colorized_new
 		fi
-		oldies+="$drive_name=$old$units "
-		newies+="$drive_name=$new$units "
+		oldies+="$drive_name=$old "
+		newies+="$drive_name=$new "
 	done
 	cd $OLDPWD || abort "cd $OLDPWD"
 	lock-replica-of-snapshots --release
