@@ -349,7 +349,7 @@ assert-drive_dir-writable() {
 	local dir=${1:-$drive_dir}
 
 	[[ -f $dir ]] && dir=${dir%/*}
-	$IfRun touch $dir/. ||
+	[[ -w $dir/. ]] ||
 	   abort "$dir mounted read-only??  Maybe corrupted, run fsck."
 }
 readonly -f assert-drive_dir-writable
@@ -2021,7 +2021,7 @@ function is-drive-usage-too-high-for-copy() {
 
 	is-drive-usage-too-high $drive_dir || return 1
 
-	prune-drive -m		       # just rename snapshots needing pruning
+	prune-drive -m $drive_name     # just rename snapshots needing pruning
 	$IfRun sleep_msecs $mon_check_period_msecs # await replica update
 	do-have-snapshots-of-type .rm && return 0  # pruning takes priority
 
