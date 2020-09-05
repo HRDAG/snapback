@@ -4906,7 +4906,7 @@ set-drive_responses() {
 		if (( $msecs <= 99999 )) # fits in alloted format?
 		   then set-secs--from-msecs $msecs
 			set-padded_number $secs
-			local secs=$padded_number
+			local secs=$padded_number$units
 			if (( $msecs >= $drive_response_warning_msecs ))
 			   then set-warning_string warning $secs
 				secs=$warning_string
@@ -4914,7 +4914,7 @@ set-drive_responses() {
 		   else set-warning_string error HUNG!
 			local secs=$warning_string
 		fi
-		responses+="$drive_name=${secs}$units "
+		responses+="$drive_name=$secs "
 	done
 	printf -v drive_responses "$stats_format" $responses
 	strip-trailing-whitespace drive_responses
