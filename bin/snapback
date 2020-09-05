@@ -5721,52 +5721,89 @@ readonly -f set-drive_name2stats_number
 
 # ---------------------------------
 
-show-stats-section-2() {
+ech_() {
 
-	local -i rows_used=3*5+1	# stats plus 1 blank line
+	if [[ ${watch_opt-} ]]
+	   then set-warning_string stale "$*"; echo "$warning_string"
+	   else echo "$*"
+	fi
+}
+readonly -f ech_
+
+# ----------------------
+
+show-stats-section-2-backup() {
+
+	local -i rows_used=4+1		# stats plus 1 blank line
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
 	[[ $stats_opt ]] || return
 
-	if [[ ${watch_opt-} ]]
-	  then Echo() { set-warning_string stale "$*";echo "$warning_string"; }
-	  else Echo() { echo "$*"; }
-	fi
-	declare -A drive_name2stats_number
-
-	set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day backup && {
+	set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day backup ||
+	    return
 	echo				# first row used
-	Echo "Number of backups/day (usually by cron):  $jobs_per_day"
+	ech_ "Number of backups/day (usually by cron):  $jobs_per_day"
 	let rows_left-=1+1		# include blank line
-	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages backup&&{
+
+	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages backup ||
+	    return
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
 	echo " Daily percentage point change in usage:  $percent_usages_per_day"
 	let rows_left-=3
-	}; }
-	setup-snapshot-stats .rm && {
-	Echo " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
+}
+readonly -f show-stats-section-2-backup
+
+# ---------------------------------
+
+show-stats-section-2-prune() {
+
+	local -i rows_used=5
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
+	[[ $stats_opt ]] || return
+
+	declare -A drive_name2stats_number
+
+	setup-snapshot-stats .rm ||
+	    return
+	ech_ " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
+
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
+
 	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $predicted_TB_sums"
 	echo "           ... predicted % point change:  $predicted_percent_usages"
 	let rows_left-=5
-	}
-	setup-snapshot-stats -e .partial && {
-	Echo " Number empty .partial dirs, for update:  $stats_numbers"
+}
+readonly -f show-stats-section-2-prune
+
+# ---------------------------------
+
+show-stats-section-2-copy() {
+
+	local -i rows_used=5
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
+	[[ $stats_opt ]] || return
+
+	declare -A drive_name2stats_number
+
+	setup-snapshot-stats -e .partial ||
+	    return
+	ech_ " Number empty .partial dirs, for update:  $stats_numbers"
+
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
+
 	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be added:  $predicted_TB_sums"
 	echo "           ... predicted % point change:  $predicted_percent_usages"
 	let rows_left-=5
-	}
 }
-readonly -f show-stats-section-2
+readonly -f show-stats-section-2-copy
 
 # --------------------------------------------
 
@@ -6120,7 +6157,9 @@ watch() {
 	generate show-sudo-config-warning
 
 	generate show-stats-section-1
-	generate show-stats-section-2
+	generate show-stats-section-2-backup
+	generate show-stats-section-2-prune
+	generate show-stats-section-2-copy
 	generate show-stats-section-3
 	generate show-stats-section-4
 
