@@ -4632,6 +4632,7 @@ function set-average-count-maximum-sum--from-files-of-numbers() {
 		(( maximum<number )) &&
 		   maximum=number
 	done
+	(( $useful_file_count != 0 )) || { average=0; $xtrace; return 0; }
 	average=$(( ( $sum + ($useful_file_count/2) ) / $useful_file_count ))
 	$xtrace
 	return 0
@@ -4739,14 +4740,16 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs() {
 		    average count maximum sum
 		set-average-count-maximum-sum--from-files-of-numbers $*
 
-		(( $average != 0 )) && average=$sign$average
-		set-division -2 $average 1024 # 2 decimal points
-		set-padded_number $division
-		GB_avg=$padded_number$g_units
+		if (( $average != 0 ))
+		   then set-division -2 $sign$average 1024 # 2 decimal points
+			set-padded_number $division
+			GB_avg=$padded_number$g_units
+		   else GB_avg=
+		fi
 
 		[[ $writer_type != backup ]] && {
 		local -i stats_number=${drive_name2stats_number[$drive_name]}
-		if (( $stats_number > 0 ))
+		if (( $stats_number > 0 && $average != 0 ))
 		   then local -i predicted_sum=$average*$stats_number
 			set-division -2 $predicted_sum $((1024*1024))
 			set-padded_number $division
