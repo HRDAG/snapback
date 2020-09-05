@@ -2243,11 +2243,15 @@ save-stats-file() {
 
 	local  data_file=$stats_subdir/$snapshot.txt
 	if [[ $data_type == MB && $is_multi_writer_drive ]]
-	   then local  lock_file=${data_file%.txt}.pid
-		[[ -s $lock_file ]] && lockpid -H $lock_file > $dev_null &&
-				       lockpid -r $lock_file # was stale lock
-		[[ -s $lock_file ]] && lockpid -r $lock_file &&
-		    cd $OLDPWD && return # $data_file contains $multi_msg
+	   then local lock_file=${data_file%.txt}.pid
+		lockpid -r $lock_file &> $dev_null
+		if [[ -s $data_file ]]
+		   then local  stats_content=$(< $data_file)
+			if [[ $stats_content != [0-9]* ]] # multiple writers?
+			   then cd $OLDPWD
+				return
+			fi
+		fi
 	fi
 	echo-to-file "$data" $data_file
 
