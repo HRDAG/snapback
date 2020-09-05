@@ -440,8 +440,9 @@ function sudo-lockpid() {
 	   then local sudo_lockpid="sudo lockpid --pid=$BASHPID"
 	   else local sudo_lockpid=lockpid # only reclaim writable locks
 	fi
+	[[ ${!#} == */* ]] && local opt= || local opt="--dir=$lock_dir"
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $sudo_lockpid" >&2
-	$IfRun $sudo_lockpid ${is_optional:+-q} "$@" |
+	$IfRun $sudo_lockpid $opt ${is_optional:+-q} "$@" |
 	    sed "s/--pid=[0-9]*/--pid=PID/" # for regression-test, when $IfRun
 	[[ ${PIPESTATUS[0]} == 0 ]]
 }
@@ -584,8 +585,9 @@ function lock-PID() {
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
 	local type=$1 lock_holder_action=$2
 
+	local lock_path
 	set-lock_path $type $name
-	local lock_file=${lock_path##*/}
+	lock_file=${lock_path##*/}	# for caller too
 
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
@@ -712,7 +714,7 @@ readonly -f _set-wait_opt
 # Similarly, a call to continue-jobs() for a non-backup job will be silently
 # ignored if a backup is running, and will return 'failed'.
 
-declare -A _lock_type_name2lock_path
+declare -A _lock_type_name2lock_file
 
 # Usage: lock [-w] [-P] type resource
 #    Grab a lock of 'type' on resource (drive-dir or snapshot).
@@ -730,9 +732,9 @@ function lock() {
 	 _set-type-name "$@"
 	local drive_name=$name
 
-	local prev_lock_path=${_lock_type_name2lock_path[$type,$name]-}
-	[[ ! $prev_lock_path ]] ||
-	   abort "hold $(basename $prev_lock_path), can't grab $type lock file"
+	local prev_lock_file=${_lock_type_name2lock_file[$type,$name]-}
+	[[ ! $prev_lock_file ]] ||
+	   abort "hold $prev_lock_file, can't grab $type lock file"
 
 	local	    lock_msg="holds '$type' lock for $drive_name"
 	local extra_lock_msg="${lock_msg/$type/backup}, so can't $type"
@@ -740,10 +742,11 @@ function lock() {
 	local wait_opt
 	 _set-wait_opt $do_wait
 
+	local lock_file
 	# be sure to grab primary lock first, so job appears on dashboard
 	lock-PID $wait_opt $type "$lock_msg" ||
 	    { local status=$?; $xtrace; return $status; }
-	local primary_lock_path=$lock_path # lock-PID sets lock_path
+	local primary_lock_file=$lock_file # lock-PID sets lock_file
 
 	! [[ $action == update* && $debug_opt ]] && # not regression-test?
 	# this 'if' logic is similar to the logic in _signal-job()
@@ -751,11 +754,11 @@ function lock() {
 	   then true
 	   else lock-PID $wait_opt backup "$extra_lock_msg" &&
 		lock-PID --release backup "$extra_lock_msg" ||
-		   { local status=$?; sudo-lockpid -r $primary_lock_path;
+		   { local status=$?; sudo-lockpid -r $primary_lock_file;
 		     $xtrace; return $status; }
 	fi
 
-	_lock_type_name2lock_path[$type,$name]=$primary_lock_path
+	_lock_type_name2lock_file[$type,$name]=$primary_lock_file
 
 	 $xtrace
 	return 0
@@ -769,17 +772,17 @@ unlock() {
 	local type name
 	 _set-type-name "$@"
 
-	local lock_path=${_lock_type_name2lock_path[$type,$name]-}
-	[[   $lock_path ]] || abort "don't hold lock: type=$type, name=$name"
+	local lock_file=${_lock_type_name2lock_file[$type,$name]-}
+	[[   $lock_file ]] || abort "don't hold lock: type=$type, name=$name"
 	if [[ $debug_opt ]]
 	   then local lock_prefix="$IfRun "
 	elif [[ $UID == 0 ]]
 	   then local lock_prefix=
 	   else local lock_prefix=sudo-
 	fi
-	${lock_prefix}lockpid --release $lock_path
-	_lock_type_name2lock_path[$type,$name]=	# in case unset fails ...
-	unset "_lock_type_name2lock_path[$type,$name]" # this sometimes fails?
+	${lock_prefix}lockpid --dir=$lock_dir --release $lock_file
+	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
+	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
 
 #	$xtrace
 }
@@ -5109,7 +5112,6 @@ function setup-snapshot-stats() {
 	suffix_name=${suffix_name#.} ; local \
 	 cache_name="suffix=$suffix_name,ignored=$ignored_date_ending_type"
 	 cache_name+=",option=$option.txt"
-	local  lock_name=stats-$suffix_name,$ignored_date_ending_type.pid
 
 	[[ $suffix == .rm ]] && suffix=*$suffix # also handle .partial.rm
 	[[ $ignored_date_ending_type == NONE && $suffix_name != keep ]] &&
@@ -5139,9 +5141,6 @@ function setup-snapshot-stats() {
 
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir  ]] || return $status # need write access to the cache
-	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
-	local lockpid_args="--dir=$lock_dir $lock_name"
-	lockpid $lockpid_args > $dev_null || return $status
 
 	mkdir -p ${numbers_cache_file%/*} ${oldest_ages_cache_file%/*} \
 					  ${newest_ages_cache_file%/*}
@@ -5150,7 +5149,6 @@ function setup-snapshot-stats() {
 	echo-to-file "$stats_oldest_ages" $oldest_ages_cache_file
 	echo-to-file "$stats_newest_ages" $newest_ages_cache_file	    ; }
 
-	lockpid --release $lockpid_args
 	return $status
 }
 readonly -f setup-snapshot-stats
