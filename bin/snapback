@@ -617,7 +617,7 @@ function lock-PID() {
 	[[ $lockpid_output =~ [Pp]rocess.([0-9]+).holds ]]
 	local lock_holder_PID=${BASH_REMATCH[1]-}
 	if [[ $status == $lockpid_busy_exit_status && $lock_holder_PID ]]
-	   then do-log-common-events &&
+	   then do-log-common-events && [[ $writer_type != prune ]] &&
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
@@ -2253,6 +2253,8 @@ save-stats-file() {
 			fi
 		fi
 	fi
+	[[ $debug_opt && $data_type == MB &&
+	   ( $data == -1 || $data == 1 ) ]] && data=0
 	echo-to-file "$data" $data_file
 
 	cd $OLDPWD
@@ -2593,7 +2595,10 @@ rm-pruned-snapshots() {
 	suspend-tracing
 
 	# sort snapshots, for regression-test
-	set -- $(tr ' ' '\n' < $snapshots_file | sort -u)
+	tr ' ' '\n' < $snapshots_file | sort -o $snapshots_file
+	# delete .partial snapshots first, they're less useful
+	set --    $(fgrep    .partial $snapshots_file)
+	set -- $* $(fgrep -v .partial $snapshots_file)
 	rm $snapshots_file
 
 	if [[ $is_update && $debug_opt ]]
@@ -5776,7 +5781,7 @@ show-stats-section-2-prune() {
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $predicted_TB_sums"
-	echo "           ... predicted % point change:  $predicted_percent_usages"
+	echo "           ... predicted %-point change:  $predicted_percent_usages"
 	let rows_left-=5
 }
 readonly -f show-stats-section-2-prune
@@ -5802,7 +5807,7 @@ show-stats-section-2-copy() {
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be added:  $predicted_TB_sums"
-	echo "           ... predicted % point change:  $predicted_percent_usages"
+	echo "           ... predicted %-point change:  $predicted_percent_usages"
 	let rows_left-=5
 }
 readonly -f show-stats-section-2-copy
