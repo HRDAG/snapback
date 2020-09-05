@@ -5149,6 +5149,7 @@ function setup-snapshot-stats() {
 	# it takes ~0.05 secs/drive to calculate stats, called 9 times: cache
 	[[ -w $log_dir  ]] || return $status # need write access to the cache
 
+	   [[ -d ${numbers_cache_file%/*} ]] ||
 	mkdir -p ${numbers_cache_file%/*} ${oldest_ages_cache_file%/*} \
 					  ${newest_ages_cache_file%/*}
 	echo-to-file "$drive_names" $cached_drive_names_file
