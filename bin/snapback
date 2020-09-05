@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-version=23			# has to match version= in configure.sh.sample
+readonly version=24		# has to match version= in configure.sh.sample
 
 ###############################################################################
 ## Our naming and coding conventions are documented at the top of libsnap.sh ##
@@ -30,12 +30,14 @@ readonly libsnap_project=git@github.com:HRDAG/libsnap
 #
 # search for '####' in libsnap.sh to see coding-conventions and environment
 [[ :$PATH: == *:/usr/local/bin:* ]] || PATH=/usr/local/bin:$PATH
-type -t  libsnap.sh > /dev/null     || PATH=$PATH:${0%/*/*/*}/libsnap/bin
-source libsnap.sh ||
-if which libsnap.sh > /dev/null
-   then abort "libsnap.sh needs to end with 'true'"
-   else echo "install libsnap.sh from $libsnap_project" >&2; exit 1
+lib=libsnap.sh
+type -t  $lib > /dev/null || PATH=$PATH:${0%/*/*/*}/libsnap/bin
+source   $lib ||
+if which $lib > /dev/null
+   then abort "$lib needs to end with 'true'"
+   else echo "install $lib from $libsnap_project" >&2; exit 1
 fi
+(( $libsnap_version >= 1 )) || abort "need latest version of $lib"
 #
 if   is-arg1-in-arg2 -E ${1-} # regression-test wants alternative config_dir?
    then _args=" $*"
@@ -769,7 +771,13 @@ unlock() {
 
 	local lock_path=${_lock_type_name2lock_path[$type,$name]-}
 	[[   $lock_path ]] || abort "don't hold lock: type=$type, name=$name"
-	sudo-lockpid --release $lock_path
+	if [[ $debug_opt ]]
+	   then local lock_prefix="$IfRun "
+	elif [[ $UID == 0 ]]
+	   then local lock_prefix=
+	   else local lock_prefix=sudo-
+	fi
+	${lock_prefix}lockpid --release $lock_path
 	_lock_type_name2lock_path[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_path[$type,$name]" # this sometimes fails?
 
