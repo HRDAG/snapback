@@ -2039,7 +2039,7 @@ function is-drive-usage-too-high-for-copy() {
 	do-have-snapshots-of-type .rm && return 0 # pruning takes priority
 
 	prune-drive -m $drive_name     # just rename snapshots needing pruning
-	$IfRun sleep_msecs $mon_check_period_msecs # await replica update
+	$IfRun msleep $mon_check_period_msecs # await replica update
 	do-have-snapshots-of-type .rm && return 0
 
 	(( $highest_drive_usage > $max_drive_usage_percent_for_copy ))
@@ -4360,6 +4360,7 @@ readonly -f fill-in-unpruned-empty-snapshots
 declare is_update=$false
 
 function update-drive() {
+	local update_drive_args=$*	# for recursion
 	local ignore_slow_sources=$false
 	[[ $1 == -S  ]] && {  ignore_slow_sources=$true; shift; }
 	[[ $1 == -s* ]] && { local          src_names_glob=${1#-?}; shift; }
@@ -4387,12 +4388,13 @@ function update-drive() {
 
 	set-srcs_dst_file
 	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
-	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 1; }
+	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 0; }
 
 	prune-drive $drive_name
 
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
 	local status=$?
+	[[ $status == 0 ]] && $IfRun update-drive $update_drive_args
 
 	rmdir *.partial &> $dev_null
 
