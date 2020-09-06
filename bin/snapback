@@ -2174,7 +2174,7 @@ readonly -f rm-dangling-stats-symlinks
 # --------------------------------------------
 
 function set-stats_subdir() {
-	local  data_type=$1
+	local  data_type=${1:-$data_type}
 
 	if [[ $data_type == MB ]]
 	   then basename=$MB_used_basename
@@ -4635,6 +4635,10 @@ function set-average-count-maximum-sum--from-files-of-numbers() {
 	sum=0 count=$#
 	[[ $count != 0 ]] || { average=0 maximum=0 ; $xtrace; return 1; }
 
+	if [[ ${writer_type-} == prune && ${data_type-} == MB ]]
+	   then local is_negative=$true
+	   else local is_negative=$false
+	fi
 	maximum=-999999
 	local -i useful_file_count=0
 	local file
@@ -4642,6 +4646,11 @@ function set-average-count-maximum-sum--from-files-of-numbers() {
 	    do	local file_contents=$(< $file)
 		[[ $file_contents == [0-9]* ]] || continue
 		local -i number=$file_contents
+
+		if [[ $is_negative && $number != 0 ]]
+		   then (( $number < 0 )) || abort "$file: pruned MB=$number"
+			number=-$number	# make it positive, so fits in field
+		fi
 		sum+=$number
 		useful_file_count+=1
 		(( maximum<number )) &&
@@ -4656,6 +4665,7 @@ readonly -f set-average-count-maximum-sum--from-files-of-numbers
 
 # ---------------------------------
 
+# dashboard's decimal numbers should have a 2-digit integeral, otherwise 0-pad
 set-padded_number() {
 	local number=${1-}
 
@@ -4707,6 +4717,7 @@ set-writer_hour_avgs-writer_hour_maxs() {
 	local writer_type=$1
 
 	cd_ $drives_log_dir
+	local stats_subdir
 	set-stats_subdir time
 	local drive_name hour_avgs= hour_maxs=
 	for drive_name in $all_drive_names
@@ -4748,15 +4759,14 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs() {
 
 	GB_avg= predicted_TB_sum= predicted_percent_usage=
 	if [[ $# != 0 ]]
-	   then [[ $writer_type == prune ]] && local sign=- || local sign=
-		set-units g; local g_units=$units
+	   then set-units g; local g_units=$units
 		set-units t; local t_units=$units
 		local -i \
 		    average count maximum sum
 		set-average-count-maximum-sum--from-files-of-numbers $*
 
 		if (( $average != 0 ))
-		   then set-division -2 $sign$average 1024 # 2 decimal points
+		   then set-division -2 $average 1024 # 2 decimal points
 			set-padded_number $division
 			GB_avg=$padded_number$g_units
 		   else GB_avg=
@@ -4789,8 +4799,8 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 
 	set-units G
 	cd_ $drives_log_dir
-	local stats_subdir
-	set-stats_subdir MB
+	local stats_subdir data_type=MB
+	set-stats_subdir
 	local -i all_file_count=0
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
@@ -4816,13 +4826,9 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		fi
 		jobs_per_day+="$drive_name=$daily_count "
 
-		if [[ $writer_type == prune && $total_MB != 0 ]]
-		   then local sign=-
-		   else local sign=
-		fi
 		if (( $MB_per_day > 0 ))
-		   then set-division -2 $sign$MB_per_day 1024
-			set-padded_number $division && padded_number+=$units
+		   then set-division -2 $MB_per_day 1024
+			set-padded_number $division$units
 		   else padded_number=
 		fi
 		GBs_per_day+="$drive_name=$padded_number "
@@ -4853,7 +4859,8 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 	local writer_type=$1
 
 	cd_ $drives_log_dir
-	set-stats_subdir MB
+	local stats_subdir data_type=MB
+	set-stats_subdir
 	local GB_avgs= predicted_TBs= predicted_percents=
 	local drive_name padded_number
 	for drive_name in $all_drive_names
