@@ -4643,7 +4643,14 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	    set -- $snapshot_glob.txt || set --
 	files=$*
 
-	while true; do			# so we can use 'break' to do cleanup
+	local  cache_type=${stats_subdir#stats/}
+	local  cache_dir=$watch_cache_dir/stats-dir/$drive_name
+	[[ -d $cache_dir ]] || mkdir -p $cache_dir || abort mkdir $cache_dir
+	local  cache_file=$cache_dir/${cache_type//\//_}.sh
+	[[ -s $cache_file && $cache_file -nt . ]] && source $cache_file &&
+	    local do_compute=$false || local do_compute=$true
+
+	while [[ $do_compute ]]; do	# we can use 'break' to do cleanup
 
 	[[ $# != 0 ]] || { count=0 average=0 maximum=0 sum=0; break; }
 
@@ -4669,11 +4676,15 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 		   maximum=number
 	done
 
-	(( $count > 0 )) || { average=0; break; }
+	(( $count > 0 )) || { average=0  maximum=0; break; }
 	average=$(( ( $sum + ($count/2) ) / $count ))
 
 	break
 	done
+
+	[[ $do_compute ]] &&
+	local data="count=$count average=$average maximum=$maximum sum=$sum" &&
+	echo-to-file "$data" $cache_file
 
 	cd $caller_PWD
 	TraceV 2 count average maximum sum
