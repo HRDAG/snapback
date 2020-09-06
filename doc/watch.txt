@@ -26,7 +26,7 @@ readable font.  To see _all_ the stats sections, run:
 
     snapback watch -s
 
-To just see the stats that illustrate drive usage (my favorite), run:
+To just see the stats that illustrate drive usage (more useful), run:
 
     snapback watch -d
 

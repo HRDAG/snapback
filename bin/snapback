@@ -2692,9 +2692,8 @@ rm-pruned-snapshots() {
 
 	# finally, prune the rest of the contents of the *.rm snapshots
 	for snapshot
-	    do	local pruning_flag=$snapshot/.pruning
-		# already half-pruned, or not a full snapshot?
-		if [[ -e $pruning_flag || $snapshot == *.partial* ]]
+	    do	# is this snapshot already partially deleted?
+		if [[ $snapshot == *.partial* ]]
 		   then local restart_opt=-r
 		   else local restart_opt=
 		fi
@@ -2703,8 +2702,9 @@ rm-pruned-snapshots() {
 		    $restart_opt $snapshot
 
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
-		$IfRun touch $pruning_flag && # .rm suffix maybe removed
-		$IfRun env rm -rf $snapshot || continue
+		[[ $snapshot != *$snapshot_glob.rm ]] ||
+		$IfRun mv $snapshot ${snapshot%.rm}.partial.rm || continue
+		$IfRun env rm -rf ${snapshot%.rm}*.rm || continue# .rm removed?
 		${rm_snapshot_post_hook-} # could update database
 
 		set-writer_stats_msg--as-save-writer-stats $snapshot
@@ -4322,8 +4322,10 @@ readonly -f fastest-snapshots
 
 # -------------------------------------------------------
 
-fill-in-unpruned-empty-snapshots() {
+function fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
+
+	local status=1			# assume we did no work
 
 	local skipped_copy_args_file=$tmp_5
 	local force_opt= # to force one copy per pass (if all sources are busy)
@@ -4347,6 +4349,7 @@ fill-in-unpruned-empty-snapshots() {
 			set -- $(fastest-snapshots $force_opt $*)
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync $1 $dst_snapshot >&2
+				status=0 # we did some work
 				[[ ! $debug_opt ]] &&
 				# copy-* took a long time, recheck drive speeds
 				unset drive_name2speed_record # force a rebuild
@@ -4364,7 +4367,7 @@ fill-in-unpruned-empty-snapshots() {
 	done
 	$IfRun rm $copy_args_file $skipped_copy_args_file |
 	    sed 's/-[0-9]*$/-PID/'
-	return 0
+	return $status
 }
 readonly -f fill-in-unpruned-empty-snapshots
 
@@ -4374,7 +4377,8 @@ declare is_update=$false
 
 function update-drive() {
 	local update_drive_args=$*	# for recursion
-	local ignore_slow_sources=$false
+	local ignore_slow_sources=$false are_recursing=$false
+	[[ $1 == -r  ]] && { 	    are_recursing=$true; shift; }
 	[[ $1 == -S  ]] && {  ignore_slow_sources=$true; shift; }
 	[[ $1 == -s* ]] && { local          src_names_glob=${1#-?}; shift; }
 	[[ $1 == -e* ]] && { local excluded_src_names_glob=${1#-?}; shift; }
@@ -4388,6 +4392,7 @@ function update-drive() {
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
+	[[ $are_recursing ]] ||
 	IfRun= lock $lock_opt copy > $dev_null || exit-normally 1
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
@@ -4401,13 +4406,13 @@ function update-drive() {
 
 	set-srcs_dst_file
 	mkdir-missing-snapshots-then-print-copy-args > $srcs_dst_file
-	[[ -s $srcs_dst_file ]] || { rm $srcs_dst_file; return 0; }
 
 	prune-drive $drive_name
 
 	fill-in-unpruned-empty-snapshots $srcs_dst_file
 	local status=$?
-	[[ $status == 0 ]] && $IfRun update-drive $update_drive_args
+	[[ $status == 0 ]] &&	  # did we do actually do some copying (slow)?
+	$IfRun update-drive -r ${update_drive_args#-r} # see if new snapshots
 
 	rmdir *.partial &> $dev_null
 
