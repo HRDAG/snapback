@@ -4806,30 +4806,38 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	cd_ $drives_log_dir
 	local stats_subdir data_type=MB
 	set-stats_subdir
-	local -i all_file_count=0
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
 	for drive_name in $all_drive_names
 	    do	local -i days_old file_count=0 total_MB=0 day_count=0
-		for ((days_old=-1; days_old > -$days_to_keep_stats;days_old--))
-		    do	local day=$(date "+%Y-%m-%d" -d "$days_old days")
-			set -- $drive_name/$stats_subdir/$day,??.txt
-			[[ $# != 0 ]] || continue
-			local -i \
-			    average count maximum sum
-			set-average-count-maximum-sum--from-files-of-numbers $*
-			file_count+=$count
-			 total_MB+=$sum
-			day_count+=1
-		done
-		all_file_count+=$file_count
+		cd $drive_name/$stats_subdir || continue
+		set -- $snapshot_glob.txt
+		local -i \
+		    average count maximum sum
+		set-average-count-maximum-sum--from-files-of-numbers $*
+		cd $OLDPWD
 
-		if (( $day_count > 0 ))
-		   then local -i daily_count=$file_count/$day_count
-			local -i MB_per_day=$total_MB/$day_count
-		   else local -i MB_per_day=0  daily_count=0
+		if [[ $# != 0 ]]
+		   then local snapshots=$* ; snapshots=${snapshots//.txt/}
+			local snap_1=${snapshots%% *}
+
+			local hours=${snapshots//$snapshot_day_glob,/}
+			set-uniques $hours
+			set -- $uniques
+			local unique_hours=$#
+
+			local days=${snapshots//,??/}
+			set-uniques $days
+			set -- $uniques
+			local -i day_count=$#
+			# we usually get a few jobs before and after whole days
+			[[ $snap_1 != *,00 || $# -gt $days_to_keep_stats ]] &&
+			local -i day_count=$day_count-1
+			local -i MB_per_day=$sum/$day_count
+		   else local -i MB_per_day=0  unique_hours=0
 		fi
-		jobs_per_day+="$drive_name=$daily_count "
+
+		jobs_per_day+="$drive_name=$unique_hours "
 
 		if (( $MB_per_day > 0 ))
 		   then set-division -2 $MB_per_day 1024
@@ -4854,7 +4862,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	printf -v percent_usages_per_day "$stats_format" $percents_per_day
 	strip-trailing-whitespace \
 	    jobs_per_day writer_GBs_per_day percent_usages_per_day
-	(( $all_file_count > 0 ))
+	(( $jobs_per_day > 0 ))
 }
 readonly -f set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day
 
