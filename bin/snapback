@@ -4632,20 +4632,26 @@ set-units() {			   # a stylistic function
 
 # ----------------------------------------------------------------------------
 
-function set-average-count-maximum-sum--from-files-of-numbers() {
+function set-count-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local data_type=$1
 
-	# $count should be the number of files, not $useful_file_count,
-	# since it's used to count the number of jobs_per_day
-	sum=0 count=$#
-	[[ $count != 0 ]] || { average=0 maximum=0 ; $xtrace; return 1; }
+	local caller_PWD=$PWD
+	cd_ $drives_log_dir/$drive_name
+	local stats_subdir
+	set-stats_subdir $data_type && cd_ $stats_subdir &&
+	    set -- $snapshot_glob.txt || set --
+	files=$*
+
+	while true; do			# so we can use 'break' to do cleanup
+
+	[[ $# != 0 ]] || { count=0 average=0 maximum=0 sum=0; break; }
 
 	if [[ ${writer_type-} == prune && ${data_type-} == MB ]]
 	   then local is_negative=$true
 	   else local is_negative=$false
 	fi
 	maximum=-999999
-	local -i useful_file_count=0
 	local file
 	for file
 	    do	local file_contents=$(< $file)
@@ -4653,20 +4659,27 @@ function set-average-count-maximum-sum--from-files-of-numbers() {
 		local -i number=$file_contents
 
 		if [[ $is_negative && $number != 0 ]]
-		   then (( $number < 0 )) || abort "$file: pruned MB=$number"
+		   then (( $number < 0 )) ||
+			    abort "$PWD/$file: pruned MB=$number"
 			number=-$number	# make it positive, so fits in field
 		fi
 		sum+=$number
-		useful_file_count+=1
+		count+=1
 		(( maximum<number )) &&
 		   maximum=number
 	done
-	(( $useful_file_count != 0 )) || { average=0; $xtrace; return 0; }
-	average=$(( ( $sum + ($useful_file_count/2) ) / $useful_file_count ))
+
+	(( $count > 0 )) || { average=0; break; }
+	average=$(( ( $sum + ($count/2) ) / $count ))
+
+	break
+	done
+
+	cd $caller_PWD
 	$xtrace
-	return 0
+	(( $count > 0 ))
 }
-readonly -f set-average-count-maximum-sum--from-files-of-numbers
+readonly -f set-count-average-maximum-sum-files--from-stats-files
 
 # ---------------------------------
 
@@ -4682,36 +4695,38 @@ set-padded_number() {
 }
 readonly -f set-padded_number
 
-# ----------------------
+# ----------------------------------------------------------------------------
 
 set-hour_avg-hour_max--from-files-of-minutes() {
-	if [[ $# != 0 ]]
-	   then set-units h
-		local -i \
-		    average count maximum sum
-		set-average-count-maximum-sum--from-files-of-numbers $*
-		set-hours--from-minutes -2 $average # 2 decimal points
-		set-padded_number $hours
-		hour_avg=$padded_number$units
-		set-hours--from-minutes -2 $maximum
-		set-padded_number $hours
-		hour_max=$padded_number$units
+	local writer_type=${1:-$writer_type}
 
-		# drv_name2backup_period_for_update -> localize period
-		set-customized_value--for-config-var-name backup_period &&
-		local -i backup_period=$customized_value
-		local -i backup_period_mins=$backup_period*60
-		if (( average >= backup_period_mins ))
-		   then if (( average == backup_period_mins ))
-			   then local type=warning
-			   else local type=error
-			fi
-			set-warning_string $type $hour_avg
-			set-padded_colorized_string--for-printf \
-			    $hour_avg $warning_string
-			hour_avg=$padded_colorized_string
+	local -i \
+	    count average maximum sum
+	set-count-average-maximum-sum-files--from-stats-files minutes ||
+	    { hour_avg= hour_max= ; return; }
+	set-units h
+
+	set-hours--from-minutes -2 $average # 2 decimal points
+	set-padded_number $hours
+	hour_avg=$padded_number$units
+
+	set-hours--from-minutes -2 $maximum
+	set-padded_number $hours
+	hour_max=$padded_number$units
+
+	# drv_name2backup_period_for_update -> localize period
+	set-customized_value--for-config-var-name backup_period &&
+	local -i backup_period=$customized_value
+	local -i backup_period_mins=$backup_period*60
+	if (( average >= backup_period_mins ))
+	   then if (( average == backup_period_mins ))
+		   then local type=warning
+		   else local type=error
 		fi
-	   else hour_max= hour_avg=
+		set-warning_string $type $hour_avg
+		set-padded_colorized_string--for-printf \
+		    $hour_avg $warning_string
+		hour_avg=$padded_colorized_string
 	fi
 }
 readonly -f set-hour_avg-hour_max--from-files-of-minutes
@@ -4721,19 +4736,14 @@ readonly -f set-hour_avg-hour_max--from-files-of-minutes
 set-writer_hour_avgs-writer_hour_maxs() {
 	local writer_type=$1
 
-	cd_ $drives_log_dir
-	local stats_subdir
-	set-stats_subdir time
 	local drive_name hour_avgs= hour_maxs=
 	for drive_name in $all_drive_names
-	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
-		local \
+	    do	local \
 		    hour_avg hour_max
-		set-hour_avg-hour_max--from-files-of-minutes $*
+		set-hour_avg-hour_max--from-files-of-minutes
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
 	done
-	cd $OLDPWD
 
 	printf -v writer_hour_avgs "$stats_format" $hour_avgs
 	printf -v writer_hour_maxs "$stats_format" $hour_maxs
@@ -4760,65 +4770,49 @@ readonly -f set-percent_usage
 
 # ---------------------------------
 
-set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs() {
+set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 
-	GB_avg= predicted_TB_sum= predicted_percent_usage=
-	if [[ $# != 0 ]]
-	   then set-units g; local g_units=$units
-		set-units t; local t_units=$units
-		local -i \
-		    average count maximum sum
-		set-average-count-maximum-sum--from-files-of-numbers $*
+	local -i \
+	    count average maximum sum
+	set-count-average-maximum-sum-files--from-stats-files MB ||
+	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
-		if (( $average != 0 ))
-		   then set-division -2 $average 1024 # 2 decimal points
-			set-padded_number $division
-			GB_avg=$padded_number$g_units
-		   else GB_avg=
-		fi
+	set-units g
+	set-division -2 $average 1024 # 2 decimal points
+	set-padded_number $division
+	GB_avg=$padded_number$units
 
-		[[ $writer_type != backup ]] && {
-		local -i stats_number=${drive_name2stats_number[$drive_name]}
+	if [[ $writer_type != backup ]]
+	   then local -i stats_number=${drive_name2stats_number[$drive_name]}
 		if (( $stats_number > 0 && $average != 0 ))
-		   then local -i predicted_sum=$average*$stats_number
+		   then set-units t
+			local -i predicted_sum=$average*$stats_number
 			set-division -2 $predicted_sum $((1024*1024))
 			set-padded_number $division
-			predicted_TB_sum=$padded_number$t_units
+			predicted_TB_sum=$padded_number$units
 
 			set-percent_usage $predicted_sum
 			predicted_percent_usage=$percent_usage
 		   else predicted_percent_usage= predicted_TB_sum=
 		fi
-		}
 	fi
-	TraceV 1 average count sum \
-	         GB_avg predicted_percent_usage predicted_TB_sum
+	TraceV 1 count average sum \
+	        GB_avg predicted_TB_sum predicted_percent_usage
 }
-readonly -f \
-	 set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs
+readonly -f set-GB_avg-predicted_TB_sum-predicted_percent_usage
 
 # --------------------------------------------
 
 function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	local writer_type=$1
 
-	set-units G
-	cd_ $drives_log_dir
-	local stats_subdir data_type=MB
-	set-stats_subdir
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
 	for drive_name in $all_drive_names
-	    do	local -i days_old file_count=0 total_MB=0 day_count=0
-		cd $drive_name/$stats_subdir || continue
-		set -- $snapshot_glob.txt
-		local -i \
-		    average count maximum sum
-		set-average-count-maximum-sum--from-files-of-numbers $*
-		cd $OLDPWD
-
-		if [[ $# != 0 ]]
-		   then local snapshots=$* ; snapshots=${snapshots//.txt/}
+	    do	local -i \
+		       count average maximum sum
+		if set-count-average-maximum-sum-files--from-stats-files MB
+		   then local snapshots=${files//.txt/}
 			local snap_1=${snapshots%% *}
 
 			local hours=${snapshots//$snapshot_day_glob,/}
@@ -4839,6 +4833,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 
 		jobs_per_day+="$drive_name=$unique_hours "
 
+		set-units g
 		if (( $MB_per_day > 0 ))
 		   then set-division -2 $MB_per_day 1024
 			set-padded_number $division$units
@@ -4853,16 +4848,15 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		fi
 		percents_per_day+="$drive_name=$padded_number "
 
-		TraceV 1 file_count total_MB day_count \
-		         daily_count MB_per_day percent_usage
+		TraceV 1 day_count unique_hours MB_per_day percent_usage
 	done
 
 	printf -v           jobs_per_day "$stats_format"     $jobs_per_day
 	printf -v     writer_GBs_per_day "$stats_format"      $GBs_per_day
 	printf -v percent_usages_per_day "$stats_format" $percents_per_day
 	strip-trailing-whitespace \
-	    jobs_per_day writer_GBs_per_day percent_usages_per_day
-	(( $jobs_per_day > 0 ))
+	    jobs_per_day     writer_GBs_per_day percent_usages_per_day
+	[[ $jobs_per_day == *=[1-9]* ]]
 }
 readonly -f set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day
 
@@ -4871,16 +4865,13 @@ readonly -f set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day
 set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 	local writer_type=$1
 
-	cd_ $drives_log_dir
-	local stats_subdir data_type=MB
-	set-stats_subdir
 	local GB_avgs= predicted_TBs= predicted_percents=
 	local drive_name padded_number
 	for drive_name in $all_drive_names
-	    do	set -- $drive_name/$stats_subdir/$snapshot_glob.txt
-		local \
+	    do	local \
 		    GB_avg predicted_TB_sum predicted_percent_usage
-		set-GB_avg-predicted_TB_sum-predicted_percent_usage--from-files-of-MBs $*
+		set-GB_avg-predicted_TB_sum-predicted_percent_usage
+
 		set-padded_number $GB_avg
 		GB_avgs+="$drive_name=$padded_number "
 
@@ -4892,13 +4883,13 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 		set-padded_number $predicted_percent_usage
 		predicted_percents+="$drive_name=$padded_number "
 	done
-	cd $OLDPWD
 
 	printf -v writer_GB_avgs           "$stats_format" $GB_avgs
 	printf -v predicted_TB_sums        "$stats_format" $predicted_TBs
 	printf -v predicted_percent_usages "$stats_format" $predicted_percents
 	strip-trailing-whitespace \
-	    writer_GB_avgs predicted_TB_sums predicted_percent_usages
+	    writer_GB_avgs     predicted_TB_sums predicted_percent_usages
+	[[ $writer_GB_avgs == *=[0-9]* ]]
 }
 readonly -f set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages
 
