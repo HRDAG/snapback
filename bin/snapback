@@ -2389,7 +2389,7 @@ readonly -f set-SECONDS-starting_MB--for-save-writer-stats
 set-writer_stats_msg--as-save-writer-stats() {
 	local snapshot=$1
 
-	writer_stats_msg="(priority=${priority:-normal})"
+	writer_stats_msg="(priority=${priority:-default})"
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
 	   then local -i minutes
@@ -5312,16 +5312,22 @@ readonly -f trim-copy-update-ps
 # the following functions are called consecutively by watch()
 # -----------------------------------------------------------
 
-exec-watch-snapback-w() {
+is-set   watch_exe_options ||		# can set custom value in $config_file
+readonly watch_exe_options="-c -d -p -x"
 
-	local all_opts="$ps_opt $no_errors $stats_opt $cron_opt $bg_opt"
+exec-watch-snapback-w() {
+	local opts=
+	while [[ ${1-} == -* || ${1-} == [0-9]* ]]; do opts+="$1 "; shift; done
+
+	local w_opts="$ps_opt $no_errors $stats_opt $cron_opt $bg_opt"
 	if [[ $names ]]
 	   then set-drive_names--from-user-args $names
-		all_opts+=" -N ${drive_names// /,}"
+		w_opts+=" -N ${drive_names// /,}"
 	fi
-	# >= 0.5 is best for watching wchan (when -C with 'sudo ps' access)
-	local n=$mon_check_period_secs
-	exec watch -c -d -p -x ${*:- -n $n} $our_path $our_opts w -w $all_opts
+	# n >= 0.5 is best for watching wchan (when -C , plus 'sudo ps' access)
+	local watch_opt_n=$mon_check_period_secs
+	exec watch $watch_exe_options -n $watch_opt_n $opts \
+	     $our_path $our_opts w -w $w_opts "$@"
 	abort-function "exec failed"
 }
 readonly -f exec-watch-snapback-w
@@ -5609,7 +5615,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
-	[[ $show_all ]] && rows_left=1222333444
+	[[ $show_all || $functions ]] && rows_left=1222333444
 	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
 	TraceV 1 rows_left
 }
@@ -6079,13 +6085,31 @@ readonly -f _start-monitor-drives-if-needed
 
 # ------------------------------------------------------------------
 
+_set-functions() {
+
+	functions=
+	local function
+	for function
+	    do	function=show-${function#show-}
+		[[ $(type -t $function) == function ]] ||
+		    abort "'$function' is an unknown function"
+		functions+="$function "
+	done
+}
+readonly -f _set-functions
+
+# --------------------------------------------
+
 readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
 [[ ! -d $generate_output_files_dir ]] || rm -r $generate_output_files_dir
 
-generate() {
+function generate() {
 	local function=$*
 
-	[[ $bg_opt == -P ]] && { $function; return; }
+	[[ ! $functions ]] ||
+	is-arg1-in-arg2 $function $functions || return 1
+
+	[[ $bg_opt == -P ]] && { $function; return $?; }
 
 	[[ -d $generate_output_files_dir ]] ||
 	mkdir $generate_output_files_dir || abort-function mkdir
@@ -6113,19 +6137,30 @@ readonly -f show-generated-output
 
 # ---------------------------------
 
+is-set   show_drive_functions ||	# can set custom value in $config_file
+readonly show_drive_functions="stats-section-1
+stats-section-2-backup stats-section-2-prune stats-section-2-copy
+filesystem-info-that-fits"
+
 watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
-	[[ ${1-} == -w ]] && { watch_opt=-w; shift; } # internal option
-	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
-	[[ ${1-} == -E ]] && { no_errors=-E; shift; }
-	[[ ${1-} == -s ]] && { stats_opt=-s; shift; }
-	[[ ${1-} == -C ]] && {  cron_opt=-C; shift; }
-	[[ ${1-} == -f ]] && {    ps_opt=-f; shift; }
-	[[ ${1-} == -P ]] && {    bg_opt=-P; shift; }
+	[[ ${1-} == -w ]] && { watch_opt=$1; shift; } # internal option
+	[[ ${1-} == -f ]] && {    ps_opt=$1; shift; }
+	[[ ${1-} == -E ]] && { no_errors=$1; shift; }
+	[[ ${1-} == -s ]] && { stats_opt=$1; shift; }
+	[[ ${1-} == -C ]] && {  cron_opt=$1; shift; }
+	[[ ${1-} == -f ]] && {    ps_opt=$1; shift; }
+	[[ ${1-} == -P ]] && {    bg_opt=$1; shift; }
+	[[ ${1-} == -d ]] && { do_drives=$1; shift; }
+	[[ ${1-} == -u ]] && { user_show=$1; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 
+	[[ ${do_drives-} ]] && set -- $show_drive_functions
+	[[ ${user_show-} ]] && set -- $show_user_functions
 	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
+
+	_set-functions $* ; shift $#
 
 	set-drive_names -a
 	local all_drive_names=$drive_names

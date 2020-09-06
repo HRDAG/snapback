@@ -8,7 +8,9 @@ or
 
 you'll see a lot of info.  If you decrease/increase the width of your screen,
 you'll see less/more info from 'ps'.  If you decrease/increase the height of
-your screen, you'll see fewer/more sections and sub-sections.
+your screen, you'll see fewer/more sections and sub-sections.  You can pass
+'watch' options (if you do, you may need to over-ride snapbacks default watch
+options, by setting watch_options="..." in configure.sh).
 
 If your screen is tall enough to show 'df', you'll see filesystem usage.  If
 filesystem usage is too high, check "Number pruned snapshots awaiting 'rm'";
@@ -20,16 +22,35 @@ when the filesystem usage threshold ('min_FS_usage_percent' in
 details on such tuning.
 
 There are now more stats sections than can fit on a typical screen with a
-readable font.  To see _all_ the stats sections, run one of:
+readable font.  To see _all_ the stats sections, run:
 
     snapback watch -s
-    ssh -t {the-server} snapback watch -s
+
+To just see the stats that illustrate drive usage (my favorite), run:
+
+    snapback watch -d
+
+... and note that you can "define" -d yourself by enumerating the functions
+you want, by setting show_drive_functions= in configure.sh).  Similarly ...
+
+You can show a user-defined set of functions by running:
+
+    snapback watch -u
+
+after setting show_user_functions in configure.sh .
+
+To construct your own dashboard, specify the stats functions (to find all
+their names, see the second half of function watch() in snapback, and run
+'snapback w' to see what each function does), run e.g.:
+
+    snapback watch stats-section-1 filesystem-info-that-fits backup-cmds
 
 I spent a couple of hours trying to include the output of 'rsync --progress',
 but it was never reliable, so I gave up.  The only sign of activity (besides
-the slowly incresing 'ps' TIME) is to watch IUsed (Inodes Used) go up (your
-screen needs to be tall enough to see the 'df' output) ... although it could
-instead go down from a pruning job.
+%CPU and the slowly incresing 'ps' TIME) is to watch IUsed (Inodes Used) go up
+(your screen needs to be tall enough to see the 'df' output, or use use -d)
+... although it could instead go down from a pruning job, and it often changes
+slowly with XFS (because of the large journal??).
 
 The -C option shows the Cron job(s).  Unless your screen has a zillion lines
 (i.e. very tall and/or small font), a lot of sections will disappear as soon
