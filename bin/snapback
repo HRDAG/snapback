@@ -2389,10 +2389,7 @@ readonly -f set-SECONDS-starting_MB--for-save-writer-stats
 set-writer_stats_msg--as-save-writer-stats() {
 	local snapshot=$1
 
-	if [[ ${priority-} ]]
-	   then writer_stats_msg="(priority=$priority)"
-	   else writer_stats_msg=
-	fi
+	writer_stats_msg="(priority=${priority:-normal})"
 
 	if (( $SECONDS >= 0 ))		# not a restart, want to record stats?
 	   then local -i minutes
