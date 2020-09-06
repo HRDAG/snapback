@@ -4632,6 +4632,20 @@ set-units() {			   # a stylistic function
 
 # ----------------------------------------------------------------------------
 
+# dashboard's decimal numbers should have a 2-digit integeral, otherwise 0-pad
+set-padded_number() {
+	local number=${1-}
+
+	if [[ $number == ?.* ]]
+	   then padded_number=0$number
+	   else padded_number=$number
+	fi
+	[[ $padded_number ]]
+}
+readonly -f set-padded_number
+
+# ----------------------------------------------------------------------------
+
 function set-count-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local data_type=$1
@@ -4694,20 +4708,6 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 readonly -f set-count-average-maximum-sum-files--from-stats-files
 
 # ---------------------------------
-
-# dashboard's decimal numbers should have a 2-digit integeral, otherwise 0-pad
-set-padded_number() {
-	local number=${1-}
-
-	if [[ $number == ?.* ]]
-	   then padded_number=0$number
-	   else padded_number=$number
-	fi
-	[[ $padded_number ]]
-}
-readonly -f set-padded_number
-
-# ----------------------------------------------------------------------------
 
 set-hour_avg-hour_max--from-files-of-minutes() {
 	local writer_type=${1:-$writer_type}
