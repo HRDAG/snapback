@@ -1230,11 +1230,11 @@ function set-admin_group {
 		return $?
 	fi
 
-	local users_groups=$(id -G -n $user)
+	local user_groups=$(env id -G -n $user)
 
 	local group
 	for group in $possible_admin_groups NoNe
-	    do	is-arg1-in-arg2 $group $users_groups && break
+	    do	is-arg1-in-arg2 $group $user_groups && break
 	done
 	[[ $group == NoNe ]] && admin_group= || admin_group=$group
 
@@ -5640,7 +5640,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
 	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
-	[[ $show_all || $functions ]] && rows_left=1222333444
+	[[ $show_all || $functions ]] && rows_left=1222333000
 	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
 	TraceV 1 rows_left
 }
@@ -5733,6 +5733,7 @@ show-sudo-config-warning() {
 
 	header "statistics"
 	echo
+
 	let rows_left-=6		# only adjust for optional sections
 }
 readonly -f show-sudo-config-warning
@@ -5741,6 +5742,8 @@ readonly -f show-sudo-config-warning
 
 # this section is mandatory
 show-stats-section-1() {
+
+	maybe-report-rows_left-and-wait
 
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
@@ -5762,7 +5765,7 @@ show-stats-section-1() {
 }
 readonly -f show-stats-section-1
 
-# --------------------------------------------
+# ----------------------------------------------------------------------------
 
 set-drive_name2stats_number() {
 	local  stats_number=" $*"
@@ -5785,11 +5788,34 @@ readonly -f ech_
 
 # ----------------------
 
+_do-have-stats() {
+	[[ ${1-} == -R ]] && { shift; local skip_last_report=$true; }
+	local data_type=${1:-always}
+
+	case $data_type in
+	    ( always ) set -- 1						;;
+	    ( backup ) set -- $stats_dir/$data_type/MB-changes/*/*.txt	;;
+	    ( prune  ) set -- $snapshots_replica_dir/*/*.rm		;;
+	    (  copy  ) set -- $snapshots_replica_dir/*/*.partial	;;
+	    (   *    ) abort-function "$1: unknown data_type"		;;
+	esac
+	[[ $# == 0 ]] && { maybe-report-rows_left-and-wait; return 1; }
+
+	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
+	[[ $stats_opt ]] || { maybe-report-rows_left-and-wait; return 1; }
+
+	let pipe_rows_left=$rows_left-$rows_used
+	[[ ! ${skip_last_report-} ]] && maybe-report-rows_left-and-wait
+	return 0
+}
+readonly -f _do-have-stats
+
+# ----------------------
+
 show-stats-section-2-backup() {
 
 	local -i rows_used=4+1		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
-	[[ $stats_opt ]] || return
+	_do-have-stats backup || return
 
 	set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day backup ||
 	    return
@@ -5811,24 +5837,22 @@ readonly -f show-stats-section-2-backup
 show-stats-section-2-prune() {
 
 	local -i rows_used=5
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
-	[[ $stats_opt ]] || return
+	_do-have-stats prune || return
 
-	declare -A drive_name2stats_number
+	setup-snapshot-stats .rm || return
 
-	setup-snapshot-stats .rm ||
-	    return
 	ech_ " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 
 	set-writer_hour_avgs-writer_hour_maxs prune
 	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
 
+	declare -A drive_name2stats_number
 	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $predicted_TB_sums"
 	echo "           ... predicted %-point change:  $predicted_percent_usages"
-	let rows_left-=5
+	let rows_left-=$rows_used
 }
 readonly -f show-stats-section-2-prune
 
@@ -5837,24 +5861,24 @@ readonly -f show-stats-section-2-prune
 show-stats-section-2-copy() {
 
 	local -i rows_used=5
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
-	[[ $stats_opt ]] || return
-
-	declare -A drive_name2stats_number
+	_do-have-stats -R || return	# don't pass 'copy', need next one ...
 
 	setup-snapshot-stats -e .partial ||
-	    return
+	   { maybe-report-rows_left-and-wait; return; }
+	let rows_left-=$rows_used
+	maybe-report-rows_left-and-wait
+
 	ech_ " Number empty .partial dirs, for update:  $stats_numbers"
 
 	set-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
+	declare -A drive_name2stats_number
 	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be added:  $predicted_TB_sums"
 	echo "           ... predicted %-point change:  $predicted_percent_usages"
-	let rows_left-=5
 }
 readonly -f show-stats-section-2-copy
 
@@ -5863,8 +5887,7 @@ readonly -f show-stats-section-2-copy
 show-stats-section-3() {
 
 	local -i rows_used=7		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
-	[[ $stats_opt ]] || return
+	_do-have-stats || return
 
 	echo				# first row used
 	setup-snapshot-stats .rm
@@ -5891,8 +5914,7 @@ readonly -f show-stats-section-3
 show-stats-section-4() {
 
 	local -i rows_used=6		# stats plus 1 blank line
-	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
-	[[ $stats_opt ]] || return
+	_do-have-stats || return
 
 	echo				# first row used
 	setup-snapshot-stats ''
@@ -5962,21 +5984,28 @@ readonly -f show-FS-repair-cmds
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
+	# df is more important than rsync details
+	local -i extra=$rows_for_one_detailed_rsync
+	(( $rows_left + $extra >= $min_rows_with_df )) && # see BD+=
+	local do_run_df=$true &&
+	let rows_left-=$num_drives+2
+
+	(( $rows_left >= $min_rows_with_df )) && [[ ! $copy_rsync_cmds ]] &&
+	local do_run_lsblk=$true &&
+	let rows_left-=$num_drives+2
+
+	maybe-report-rows_left-and-wait
+
 	if [[ $show_all && ! $stats_opt ]]
 	   then have-cmd snapcrypt && snapcrypt status all
 		filesystem-geometry $drive_dirs
-	   else	local -i extra=$rows_for_one_detailed_rsync
-		# df is more important than rsync details
-		(( $rows_left + $extra >= $min_rows_with_df )) && # see BD+=
-		run-df $drive_dirs &&
-		let rows_left-=$num_drives+2
+	   else	[[ ${do_run_df-} ]] &&
+		run-df $drive_dirs
 
 		# --------------------------------------------
 
-		(( $rows_left >= $min_rows_with_df )) &&
-		[[ ! $copy_rsync_cmds ]] &&
-		run-lsblk $drive_dirs &&
-		let rows_left-=$num_drives+2
+		[[ ${do_run_lsblk-} ]] &&
+		run-lsblk $drive_dirs
 	fi
 
 	print-big-swapouts-file		# these are also run at end of ...
@@ -5988,6 +6017,8 @@ readonly -f show-filesystem-info-that-fits
 # --------------------------------------------
 
 show-prune-cmds() {
+
+	maybe-report-rows_left-and-wait
 
 	[[ $prune_cmds || $show_all ]] && header "prune-drive" && echo
 	if [[ $prune_cmds ]]
@@ -6002,6 +6033,8 @@ readonly -f show-prune-cmds
 # --------------------------------------------
 
 show-copy-cmds() {
+
+	maybe-report-rows_left-and-wait
 
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] || return
 
@@ -6034,6 +6067,8 @@ readonly -f set-rsync_abbrev_msg
 
 show-backup-cmds() {
 
+	maybe-report-rows_left-and-wait
+
        header "backup-drive's most-CPU-intensive rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
@@ -6048,6 +6083,8 @@ readonly -f show-backup-cmds
 
 # show process tree of master cron job(s)
 show-cron-jobs() {
+
+	maybe-report-rows_left-and-wait
 
 	[[ $cron_cmds ]] || return
 
@@ -6064,6 +6101,8 @@ readonly -f show-cron-jobs
 
 show-backup-cmds-with-full-details() {
 
+	maybe-report-rows_left-and-wait
+
 	[[ $bkp_rsync_cmds ]] || return
 
       header "backup-drive's most-CPU-intensive rsync processes (full details)"
@@ -6077,6 +6116,8 @@ readonly -f show-backup-cmds-with-full-details
 
 show-copy-cmds-with-full-details() {
 
+	maybe-report-rows_left-and-wait
+
 	[[ $copy_rsync_cmds == *rsync* ]] || return
 
        header "copy/update's most-CPU-intensive rsync processes (full details)"
@@ -6087,7 +6128,7 @@ show-copy-cmds-with-full-details() {
 }
 readonly -f show-copy-cmds-with-full-details
 
-# ------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 _start-monitor-drives-if-needed() {
 
@@ -6127,34 +6168,54 @@ readonly -f _set-functions
 
 readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
 [[ ! -d $generate_output_files_dir ]] || rm -r $generate_output_files_dir
+readonly rows_left_pipe=$generate_output_files_dir/rows_left-pipe
 
 function generate() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local function=$*
 
 	[[ ! $functions ]] ||
-	is-arg1-in-arg2 $function $functions || return 1
+	is-arg1-in-arg2 $function $functions || { $xtrace; return 1; }
 
-	[[ $bg_opt == -P ]] && { $function; return $?; }
+	[[ $do_parallel ]] || { $function; $xtrace; return $?; }
 
 	[[ -d $generate_output_files_dir ]] ||
 	mkdir $generate_output_files_dir || abort-function mkdir
+	[[ -p  $rows_left_pipe ]] ||
+	mkfifo $rows_left_pipe || abort-function mkfifo
+
 	local output_file=$generate_output_files_dir/out-$job_num
 	$function &> $output_file &
 	job_num2PID[job_num++]=$!
+
+	read rows_left < $rows_left_pipe # let child modify our global
+	Trace 1 "$output_file from $function"
+	$xtrace
 }
+
 readonly -f generate
+
+# ----------------------
+
+maybe-report-rows_left-and-wait() {
+
+	[[ $do_parallel ]] && echo $rows_left > $rows_left_pipe
+}
+readonly -f maybe-report-rows_left-and-wait
 
 # ----------------------
 
 show-generated-output() {
 
-	[[ $bg_opt == -P ]] && return
+	[[ $do_parallel ]] || return
 
 	local -i max_job_num=$job_num-1
 	for (( job_num=0; $job_num <= $max_job_num; job_num++ ))
 	    do	local  PID=${job_num2PID[$job_num]}
 		wait  $PID
-		cat $generate_output_files_dir/out-$job_num
+		local output_file=$generate_output_files_dir/out-$job_num
+		cat  $output_file &&
+		  rm $output_file	# uncomment to debug
 	done
 	rm -r $generate_output_files_dir
 }
@@ -6194,12 +6255,13 @@ watch() {
 	set -- ${all_drive_dirs// / $drive_dir_prefix}
 	all_drive_dirs=$*
 
+	[[ $bg_opt == -P ]] && local do_parallel= || local do_parallel=$true
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || trap '' HUP
 	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
 	[[ $watch_opt || $UID != 0 ]] || check-logs
-	(( $Trace_level > 0 )) && bg_opt=-P
+	(( $Trace_level > 0 )) && do_parallel=$false
 
 	SECONDS=$(date '+%s')		# for _set-age()
 
@@ -6236,7 +6298,7 @@ watch() {
 
 	_start-monitor-drives-if-needed
 
-	generate show-sudo-config-warning
+	show-sudo-config-warning
 
 	generate show-stats-section-1
 	generate show-stats-section-2-backup
