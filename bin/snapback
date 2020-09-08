@@ -259,7 +259,7 @@ exit-normally() {
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
 	exit ${1-}
 }
-_exit() { exit-normally "$@"; }		# short form, for test action
+exit_() { exit-normally "$@"; }		# short form, for test action
 
 # $tmp_1 and $tmp_2 are used then deleted in the same function. so don't
 # need to check the whole script to see if someone else is using them.
@@ -544,7 +544,7 @@ function set-lock_paths() {
 	[[ ${1-} == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
 	local type_glob=${1:-*} name_glob=${2:-${drive_name:-*}}
 	[[ $name_glob == */* ]] &&
-	    { _set-_drive_name $name_glob; name_glob=$_drive_name; }
+	    { set-_drive_name- $name_glob; name_glob=$_drive_name; }
 
 	set-glob "$type_glob" && type_glob=$glob
 	set-glob "$name_glob" && name_glob=$glob
@@ -635,7 +635,7 @@ _set-type-name() {
 	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	type=$1 resource=${2:-$drive_name}
 
-	 _set-_drive_name $resource
+	 set-_drive_name- $resource
 	name=$_drive_name
 
 	$xtrace
@@ -939,7 +939,7 @@ function signal-job() {
 		[[ $lock_path == /* ]] || lock_path=$lock_dir/${lock_path##*/}
 	   else local job_type=$1 drive_name=${2:-$drive_name}
 		suspend-tracing
-		_set-drive_name $drive_name
+		set-drive_name- $drive_name
 		set-lock_path $job_type
 		restore-tracing
 	fi
@@ -1329,7 +1329,7 @@ readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
 # This is much faster than set-drive_name, but can only be used for
 # already-existing-and-initialized backup directories and their names.
 # This checks name-validity, and fixex the case of valid names.
-_set-drive_name() {
+set-drive_name-() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
@@ -1360,18 +1360,18 @@ _set-drive_name() {
 	_last_fully_initialized_drive_name= # prevent weird bugs
 	$xtrace
 }
-readonly -f _set-drive_name
+readonly -f set-drive_name-
 
 # ---------
 
-# a variant on _set-drive_name that doesn't mess up the global $drive_name
-_set-_drive_name() {
+# a variant on set-drive_name- that doesn't mess up the global $drive_name
+set-_drive_name-() {
 
 	local drive_name	      # don't mess up the usually-global value
-	 _set-drive_name "$@"
+	 set-drive_name- "$@"
 	_drive_name=$drive_name
 }
-readonly -f _set-_drive_name
+readonly -f set-_drive_name-
 
 # ----------------------
 
@@ -1382,7 +1382,7 @@ set-drive_name() {
 
 	${set_drive_name_pre_hook-} # can munge 'name' variable
 
-	_set-drive_name -c $name && name=$drive_name
+	set-drive_name- -c $name && name=$drive_name
 
 	if [[ ! $name =~ ^$admin_drive_name_regex$ ]]
 	   then if [[ $name == /dev/* ]]
@@ -1399,7 +1399,7 @@ set-drive_name() {
 		   abort "$name is not drive-dir or FS-label or valid-name"
 		name=${drive_dir#$drive_dir_prefix}
 	fi
-	_set-drive_name $name	  # call again, for globbing and case-control
+	set-drive_name- $name	  # call again, for globbing and case-control
 	TraceV 3 drive_name
 
 	${set_drive_name_post_hook-} # can munge 'drive_name' variable
@@ -1411,7 +1411,7 @@ readonly -f set-drive_name
 # ---------------------------------
 
 # only call this with a known-valid drive_name, for speed
-function _set-drive_dir() {
+function set-drive_dir-() {
 	local name=${1:-$drive_name}
 
 	if [[ $name == $mon_overhead_drive_name ]]
@@ -1420,7 +1420,7 @@ function _set-drive_dir() {
 	fi
 	[[ -d $drive_dir ]] || warn "'$name' not mounted"
 }
-readonly -f _set-drive_dir
+readonly -f set-drive_dir-
 
 # ----------------------
 
@@ -1448,7 +1448,7 @@ function set-drive_dir() {
 	[[ $drive_name != */* ]] ||
 	  abort "'/' in drive name not (yet)supported, add to drive_dir_prefix"
 
-	_set-drive_dir
+	set-drive_dir-
 
 	if [[ $is_regression_test && ! -d $drive_dir ]]
 	   then	set-admin_group
@@ -1486,7 +1486,7 @@ source-drive-specific-config-file ||# can define custom version in $config_file
 source-drive-specific-config-file() {
 	[[ $# == 0 ]] && return
 	local _name=$1  _main_config_file=${2:-${config_file-}}
-	_set-drive_name $_name
+	set-drive_name- $_name
 	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
 
 	local     _config_file=${_main_config_file/%.sh/-$drive_name.sh}
@@ -1604,7 +1604,7 @@ function set-customized_value--for-config-var-name() {
 	set-custom_config_vars-custom_config_var2default_value
 
 	local drive_name value
-	 _set-drive_name $resource
+	 set-drive_name- $resource
 	if _set-value--for-config-var $var_name $drive_name
 	   then customized_value=$value       && return 0
 	   else customized_value=${!var_name} && return 1
@@ -1742,7 +1742,7 @@ mon-launch-globs() {
 
 	local drive_name drive_dir
 	for drive_name
-	    do	 _set-drive_dir $drive_name || abort "bad $drive_name"
+	    do	 set-drive_dir- $drive_name || abort "bad $drive_name"
 		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
 
 		cd $drive_dir || continue
@@ -1998,7 +1998,7 @@ function is-drive-usage-too-high() {
 	local drive_dir=${1:-$drive_dir}
 
 	local drive_name
-	 _set-drive_name $drive_dir
+	 set-drive_name- $drive_dir
 	set-customized_value--for-config-var-name max_FS_usage_percent &&
 	local max_FS_usage_percent=$customized_value
 
@@ -2114,7 +2114,7 @@ readonly -f reset-drive-jobs-priorities
 function is-copy-higher-priority-than-prune() {
 	local drive_name=${*:-$drive_name}
 
-	_set-drive_name $drive_name
+	set-drive_name- $drive_name
 	reset-drive-jobs-priorities || return 1
 
 	have-job copy || { continue-jobs prune; return 1; }
@@ -2457,7 +2457,7 @@ readonly -f count-rsyncs-using-resource
 function is-sleeping() {
 	local job_type=$1 drive_name=${2:-$drive_name} executables
 
-	_set-drive_name $drive_name
+	set-drive_name- $drive_name
 	set-job_PGID $job_type || return 1
 	set-executables--in-process-groups $job_PGID || { warn "set-exe* -> $?"
 		print-call-stack $drive_name; ps-locks $job_type $drive_name;
@@ -2471,7 +2471,7 @@ readonly -f is-sleeping
 function is-suspended() {
 	local job_type=$1 drive_name=${2:-$drive_name} state
 
-	_set-drive_name $drive_name
+	set-drive_name- $drive_name
 	set-job_PGID $job_type || return 1
 	set-state--in-process-groups $job_PGID || { warn "set-exe* -> $?"
 		print-call-stack $drive_name; ps-locks $job_type $drive_name;
@@ -2842,7 +2842,7 @@ validate-prune_globs() {
 	while [[ ${1-} == -* ]]; do shift; done
 	local name=${1:-Z}
 	[[ $name == all ]] && name=Z
-	_set-drive_name $name
+	set-drive_name- $name
 
 	local parent_cmd=$(COLUMNS=9999 ps -o command= $PPID)
 	[[  "$parent_cmd " =~ ' '(regression-test|rt)' ' ]] && local debug_opt=
@@ -2852,7 +2852,7 @@ validate-prune_globs() {
 	set-type2date_span
 	[[ $debug_opt ]] && declare -p type2date_span
 
-	local test_dir=$tmp_dir/$_our_name-prune-$drive_name
+	local test_dir=$tmp_dir/$our_name_-prune-$drive_name
 	mkdir -p $test_dir
 	cd $test_dir || abort cd
 
@@ -3876,7 +3876,7 @@ function matches-dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local drive_dir=$1 drive_name
 
-	_set-drive_name $drive_dir
+	set-drive_name- $drive_dir
 	set-backup_type $drive_name
 	$xtrace
 	[[ $backup_type == $dst_backup_type || $debug_opt ]]
@@ -4074,7 +4074,7 @@ readonly -f wait-for-full-snapshots
 function set-srcs_dst_file() {
 
 	# this is not deleted, so can be inspected
-	srcs_dst_file=$tmp_dir/$_our_name-update-$drive_name.args
+	srcs_dst_file=$tmp_dir/$our_name_-update-$drive_name.args
 	[[ -s $srcs_dst_file ]]
 }
 readonly -f set-srcs_dst_file
@@ -4129,7 +4129,7 @@ readonly -f _set-src_names_regex
 
 _set-drive_dirs--for-update-srcs() {
 	local drive_name=${1:-$drive_name}
-	_set-drive_dir
+	set-drive_dir-
 
 	set-excluded_drive_dirs_regex
 	_set-src_names_regex
@@ -4160,7 +4160,7 @@ readonly -f _set-drive_dirs--for-update-srcs
 
 src_dirs-for-update() {
 
-	_set-drive_dirs--for-update-srcs ||
+	set-drive_dir-s--for-update-srcs ||
 	   abort "couldn't find any drives to copy to $drive_name"
 
 	local period=$backup_period
@@ -4251,12 +4251,12 @@ readonly -f mkdir-missing-snapshots-then-print-copy-args
 function _set-speed_record() {
 	local snapshot=$1   drive_name drive_dir
 
-	_set-drive_name $snapshot
+	set-drive_name- $snapshot
 
 	speed_record=${drive_name2speed_record[$drive_name]-}
 	[[ $speed_record ]] && return 0
 
-	_set-drive_dir || { print-call-stack; return 1; }
+	set-drive_dir- || { print-call-stack; return 1; }
 
 	if is-multi-writer-drive $snapshot
 	   then local not_multi_writer=0
@@ -4455,8 +4455,8 @@ function set-drive_dirs--from-user-args() {
 
 	drive_dirs=
 	for drive_dir
-	    do	_set-drive_name -q $drive_dir  &&
-		_set-drive_dir     $drive_name || continue
+	    do	set-drive_name- -q $drive_dir  &&
+		set-drive_dir-     $drive_name || continue
 		[[ $drive_name != [zZ] || $is_regression_test ]] || continue
 		is-drive-mounted   $drive_dir  &&
 		      drive_dirs+="$drive_dir "
@@ -4476,7 +4476,7 @@ function set-drive_names--from-user-args() {
 	drive_names=
 	local drive_dir drive_name
 	for drive_dir in $drive_dirs
-	    do	_set-drive_name $drive_dir
+	    do	set-drive_name- $drive_dir
 		  drive_names+="$drive_name "
 	done
 	drive_names=${drive_names% }
@@ -4565,12 +4565,12 @@ create-jobs() {
 	NOTE: your $action command will run as a separate, disconnected job;
 	      and it might wait for a lock before it can start.  See it with:
 
-		$_our_name watch
+		$our_name_ watch
 "
 	$Trace
 	for name
 	    do	# [[ $name == *[aA] ]] && set -x	   # uncomment to debug
-		_set-drive_name $name &&  name=$drive_name # cleanup for 'ps'
+		set-drive_name- $name &&  name=$drive_name # cleanup for 'ps'
 		if [[  ! $debug_opt   && $name != [zZ] ]]
 		   then trap '' HUP
 			# Want new process-group so can ps/kill independently.
@@ -4774,7 +4774,7 @@ set-percent_usage() {
 	local -i MB=$1
 
 	local drive_dir division
-	_set-drive_dir
+	set-drive_dir-
 	local -i used_MB size_MB
 	set-used_MB-size_MB
 	local -i  MB_100=MB*100
@@ -4936,7 +4936,7 @@ set-drive_usages() {
 			percent=$warning_string
 		   else percent=$percent%$type
 		fi
-		_set-drive_name $drive_dir
+		set-drive_name- $drive_dir
 		percents+="$drive_name=$percent "
 	done
 	printf -v drive_usages "$stats_format" $percents
@@ -5315,8 +5315,8 @@ function trim-copy-update-ps {
 
 	set -f; set -- $rsync_backup_opts; set +f # standardize whitespace
 
-	local cpss="$_our_name c"
-	local   ud="$_our_name u"
+	local cpss="$our_name_ c"
+	local   ud="$our_name_ u"
 	trim-ps |
 	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
 	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
@@ -5327,7 +5327,7 @@ function trim-copy-update-ps {
 	    -e   "/$cpss/s@ -B @ @g" \
 	    -e "s@($cpss[^ ]+ +[^ ]+) +[^ ]+.* ([^ ]+) *\$@\1 ... \2@" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
-	    -e "/[0-9]   $_our_name/d" \
+	    -e "/[0-9]   $our_name_/d" \
 	    -e "s@ $* /@ /@" \
 	    -e 's@/[^/]*/\. /@/$snap/. /@' \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
@@ -5368,8 +5368,8 @@ set-drive_names-names_msg-names_glob-drive_dirs() {
 	if [[ $names ]]
 	   then local name drive_name drive_dir
 		for name in ${names//,/ }
-		    do	_set-drive_name $name
-			_set-drive_dir  $drive_name
+		    do	set-drive_name- $name
+			set-drive_dir-  $drive_name
 			drive_names+="$drive_name "
 			 drive_dirs+="$drive_dir "
 		done
@@ -5494,7 +5494,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
-			   grep -e "[0-9] .*$_our_name.* [cu]"      \
+			   grep -e "[0-9] .*$our_name_.* [cu]"      \
 				-e " [l]ockpid "     -e " [s]leep " \
 				-e "[0-9] $rsync_ps" -e " [s]ync "     )
 	[[ $ps_opt_H ]] ||
@@ -5724,7 +5724,7 @@ readonly -f show-errors-in-syslog
 show-sudo-config-warning() {
 
 	local -i min_for_rare=$(( min_rows_with_df + 6 + 7 + 6 ))
-	[[ ! -s /etc/sudoers.d/$_our_name &&
+	[[ ! -s /etc/sudoers.d/$our_name_ &&
 	   $rows_left -gt $min_for_rare       ]] || return
 
 	header -E "to not fill the log with frequent 'sudo ps'"
@@ -6263,7 +6263,7 @@ watch() {
 	local do_tput=$true show_all=$false
 	[[ $watch_opt ]] || ps_opt=-f cron_opt=-C show_all=$true do_tput=$false
 	[[ $watch_opt ]] || trap '' HUP
-	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$_our_name-w.$BASHPID
+	[[ $watch_opt && $Trace ]] && exec 2>$tmp_dir/$our_name_-w.$BASHPID
 	[[ $watch_opt || $UID != 0 ]] || check-logs
 	(( $Trace_level > 0 )) && do_parallel=$false
 
@@ -6358,7 +6358,7 @@ predict-prune() {
 
 	echo -e "
 	With current *prun* variable values in $config_file,
-	running '$_our_name prune $args' would prune $1 snapshots.
+	running '$our_name_ prune $args' would prune $1 snapshots.
 " >& 2
 }
 readonly -f predict-prune
@@ -6433,7 +6433,7 @@ dir-sizes() {
 
 	[[ $file ]] || {
 
-	_set-drive_dir
+	set-drive_dir-
 	if [[ -d $drive_dir/latest ]]
 	   then excludes=   dirs_to_backup=$drive_dir/latest/.  where=
 	   else excludes="--exclude=$drive_dir_prefix*
@@ -6714,8 +6714,8 @@ check-lost+found() {
 		set -- $(sudo ls $lost_found)
 		[[ $# == 0 ]] && continue
 		warn "$lost_found/ contains $# entries: mv to correct place,
-	else delete them and run: $_our_name redo $dir/*,??
-	then rebuild snapshots with: $_our_name update-drive ${dir##*/}"
+	else delete them and run: $our_name_ redo $dir/*,??
+	then rebuild snapshots with: $our_name_ update-drive ${dir##*/}"
 	done
 }
 readonly -f check-lost+found
@@ -6858,18 +6858,18 @@ _set-device-drive_name-drive_dir-is_new_dev() {
 	[[ -b $device ]] || $IfRun abort "'$device' is not a block device"
 
 	if [[ $name ]]
-	   then _set-drive_name $name
+	   then set-drive_name- $name
 	   else name=${device##*/}
 		local mount_dir
 		set-mount_dir--from-FS-label $name
 		[[ $mount_dir == $drive_dir_prefix* ]] ||
 		   abort "can't derive name from device or label: specify name"
-		_set-drive_name $mount_dir
+		set-drive_name- $mount_dir
 	fi
 	name=$drive_name
 	[[ ${name,,} != all ]] ||
 	    abort "drive_name '$name' is a reserved word"
-	_set-drive_dir
+	set-drive_dir-
 	TraceV 2 mkfs_opts device drive_name drive_dir && echo
 
 	if [[ $(df --output=source $device 2> $dev_null) != *$device ]]
@@ -6995,7 +6995,7 @@ function mkfs-backup-drive() {
 
 	[[ ! $debug_opt ]] || return 1
 
-	set -- $(which -a $_our_name)
+	set -- $(which -a $our_name_)
 	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
 	local _our_path=$1
 	echo -e "\nTo populate newly-created drive, run:\n
@@ -7070,7 +7070,7 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 	if [[ ! $device ]]
 	   then if set-decryption_dev $name
 		   then device=$decryption_dev
-		   else _set-drive_dir $name
+		   else set-drive_dir- $name
 			set-FS_label--from-mount_dir $drive_dir_prefix$name &&
 			set-FS_device--from-FS-label $FS_label &&
 			device=$FS_device
@@ -7084,8 +7084,8 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 	fi
 
 	FS_device=$device
-	_set-drive_name $name
-	_set-drive_dir
+	set-drive_name- $name
+	set-drive_dir-
 	set-FS_label--from-mount_dir $drive_dir
 
 	TraceV 1 device name drive_name FS_device drive_dir FS_label
@@ -7137,7 +7137,7 @@ copy-backup-drive() {
 	local cmd=$*
 
 	if [[ $debug_opt ]]
-	   then header "$_our_name ${cmd#* }"
+	   then header "$our_name_ ${cmd#* }"
 		exec $cmd || abort "$cmd -> $?"
 	fi
 
@@ -7256,7 +7256,7 @@ readonly all_drives_go_offline_msg='
         copy $src_drive_dir to $dst_drive_dir ; if you let me unmount these
 	partition(s), no new backups will be made for many hours (or days).
 
-	You might instead run "$_our_name mkfs" on the new drive, leave the old
+	You might instead run "$our_name_ mkfs" on the new drive, leave the old
 	drive mounted, and run action update-drive.
 
 	To instead unmount both drives and do a fast "dd"'
@@ -7319,7 +7319,7 @@ function finish-copy-backup-drive() {
 	action_opts=
 	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
 	local cmd=$(echo "$Usage" |
-		    grep copy-drive | sed "s/^ */$_our_name -d /; s/:.*//")
+		    grep copy-drive | sed "s/^ */$our_name_ -d /; s/:.*//")
 	[[ $# == 4 ]] || abort "to see args, run: $cmd"
 
 	local src_device=$1 src_drive_dir=$2
@@ -7869,8 +7869,8 @@ function regression-test() {
 	local dst=${!#}
 	_show-test-header update $dst
 
-	_set-drive_name $dst
-	_set-drive_dir
+	set-drive_name- $dst
+	set-drive_dir-
 	suspend-jobs backup prune
 	have-job copy &&
 	$our_path kill copy $dst &> $dev_null && killed_dst=$dst && {
@@ -7907,9 +7907,9 @@ readonly -f regression-test
 [[ $# != 0 ]] || abort "specify an action to perform\n$Usage"
 
 action=$1; shift
-_our_name="$our_name"
+our_name_="$our_name"
  our_name="$our_name $action"
-undo-action-abbrev() { readonly action=$1 our_name="$_our_name $1" _our_name; }
+undo-action-abbrev() { readonly action=$1 our_name="$our_name_ $1" our_name_; }
 
 # ---------------------------------
 
@@ -8072,7 +8072,7 @@ case $action in
 
 	$Trace
 	for drive_name in $drive_names
-	    do	_set-drive_dir $drive_name
+	    do	set-drive_dir- $drive_name
 		reset-priority
 	done
 	;;
@@ -8099,7 +8099,7 @@ case $action in
 		[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
 		PATH=/usr/local/bin:$PATH \
-		setsid $_our_name $debug_opt $trace_opt $action -r &
+		setsid $our_name_ $debug_opt $trace_opt $action -r &
 	fi
 	;;
 
@@ -8343,8 +8343,8 @@ case $action in
    # for "snapcrypt close": find drive with max # snapshots since last mounted
    ( max*drive | max*backup* | md | mb ) undo-action-abbrev max-drive
 	if [[ $# == 1 ]]
-	   then  _set-drive_name $1 &&
-		 _set-drive_dir &&
+	   then  set-drive_name- $1 &&
+		 set-drive_dir- &&
 		echo $drive_dir && exit-normally 0
 	fi
 
@@ -8374,8 +8374,8 @@ case $action in
    # for "snapcrypt": echo drive mountpoint
    ( drive )
 	[[ $# == 1 ]] || abort "specify a name for a drive"
-	 _set-drive_name $1 || abort "$1 is not a valid backup drive name"
-	 _set-drive_dir
+	 set-drive_name- $1 || abort "$1 is not a valid backup drive name"
+	 set-drive_dir-
 	echo $drive_dir
 	;;
 
@@ -8409,11 +8409,11 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	source $_our_name-test.sh || exit-normally $?
+	source $our_name_-test.sh || exit-normally $?
 	;;
 
    ( * )
-	warn "'$action' is not a recognized action, run: $_our_name -h"
+	warn "'$action' is not a recognized action, run: $our_name_ -h"
 	exit-normally 1
 	;;
 esac
