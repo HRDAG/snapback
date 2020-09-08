@@ -4728,6 +4728,8 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 	set-padded_number $hours
 	hour_max=$padded_number$units
 
+	[[ $writer_type == backup ]] || return
+
 	# drv_name2backup_period_for_update -> localize period
 	set-customized_value--for-config-var-name backup_period &&
 	local -i backup_period=$customized_value
