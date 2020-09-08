@@ -5743,7 +5743,7 @@ readonly -f show-sudo-config-warning
 # this section is mandatory
 show-stats-section-1() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
@@ -5799,13 +5799,13 @@ _do-have-stats() {
 	    (  copy  ) set -- $snapshots_replica_dir/*/*.partial	;;
 	    (   *    ) abort-function "$1: unknown data_type"		;;
 	esac
-	[[ $# == 0 ]] && { maybe-report-rows_left-and-wait; return 1; }
+	[[ $# == 0 ]] && { report-rows_left-if-parallelized; return 1; }
 
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
-	[[ $stats_opt ]] || { maybe-report-rows_left-and-wait; return 1; }
+	[[ $stats_opt ]] || { report-rows_left-if-parallelized; return 1; }
 
 	let pipe_rows_left=$rows_left-$rows_used
-	[[ ! ${skip_last_report-} ]] && maybe-report-rows_left-and-wait
+	[[ ! ${skip_last_report-} ]] && report-rows_left-if-parallelized
 	return 0
 }
 readonly -f _do-have-stats
@@ -5864,9 +5864,9 @@ show-stats-section-2-copy() {
 	_do-have-stats -R || return	# don't pass 'copy', need next one ...
 
 	setup-snapshot-stats -e .partial ||
-	   { maybe-report-rows_left-and-wait; return; }
+	    { report-rows_left-if-parallelized; return; }
 	let rows_left-=$rows_used
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	ech_ " Number empty .partial dirs, for update:  $stats_numbers"
 
@@ -5994,7 +5994,7 @@ show-filesystem-info-that-fits() {
 	local do_run_lsblk=$true &&
 	let rows_left-=$num_drives+2
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	if [[ $show_all && ! $stats_opt ]]
 	   then have-cmd snapcrypt && snapcrypt status all
@@ -6018,7 +6018,7 @@ readonly -f show-filesystem-info-that-fits
 
 show-prune-cmds() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	[[ $prune_cmds || $show_all ]] && header "prune-drive" && echo
 	if [[ $prune_cmds ]]
@@ -6034,7 +6034,7 @@ readonly -f show-prune-cmds
 
 show-copy-cmds() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] || return
 
@@ -6067,7 +6067,7 @@ readonly -f set-rsync_abbrev_msg
 
 show-backup-cmds() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
        header "backup-drive's most-CPU-intensive rsync processes (abbreviated)"
 	[[ $bkp_rsync_cmds ]] && {
@@ -6084,7 +6084,7 @@ readonly -f show-backup-cmds
 # show process tree of master cron job(s)
 show-cron-jobs() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	[[ $cron_cmds ]] || return
 
@@ -6101,7 +6101,7 @@ readonly -f show-cron-jobs
 
 show-backup-cmds-with-full-details() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	[[ $bkp_rsync_cmds ]] || return
 
@@ -6116,7 +6116,7 @@ readonly -f show-backup-cmds-with-full-details
 
 show-copy-cmds-with-full-details() {
 
-	maybe-report-rows_left-and-wait
+	report-rows_left-if-parallelized
 
 	[[ $copy_rsync_cmds == *rsync* ]] || return
 
@@ -6168,7 +6168,7 @@ readonly -f _set-functions
 
 readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
 [[ ! -d $generate_output_files_dir ]] || rm -r $generate_output_files_dir
-readonly rows_left_pipe=$generate_output_files_dir/rows_left-pipe
+readonly rows_left_file=$generate_output_files_dir/rows_left
 
 function generate() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -6181,15 +6181,17 @@ function generate() {
 
 	[[ -d $generate_output_files_dir ]] ||
 	mkdir $generate_output_files_dir || abort-function mkdir
-	[[ -p  $rows_left_pipe ]] ||
-	mkfifo $rows_left_pipe || abort-function mkfifo
 
+	> $rows_left_file
 	local output_file=$generate_output_files_dir/out-$job_num
 	$function &> $output_file &
 	job_num2PID[job_num++]=$!
-
-	read rows_left < $rows_left_pipe # let child modify our global
 	Trace 1 "$output_file from $function"
+
+	# wouldn't need polling if used a fifo, but they're buggy in bash-4.4
+	until [[ -s $rows_left_file ]] ; do msleep 1; done
+	read rows_left < $rows_left_file # let child modify our global
+
 	$xtrace
 }
 
@@ -6197,11 +6199,11 @@ readonly -f generate
 
 # ----------------------
 
-maybe-report-rows_left-and-wait() {
+report-rows_left-if-parallelized() {
 
-	[[ $do_parallel ]] && echo $rows_left > $rows_left_pipe
+	[[ $do_parallel ]] && echo $rows_left > $rows_left_file
 }
-readonly -f maybe-report-rows_left-and-wait
+readonly -f report-rows_left-if-parallelized
 
 # ----------------------
 
