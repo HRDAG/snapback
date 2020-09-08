@@ -2208,9 +2208,8 @@ readonly -f create-stats_subdir-and-symlink-to-it
 handle-stats-when-multiple-writers() {
 	local snapshot=$(basename ${1%%.*})
 
-	[[ $is_multi_writer_drive ]] || return
-
 	cd $drive_log_dir/stats || abort cd
+
 	local  our_MB_stats_subdir=$writer_type/$MB_used_basename
 	[[ -d $our_MB_stats_subdir ]] || mkdir -p $our_MB_stats_subdir ||
 	    abort-function ": mkdir $PWD/$our_MB_stats_subdir -> $?"
@@ -2240,11 +2239,15 @@ save-stats-file() {
 	local stats_subdir=$1 snapshot=$2 data=$3
 
 	cd $drive_log_dir || abort cd
+	local data_file=$stats_subdir/$snapshot.txt
 
-	local  data_file=$stats_subdir/$snapshot.txt
-	if [[ $data_type == MB && $is_multi_writer_drive ]]
+	# OK if multiple writers -> larger minutes, that's "current reality"
+	if [[ $data_type == MB ]]
 	   then local lock_file=${data_file%.txt}.pid
-		$IfRun lockpid -r $lock_file &> $dev_null
+		$IfRun lockpid -r $lock_file 2>&1 |
+		    # this shouldn't happen
+		    egrep -v '^$|: open: No such file or directory$'
+		# a prune or copy could have been suspended by another writer
 		if [[ -s $data_file ]]
 		   then local  stats_content=$(< $data_file)
 			if [[ $stats_content != [0-9]* ]] # multiple writers?
@@ -2254,14 +2257,14 @@ save-stats-file() {
 		fi
 	fi
 
-	if [[ $data_type == MB ]]
-	   then if [[ $data != [0-9]* ]] # unknown MB, for jobs_per_day?
+	if [[ $data_type == MB ]]	 # MB file needed for jobs_per_day stat
+	   then if [[ $data != [0-9]* ]] # unknown MB?
 		   then data="this was a restart, MB change unknown"
 		elif [[ ( $data == -1 || $data == 1 ) && $debug_opt ]]
 		   then data=0		# for regression test
 		fi
-	elif [[ $data != [0-9]* ]]	# unknown $writer_minutes?
-	     then cd $OLDPWD
+	elif [[ $data != [0-9]* ]]	# unknown minutes?
+	     then cd $OLDPWD		# minutes file not needed for stats
 		  return
 	fi
 
@@ -2412,7 +2415,6 @@ set-writer_stats_msg--as-save-writer-stats() {
 		writer_stats_msg+=" in $writer_hours hours; used $writer_GB GB"
 	   else writer_stats_msg+=": earlier attempt aborted"
 		writer_MB=unknown  writer_minutes=unknown
-		[[ $writer_type == backup ]] && # MB needed for jobs_per_day?
 		save-writer-stats $snapshot
 	fi
 }
