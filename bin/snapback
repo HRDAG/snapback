@@ -2205,7 +2205,7 @@ readonly -f create-stats_subdir-and-symlink-to-it
 
 # ----------------------------------------------------------------------------
 
-manage-multi-writer-stats() {
+handle-stats-when-multiple-writers() {
 	local snapshot=$(basename ${1%%.*})
 
 	[[ $is_multi_writer_drive ]] || return
@@ -2232,7 +2232,7 @@ manage-multi-writer-stats() {
 
 	cd $OLDPWD
 }
-readonly -f manage-multi-writer-stats
+readonly -f handle-stats-when-multiple-writers
 
 # --------------------------------------------
 
@@ -2356,7 +2356,7 @@ set-used_MB-size_MB() {
 	local drive_dir=${1:-$drive_dir}
 
 	local -i used size
-	setup-df-data-from-fields -m $drive_dir used size
+	setup-df-data-from-fields -m $drive_dir used size # -BM appends 'M'
 	used_MB=$used
 	size_MB=$size
 }
@@ -2375,12 +2375,12 @@ set-SECONDS-starting_MB--for-save-writer-stats() {
 	if [[ $is_a_restart ]]		# already half-done?
 	   then SECONDS=-1123456789	# our signal to not record stats
 	   else SECONDS=0		# else do
-		local used_MB size_MB
+		local -i used_MB size_MB
 		set-used_MB-size_MB
 		starting_MB=$used_MB
 	fi
 
-	manage-multi-writer-stats $snapshot
+	handle-stats-when-multiple-writers $snapshot
 }
 readonly -f set-SECONDS-starting_MB--for-save-writer-stats
 
