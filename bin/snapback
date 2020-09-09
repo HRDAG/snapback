@@ -1894,7 +1894,7 @@ readonly -f mon-look-for-finished-globs
 
 # ----------------------------------------------------------------------------
 
-monitor-drive-update() {
+update-monitor-drive-config() {
 	[[ ${1-} == -c ]] && { shift; local do_check=$true; } ||local do_check=
 	[[ $# == 0 ]] &&
 	    set-drive_names -a && set -- $drive_names $mon_overhead_drive_name
@@ -1907,7 +1907,7 @@ monitor-drive-update() {
 
 		if [[ $do_check ]]
 		   then is-newer $window_msecs_file $config_file && continue
-			$our_path monitor-drive-update # so reread configure.sh
+			$our_path update-monitor-drive-config #so reread config
 			break
 		fi
 
@@ -1920,7 +1920,7 @@ monitor-drive-update() {
 		echo-to-file $msecs $window_msecs_file
 	done
 }
-readonly -f monitor-drive-update
+readonly -f update-monitor-drive-config
 
 # ----------------------------------------------------------------------------
 
@@ -1942,7 +1942,7 @@ monitor-drives() {
 	    do	set-drive_names -a	# see if a new drive appeared
 		# $mon_overhead_drive_name MUST be first, see $_drive_name code
 		drive_names="$mon_overhead_drive_name $drive_names"
-		monitor-drive-update -c $drive_names # was confgure.sh updated?
+		update-monitor-drive-config -c $drive_names # new confgure.sh?
 		mon-launch-globs $drive_names
 		mon-look-for-finished-globs
 	done
@@ -8081,9 +8081,9 @@ case $action in
    # filesystem maintenance actions
    ###########################################################################
 
-   # monitor-drive-update: configure.sh's drive_response_averaging_window_secs
-   ( mon*u* | mu ) undo-action-abbrev monitor-drive-update; $Trace
-	monitor-drive-update
+   # update-monitor-drive: configure.sh's drive_response_averaging_window_secs
+   ( mon*u* | mu ) undo-action-abbrev update-monitor-drive-config; $Trace
+	update-monitor-drive-config
 	;;
    # monitor-drives: start run-forever monitor of drive response time
    ( mon* | m ) undo-action-abbrev monitor-drives
