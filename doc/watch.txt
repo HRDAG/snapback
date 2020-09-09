@@ -12,6 +12,9 @@ your screen, you'll see fewer/more sections and sub-sections.  You can pass
 'watch' options (if you do, you may need to over-ride snapbacks default watch
 options, by setting watch_options="..." in configure.sh).
 
+If you type 'q', you'll exit from 'watch' (after it deletes its temporary
+files and directories).
+
 If your screen is tall enough to show 'df', you'll see filesystem usage.  If
 filesystem usage is too high, check "Number pruned snapshots awaiting 'rm'";
 if there's few, you'll probably need to increase the rate of pruning in
