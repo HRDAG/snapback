@@ -1766,7 +1766,7 @@ mon-launch-globs() {
 		#
 		local partial_file=$non_empty_partial_dir/$drive_name
 		# snapshot is non-empty if has subdirectories: check link count
-		( /bin/ls -ld $snapshot_glob.partial 2> $dev_null |
+		( ls -ld $snapshot_glob.partial 2> $dev_null |
 		     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
 				mv $partial_file.$$ $partial_file ) &
 		ls_drive_name2PID[$drive_name]=$!
@@ -4074,7 +4074,7 @@ readonly -f wait-for-full-snapshots
 function set-srcs_dst_file() {
 
 	# this is not deleted, so can be inspected
-	srcs_dst_file=$tmp_dir/$our_name_-update-$drive_name.args
+	srcs_dst_file=$tmp_dir/$our_name_-update-$drive_name$debug_opt.args
 	[[ -s $srcs_dst_file ]]
 }
 readonly -f set-srcs_dst_file
@@ -4160,7 +4160,7 @@ readonly -f _set-drive_dirs--for-update-srcs
 
 src_dirs-for-update() {
 
-	set-drive_dir-s--for-update-srcs ||
+	_set-drive_dirs--for-update-srcs ||
 	   abort "couldn't find any drives to copy to $drive_name"
 
 	local period=$backup_period
