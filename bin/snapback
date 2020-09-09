@@ -1765,10 +1765,11 @@ mon-launch-globs() {
 		[[ $PID ]] && kill -0 $PID 2> $dev_null && continue # running?
 		#
 		local partial_file=$non_empty_partial_dir/$drive_name
-		# snapshot is non-empty if has subdirectories: check link count
-		( ls -ld $snapshot_glob.partial 2> $dev_null |
-		     awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
-				mv $partial_file.$$ $partial_file ) &
+		(set -- $snapshot_glob.partial
+		 [[ $# == 0 ]] && > $partial_file ||
+		 # snapshot non-empty if has subdirectories: check link count
+		 ls -ld $* | awk '$2 > 2 { print $(NF) }' > $partial_file.$$ &&
+					mv $partial_file.$$ $partial_file   ) &
 		ls_drive_name2PID[$drive_name]=$!
 	done
 
