@@ -6211,6 +6211,9 @@ readonly -f report-rows_left-if-parallelized
 
 show-generated-output() {
 
+	read -t 0.001 user_input
+	[[ ${user_input-} == [qQ]* ]] && kill -1 $PPID
+
 	[[ $do_parallel ]] || return
 
 	local -i max_job_num=$job_num-1
