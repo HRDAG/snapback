@@ -2712,7 +2712,7 @@ rm-pruned-snapshots() {
 
 		set-writer_stats_msg--as-save-writer-stats $snapshot
 		(( $log_level >= 2 )) &&
-		    log "deleted $snapshot $writer_stats_msg"
+		    log "deleted $(basename $snapshot) $writer_stats_msg"
 		suspend-tracing
 	done
 	restore-tracing
@@ -3504,8 +3504,8 @@ _handle-rsync-results() {
 		update-snapshots-ls
 		set-writer_stats_msg--as-save-writer-stats $new_snapshot
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
-		   ! $is_cron || $debug_opt ]] &&
-		$IfRun log "created $new_snapshot $writer_stats_msg"
+		   ! $is_cron || $debug_opt ]] && $IfRun \
+		    log "created $(basename $new_snapshot) $writer_stats_msg"
 	   else set -- $(bzcat $log 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
