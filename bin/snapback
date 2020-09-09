@@ -4665,6 +4665,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	local  cache_file=$cache_dir/${cache_type//\//_}.sh
 	[[ -s $cache_file && $cache_file -nt . ]] && source $cache_file &&
 	    local do_compute=$false || local do_compute=$true
+	#[[ $do_compute ]] || echo -n "C: " # uncomment to ensure caching works
 
 	while [[ $do_compute ]]; do	# we can use 'break' to do cleanup
 
