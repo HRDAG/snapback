@@ -8086,7 +8086,7 @@ case $action in
    ###########################################################################
 
    # update-monitor-drive: configure.sh's drive_response_averaging_window_secs
-   ( mon*u* | mu ) undo-action-abbrev update-monitor-drive-config; $Trace
+   ( mon*u* | mu | um* ) undo-action-abbrev update-monitor-drive-config; $Trace
 	update-monitor-drive-config
 	;;
    # monitor-drives: start run-forever monitor of drive response time
