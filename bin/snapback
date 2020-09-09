@@ -1418,7 +1418,7 @@ function set-drive_dir-() {
 	   then drive_dir=$mon_overhead_drive_dir
 	   else drive_dir=$drive_dir_prefix$name
 	fi
-	[[ -d $drive_dir ]] || warn "'$name' not mounted"
+	[[ -d $drive_dir ]] || warn "no mount directory for '$name'"
 }
 readonly -f set-drive_dir-
 
@@ -5349,7 +5349,8 @@ exec-watch-snapback-w() {
 
 	local w_opts="$ps_opt $no_errors $stats_opt $cron_opt $bg_opt"
 	if [[ $names ]]
-	   then set-drive_names--from-user-args $names
+	   then set-drive_names--from-user-args $names ||
+		   warn "'$names' not mounted" || exit-normally $?
 		w_opts+=" -N ${drive_names// /,}"
 	fi
 	# n >= 0.5 is best for watching wchan (when -C , plus 'sudo ps' access)
@@ -5716,6 +5717,7 @@ show-errors-in-syslog() {
 	 set-FS_repair_cmds_file
 	show-FS-repair-cmds
 	echo "No mounted backup drives found."
+	quit-if-requested
 	exit-normally
 }
 readonly -f show-errors-in-syslog
@@ -6210,10 +6212,18 @@ readonly -f report-rows_left-if-parallelized
 
 # ----------------------
 
+quit-if-requested() {
+
+	read -n 1 -t 0.2 user_input
+	[[ ${user_input-} == [qQ]* ]] && kill -1 $PPID # kill 'watch' binary
+}
+readonly -f quit-if-requested
+
+# ----------------------
+
 show-generated-output() {
 
-	read -t 0.001 user_input
-	[[ ${user_input-} == [qQ]* ]] && kill -1 $PPID
+	quit-if-requested
 
 	[[ $do_parallel ]] || return
 
@@ -6520,7 +6530,8 @@ readonly -f dir-sizes
 filesystem-geometry() {
 	local drive_dirs
 	set-drive_dirs--from-user-args "$@" ||
-	    warn "No mounted backup drives found." || return
+	    warn "No mounted backup drives found." ||
+	    { quit-if-requested; return; }
 
 	run-df    $drive_dirs
 	run-lsblk $drive_dirs
