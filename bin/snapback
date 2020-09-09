@@ -6223,7 +6223,7 @@ show-generated-output() {
 		wait  $PID
 		local output_file=$generate_output_files_dir/out-$job_num
 		cat  $output_file &&
-		  rm $output_file	# uncomment to debug
+		: rm $output_file	# uncomment to debug
 	done
 	rm -r $generate_output_files_dir
 }
