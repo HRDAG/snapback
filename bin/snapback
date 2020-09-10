@@ -2711,7 +2711,7 @@ rm-pruned-snapshots() {
 		fi
 		local  -i   starting_MB=0
 		set-SECONDS-starting_MB--for-save-writer-stats \
-		    $restart_opt $snapshot
+		    $restart_opt ${snapshot%.partial*}
 
 		local did_rm=$false
 		while true; do		 # so following code can 'break'
