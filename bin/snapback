@@ -189,6 +189,7 @@ Usage: $our_name [options] action [options] [args]
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
     predict-prune [-f span] name: see: grep 'prun\w*=' $config_file
+    dump-state [tar-file-name]: store $our_name's full state in tarball
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
     mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
@@ -6372,7 +6373,7 @@ readonly -f watch
 ##############################################################################
 
 # ----------------------------------------------------------------------------
-# function to predict impact of changing pruning vriables in configure.sh
+# function to predict impact of changing pruning variables in configure.sh
 # ----------------------------------------------------------------------------
 
 # predict-prune [-f span] name: see: grep 'prun\w*=' $config_file
@@ -6393,6 +6394,36 @@ predict-prune() {
 " >& 2
 }
 readonly -f predict-prune
+
+# ----------------------------------------------------------------------------
+# Function to dump snapack state, for a coder to investigate problems/issues.
+# Respects privacy, e.g. doesn't save /etc/snapback/exclude.txt .
+# ----------------------------------------------------------------------------
+
+# dump-state [tar-file-name]: store $our_name's full state in tarball
+dump-state() {
+	local tar_file=${1-}
+
+	set-date_time
+	[[ $tar_file ]] || tar_file=$our_name_-$HOSTNAME-$date_time.tar
+	tar_file=${tar_file%.xz}.xz
+	[[ $tar_file == /* ]] || tar_file=$PWD/$tar_file
+
+	cd_ /
+
+	local libsnap_path=$(type -p libsnap.sh)
+	if [[ $our_path != /usr/* ]]
+	   then set -- usr/local/bin/{snapback,libsnap.sh}
+		local installed_paths=$*
+	   else local installed_paths=
+	fi
+
+	shopt -u nullglob
+	$IfRun tar Jcvf $tar_file --exclude=*~ \
+	     ${config_dir#/}/*.sh ${log_dir#/} ${status_dir#/} ${lock_dir#/} \
+	     ${our_path#/} ${libsnap_path#/} $installed_paths
+}
+readonly -f dump-state
 
 # ----------------------------------------------------------------------------
 # functions to calculate directory sizes for different FS parameters
@@ -7323,7 +7354,7 @@ _copy-extN-backup-drive() {
 	if sudo tune2fs -l $src_device | grep -q "^Journal dev" || # external?
 	   [[ $do_want_external_log ]]
 	   then add-extN-journal -M $dst_name $dst_device ||
-		   abort "need to fix journal on $src_device: $_our_name aej"
+		   abort "need to fix journal on $src_device: $our_name_ aej"
 	fi
 
 	local mount_options=$common_mount_options,$extN_mount_options
@@ -8137,6 +8168,10 @@ case $action in
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
      predict-prune "$@"
+	;;
+
+   ( dump*state | dump ) undo-action-abbrev dump-state # dir-sizes gets 'ds'
+     dump-state "$@"
 	;;
 
    ( dir*sizes | ds ) undo-action-abbrev dir-sizes
