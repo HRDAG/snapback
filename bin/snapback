@@ -2137,7 +2137,7 @@ function is-copy-higher-priority-than-prune() {
 		if set-copy_PGID--if-copy-src #2 drives copying to each other?
 		   then local lock_paths
 			set-lock_paths prune
-			sudo lockpid -r -p $copy_PGID $lock_paths &> $dev_null
+			lockpid --release $lock_paths &> $dev_null
 		fi
 		continue-jobs prune # may do nothing if backup running
 	   else set-copy_PGID--if-copy-src && # is this a copy job's source?
