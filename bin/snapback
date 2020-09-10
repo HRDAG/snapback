@@ -913,6 +913,15 @@ readonly -f have-job
 
 # ----------------------
 
+function is-our-lock() {
+	local  lock_file=$1
+
+	[[ -s $lock_file ]] && set -- $(< $lock_file) && [[ ${1-} == $$ ]]
+}
+readonly -f is-our-lock
+
+# ---------------------------------------
+
 function sudo-kill() {
 	local PID=${!#}
 
@@ -2209,28 +2218,28 @@ readonly -f create-stats_subdir-and-symlink-to-it
 handle-stats-when-multiple-writers() {
 	local snapshot=$(basename ${1%%.*})
 
-	cd $drive_log_dir/stats || abort cd
-
-	local  our_MB_stats_subdir=$writer_type/$MB_used_basename
-	[[ -d $our_MB_stats_subdir ]] || mkdir -p $our_MB_stats_subdir ||
-	    abort-function ": mkdir $PWD/$our_MB_stats_subdir -> $?"
+	cd_ $drive_log_dir
 
 	local multi_msg="multiple writers during this job, MB change unknown"
 
 	local lock_file did_find_multiple_writers=$false
-	for lock_file in */$MB_used_basename/*.pid
-	    do	lockpid -q $lock_file && lockpid -r $lock_file && continue
+	for lock_file in stats/*/$MB_used_basename/*.pid
+	    do	# remove stale lock, if any ... and also our own (old??) lock
+		lockpid $lock_file &> $dev_null && lockpid -r $lock_file &&
+		    continue
 		echo-to-file "$multi_msg" ${lock_file%.pid}.txt
 		did_find_multiple_writers=$true
 	done
 
-	local lock_file=$our_MB_stats_subdir/$snapshot.pid
+	local stats_subdir
+	set-stats_subdir MB || mkdir -p $stats_subdir || abort mkdir
+	local lock_file=$stats_subdir/$snapshot.pid
 	local lock_cmd="lockpid $lock_file"
 	$IfRun $lock_cmd || abort-function ": $lock_cmd -> $?"
 	[[ ! $did_find_multiple_writers ]] ||
 	echo-to-file "$multi_msg" ${lock_file%.pid}.txt
 
-	cd $OLDPWD
+	cd_ $OLDPWD
 }
 readonly -f handle-stats-when-multiple-writers
 
@@ -2704,11 +2713,17 @@ rm-pruned-snapshots() {
 		set-SECONDS-starting_MB--for-save-writer-stats \
 		    $restart_opt $snapshot
 
+		local did_rm=$false
+		while true; do		 # so following code can 'break'
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
-		[[ $snapshot != *$snapshot_glob.rm ]] ||
-		$IfRun mv $snapshot ${snapshot%.rm}.partial.rm || continue
-		$IfRun env rm -rf ${snapshot%.rm}*.rm || continue# .rm removed?
+		[[ $snapshot != *$snapshot_glob.rm ]] || # already .partial.rm?
+		$IfRun mv $snapshot ${snapshot%.rm}.partial.rm || break
+		$IfRun  env   rm -r ${snapshot%.rm}*.rm || break # .rm removed?
 		${rm_snapshot_post_hook-} # could update database
+		did_rm=$true
+		break
+		done
+		[[ $did_rm ]] || SECONDS=-1123456789 # treat like restart
 
 		set-writer_stats_msg--as-save-writer-stats $snapshot
 		(( $log_level >= 2 )) &&
