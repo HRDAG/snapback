@@ -3614,7 +3614,7 @@ readonly -f _run-rsync-cmd
 function run-rsync() {
 	assert-not-option "${1-}"
 	local dst_snapshot=${!#}
-	local src_dirs=${*%$dst_snapshot}
+	local src_dirs=${*#$dst_snapshot}
 
 	local date_time=${dst_snapshot##*/}
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
@@ -3957,7 +3957,7 @@ function copy-snapshot() {
 	[[ $src     ]] && set -- $src $1
 	(( $# >= 2  )) || abort-function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
-	local src_snapshots=${*%$dst_drive_name}
+	local src_snapshots=${*#$dst_drive_name}
 	src_snapshot=${src_snapshot%/.keep}
 	local drive_name=$drive_name drive_dir=${drive_dir-} # protect caller
 	copy_snapshot_args=		# holds result when $is_update
@@ -8029,8 +8029,8 @@ case $action in
 	local opts=
 	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
 	(( $# >= 2 )) || abort-with-action-Usage
-	set-drive_name ${!#}
-	src_snapshots=${*%$drive_name}
+	set-drive_name    ${!#}
+	src_snapshots=${*#${!#}}
 	src_snapshots=${src_snapshots% }
 	create-jobs copy -s${src_snapshots// / -s} $opts $drive_name
 	;;
