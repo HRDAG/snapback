@@ -6422,6 +6422,11 @@ dump-state() {
 	$IfRun tar Jcvf $tar_file --exclude=*~ \
 	     ${config_dir#/}/*.sh ${log_dir#/} ${status_dir#/} ${lock_dir#/} \
 	     ${our_path#/} ${libsnap_path#/} $installed_paths
+	local status=$?
+	(( $status <= 1 )) ||		# non-fatal error?
+	    abort "tarball probably bad, 'tar' returned $status"
+	echo
+	du -h $tar_file
 }
 readonly -f dump-state
 
@@ -8170,7 +8175,7 @@ case $action in
      predict-prune "$@"
 	;;
 
-   ( dump*state | dump ) undo-action-abbrev dump-state # dir-sizes gets 'ds'
+   ( dump*state | dump | tb ) undo-action-abbrev dump-state # dir-sizes gets ds
      dump-state "$@"
 	;;
 
