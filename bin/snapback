@@ -2218,7 +2218,8 @@ readonly -f create-stats_subdir-and-symlink-to-it
 # ----------------------------------------------------------------------------
 
 handle-stats-when-multiple-writers() {
-	local snapshot=$(basename ${1%%.*})
+	local snapshot=$(basename $1)
+	snapshot=${snapshot%%.*}
 
 	cd_ $drive_log_dir
 
@@ -2248,7 +2249,8 @@ readonly -f handle-stats-when-multiple-writers
 # --------------------------------------------
 
 save-stats-file() {
-	local stats_subdir=$1 snapshot=$2 data=$3
+	local stats_subdir=$1 snapshot=$(basename $2) data=$3
+	snapshot=${snapshot%%.*}
 
 	cd $drive_log_dir || abort cd
 	local data_file=$stats_subdir/$snapshot.txt
@@ -2256,9 +2258,7 @@ save-stats-file() {
 	# OK if multiple writers -> larger minutes, that's "current reality"
 	if [[ $data_type == MB ]]
 	   then local lock_file=${data_file%.txt}.pid
-		$IfRun lockpid -r $lock_file 2>&1 |
-		    # this shouldn't happen
-		    egrep -v '^$|: open: No such file or directory$'
+		$IfRun lockpid -r $lock_file
 		# a prune or copy could have been suspended by another writer
 		if [[ -s $data_file ]]
 		   then local  stats_content=$(< $data_file)
@@ -2348,7 +2348,7 @@ readonly -f archive-writer-stats-data
 # ----------------------------------------------------------------------------
 
 save-writer-stats() {
-	local snapshot=$(basename ${1%.rm})
+	local snapshot=$1
 
 	cd_ $drive_log_dir
 
