@@ -5865,7 +5865,7 @@ show-stats-section-2-prune() {
 	ech_ " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 
 	set-writer_hour_avgs-writer_hour_maxs prune
-	echo "   Average hours to prune *.rm snapshot:  $writer_hour_avgs"
+	echo "  Average hours to delete *.rm snapshot:  $writer_hour_avgs"
 
 	declare -A drive_name2stats_number
 	set-drive_name2stats_number $stats_numbers
