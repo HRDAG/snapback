@@ -1335,7 +1335,7 @@ readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 # functions for naming and finding backup drives
 # ----------------------------------------------------------------------------
 
-readonly allowed_drive_name_dir_chars='-_.a-zA-Z0-9' # '-' must be first
+readonly allowed_drive_name_dir_chars='-._a-zA-Z0-9' # '-' must be first
 
 # This is much faster than set-drive_name, but can only be used for
 # already-existing-and-initialized backup directories and their names.
@@ -2262,7 +2262,7 @@ save-stats-file() {
 		# a prune or copy could have been suspended by another writer
 		if [[ -s $data_file ]]
 		   then local  stats_content=$(< $data_file)
-			if [[ $stats_content != [0-9]* ]] # multiple writers?
+			if [[ $stats_content != [-0-9]* ]] # multiple writers?
 			   then cd $OLDPWD
 				return
 			fi
@@ -2270,12 +2270,12 @@ save-stats-file() {
 	fi
 
 	if [[ $data_type == MB ]]	 # MB file needed for jobs_per_day stat
-	   then if [[ $data != [0-9]* ]] # unknown MB?
+	   then if [[ $data != [-0-9]* ]] # text, i.e. unknown MB?
 		   then data="this was a restart, MB change unknown"
 		elif [[ ( $data == -1 || $data == 1 ) && $debug_opt ]]
 		   then data=0		# for regression test
 		fi
-	elif [[ $data != [0-9]* ]]	# unknown minutes?
+	elif [[ $data != [-0-9]* ]]	# unknown minutes? (bug if negative)
 	     then cd $OLDPWD		# minutes file not needed for stats
 		  return
 	fi
@@ -2422,13 +2422,12 @@ set-writer_stats_msg--as-save-writer-stats() {
 		local writer_GB=$division
 		[[ $writer_GB == -0.00 ]] && writer_GB=${writer_GB#-}
 
-		save-writer-stats $snapshot
-
 		writer_stats_msg+=" in $writer_hours hours; used $writer_GB GB"
 	   else writer_stats_msg+=": earlier attempt aborted"
 		writer_MB=unknown  writer_minutes=unknown
-		save-writer-stats $snapshot
 	fi
+
+	save-writer-stats $snapshot
 }
 readonly -f set-writer_stats_msg--as-save-writer-stats
 
@@ -4697,7 +4696,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	local file
 	for file
 	    do	local file_contents=$(< $file)
-		[[ $file_contents == [0-9]* ]] || continue
+		[[ $file_contents == [-0-9]* ]] || continue
 		local -i number=$file_contents
 
 		if [[ $is_negative && $number != 0 ]]
@@ -4931,7 +4930,7 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 	printf -v predicted_percent_usages "$stats_format" $predicted_percents
 	strip-trailing-whitespace \
 	    writer_GB_avgs     predicted_TB_sums predicted_percent_usages
-	[[ $writer_GB_avgs == *=[0-9]* ]]
+	[[ $writer_GB_avgs == *=[-0-9]* ]]
 }
 readonly -f set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages
 
