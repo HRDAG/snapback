@@ -2496,7 +2496,7 @@ readonly -f is-suspended
 function update-snapshots-ls {
 
 	[[ ! $debug_opt ]] &&
-	echo $snapshot_glob{,.links} | tr ' ' '\n' |
+	echo $snapshot_glob* | tr ' ' '\n' |
 	    sort > $drive_log_dir/snapshots.ls
 	return 0			# so can precede and follow by '&&'
 }
