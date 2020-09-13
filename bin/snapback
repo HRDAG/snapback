@@ -4722,7 +4722,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	cd $caller_PWD
 	TraceV 2 count average maximum sum
 	$xtrace
-	(( $count > 0 ))
+	[[ $files ]]
 }
 readonly -f set-count-average-maximum-sum-files--from-stats-files
 
@@ -4842,34 +4842,33 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	jobs_per_day= GBs_per_day= percents_per_day=
 	local drive_name padded_number division percent_usage
 	for drive_name in $all_drive_names
-	    do	local -i \
+	    do	local -i MB_per_day=0  unique_hours=0 \
 		       count average maximum sum
 		if set-count-average-maximum-sum-files--from-stats-files MB
 		   then local snapshots=${files//.txt/}
-			local snap_1=${snapshots%% *}
-			set -- $snapshots
-			local file_count=$#
 
 			local hours=${snapshots//$snapshot_day_glob,/}
 			set-uniques $hours
 			set -- $uniques
-			local -i unique_hours=$#
+			local unique_hours=$#
 
 			local days=${snapshots//,??/}
 			set-uniques $days
 			set -- $uniques
 			local -i day_count=$#
 
-		        (( $unique_hours > 1 )) &&
+		        local snap_1=${snapshots%% *}
+			(( $unique_hours > 1 )) &&
 			# we usually get a few jobs before and after whole days
 			[[ $snap_1 != *,00 || $# -gt $days_to_keep_stats ]] &&
 			day_count=$day_count-1
+			set -- $snapshots
+			local  file_count=$#
 			if [[ $file_count == $count ]]
-			   then local -i MB_per_day=$sum/$day_count
+			   then MB_per_day=$sum/$day_count
 			   else # some MB values unknown, have to estimate
-			        local -i MB_per_day=$average*$unique_hours
+			        MB_per_day=$average*$unique_hours
 			fi
-		   else local -i MB_per_day=0  unique_hours=0
 		fi
 
 		jobs_per_day+="$drive_name=$unique_hours "
