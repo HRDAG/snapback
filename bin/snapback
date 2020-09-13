@@ -4807,7 +4807,8 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 
 	local -i \
 	    count average maximum sum
-	set-count-average-maximum-sum-files--from-stats-files MB ||
+	set-count-average-maximum-sum-files--from-stats-files MB
+	(( $count > 0 )) ||
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
 	set-units g
