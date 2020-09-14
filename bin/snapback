@@ -27,7 +27,7 @@ readonly version=24		# has to match version= in configure.sh.sample
 
 set -u					# abort if access unset variable
 
-readonly dev_null=/dev/null	       # shellcheck does not source libsnap.sh
+readonly dev_null=/dev/null		# for shellcheck
 
 readonly libsnap_project=git@github.com:HRDAG/libsnap
 #
@@ -35,7 +35,7 @@ readonly libsnap_project=git@github.com:HRDAG/libsnap
 [[ :$PATH: == *:/usr/local/bin:* ]] || PATH=/usr/local/bin:$PATH
 lib=libsnap.sh
 type -t  $lib > $dev_null || PATH=$PATH:${0%/*/*/*}/libsnap/bin
-source   $lib ||  # shellcheck action replaces this command
+source   $lib ||  # the shellcheck action replaces this command
 if which $lib > $dev_null
    then abort "$lib needs to end with 'true'"
    else echo "install $lib from $libsnap_project" >&2; exit 1
