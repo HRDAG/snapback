@@ -7810,6 +7810,149 @@ readonly -f chroot-backup
 
 # ----------------------------------------------------------------------------
 
+mk-Z() {
+	[[ $1 == -q ]] && { shift; local is_quiet=$true; } || local is_quiet=
+	assert-not-option "$1"
+	# 1/1/2010 is earliest day, earlier days (e.g. 091231) look like octal
+	readonly end_date="1/1/2100"	   # keep constant, so can compare
+	local  start_date=${1:-12/22/2099} # tests hours with ...
+	local      period=${2:-0..23}	   # sequence of hours, else 'month'
+
+	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
+	set-drive_dir Z
+	cd_ "$drive_dir"
+	[[ $debug_opt ]] ||
+	rm -rf ./*
+
+	local hours=00 is_months=$false
+	case $period in
+	    ( 0 ) ;;
+	    ( month* ) is_months=$true ;;
+	    ( * ) eval "set -- {$period}" ; hours=$* ;;
+	esac
+
+	# shellcheck disable=SC2155
+	local -i start_secs=$(date -d "$start_date" '+%s')
+	# shellcheck disable=SC2155
+	local -i   end_secs=$(date -d   "$end_date" '+%s')
+	local -i secs=start_secs  secs_per_day=$(( 24*60*60 ))
+	let end_secs-=3600		# end at 11 PM on previous day
+	while  ((  secs < end_secs ))
+	   do	set-day--from-secs $secs
+		let secs+=secs_per_day
+		[[ $day == *01 || ! $is_months ]] || continue
+		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
+		for hour in $hours
+		    do	[[ $hour == ? ]] && hour=0$hour
+			snapshot=$day,$hour
+			[[ -d $snapshot ]] || echo "$snapshot"
+		done
+	done | xargs -r $IfRun mkdir || abort mkdir
+
+	# setup partial snapshots mid-date, to test pruning
+	local -i mid_secs="start_secs+(end_secs-start_secs)/2"
+	set-day--from-secs $mid_secs; mid_day=$day
+	TraceV 7 start_date mid_day end_date
+	for hour in 00 02 04 08 09 12
+	    do	for ext in links partial
+		    do	snapshot=$mid_day,$hour.$ext
+			$IfRun mkdir -p "$snapshot"
+		done
+	done
+
+	set-day--from-secs "$start_secs"
+	snapshot=$day,00
+	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
+	    do	bad_dir=$snapshot$subdir/deleteme
+		$IfRun mkdir -p "$bad_dir"
+		$IfRun touch    "$bad_dir/deleteme.txt"
+	done
+	[[ $is_quiet ]] ||
+	Trace 0 "created excludable-junk in $snapshot"
+
+	# there was something else that needed to be tested??
+	for file in
+	    do	true
+	done
+
+	$IfRun rm -rf .mk-Z
+	$IfRun mkdir  .mk-Z	; [[ $debug_opt ]] ||
+	cp -al ./*    .mk-Z/
+}
+readonly -f mk-Z
+
+# -------------------------------------------------------
+
+# The following are designed to work with (custom) configure.sh span of 1:
+declare -r -A prune_type2mk_Z_args=(
+      [hour]="12/22/2099 0..23"		# 0, 2 seconds
+ [month-day]="1/1/2094 0"		# 5,14 seconds
+[year-month]="1/1/2010 month"		# 58,8 seconds
+)
+
+clone-stashed-mk-Z() {
+	local type=$1 stash=.mk-Z.$1
+
+	suspend-tracing
+	set-drive_dir Z
+	cd_ "$drive_dir"
+	if [[ ! -d $stash ]]
+	   then $IfRun mk-Z -q ${prune_type2mk_Z_args[$type]} &&
+		$IfRun mv .mk-Z "$stash" && $IfRun rm -f "$stash/latest" ||
+		    abort "couldn't populate $stash"
+	fi
+
+	# shellcheck disable=SC2086
+	rm -rf $snapshot_glob* la* && cp -al $stash/* . ||
+	   abort "failed to clone $stash"
+	restore-tracing
+}
+readonly -f clone-stashed-mk-Z
+
+# --------------------------------------------
+
+test-prune() {
+	customize-and-validate-configuration-variables Z
+
+	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
+	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
+	echo -e "\nComparing $old_cmd to $tst_cmd"
+
+	set-drive_dir Z
+
+	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
+	$Trace
+	cd_ "$drive_dir"
+	# shellcheck disable=SC2086
+	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
+	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
+		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
+		stash=.mk-Z.$type
+		$IfRun rm -rf "$stash".*.ls
+		for cmd in $old_cmd $tst_cmd
+		    do	$IfRun clone-stashed-mk-Z "$type"
+			# shellcheck disable=SC2086
+			$IfRun $cmd $our_opts prune-drive Z
+			[[ $cmd == "$old_cmd" ]] && which=old || which=new
+			ls > "$stash.$which.ls"
+		done
+		# shellcheck disable=SC2086
+		set-reversed_words $stash.{old,new}.ls; set -- $reversed_words
+		[[ $# == 2 ]] || abort "expected two files: $*"
+		# shellcheck disable=SC2086
+		diff -d -q "$@" && mv $stash.new.ls $stash.pruned.ls &&
+				   rm $stash.old.ls &&
+		   echo -e "\nSame results, see $stash*" && continue
+		warn "regression, see: diff -u $*"
+	done
+
+	clone-stashed-mk-Z hour
+	echo -e "\nLeft a lot of unpruned snapshots in Z, for regression-test."
+}
+readonly -f test-prune
+
+# ----------------------------------------------------------------------------
+
 _show-test-header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	header "$* (first number is md5sum of sorted data, second is unsorted)"
@@ -7885,6 +8028,7 @@ function regression-test() {
 	# can exclude one test (especially useful to exclude the slow 'u' test)
 	[[ $tests == [A-Z]* ]] && tests=${regression_tests//[${tests,,}]/}
 
+	clone-stashed-mk-Z hour
 	[[ $tests == *[zpu]* ]] && validate-prune_globs
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
@@ -8256,80 +8400,7 @@ case $action in
 
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
    ( mk*[Zz] | mkz ) undo-action-abbrev mk-Z
-	[[ $1 == -q ]] && { is_quiet=$true; shift; } || is_quiet=$false
-	[[ $1 != -* ]] || abort "unknown option $1"
-
-	# The following designed to work with (custom) configure.sh span of 1,
-	#    and are memorialized in action test-prune.
-	# Test pruning of hours: snapback mk-Z 12/22/2099 0..23 # 0, 2 seconds
-	#    ...  days & months: snapback mk-Z 1/1/2094   0	# 5,14 seconds
-	#    ... months & years: snapback mk-Z 1/1/2010   month # 58,8 seconds
-
-	# 1/1/2010 is earliest day, earlier days (e.g. 091231) look like octal
-     readonly end_date="1/1/2100"	# keep constant, so can compare
-	    start_date=${1:-12/22/2099}	# tests hours with ...
-	        period=${2:-0..23}	# sequence of hours, else 'month'
-
-	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
-	set-drive_dir Z
-	cd_ "$drive_dir"
-	[[ $debug_opt ]] ||
-	rm -rf ./*
-
-	hours=00 is_months=$false
-	case $period in
-	    ( 0 ) ;;
-	    ( month* ) is_months=$true ;;
-	    ( * ) eval "set -- {$period}" ; hours=$* ;;
-	esac
-
-	# shellcheck disable=SC2155
-	local -i start_secs=$(date -d "$start_date" '+%s')
-	# shellcheck disable=SC2155
-	local -i   end_secs=$(date -d   "$end_date" '+%s')
-	local -i secs=start_secs  secs_per_day=$(( 24*60*60 ))
-	let end_secs-=3600		# end at 11 PM on previous day
-	while  ((  secs < end_secs ))
-	   do	set-day--from-secs $secs
-		let secs+=secs_per_day
-		[[ $day == *01 || ! $is_months ]] || continue
-		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
-		for hour in $hours
-		    do	[[ $hour == ? ]] && hour=0$hour
-			snapshot=$day,$hour
-			[[ -d $snapshot ]] || echo "$snapshot"
-		done
-	done | xargs -r $IfRun mkdir || abort mkdir
-
-	# setup partial snapshots mid-date, to test pruning
-	local -i mid_secs="start_secs+(end_secs-start_secs)/2"
-	set-day--from-secs $mid_secs; mid_day=$day
-	TraceV 7 start_date mid_day end_date
-	for hour in 00 02 04 08 09 12
-	    do	for ext in links partial
-		    do	snapshot=$mid_day,$hour.$ext
-			$IfRun mkdir -p "$snapshot"
-		done
-	done
-
-	set-day--from-secs "$start_secs"
-	snapshot=$day,00
-	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
-	    do	bad_dir=$snapshot$subdir/deleteme
-		$IfRun mkdir -p "$bad_dir"
-		$IfRun touch    "$bad_dir/deleteme.txt"
-	done
-	[[ $is_quiet ]] ||
-	Trace 0 "created excludable-junk in $snapshot"
-
-	# there was something else that needed to be tested??
-	for file in
-	    do	true
-	done
-
-	$IfRun rm -rf .mk-Z
-	$IfRun mkdir  .mk-Z	; [[ $debug_opt ]] ||
-	cp -al ./*    .mk-Z/
+	mk-Z "$@"
 	;;
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
@@ -8338,63 +8409,7 @@ case $action in
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
 
-	customize-and-validate-configuration-variables Z
-
-	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
-	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
-	echo -e "\nComparing $old_cmd to $tst_cmd"
-
-	set-drive_dir Z
-
-	# see the comment at the top of the mk-Z option, above
-	local -A prune_type2mk_Z_args=(
-	      [hour]="12/22/2099 0..23"
-	 [month-day]="1/1/2094 0"
-	[year-month]="1/1/2010 month"
-	)
-
-	clone-stashed-mk-Z() {
-		local type=$1 stash=.mk-Z.$1
-		suspend-tracing
-		# shellcheck disable=SC2086
-		rm -rf $snapshot_glob* la* && cp -al $stash/* . ||
-		   abort "failed to clone $stash"
-		restore-tracing
-	}
-
-	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
-	$Trace
-	cd_ "$drive_dir"
-	# shellcheck disable=SC2086
-	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
-	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
-		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
-		stash=.mk-Z.$type
-		$IfRun rm -rf "$stash".*.ls
-		[[ ! -d $stash ]] && {
-		# shellcheck disable=SC2086
-		$IfRun $our_path mk-Z -q $mk_Z_args &&
-		   $IfRun mv .mk-Z "$stash" && $IfRun rm -f "$stash/latest" ||
-			abort "couldn't populate $stash"; }
-		for cmd in $old_cmd $tst_cmd
-		    do	$IfRun clone-stashed-mk-Z "$type"
-			# shellcheck disable=SC2086
-			$IfRun $cmd $our_opts prune-drive Z
-			[[ $cmd == "$old_cmd" ]] && which=old || which=new
-			ls > "$stash.$which.ls"
-		done
-		# shellcheck disable=SC2086
-		set-reversed_words $stash.{old,new}.ls; set -- $reversed_words
-		[[ $# == 2 ]] || abort "expected two files: $*"
-		# shellcheck disable=SC2086
-		diff -d -q "$@" && mv $stash.new.ls $stash.pruned.ls &&
-				   rm $stash.old.ls &&
-		   echo -e "\nSame results, see $stash*" && continue
-		warn "regression, see: diff -u $*"
-	done
-
-	clone-stashed-mk-Z hour
-	echo -e "\nLeft a lot of unpruned snapshots in Z, for other testing."
+	test-prune "$@"
 	;;
 
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
