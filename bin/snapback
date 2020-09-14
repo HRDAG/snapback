@@ -8307,7 +8307,7 @@ case $action in
 
    # check-logs: update error cache: run this if dashboard fails with I/O error
    ( check*logs | cl ) undo-action-abbrev check-logs
-	check-logs
+	$action
 	;;
 
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
@@ -8366,7 +8366,7 @@ case $action in
 	$Trace
 	for drive_name in $drive_names
 	    do	set-drive_dir- "$drive_name"
-		reset-priority "$drive_name"
+		$action        "$drive_name"
 	done
 	;;
 
@@ -8376,13 +8376,13 @@ case $action in
 
    # update-monitor-drive: configure.sh's drive_response_averaging_window_secs
    ( mon*u* | mu | um* ) undo-action-abbrev update-monitor-drive-config; $Trace
-	update-monitor-drive-config
+	$action
 	;;
    # monitor-drives: start run-forever monitor of drive response time
    ( mon* | m ) undo-action-abbrev monitor-drives
 	if [[ ${1-} == -r ]]
 	   then shift
-		$IfRun monitor-drives "$@"
+		$IfRun $action "$@"
 	   else	# shellcheck disable=SC2046
 		set -- $(list-drive-dirs -a)
 		if [[ $# == 0 ]]
@@ -8398,19 +8398,19 @@ case $action in
 	;;
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
-     predict-prune "$@"
+	$action "$@"
 	;;
 
    ( dump*state | dump | tb ) undo-action-abbrev dump-state # dir-sizes gets ds
-     dump-state "$@"
+	$action "$@"
 	;;
 
    ( dir*sizes | ds ) undo-action-abbrev dir-sizes
-     dir-sizes "$@"
+	$action "$@"
 	;;
 
    ( add*extN*journal | aej ) undo-action-abbrev add-extN-journal
-     add-extN-journal "$@"
+	$action "$@"
 	;;
 
    # mkfs [-f] [mkfs-opts] device-or-label [name]: mkfs drive (see comments)
@@ -8428,7 +8428,7 @@ case $action in
 
    # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
    ( f*g* | f*s* | *geo* ) undo-action-abbrev filesystem-geometry
-     filesystem-geometry "$@"
+	$action "$@"
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
@@ -8459,14 +8459,14 @@ case $action in
 
 	status=0
 	for name in $drive_names
-	    do	check-snapshot-hard-links "$name" || status=$?
+	    do	$action "$name" || status=$?
 	done
 	exit-normally $status
 	;;
 
    # mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
    ( mk*[Zz] | mkz ) undo-action-abbrev mk-Z
-	mk-Z "$@"
+	$action "$@"
 	;;
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
@@ -8475,17 +8475,17 @@ case $action in
 
 	[[ $UID != 0 ]] || abort "do not run this as root"
 
-	test-prune "$@"
+	$action "$@"
 	;;
 
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
    ( regression-test | rt ) undo-action-abbrev regression-test
 	# $Trace
-	regression-test "$@"
+	$action "$@"
 	;;
    # chroot-backup date,time [command]: chroot to snapshot on fastest drive
    ( chr* | cb ) undo-action-abbrev chroot-backup
-	chroot-backup "$@"
+	$action "$@"
 	;;
 
    ###########################################################################
