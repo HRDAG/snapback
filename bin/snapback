@@ -6690,10 +6690,9 @@ max-drive() {
 
 	local -i secs_per_day=$(( 24*60*60 ))
 	$Trace
-	max_drive=$1; shift
-	while [[ $# != 0 ]]
-	    do	new_drive=$1
-		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
+	local max_drive=$1 new_drive; shift
+	for new_drive
+	    do	for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
 		    do	set-day--from-secs $secs
 
 			set -- "$new_drive/$day",??*
@@ -6704,7 +6703,6 @@ max-drive() {
 			max_drive=$new_drive
 			break
 		done
-		shift
 	done
 	echo "$max_drive"
 }
