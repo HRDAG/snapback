@@ -1,4 +1,5 @@
 #! /usr/bin/env bash
+# shellcheck disable=SC1007,SC2004,SC2015,SC2034,SC2126,SC2128,SC2196,SC2197
 
 #    snapback (short for "snapshot backups") manages backups on multiple drives
 #
@@ -26,14 +27,16 @@ readonly version=24		# has to match version= in configure.sh.sample
 
 set -u					# abort if access unset variable
 
+readonly dev_null=/dev/null	       # shellcheck does not source libsnap.sh
+
 readonly libsnap_project=git@github.com:HRDAG/libsnap
 #
-# search for '####' in libsnap.sh to see coding-conventions and environment
+# search for ######## in  libsnap.sh to see coding-conventions and environment
 [[ :$PATH: == *:/usr/local/bin:* ]] || PATH=/usr/local/bin:$PATH
 lib=libsnap.sh
-type -t  $lib > /dev/null || PATH=$PATH:${0%/*/*/*}/libsnap/bin
-source   $lib ||
-if which $lib > /dev/null
+type -t  $lib > $dev_null || PATH=$PATH:${0%/*/*/*}/libsnap/bin
+source   $lib ||  # shellcheck action replaces this command
+if which $lib > $dev_null
    then abort "$lib needs to end with 'true'"
    else echo "install $lib from $libsnap_project" >&2; exit 1
 fi
@@ -202,7 +205,9 @@ Usage: $our_name [options] action [options] [args]
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
     regression-test [-t] [tests]: check functionality, results in $tmp_dir/??
     chroot-backup date,time [command]: chroot to snapshot on fastest drive
-    run [-v var-names] func-name [args]: run func-name, echo var-names values
+    shellcheck: run shellcheck utility on this script
+    run [-v var-names] func-name [args]: run func-name, echo var-names values;
+       set globals for func-name with: var_1=foo var_2=bar $our_name run ...
 
   NOTE: to see what an action would do, use -d option to simulate the action.
 
@@ -1335,7 +1340,8 @@ readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 # functions for naming and finding backup drives
 # ----------------------------------------------------------------------------
 
-readonly allowed_drive_name_dir_chars='-._a-zA-Z0-9' # '-' must be first
+# you could ask $coder to allow more characters
+readonly allowed_drive_dir_chars='-._a-zA-Z0-9' # '-' must be first
 
 # This is much faster than set-drive_name, but can only be used for
 # already-existing-and-initialized backup directories and their names.
@@ -1352,7 +1358,7 @@ set-drive_name-() {
 	# might need a quick exit for first phase of set-drive_name .
 	[[ $clean ]] && drive_name=$name && { $xtrace; return 0; }
 
-	[[ $name == *[^$allowed_drive_name_dir_chars]* ]] && {
+	[[ $name == *[^$allowed_drive_dir_chars]* ]] && {
 	   [[ $is_quiet ]] && { $xtrace; return 1; }
 	   abort "drive_name='$1' has bad chars (can ask $coder to allow)"
 	}
@@ -1646,7 +1652,7 @@ validate-config-variables() {
 	[[ $excluded_backup_hours != *[^-\ \	0-9]* ]] ||
 	   abort "excluded_backup_hours must be list of (ranges of) numbers"
 
-	[[ $drive_dir_prefix == *[^$allowed_drive_name_dir_chars/]* ]] &&
+	[[ $drive_dir_prefix == *[^$allowed_drive_dir_chars/]* ]] &&
 	   abort "drive_dir_prefix has disallowed chars (ask $coder to allow)"
 
 	[[ $drive_response_averaging_window_secs > $mon_check_period_secs ]] ||
@@ -2190,7 +2196,8 @@ function set-stats_subdir() {
 
 	if [[ $data_type == MB ]]
 	   then basename=$MB_used_basename
-	   else if [[ $writer_type == prune ]]
+	   else # shellcheck disable=SC1075
+		if [[ $writer_type == prune ]]
 		   then local basename=$rm_time_basename
 		   else local basename=$rsync_time_basename
 		fi
@@ -4549,7 +4556,8 @@ create-jobs() {
 		   then $IfRun do-chores & # echo appears whenever, unless ...
 			[[ $is_regression_test ]] && env sleep 0.05 # ... wait
 		fi
-	   else if set-drive_names--from-user-args "$@"
+	   else # shellcheck disable=SC1075
+		if set-drive_names--from-user-args "$@"
 		   then set -- $drive_names
 		elif [[ $* != [zZ] ]]
 		   then abort "no valid drive names specified: $*"
@@ -7539,7 +7547,7 @@ measure-swapout-MBps() {
 
 	for cmd in swapon swapoff mkswap
 	    do	have-cmd $cmd && continue
-		$IfRun \ 
+		$IfRun \
 		abort "only works with Linux, but run with -d option for clues"
 	done
 
@@ -7784,27 +7792,28 @@ chroot-backup() {
 
 	# $Trace
 	have-proc && {
-	$IfRun sudo mount -o bind /proc    $chroot_dir/proc
-	$IfRun sudo mount -o bind /dev     $chroot_dir/dev
-	$IfRun sudo mount -o bind /dev/pts $chroot_dir/dev/pts
-	$IfRun sudo mount -t tmpfs tmpfs   $chroot_dir/dev/shm
-	$IfRun sudo mount -t tmpfs tmpfs   $chroot_dir/run
-	$IfRun sudo mount -t sysfs sys     $chroot_dir/sys	; true
+	$IfRun sudo mount -o bind /proc    "$chroot_dir/proc"
+	$IfRun sudo mount -o bind /dev     "$chroot_dir/dev"
+	$IfRun sudo mount -o bind /dev/pts "$chroot_dir/dev/pts"
+	$IfRun sudo mount -t tmpfs tmpfs   "$chroot_dir/dev/shm"
+	$IfRun sudo mount -t tmpfs tmpfs   "$chroot_dir/run"
+	$IfRun sudo mount -t sysfs sys     "$chroot_dir/sys"	; true
 	} ||
-	$IfRun sudo mount -t devfs devfs   $chroot_dir/dev # Darwin/BSD
+	$IfRun sudo mount -t devfs devfs   "$chroot_dir/dev" # Darwin/BSD
 
 	drive_dir=${chroot_dir%/*}
 	[[ ! $is_cron ]] &&
 	echo -n "remounting $drive_dir, might take a minute ... "
-	$IfRun sudo mount -o remount,dev,suid	  $drive_dir; echo; $Trace
+	$IfRun sudo mount -o remount,dev,suid	  "$drive_dir"; echo; $Trace
+	# shellcheck disable=SC2086
 	$IfRun sudo chroot $chroot_dir $command			  ; set +x
-	$IfRun sudo mount -o remount,nodev,nosuid $drive_dir
+	$IfRun sudo mount -o remount,nodev,nosuid "$drive_dir"
 
 	have-proc && {
 	for dir in proc dev/pts dev/shm dev run sys
-	    do	$IfRun sudo umount $chroot_dir/$dir
+	    do	$IfRun sudo umount "$chroot_dir/$dir"
 	done							; true
-	} ||    $IfRun sudo umount $chroot_dir/dev # Darwin/BSD
+	} ||    $IfRun sudo umount "$chroot_dir/dev" # Darwin/BSD
 }
 readonly -f chroot-backup
 
@@ -7824,7 +7833,7 @@ _show-test-results() {
 	local output_file=$1
 
 	[[ -s $output_file ]] &&
-	echo "$(sort $output_file | md5sum) $(md5sum $output_file)"
+	echo "$(sort "$output_file" | md5sum) $(md5sum "$output_file")"
 	$xtrace
 }
 readonly -f _show-test-results
@@ -7838,7 +7847,9 @@ _run-debug-cmds() {
 	local tmp_o=$tmp_dir/o$test	# holds output from "old" cmd
 	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
 
+	# shellcheck disable=SC2154
 	local old_cmd_="$old_cmd -C -d  $trace_opt               $args"
+	# shellcheck disable=SC2154
 	local tst_cmd_="$tst_cmd -C -d ${trace_opt:-$_trace_opt} $args"
 
 	if [[ $debug_opt ]]
@@ -7848,23 +7859,25 @@ _run-debug-cmds() {
 	fi
 
 	$Trace
-					   _show-test-results $tmp_o
-	$tst_cmd_ &> $tmp_t || abort tst ; _show-test-results $tmp_t
+					     _show-test-results "$tmp_o"
+	$tst_cmd_ &> "$tmp_t" || abort tst ; _show-test-results "$tmp_t"
+	# shellcheck disable=SC2086
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
-	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
+	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
 
 	echo "
 	Since different results, regenerate data cached from installed cmd ..."
 	PATH=${old_cmd%/*}:$PATH \
-	$old_cmd_ &> $tmp_o || abort old ; _show-test-results $tmp_o
-					   _show-test-results $tmp_t
+	$old_cmd_ &> "$tmp_o" || abort old ; _show-test-results "$tmp_o"
+					     _show-test-results "$tmp_t"
+	# shellcheck disable=SC2086
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
-	cmp -s $tmp_o $tmp_t && { set +x; echo "-- same results!"; return; }
+	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
 
 	set +x
 	set-warning_string error DIFFERENT results
 	echo "-- $warning_string, compare with: diff -u $tmp_o $tmp_t | less"
-	[[ $test != u ]] || cmp -s $tmp_o.args $tmp_t.args ||
+	[[ $test != u ]] || cmp -s "$tmp_o.args" "$tmp_t.args" ||
 	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
 
 	failed_tests+="$test "
@@ -7892,6 +7905,7 @@ function regression-test() {
 
 	# --------------------------------------------
 
+	# shellcheck disable=SC2086
 	is-arg1-in-arg2 b $tests && {
 	_show-test-header backup all
 	_run-debug-cmds b backup-drive all
@@ -7899,17 +7913,21 @@ function regression-test() {
 
 	# --------------------------------------------
 
+	# shellcheck disable=SC2086
 	is-arg1-in-arg2 c $tests && {
 	_show-test-header copy to Z
+	# shellcheck disable=SC2086
 	set -- $drive_dir_prefix*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	src_snapshots=$1
 	[[ -d $2 ]] && src_snapshots+=" $2"
+	# shellcheck disable=SC2086
 	_run-debug-cmds c copy-snapshot $src_snapshots Z
 	}
 
 	# --------------------------------------------
 
+	# shellcheck disable=SC2086
 	is-arg1-in-arg2 z $tests && {
 	set -- ${drive_dir_prefix}Z/$snapshot_glob
 	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
@@ -7921,6 +7939,7 @@ function regression-test() {
 
 	set-drive_dirs
 
+	# shellcheck disable=SC2086
 	is-arg1-in-arg2 p $tests && [[ $drive_dirs ]] && {
 	_show-test-header prune all
 	_run-debug-cmds p prune-drives all
@@ -7928,26 +7947,30 @@ function regression-test() {
 
 	# --------------------------------------------
 
+	# shellcheck disable=SC2086
 	is-arg1-in-arg2 u $tests && [[ $drive_dirs == *' '* ]] && {
 	local args=${update_test_args-}
 	[[ $args ]] || abort "$config_file needs update_test_args= for 'u'"
+	# shellcheck disable=SC2086
 	set -- $args
 	local dst=${!#}
-	_show-test-header update $dst
+	_show-test-header update "$dst"
 
-	set-drive_name- $dst
+	set-drive_name- "$dst"
 	set-drive_dir-
 	suspend-jobs backup prune
 	have-job copy &&
-	$our_path kill copy $dst &> $dev_null && killed_dst=$dst && {
+	$our_path kill copy "$dst" &> $dev_null && killed_dst=$dst && {
 	    warn "killed update-drive (or copy) on drive $dst"
-	    cd_ $drive_dir
-	    $IfRun sudo rm -f *.partial/.keep
-	    $IfRun sudo rmdir *.partial &> $dev_null
+	    cd_ "$drive_dir"
+	    $IfRun sudo rm -f ./*.partial/.keep
+	    $IfRun sudo rmdir ./*.partial &> $dev_null
 	}
 
+	# shellcheck disable=SC2086
 	_run-debug-cmds u update-drive $args
 
+	# shellcheck disable=SC2119
 	reset-priority			# will continue only one job
 	continue-jobs backup
 	[[ ${killed_dst-} ]] &&
@@ -7989,7 +8012,7 @@ case $action in
    # backup-drives   names: backup names ('all' for every mounted backup drive)
    ( b*k*p*dr*v* | bd* | r*b* ) undo-action-abbrev backup-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 != -r ]] && assert-not-option $1
+	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
@@ -8002,7 +8025,7 @@ case $action in
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 == -f ]] && { final_prune_type=$2; shift 2; } ||final_prune_type=
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 != -r ]] && assert-not-option $1
+	[[ $1 != -r ]] && assert-not-option "$1"
 	create-jobs prune "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
@@ -8012,24 +8035,26 @@ case $action in
 	[[ $1 == -S ]] && {     ignore_slow_sources_opt=$1    ; shift  ; }
 	[[ $1 == -s ]] && {          src_names_glob_opt="$1$2"; shift 2; }
 	[[ $1 == -e ]] && { excluded_src_names_glob_opt="$1$2"; shift 2; }
-	[[ $1 != -r ]] && assert-not-option $1
+	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
 	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}
 				 ${excluded_src_names_glob_opt-}"
+	# shellcheck disable=SC2086
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs | cp* ) undo-action-abbrev copy-snapshots # cpss
 	[[ $# != 0  ]] || abort-with-action-Usage
-	is-arg1-in-arg2 -r $* && { create-jobs copy "$@"; exit-normally $?; }
+	is-arg1-in-arg2 -r "$@" && { create-jobs copy "$@"; exit-normally $?; }
 
 	local opts=
 	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
 	(( $# >= 2 )) || abort-with-action-Usage
-	set-drive_name    ${!#}
+	set-drive_name   "${!#}"
 	src_snapshots=${*#${!#}}
 	src_snapshots=${src_snapshots% }
+	# shellcheck disable=SC2086
 	create-jobs copy -s${src_snapshots// / -s} $opts $drive_name
 	;;
 
@@ -8037,7 +8062,7 @@ case $action in
    ( rm | del* ) undo-action-abbrev rm
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] || continue
-		$IfRun sudo mv -v $snapshot $snapshot.rm
+		$IfRun sudo mv -v "$snapshot" "$snapshot.rm"
 	done
 	;;
    # unrm snapshots: rename *.rm snapshots to *.partial (update-drive restores)
@@ -8045,8 +8070,8 @@ case $action in
 	for snapshot
 	    do	[[ $snapshot == *.rm ]] || warn "$snapshot not *.rm" ||continue
 		if  [[ $snapshot == *.partial.rm ]]
-		   then $IfRun sudo mv -v $snapshot ${snapshot%.rm}
-		   else $IfRun sudo mv -v $snapshot ${snapshot%.rm}.partial
+		   then $IfRun sudo mv -v "$snapshot" "${snapshot%.rm}"
+		   else $IfRun sudo mv -v "$snapshot" "${snapshot%.rm}.partial"
 		fi
 	done
 	;;
@@ -8056,7 +8081,7 @@ case $action in
 	    do	[[ $snapshot != *.rm ]] || warn "can't redo *.rm; see unrm" ||
 		    continue
 		[[ $snapshot == *,[0-2][0-9] ]] || continue
-		$IfRun sudo mv -v $snapshot $snapshot.partial
+		$IfRun sudo mv -v "$snapshot" "$snapshot.partial"
 	done
 	;;
 
@@ -8101,8 +8126,9 @@ case $action in
    # kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
    ( kil* | k ) undo-action-abbrev kill
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
-	[[ $# == 2 || $* == m* ]] || abort-with-action-Usage
+	[[ $# == 2 || $1 == m* ]] || abort-with-action-Usage
 	$Trace
+	# shellcheck disable=SC2086
 	kill-job-on-drives ${signal-} "$@"
 	;;
    # continue	   job-type-glob  name-glob: as above, but -CONT signal
@@ -8138,8 +8164,8 @@ case $action in
 
 	$Trace
 	for drive_name in $drive_names
-	    do	set-drive_dir- $drive_name
-		reset-priority
+	    do	set-drive_dir- "$drive_name"
+		reset-priority "$drive_name"
 	done
 	;;
 
@@ -8156,7 +8182,8 @@ case $action in
 	if [[ ${1-} == -r ]]
 	   then shift
 		$IfRun monitor-drives "$@"
-	   else	set -- $(list-drive-dirs -a)
+	   else	# shellcheck disable=SC2046
+		set -- $(list-drive-dirs -a)
 		if [[ $# == 0 ]]
 		   then [[ -t 1 ]] &&
 			echo "No mounted backup drives, won't start $action"
@@ -8165,7 +8192,7 @@ case $action in
 		[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
 		PATH=/usr/local/bin:$PATH \
-		setsid $our_name_ $debug_opt $trace_opt $action -r &
+		setsid "$our_name_" $debug_opt $trace_opt "$action" -r &
 	fi
 	;;
 
@@ -8210,9 +8237,9 @@ case $action in
 	[[ -d $dir ]] || abort "dir '$dir' doesn't exist"
 	warn "this could take hours"
 	$Trace
-	KB=$(sudo find $dir -links 1 -printf '%k\n' |
+	KB=$(sudo find "$dir" -links 1 -printf '%k\n' |
 		awk '{ total += $1 } ; END { print total }')
-	set-readable_du_size $KB
+	set-readable_du_size "$KB"
 	du_size=$readable_du_size
 	echo "$dir contains >= $du_size of files in no other directories"
 	;;
@@ -8225,13 +8252,13 @@ case $action in
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 != -r  ]] && assert-not-option $1
+	[[ $1 != -r  ]] && assert-not-option "$1"
 	[[ $# != 0   ]] || abort-with-action-Usage
 	set-drive_names--from-user-args "$@"
 
 	status=0
 	for name in $drive_names
-	    do	check-snapshot-hard-links $name || status=$?
+	    do	check-snapshot-hard-links "$name" || status=$?
 	done
 	exit-normally $status
 	;;
@@ -8253,9 +8280,9 @@ case $action in
 	        period=${2:-0..23}	# sequence of hours, else 'month'
 
 	set-drive_dir Z
-	cd_ $drive_dir
+	cd_ "$drive_dir"
 	[[ $debug_opt ]] ||
-	rm -rf *
+	rm -rf ./*
 
 	hours=00 is_months=$false
 	case $period in
@@ -8264,9 +8291,11 @@ case $action in
 	    ( * ) eval "set -- {$period}" ; hours=$* ;;
 	esac
 
+	# shellcheck disable=SC2155
 	local -i start_secs=$(date -d "$start_date" '+%s')
+	# shellcheck disable=SC2155
 	local -i   end_secs=$(date -d   "$end_date" '+%s')
-	local -i secs=start_secs secs_per_day=24*60*60
+	local -i secs=start_secs  secs_per_day=$(( 24*60*60 ))
 	let end_secs-=3600		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
 	   do	set-day--from-secs $secs
@@ -8276,7 +8305,7 @@ case $action in
 		for hour in $hours
 		    do	[[ $hour == ? ]] && hour=0$hour
 			snapshot=$day,$hour
-			[[ -d $snapshot ]] || echo $snapshot
+			[[ -d $snapshot ]] || echo "$snapshot"
 		done
 	done | xargs -r $IfRun mkdir || abort mkdir
 
@@ -8287,16 +8316,16 @@ case $action in
 	for hour in 00 02 04 08 09 12
 	    do	for ext in links partial
 		    do	snapshot=$mid_day,$hour.$ext
-			$IfRun mkdir -p $snapshot
+			$IfRun mkdir -p "$snapshot"
 		done
 	done
 
-	set-day--from-secs $start_secs
+	set-day--from-secs "$start_secs"
 	snapshot=$day,00
 	for subdir in /var/repos/snap.test ~/{tmp,git/pylint}
 	    do	bad_dir=$snapshot$subdir/deleteme
-		$IfRun mkdir -p $bad_dir
-		$IfRun touch    $bad_dir/deleteme.txt
+		$IfRun mkdir -p "$bad_dir"
+		$IfRun touch    "$bad_dir/deleteme.txt"
 	done
 	[[ $is_quiet ]] ||
 	Trace 0 "created excludable-junk in $snapshot"
@@ -8308,7 +8337,7 @@ case $action in
 
 	$IfRun rm -rf .mk-Z
 	$IfRun mkdir  .mk-Z	; [[ $debug_opt ]] ||
-	cp -al *    .mk-Z/
+	cp -al ./*    .mk-Z/
 	;;
 
    # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
@@ -8335,31 +8364,37 @@ case $action in
 	clone-stashed-mk-Z() {
 		local type=$1 stash=.mk-Z.$1
 		suspend-tracing
+		# shellcheck disable=SC2086
 		rm -rf $snapshot_glob* la* && cp -al $stash/* . ||
 		   abort "failed to clone $stash"
 		restore-tracing
 	}
 
 	$Trace
-	cd_ $drive_dir
+	cd_ "$drive_dir"
+	# shellcheck disable=SC2086
 	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
 	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
 		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
 		stash=.mk-Z.$type
-		$IfRun rm -rf $stash.*.ls
+		$IfRun rm -rf "$stash".*.ls
 		[[ ! -d $stash ]] && {
+		# shellcheck disable=SC2086
 		$IfRun $our_path mk-Z -q $mk_Z_args &&
-		   $IfRun mv .mk-Z $stash && $IfRun rm -f $stash/latest ||
+		   $IfRun mv .mk-Z "$stash" && $IfRun rm -f "$stash/latest" ||
 			abort "couldn't populate $stash"; }
 		for cmd in $old_cmd $tst_cmd
-		    do	$IfRun clone-stashed-mk-Z $type
+		    do	$IfRun clone-stashed-mk-Z "$type"
+			# shellcheck disable=SC2086
 			$IfRun $cmd $our_opts prune-drive Z |&
 			   fgrep -v ' prune-drive Z: pruned '
-			[[ $cmd == $old_cmd ]] && which=old || which=new
-			ls > $stash.$which.ls
+			[[ $cmd == "$old_cmd" ]] && which=old || which=new
+			ls > "$stash.$which.ls"
 		done
+		# shellcheck disable=SC2086
 		set-reversed_words $stash.*.ls; set -- $reversed_words
-		diff -d -q $*  &&  mv $stash.new.ls $stash.pruned.ls &&
+		# shellcheck disable=SC2086
+		diff -d -q "$@" && mv $stash.new.ls $stash.pruned.ls &&
 				   rm $stash.old.ls &&
 		   echo -e "\nSame results, see $stash*" && continue
 		warn "regression, see: diff -u $*"
@@ -8395,33 +8430,35 @@ case $action in
 	[[ $drive == *[zZ] ]] && exit-normally 0	# for debugging
 
 	$Trace
-	is-drive-mounted $drive || exit-normally 0
+	is-drive-mounted "$drive" || exit-normally 0
 	suspend-tracing
+	# shellcheck disable=SC2086
 	set -- $drive/$snapshot_glob	# all the _successful_ snapshots
 	restore-tracing
 	latest_snapshot=${!#}
 	[[ $# != 0 && -d $latest_snapshot ]] ||
 	    abort "$drive has no (successful) snapshots"
-	latest_date_time=$(basename $latest_snapshot)
+	latest_date_time=$(basename "$latest_snapshot")
 	latest_day=${latest_date_time%,??}
 	# let latest_day=latest_day-1		# uncomment to debug
 	set-date_time
 	day=${date_time%,??}
-	[[ $latest_day == $day ]] ||
+	[[ $latest_day == "$day" ]] ||
 	    abort "$drive has no (successful) backups since $latest_day"
 	;;
    # for "snapcrypt close": find drive with max # snapshots since last mounted
    ( max*drive | max*backup* | md | mb ) undo-action-abbrev max-drive
 	if [[ $# == 1 ]]
-	   then  set-drive_name- $1 &&
+	   then  set-drive_name- "$1" &&
 		 set-drive_dir- &&
-		echo $drive_dir && exit-normally 0
+		echo "$drive_dir" && exit-normally 0
 	fi
 
+	# shellcheck disable=SC2086
 	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
-	local -i secs_per_day=24*60*60
+	local -i secs_per_day=$(( 24*60*60 ))
 	$Trace
 	max_drive=$1; shift
 	while [[ $# != 0 ]]
@@ -8429,42 +8466,51 @@ case $action in
 		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
 		    do	set-day--from-secs $secs
 
-			set -- $new_drive/$day,??*
+			set -- "$new_drive/$day",??*
 			[[ $# != 0 ]] || break
 
-			set -- $max_drive/$day,??*
+			set -- "$max_drive/$day",??*
 			[[ $# != 0 ]] && continue
 			max_drive=$new_drive
 			break
 		done
 		shift
 	done
-	echo $max_drive
+	echo "$max_drive"
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
 	[[ $# == 1 ]] || abort "specify a name for a drive"
-	 set-drive_name- $1 || abort "$1 is not a valid backup drive name"
+	 set-drive_name- "$1" || abort "$1 is not a valid backup drive name"
 	 set-drive_dir-
-	echo $drive_dir
+	echo "$drive_dir"
 	;;
 
-   # -------------------------------------------------------------
-   # this final action has random tests used during development; #
-   # you can jump to the end of the file.			 #
-   # -------------------------------------------------------------
+   ( shellcheck | sc ) undo-action-abbrev shellcheck
+	have-cmd shellcheck ||
+	 abort "https://github.com/koalaman/shellcheck#user-content-installing"
+	tmp_cmd="$tmp_dir/$our_name_"
+	lib_path=$(which libsnap.sh)
+	# make it easier for shellcheck to source our config file
+	sed -e "s@^source .config_file @source $config_file @" \
+	    -e "s@^source   .lib @source $lib_path @" "$our_path" > "$tmp_cmd"
+	# diff -u $our_path $tmp_cmd; false && # uncomment to debug the above
+	$IfRun shellcheck "$tmp_cmd"
+	rm "$tmp_cmd"
+	;;
 
-   # run [-v var-names] func-name: run func-name, echo contents of var-names
+   # run [-v var-names] func-name [args]: run func-name, echo var-names values;
    ( run | r ) undo-action-abbrev run
 	local cmd=$1
 	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo status=$?
 	set +x
-	[[ $cmd =~ ^_?set- ]] || exit-normally
+	[[ $cmd =~ ^_?(set|update|(append|prepend)-to)- ]] || exit-normally
+	cmd_prefix=${BASH_REMATCH[0]}
 
 	header "variables set by $cmd"
-	var_names=${cmd#*set-} ; var_names=${var_names%%--*}
+	var_names=${cmd#$cmd_prefix} ; var_names=${var_names%%--*}
 	var_names=${var_names//-/ }
 	declare -i max_name_width=0
 	for var_name in $var_names
@@ -8472,14 +8518,16 @@ case $action in
 		   max_name_width=${#var_name}
 	done
 	for var_name in $var_names
-	    do	set-var_value--from-var_name $var_name
-		printf "%${max_name_width}s=%s\n" $var_name "$var_value"
+	    do	set-var_value--from-var_name "$var_name"
+		# shellcheck disable=SC2154
+		printf "%${max_name_width}s=%s\n" "$var_name" "$var_value"
 	done
 	;;
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	source $our_name_-test.sh || exit-normally $?
+	# shellcheck disable=SC1090
+	source "$our_name_-test.sh" || exit-normally $?
 	;;
 
    ( * )
