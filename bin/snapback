@@ -1341,7 +1341,8 @@ readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 # ----------------------------------------------------------------------------
 
 # you could ask $coder to allow more characters
-readonly allowed_drive_dir_chars='-._a-zA-Z0-9' # '-' must be first
+# exclude '.' , since we use ${snapshot%%.*} to remove .partial.rm .links etc
+readonly allowed_drive_dir_chars='-_a-zA-Z0-9' # '-' must be first
 
 # This is much faster than set-drive_name, but can only be used for
 # already-existing-and-initialized backup directories and their names.
