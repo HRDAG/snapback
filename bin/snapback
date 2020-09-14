@@ -8270,6 +8270,8 @@ case $action in
    ( unrm | undel* ) undo-action-abbrev unrm
 	for snapshot
 	    do	[[ $snapshot == *.rm ]] || warn "$snapshot not *.rm" ||continue
+		set-drive_name- $PWD/$snapshot
+		kill-job-on-drives prune $drive_name
 		$IfRun sudo mv -v "$snapshot" "${snapshot%.rm}"
 	done
 	;;
