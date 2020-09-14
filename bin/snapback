@@ -5856,7 +5856,7 @@ show-stats-section-2-backup() {
 	    return
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
-	echo " Daily percentage point change in usage:  $percent_usages_per_day"
+	echo " Daily percentage-point change in usage:  $percent_usages_per_day"
 	let rows_left-=3
 }
 readonly -f show-stats-section-2-backup
