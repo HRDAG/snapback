@@ -6644,6 +6644,73 @@ filesystem-geometry() {
 readonly -f filesystem-geometry
 
 # ----------------------------------------------------------------------------
+# functions used by snapcrypt
+# ----------------------------------------------------------------------------
+
+has-new-snapshots() {
+	local drive_dir=$1
+
+	[[ $drive_dir == */Z ]] && exit-normally 0 # for debugging
+
+	$Trace
+	is-drive-mounted "$drive_dir" || exit-normally 0
+
+	suspend-tracing
+	# shellcheck disable=SC2086
+	set -- $drive_dir/$snapshot_glob # all the _successful_ snapshots
+	restore-tracing
+
+	latest_snapshot=${!#}
+	[[ $# != 0 && -d $latest_snapshot ]] ||
+	    abort "$drive_dir has no (successful) snapshots"
+
+	latest_date_time=$(basename "$latest_snapshot")
+	latest_day=${latest_date_time%,??}
+	# let latest_day=latest_day-1		# uncomment to debug
+	set-date_time
+	day=${date_time%,??}
+	[[ $latest_day == "$day" ]] ||
+	    abort "$drive_dir has no (successful) backups since $latest_day"
+}
+readonly -f has-new-snapshots
+
+# ----------------------------------------------------------------------------
+
+# print drive_dir with most days of snapshots since last mounted
+max-drive() {
+	if [[ $# == 1 ]]
+	   then  set-drive_name- "$1" &&
+		 set-drive_dir-   &&
+		echo "$drive_dir" && exit-normally 0
+	fi
+
+	# shellcheck disable=SC2086
+	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
+	[[ $# != 0 ]] || abort "no backup drives are mounted"
+
+	local -i secs_per_day=$(( 24*60*60 ))
+	$Trace
+	max_drive=$1; shift
+	while [[ $# != 0 ]]
+	    do	new_drive=$1
+		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
+		    do	set-day--from-secs $secs
+
+			set -- "$new_drive/$day",??*
+			[[ $# != 0 ]] || break
+
+			set -- "$max_drive/$day",??*
+			[[ $# != 0 ]] && continue
+			max_drive=$new_drive
+			break
+		done
+		shift
+	done
+	echo "$max_drive"
+}
+readonly -f max-drive
+
+# ----------------------------------------------------------------------------
 # miscellaneous functions for later functions
 # ----------------------------------------------------------------------------
 
@@ -8435,57 +8502,11 @@ case $action in
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today
    ( has*new*snapshots | hsn ) undo-action-abbrev has-new-snapshots
-	drive=$1
-	[[ $drive == *[zZ] ]] && exit-normally 0	# for debugging
-
-	$Trace
-	is-drive-mounted "$drive" || exit-normally 0
-	suspend-tracing
-	# shellcheck disable=SC2086
-	set -- $drive/$snapshot_glob	# all the _successful_ snapshots
-	restore-tracing
-	latest_snapshot=${!#}
-	[[ $# != 0 && -d $latest_snapshot ]] ||
-	    abort "$drive has no (successful) snapshots"
-	latest_date_time=$(basename "$latest_snapshot")
-	latest_day=${latest_date_time%,??}
-	# let latest_day=latest_day-1		# uncomment to debug
-	set-date_time
-	day=${date_time%,??}
-	[[ $latest_day == "$day" ]] ||
-	    abort "$drive has no (successful) backups since $latest_day"
+	$action "$@"
 	;;
    # for "snapcrypt close": find drive with max # snapshots since last mounted
    ( max*drive | max*backup* | md | mb ) undo-action-abbrev max-drive
-	if [[ $# == 1 ]]
-	   then  set-drive_name- "$1" &&
-		 set-drive_dir- &&
-		echo "$drive_dir" && exit-normally 0
-	fi
-
-	# shellcheck disable=SC2086
-	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
-	[[ $# != 0 ]] || abort "no backup drives are mounted"
-
-	local -i secs_per_day=$(( 24*60*60 ))
-	$Trace
-	max_drive=$1; shift
-	while [[ $# != 0 ]]
-	    do	new_drive=$1
-		for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
-		    do	set-day--from-secs $secs
-
-			set -- "$new_drive/$day",??*
-			[[ $# != 0 ]] || break
-
-			set -- "$max_drive/$day",??*
-			[[ $# != 0 ]] && continue
-			max_drive=$new_drive
-			break
-		done
-		shift
-	done
-	echo "$max_drive"
+	$action "$@"
 	;;
    # for "snapcrypt": echo drive mountpoint
    ( drive )
