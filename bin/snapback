@@ -8497,24 +8497,7 @@ case $action in
 	local cmd=$1
 	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
-	echo status=$?
-	set +x
-	[[ $cmd =~ ^_?(set|update|(append|prepend)-to)- ]] || exit-normally
-	cmd_prefix=${BASH_REMATCH[0]}
-
-	header "variables set by $cmd"
-	var_names=${cmd#$cmd_prefix} ; var_names=${var_names%%--*}
-	var_names=${var_names//-/ }
-	declare -i max_name_width=0
-	for var_name in $var_names
-	    do	(( max_name_width <= ${#var_name} )) || continue
-		   max_name_width=${#var_name}
-	done
-	for var_name in $var_names
-	    do	set-var_value--from-var_name "$var_name"
-		# shellcheck disable=SC2154
-		printf "%${max_name_width}s=%s\n" "$var_name" "$var_value"
-	done
+	echo -e "\nstatus=$?"
 	;;
    ( true )				# used to test for needed options
 	true ;;
