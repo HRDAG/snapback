@@ -2687,7 +2687,6 @@ rm-pruned-snapshots() {
 	fi
 
 	# finally, prune the contents of the *.rm snapshots
-	shopt -u nullglob		# helps catch bugs with 'env rm -r'
 	[[ ! ( $debug_opt && $drive_name == Z ) ]] &&
 	for snapshot
 	    do	# is this snapshot already partially deleted?
@@ -2700,6 +2699,7 @@ rm-pruned-snapshots() {
 		set-SECONDS-starting_MB--for-save-writer-stats \
 		    $restart_opt ${snapshot%.partial*}
 
+		shopt -u nullglob	 # helps catch bugs with 'env rm -r'
 		local did_rm=$false
 		while true; do		 # so following code can 'break'
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
@@ -2710,6 +2710,8 @@ rm-pruned-snapshots() {
 		did_rm=$true
 		break
 		done
+		shopt -s nullglob
+
 		[[ $drive_name != Z ]] || continue
 		[[ $did_rm ]] || SECONDS=-1123456789 # treat like restart
 
@@ -2719,7 +2721,6 @@ rm-pruned-snapshots() {
 		    log "deleted $(basename $snapshot) $writer_stats_msg"
 		suspend-tracing
 	done
-	shopt -s nullglob
 	restore-tracing
 
 	update-snapshots-ls
