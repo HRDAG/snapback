@@ -7908,10 +7908,10 @@ function regression-test() {
 	is-arg1-in-arg2 c $tests && {
 	_show-test-header copy to Z
 	# shellcheck disable=SC2086
-	set -- $drive_dir_prefix*/$snapshot_day_glob,00
+	set -- $drive_dir_prefix[^Z]*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	src_snapshots=$1
-	[[ -d $2 ]] && src_snapshots+=" $2"
+	[[ -d $2 ]] && src_snapshots+=" ${!#}"
 	# shellcheck disable=SC2086
 	_run-debug-cmds c copy-snapshot $src_snapshots Z
 	}
