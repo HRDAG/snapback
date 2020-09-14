@@ -171,8 +171,8 @@ Usage: $our_name [options] action [options] [args]
     copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
 
       rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
-    unrm snapshots: rename *.rm snapshots to *.partial (update-drive restores)
-    redo snapshots: rename      snapshots to *.partial (update-drive restores)
+    unrm snapshots: remove .rm suffixes, leaving good snapshot else .partial
+    redo snapshots: rename snapshots to *.partial (update-drive will restore)
 
     w: show full details on all jobs and drives
     watch [-s][-C][-N names] [watch-opts]: dashboard (-s: stats; -C: cron jobs)
@@ -8266,18 +8266,15 @@ case $action in
 		$IfRun sudo mv -v "$snapshot" "$snapshot.rm"
 	done
 	;;
-   # unrm snapshots: rename *.rm snapshots to *.partial (update-drive restores)
+   # unrm snapshots: remove .rm suffixes, leaving good snapshot else .partial
    ( unrm | undel* ) undo-action-abbrev unrm
 	for snapshot
 	    do	[[ $snapshot == *.rm ]] || warn "$snapshot not *.rm" ||continue
-		if  [[ $snapshot == *.partial.rm ]]
-		   then $IfRun sudo mv -v "$snapshot" "${snapshot%.rm}"
-		   else $IfRun sudo mv -v "$snapshot" "${snapshot%.rm}.partial"
-		fi
+		$IfRun sudo mv -v "$snapshot" "${snapshot%.rm}"
 	done
 	;;
-   # redo snapshots: rename      snapshots to *.partial (update-drive restores)
-   ( redo | undo )
+   # redo snapshots: rename snapshots to *.partial (update-drive will restore)
+   ( redo | undo ) undo-action-abbrev redo
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] || warn "can't redo *.rm; see unrm" ||
 		    continue
