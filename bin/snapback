@@ -145,7 +145,7 @@ readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
 readonly -f set-padded_colorized_string--for-printf
 readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
-readonly -f cd_ have-proc is-process-alive set-reversed_words
+readonly -f cd_ pushd_ popd_ have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word-is_last_word--from-list
 readonly -f set-division set-warning_string
 readonly -f confirm run-function set-backup_suffix
@@ -1845,10 +1845,10 @@ function do-have-snapshots-of-type() {
 	local suffix=$1 drive_name=${2:-$drive_name}
 
 	lock-replica-of-snapshots --wait
-	cd $snapshots_replica_dir/$drive_name || return 1
+	pushd $snapshots_replica_dir/$drive_name &> $dev_null || return 1
 	set -- *$suffix
 	lock-replica-of-snapshots --release
-	cd $OLDPWD
+	popd_ -q
 
 	[[ $# != 0 ]]
 }
@@ -1917,7 +1917,7 @@ update-monitor-drive-config() {
 	[[ $# == 0 ]] &&
 	    set-drive_names -a && set -- $drive_names $mon_overhead_drive_name
 
-	cd_ $window_msecs_dir
+	pushd_ $window_msecs_dir
 
 	local drive_name
 	for drive_name
@@ -1937,6 +1937,8 @@ update-monitor-drive-config() {
 		set-msecs--from-secs $customized_value
 		echo-to-file $msecs $window_msecs_file
 	done
+
+	popd_
 }
 readonly -f update-monitor-drive-config
 
@@ -2179,13 +2181,13 @@ readonly rsync_time_basename=rsync-minutes
 
 rm-dangling-stats-symlinks() {
 
-	cd $stats_dir &> $dev_null || return
+	pushd $stats_dir &> $dev_null || return
 
 	for drive in [bcp]*/[Mr]*/*	# {backup,copy,prune}/{*-minutes,MB*}/*
 	    do	[[ -L $drive && ! -e $drive ]] && rm $drive
 	done
 
-	cd $OLDPWD
+	popd_ -q
 }
 readonly -f rm-dangling-stats-symlinks
 
@@ -2228,7 +2230,7 @@ handle-stats-when-multiple-writers() {
 	local snapshot=$(basename $1)
 	snapshot=${snapshot%%.*}
 
-	cd_ $drive_log_dir
+	pushd_ $drive_log_dir
 
 	local multi_msg="multiple writers during this job, MB change unknown"
 
@@ -2252,7 +2254,7 @@ handle-stats-when-multiple-writers() {
 	   then echo-to-file "$multi_msg" ${lock_file%.pid}.txt
 	fi
 
-	cd_ $OLDPWD
+	popd_
 }
 readonly -f handle-stats-when-multiple-writers
 
@@ -2262,7 +2264,7 @@ save-stats-file() {
 	local stats_subdir=$1 snapshot=$(basename $2) data=$3
 	snapshot=${snapshot%%.*}
 
-	cd $drive_log_dir || abort cd
+	pushd_ -q $drive_log_dir
 	local data_file=$stats_subdir/$snapshot.txt
 
 	# OK if multiple writers -> larger minutes, that's "current reality"
@@ -2273,7 +2275,7 @@ save-stats-file() {
 		if [[ -s $data_file ]]
 		   then local  stats_content=$(< $data_file)
 			if [[ $stats_content != [-0-9]* ]] # multiple writers?
-			   then cd $OLDPWD
+			   then popd_ -q
 				return
 			fi
 		fi
@@ -2286,13 +2288,13 @@ save-stats-file() {
 		   then data=0		# for regression test
 		fi
 	elif [[ $data != [-0-9]* ]]	# unknown minutes? (bug if negative)
-	     then cd $OLDPWD		# minutes file not needed for stats
+	     then popd_ -q		# minutes file not needed by dashboard
 		  return
 	fi
 
 	echo-to-file "$data" $data_file
 
-	cd $OLDPWD
+	popd_ -q
 }
 readonly -f save-stats-file
 
@@ -2307,7 +2309,7 @@ declare -r -i min_stats_files_to_keep=5
 prune-stats-files() {
 	local stats_subdir=$1
 
-	cd $drive_log_dir || abort cd
+	pushd_ -q $drive_log_dir
 
 	set -- $stats_subdir/$snapshot_glob.txt # duplicated in for loop, below
 	[[ $# != 0 ]] && {
@@ -2325,7 +2327,7 @@ prune-stats-files() {
 
 	}
 
-	cd $OLDPWD
+	popd_ -q
 }
 readonly -f prune-stats-files
 
@@ -2333,7 +2335,7 @@ readonly -f prune-stats-files
 
 archive-writer-stats-data() {
 
-	cd $drive_log_dir || abort cd
+	pushd_ -q $drive_log_dir
 
 	local data_type
 	for data_type in $stats_data_types
@@ -2351,7 +2353,7 @@ archive-writer-stats-data() {
 		done
 	done
 
-	cd $OLDPWD
+	popd_ -q
 }
 readonly -f archive-writer-stats-data
 
@@ -2360,7 +2362,7 @@ readonly -f archive-writer-stats-data
 save-writer-stats() {
 	local snapshot=$1
 
-	cd_ $drive_log_dir
+	pushd_ $drive_log_dir
 
 	local data_type
 	for data_type in $stats_data_types
@@ -2371,7 +2373,7 @@ save-writer-stats() {
 		prune-stats-files $stats_subdir
 	done
 
-	cd $OLDPWD
+	popd_
 }
 readonly -f save-writer-stats
 
@@ -2595,7 +2597,7 @@ _prune-exclude-globs-from-all-snapshots() {
 	remember-tracing
 
 	# prune exclude-globs from _all_ snapshots, very slow
-	cd $drive_dir
+	pushd_ -q $drive_dir
 	local snapshot exclude_glob file
 	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot == *.rm ]] && continue
@@ -2608,7 +2610,7 @@ _prune-exclude-globs-from-all-snapshots() {
 		done
 		suspend-tracing
 	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
-	cd $OLDPWD
+	popd_ -q
 
 	[[ $drive_name == Z ]] ||
 	$IfRun log "pruned exclude-globs from _all_ snapshots"
@@ -2685,7 +2687,8 @@ rm-pruned-snapshots() {
 	fi
 
 	# finally, prune the contents of the *.rm snapshots
-	[[ ! $debug_opt ]] &&
+	shopt -u nullglob		# helps catch bugs with 'env rm -r'
+	[[ ! ( $debug_opt && $drive_name == Z ) ]] &&
 	for snapshot
 	    do	# is this snapshot already partially deleted?
 		if [[ $snapshot == *.partial* ]]
@@ -2701,8 +2704,8 @@ rm-pruned-snapshots() {
 		while true; do		 # so following code can 'break'
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
 		[[ $snapshot != $snapshot_glob.rm ]] || # already .partial.rm?
-		$IfRun    mv $snapshot ${snapshot%.rm}.partial.rm || break
-		$IfRun env rm -rf $PWD/${snapshot%.rm}*.rm || break
+		$IfRun  mv  $snapshot ${snapshot%.rm}.partial.rm || break
+		$IfRun env rm -r $PWD/${snapshot%.rm}*.rm || break
 		${rm_snapshot_post_hook-} # could update database
 		did_rm=$true
 		break
@@ -2716,6 +2719,7 @@ rm-pruned-snapshots() {
 		    log "deleted $(basename $snapshot) $writer_stats_msg"
 		suspend-tracing
 	done
+	shopt -s nullglob
 	restore-tracing
 
 	update-snapshots-ls
@@ -2855,8 +2859,8 @@ validate-prune_globs() {
 	[[ $debug_opt ]] && declare -p type2date_span
 
 	local test_dir=$tmp_dir/$our_name_-prune-$drive_name
-	mkdir -p $test_dir
-	cd $test_dir || abort cd
+	mkdir  -p $test_dir
+	pushd_ -q $test_dir
 
 	set -f		  # make sure code not confused by unexpected globbing
 	local type prefix tst_seq suffix
@@ -2913,7 +2917,7 @@ validate-prune_globs() {
 	done
 	set +f
 
-	cd $OLDPWD
+	popd_ -q
 }
 readonly -f validate-prune_globs
 
@@ -3150,7 +3154,7 @@ function prune-drive() {
 
 	set-prune_types ${final_prune_type-}
 
-	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
+	cd_ $drive_dir	    # can safely kill job with: fuser -k -M $drive_dir
 
 	$Trace
 	set -- $(reverse-sorted-snapshot-basenames)
@@ -3649,7 +3653,7 @@ function backup-drive-rsync() {
 
 	local new_snapshot=$drive_dir/$date_time
 
-	cd_ $drive_dir	# so can safely kill job with: fuser -k -M $drive_dir
+	cd_ $drive_dir	    # can safely kill job with: fuser -k -M $drive_dir
 
 	suspend-tracing
 	run-rsync $dirs_to_backup $new_snapshot
@@ -3993,7 +3997,9 @@ function copy-snapshots() {
 	assert-not-option -o "${1-}"
 	[[ $src_snapshots && $# == 1 ]] ||
 	    abort-function "src_option(s) [-q] dst_drive_name"
-	set-drive_name $1
+	set-drive_name "$1"
+	set-drive_dir  "$drive_name"
+	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
 
 	lock -w copy || exit-normally 1
 
@@ -4038,9 +4044,7 @@ function copy-snapshot-rsync() {
 
 	set-priority copy
 
-	cd_ ${dst_snapshot%/*}	     # can kill job with: fuser -k -M $dst_dir
 	run-rsync $src_snapshot/. $dst_snapshot; local status=$?
-	cd_ $OLDPWD
 	previously_copied_snapshot=$dst_snapshot
 
 	[[ ! $is_multi_writer_drive ]] &&
@@ -4392,7 +4396,7 @@ function update-drive() {
 	is_update=$true
 	set-drive_name $1
 	set-drive_dir $drive_name
-	cd $drive_dir || abort-function cd
+	cd_ $drive_dir	    # can safely kill job with: fuser -k -M $drive_dir
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
@@ -4655,8 +4659,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local data_type=$1
 
-	local caller_PWD=$PWD
-	cd_ $drives_log_dir/$drive_name
+	pushd_ -q $drives_log_dir/$drive_name
 	local stats_subdir
 	set-stats_subdir $data_type && cd_ $stats_subdir &&
 	    set -- $snapshot_glob.txt || set --
@@ -4706,7 +4709,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	local data="count=$count average=$average maximum=$maximum sum=$sum" &&
 	echo-to-file "$data" $cache_file
 
-	cd $caller_PWD
+	popd_ -q
 	TraceV 2 count average maximum sum
 	$xtrace
 	[[ $files ]]
@@ -5066,11 +5069,12 @@ _recalculate-snapshot-stats-vars() {
 
 	[[ ${hour_ages-} ]] && local units=H || local units=D
 	set-units $units
+	local caller_PWD=$PWD
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
 	local drive_name nums= oldies= newies=
 	for drive_name in $all_drive_names
-	    do	local dir=$snapshots_replica_dir/$drive_name
-		cd_  $dir
+	    do	local   dir=$snapshots_replica_dir/$drive_name
+		cd_ -q $dir
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
 		set -- $snapshot_glob$suffix
@@ -5119,7 +5123,7 @@ _recalculate-snapshot-stats-vars() {
 		oldies+="$drive_name=$old "
 		newies+="$drive_name=$new "
 	done
-	cd $OLDPWD || abort "cd $OLDPWD"
+	cd_ -q $caller_PWD
 	lock-replica-of-snapshots --release
 
 	printf -v stats_numbers     "$stats_format" $nums   ; [[ $dates ]] && {
@@ -8266,7 +8270,7 @@ case $action in
 	    start_date=${1:-12/22/2099}	# tests hours with ...
 	        period=${2:-0..23}	# sequence of hours, else 'month'
 
-	enable -f mkdir mkdir
+	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
 	set-drive_dir Z
 	cd_ "$drive_dir"
 	[[ $debug_opt ]] ||
@@ -8358,7 +8362,7 @@ case $action in
 		restore-tracing
 	}
 
-	enable -f mkdir mkdir
+	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
 	$Trace
 	cd_ "$drive_dir"
 	# shellcheck disable=SC2086
