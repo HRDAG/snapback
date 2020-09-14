@@ -2246,8 +2246,11 @@ handle-stats-when-multiple-writers() {
 	local lock_file=$stats_subdir/$snapshot.pid
 	local lock_cmd="lockpid $lock_file"
 	$IfRun $lock_cmd || abort-function ": $lock_cmd -> $?"
-	[[ ! $did_find_multiple_writers ]] ||
-	echo-to-file "$multi_msg" ${lock_file%.pid}.txt
+	if [[ $did_find_multiple_writers &&
+	      # with disks: backup is the sole writer, and never suspended
+	      ( $writer_type != backup || $is_multi_writer_drive ) ]]
+	   then echo-to-file "$multi_msg" ${lock_file%.pid}.txt
+	fi
 
 	cd_ $OLDPWD
 }
