@@ -5275,6 +5275,14 @@ function run-df() {
 	local df_opts="--block-size=G --output=$df_fields
 		       $df_exclude_type_options --no-sync"
 	df $df_opts $drive_dirs | filter-df
+
+	[[ ${show_all-} ]] || return
+
+	echo
+	df_fields=${df_fields/,iused,ipcent,/,}
+	df_opts="-m --output=$df_fields
+		       $df_exclude_type_options --no-sync"
+	df $df_opts $drive_dirs | filter-df
 }
 readonly -f run-df
 
