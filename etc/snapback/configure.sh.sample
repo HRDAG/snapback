@@ -220,13 +220,6 @@ declare -i max_FS_usage_percent=95	# for "df" and "df -i"
 
 # ---------------------------------------------------------
 
-# Dirs that contain files with massive numbers of hard-links; don't
-# need to set this if using a filesystem (like XFS) that supports a zillion
-# hard-links per inode.
-# Don't mark this 'readonly', we clear it if the backup drive has an
-# FS which supports a zillion hard-links per inode.
-hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
-
 # The following description of how pruning works is hard to follow.
 # If you prefer examples, run the command "snapback test-prune",
 # then 'cd' to ${drive_dir_prefix}Z (or however you renamed Z),
@@ -236,7 +229,7 @@ hard_link_dirs="/var/repos/snap*" # for HRDAG's 'snapshot' command
 #
 # To grok how pruning works, you can trace the code in simulation mode:
 #    snapback -d -T 5 prune-drives |& less
-# and study the 'prune_drive' function.
+# and study the 'prune-drive' function.
 
 # NOTE: To see the impact of changes: snapback predict-pruning [-f span] names
 

@@ -1543,8 +1543,7 @@ set-custom_config_vars-custom_config_var2default_value() {
 		local drv_name2var=drv_name2$var_name
 		if ! set-customized_drv_names $var_name # not customized?
 		   then unset $drv_name2var
-			# rm-pruned-snapshots can clear hard_link_dirs
-			[[ $var_name != hard_link_dirs ]] && readonly $var_name
+			readonly $var_name
 			continue
 		fi
 		is-readonly-var $var_name &&
@@ -2596,19 +2595,22 @@ _prune-exclude-globs-from-all-snapshots() {
 	remember-tracing
 
 	# prune exclude-globs from _all_ snapshots, very slow
-	local exclude_glob file
-	for snapshot in $drive_dir/$snapshot_glob*
+	cd $drive_dir
+	local snapshot exclude_glob file
+	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot == *.rm ]] && continue
 		grep '^ */' $exclude_file | fgrep -v '**' |
 		while read exclude_glob
 		    do	set -- $snapshot$exclude_glob
 			for file	# can have SPACEs, need to quote it
-			   do	[[ -e "$file" ]] && echo "$file"
+			   do	[[ -e "$file" ]] && echo "$PWD/$file"
 			done
 		done
 		suspend-tracing
 	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
+	cd $OLDPWD
 
+	[[ $drive_name == Z ]] ||
 	$IfRun log "pruned exclude-globs from _all_ snapshots"
 
 	restore-tracing
@@ -2642,7 +2644,7 @@ rm-pruned-snapshots() {
 	for snapshot
 	    do	[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
-		[[ ! $debug_opt ]] &&		 # speedup for regression test
+		[[ ! ( $debug_opt || $drive_name == Z ) ]] &&
 		# could instead use: count-rsyncs-using-resource $snapshot
 		fuser -s $snapshot/. && continue # don't rename if in-use
 		if [[ $is_update ]]
@@ -2656,7 +2658,7 @@ rm-pruned-snapshots() {
 
 	[[ $rm_count != 0 && ! $is_update ]] &&
 	if (( $log_level >= 3 ))
-	   then [[ $debug_opt ]] ||
+	   then [[ $debug_opt || $drive_name == Z ]] ||
 		log "will prune these snapshots: " $rm_snapshots
 	   else local -i n=$rm_count
 		$IfRun \
@@ -2672,7 +2674,7 @@ rm-pruned-snapshots() {
 
 	# delete .partial snapshots first, they're less useful
 	set -- $snapshot_glob.partial.rm $snapshot_glob.rm
-	local snapshot_basenames=$*
+	local snapshot_basenames=$* number_pruned_snapshots=$#
 
 	restore-tracing
 
@@ -2682,62 +2684,35 @@ rm-pruned-snapshots() {
 		$IfRun ln -s $(basename ${!#}) latest
 	fi
 
-	suspend-tracing
-	# put newest ones first, since they have the most hardlinks.
-	# use absolute paths, so the 'ps' output is more clear.
-	set -- $(echo $drive_dir/*.rm | tr ' ' '\n' | sort -r)
-	local number_pruned_snapshots=$#
-	restore-tracing number_pruned_snapshots
-
-	$Trace
-	# just prune subdirs containing files with massive # of hard-links;
-	# except too-high drive usage is more critical than "Too many files".
-	if [[ $drive_name == [zZ] ]]
-	   then FS_type=
-	   else	set-FS_type--from-path $PWD
-	fi
-	case ${FS_type,,} in
-	    ( xfs | btrfs | apfs ) # any FS that supports a zillion links
-		hard_link_dirs= ;;
-	esac
-	[[ ${hard_link_dirs-} ]] && ! is-drive-usage-too-high $drive_dir &&
-	for snapshot
-	    do	local subdir
-		for subdir in $hard_link_dirs
-		    do	${rm_snapshot_pre_hook-} # could set snapshot= to block
-			$IfRun env rm -rf $snapshot$subdir
-			${rm_snapshot_post_hook-} # could update database
-		done
-		suspend-tracing
-	done
-	subdir=
-	restore-tracing
-
-	# finally, prune the rest of the contents of the *.rm snapshots
+	# finally, prune the contents of the *.rm snapshots
+	[[ ! $debug_opt ]] &&
 	for snapshot
 	    do	# is this snapshot already partially deleted?
 		if [[ $snapshot == *.partial* ]]
 		   then local restart_opt=-r
 		   else local restart_opt=
 		fi
-		local  -i   starting_MB=0
+		[[ $drive_name != Z ]] &&
+		local  -i   starting_MB=0 &&
 		set-SECONDS-starting_MB--for-save-writer-stats \
 		    $restart_opt ${snapshot%.partial*}
 
 		local did_rm=$false
 		while true; do		 # so following code can 'break'
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
-		[[ $snapshot != *$snapshot_glob.rm ]] || # already .partial.rm?
-		$IfRun mv $snapshot ${snapshot%.rm}.partial.rm || break
-		$IfRun  env   rm -r ${snapshot%.rm}*.rm || break # .rm removed?
+		[[ $snapshot != $snapshot_glob.rm ]] || # already .partial.rm?
+		$IfRun    mv $snapshot ${snapshot%.rm}.partial.rm || break
+		$IfRun env rm -rf $PWD/${snapshot%.rm}*.rm || break
 		${rm_snapshot_post_hook-} # could update database
 		did_rm=$true
 		break
 		done
+		[[ $drive_name != Z ]] || continue
 		[[ $did_rm ]] || SECONDS=-1123456789 # treat like restart
 
 		set-writer_stats_msg--as-save-writer-stats $snapshot
 		(( $log_level >= 2 )) &&
+		[[ ! ( $debug_opt || $drive_name == Z ) ]] &&
 		    log "deleted $(basename $snapshot) $writer_stats_msg"
 		suspend-tracing
 	done
@@ -2747,7 +2722,7 @@ rm-pruned-snapshots() {
 
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
-	   then [[ $debug_opt ]] ||
+	   then [[ $debug_opt || $drive_name == Z ]] ||
 	        log "deleted these pruned snapshots: $snapshot_basenames"
 	   else $IfRun \
 		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
@@ -8291,6 +8266,7 @@ case $action in
 	    start_date=${1:-12/22/2099}	# tests hours with ...
 	        period=${2:-0..23}	# sequence of hours, else 'month'
 
+	enable -f mkdir mkdir
 	set-drive_dir Z
 	cd_ "$drive_dir"
 	[[ $debug_opt ]] ||
@@ -8382,6 +8358,7 @@ case $action in
 		restore-tracing
 	}
 
+	enable -f mkdir mkdir
 	$Trace
 	cd_ "$drive_dir"
 	# shellcheck disable=SC2086
@@ -8398,13 +8375,13 @@ case $action in
 		for cmd in $old_cmd $tst_cmd
 		    do	$IfRun clone-stashed-mk-Z "$type"
 			# shellcheck disable=SC2086
-			$IfRun $cmd $our_opts prune-drive Z |&
-			   fgrep -v ' prune-drive Z: pruned '
+			$IfRun $cmd $our_opts prune-drive Z
 			[[ $cmd == "$old_cmd" ]] && which=old || which=new
 			ls > "$stash.$which.ls"
 		done
 		# shellcheck disable=SC2086
-		set-reversed_words $stash.*.ls; set -- $reversed_words
+		set-reversed_words $stash.{old,new}.ls; set -- $reversed_words
+		[[ $# == 2 ]] || abort "expected two files: $*"
 		# shellcheck disable=SC2086
 		diff -d -q "$@" && mv $stash.new.ls $stash.pruned.ls &&
 				   rm $stash.old.ls &&
