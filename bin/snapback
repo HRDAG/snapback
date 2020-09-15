@@ -3147,6 +3147,8 @@ readonly -f prune-snapshots-not-matching-backup_period
 
 # for the goals of this function, see prune-variable comments in configure.sh
 function prune-drive() {
+	[[ $1 == -s* ]] && { local prune_sleep_time=${1#-?}; shift; }
+	[[ $1 == -f* ]] && { local final_prune_type=${1#-?}; shift; }
 	if [[ ${1-} == -m ]]
 	   then shift
 		local only_do_mv=$true
@@ -3170,6 +3172,8 @@ function prune-drive() {
 	set-prune_types ${final_prune_type-}
 
 	cd_ $drive_dir	    # can safely kill job with: fuser -k -M $drive_dir
+
+	[[ ${prune_sleep_time-} ]] && env sleep $prune_sleep_time
 
 	$Trace
 	set -- $(reverse-sorted-snapshot-basenames)
@@ -8289,10 +8293,12 @@ case $action in
    # prune-drives [-s time|-f span] names: prune names ('all' same as above)
    ( pr*n*dr*v* | pd* ) undo-action-abbrev prune-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 == -f ]] && { final_prune_type=$2; shift 2; } ||final_prune_type=
+	[[ $1 == -s ]] && { prune_sleep_time_opt=$1$2; shift 2; }
+	[[ $1 == -f ]] && { final_prune_type_opt=$1$2; shift 2; }
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 != -r ]] && assert-not-option "$1"
-	create-jobs prune "$@"
+	opts="${prune_sleep_time_opt-} ${final_prune_type_opt-}"
+	create-jobs prune $opts "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # update-drives [-s src-names-glob] dst-names: copy missing snapshots
