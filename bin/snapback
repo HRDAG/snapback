@@ -2511,6 +2511,38 @@ readonly -f is-suspended
 
 # ----------------------------------------------------------------------------
 
+write-drive-usage-vs-speed() {
+
+	#		     76% -> 09.08h
+	local   data_format="%4s -> %s\n"
+	local header_format=${data_format/->/  }
+
+	cd $drives_log_dir
+	local drive_names drive_name
+	set-drive_names -a
+	for drive_name in ${*:-$drive_names}
+	    do	set-drive_dir- $drive_name
+		{
+		printf "$header_format" "df's" "hours to"
+		printf "$header_format" "Use%" "backup"
+		printf "$header_format" "====" "======"
+
+		for file in $drive_dir/*,00$log_dir/cron-w.txt
+		    do	[[ -s $file ]] || continue
+			set -- $(sed -n -r \
+	 -e "s/ *Average hours to create.* $drive_name=([^ ]+)( .*| *$)/\1/p" \
+	 -e "s/.*G +([^ ]+) .* .backup.$drive_name$/\1/p" $file); set +x
+			[[ $# == 2 ]] || continue
+			hours=$1 usage=$2; [[ $hours == ?.* ]] && hours=0$hours
+			printf "$data_format" $usage $hours
+		done | sort
+		} > $drive_name/usage-vs-speed.txt & # run in parallel
+	done
+}
+readonly -f write-drive-usage-vs-speed
+
+# ----------------------------------------------------------------------------
+
 function update-snapshots-ls {
 
 	[[ ! $debug_opt ]] &&
@@ -3457,6 +3489,9 @@ function _is-time-to-backup-drive {
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
 	   ( cd $log_dir && $our_path w | echo-to-file - cron-w.txt ) &
+
+	(( $current_hour == 6 && $current_minute == 5 )) &&
+	   write-drive-usage-vs-speed &
 
 	# we're called more than hourly (to reset priorities, and to prune)
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
