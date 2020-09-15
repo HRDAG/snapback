@@ -1352,7 +1352,9 @@ set-drive_name-() {
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
 	assert-not-option -o "$1"
-	local  name=${1#$drive_dir_prefix}
+	local name=$1
+	[[ $name == $snapshot_glob* ]] && name=$PWD/$name
+	name=${name#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
 	name=${name%/latest*}
 
@@ -6233,7 +6235,7 @@ readonly -f report-rows_left-if-parallelized
 
 quit-if-requested() {
 
-	read -n 1 -t 0.2 user_input
+	read -n 1 -t 0.25 user_input
 	[[ ${user_input-} == [qQ]* ]] && kill -1 $PPID # kill 'watch' binary
 }
 readonly -f quit-if-requested
@@ -6702,7 +6704,7 @@ max-drive() {
 	local -i secs_per_day=$(( 24*60*60 ))
 	$Trace
 	local max_drive=$1 new_drive; shift
-	for new_drive
+	for new_drive in $*
 	    do	for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
 		    do	set-day--from-secs $secs
 
@@ -8281,7 +8283,7 @@ case $action in
    ( unrm | undel* ) undo-action-abbrev unrm
 	for snapshot
 	    do	[[ $snapshot == *.rm ]] || warn "$snapshot not *.rm" ||continue
-		set-drive_name- $PWD/$snapshot
+		set-drive_name- $snapshot
 		kill-job-on-drives prune $drive_name
 		$IfRun sudo mv -v "$snapshot" "${snapshot%.rm}"
 	done
