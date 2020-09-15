@@ -2677,7 +2677,7 @@ rm-pruned-snapshots() {
 	fi
 
 	# delete less-useful snapshots before more-useful ones
-	set --  $snapshot_glob.partial.rm $snapshot_glob.links.rm \
+	set --  $snapshot_glob*.partial.rm $snapshot_glob.links.rm \
 		$snapshot_glob.rm
 	local snapshot_basenames=$* number_pruned_snapshots=$#
 
