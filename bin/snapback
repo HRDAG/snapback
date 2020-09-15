@@ -179,6 +179,7 @@ Usage: $our_name [options] action [options] [args]
     watch [-s][-C][-N names] [watch-opts]: dashboard (-s: stats; -C: cron jobs)
     big-swapouts: search syslog files for warnings about high swapout rates
     measure-swapout-bandwith swap-dev: to set max_swapout_MBps in configure.sh
+    mkswap name size [priority [label]]: create /var/swap/name and enable it
     check-logs: update error cache: run this if dashboard fails with I/O error
     list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
     df [-A]: show filesystem details; -A adds non-backup drives
@@ -7646,7 +7647,7 @@ measure-swapout-MBps() {
 	fi
 
 	$IfRun sudo swapoff $swap_dev || 
-	    abort "add temporary swap: 'dd', 'mkswap', 'chmod', 'swapon'"
+	    abort "need (temporary) swap; can use action 'mkswap'"
 	$IfRun \
 	sudo dd if=/dev/zero of=$swap_dev bs=1M count=$size_MB_1 &> $tmp_1
 	if [[ ! $debug_opt ]]
@@ -7665,6 +7666,44 @@ measure-swapout-MBps() {
 	set +x
 }
 readonly -f measure-swapout-MBps
+
+# ----------------------------------------------------------------------------
+
+mkswap() {
+	local name=$1 size=$2 priority=${3-} label=${4-}
+
+	[[ $name != *[\ /]* ]] || abort "name=$name should be basename"
+	case ${size^} in
+	    ( *M ) size=${size%?} ;;
+	    ( *G ) size=$(( ${size%?} * 1024 )) ;;
+	    ( *  ) abort "size=$size needs M or G suffix" ;;
+	esac
+	[[ $size =~ ^[1-9][0-9]*.$  ]] || abort "size=$size must have number"
+	[[ $priority =~ ^(|[0-9]+)$ ]] || abort "priority must be a number"
+
+	[[ $priority ]] && local pri_opt="-p $priority" || local pri_opt=
+	[[ $label ]] ||
+	  { label=$name; [[ $priority ]] && label=$label-$priority; }
+
+	local file=/var/swap/$name
+	sudo swapoff $file &> $dev_null	# probably not enabled
+	[[ ! -e $file ]] || abort "$file already exists"
+	$IfRun sudo mkdir -p -m 2750 $(dirname $file)
+	set-admin_group
+	$IfRun sudo chgrp $admin_group $(dirname $file)
+
+	$IfRun sudo dd if=/dev/zero of=$file bs=1M count=$size && echo &&
+	$IfRun sudo chmod 0600 $file &&
+	$IfRun sudo mkswap --label $label $file &&
+	$IfRun sudo swapon $pri_opt $file ||
+	    abort "failed to make or enable $file"
+	echo; swapon --show
+
+	local record="LABEL=$label\tnone\tswap\tsw\t\t0 0"
+	[[ $priority ]] && record="${record/sw\\t/sw,pri=$priority}"
+	echo -e "\nHere's a record for /etc/fstab:\n\n$record"
+}
+readonly -f mkswap
 
 # ----------------------------------------------------------------------------
 # check syslog for FS and OS errors
@@ -8313,9 +8352,15 @@ case $action in
    ( big*swapouts | bs | so ) undo-action-abbrev big-swapouts
 	find-and-print-big-swapouts
 	;;
-   # measure-swapout-bandwith swap-dev: measure bandwidth of swap-dev
+   # measure-swapout-bandwith swap-dev: to set max_swapout_MBps in configure.sh
    ( m*swap*b*w* ) undo-action-abbrev measure-swapout-bandwith
 	measure-swapout-MBps "$@"
+	;;
+
+   # mkswap name size [priority [label]]: create /var/swap/name and enable it
+   ( mksw* ) undo-action-abbrev mkswap
+	[[ $# == [2-4] ]] || abort-with-action-Usage
+	$action "$@"
 	;;
 
    # check-logs: update error cache: run this if dashboard fails with I/O error
