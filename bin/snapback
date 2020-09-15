@@ -2531,7 +2531,7 @@ write-drive-usage-vs-speed() {
 		    do	[[ -s $file ]] || continue
 			set -- $(sed -n -r \
 	 -e "s/ *Average hours to create.* $drive_name=([^ ]+)( .*| *$)/\1/p" \
-	 -e "s/.*G +([^ ]+) .* .backup.$drive_name$/\1/p" $file); set +x
+	 -e "s/.*G +([^ ]+) .*% .backup.$drive_name$/\1/p" $file); set +x
 			[[ $# == 2 ]] || continue
 			hours=$1 usage=$2; [[ $hours == ?.* ]] && hours=0$hours
 			printf "$data_format" $usage $hours
