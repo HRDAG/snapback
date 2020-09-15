@@ -161,8 +161,8 @@ Usage: $our_name [options] action [options] [args]
 
   $our_name (snapshot backups) maintains multiple, uniquely-named,
       online and offsite backup drives (partitions), each with separate
-      logging and policy (see files in $config_dir/); for the dashboard,
-      run: $our_name watch
+      logging and policy (see files in $config_dir/);
+      for the dashboard, run: $our_name watch
 
   Current actions are (you can specify their acronym, see process-action):
 
@@ -2395,6 +2395,8 @@ readonly -f set-used_MB-size_MB
 
 # --------------------------------------------
 
+declare -r -i restart_seconds=-1123456789
+
 set-SECONDS-starting_MB--for-save-writer-stats() {
 	if [[ $1 == -r ]]
 	   then shift
@@ -2404,7 +2406,7 @@ set-SECONDS-starting_MB--for-save-writer-stats() {
 	local snapshot=$1
 
 	if [[ $is_a_restart ]]		# already half-done?
-	   then SECONDS=-1123456789	# our signal to not record stats
+	   then SECONDS=$restart_seconds # our signal to not record stats
 	   else SECONDS=0		# else do
 		local -i used_MB size_MB
 		set-used_MB-size_MB
@@ -2625,6 +2627,41 @@ readonly -f _prune-exclude-globs-from-all-snapshots
 
 # ---------------------------------
 
+delete-pruned-snapshot() {
+	local snapshot=$1
+
+	# is this snapshot already partially deleted?
+	if [[ $snapshot == *.partial* ]]
+	   then local restart_opt=-r	delete_name=$snapshot
+	   else local restart_opt=	delete_name=${snapshot%.rm}.partial.rm
+	fi
+	[[ $drive_name != Z ]] &&
+	local  -i   starting_MB=0 &&
+	set-SECONDS-starting_MB--for-save-writer-stats $restart_opt $snapshot
+
+	local did_rm=$false
+	while true			 # so following code can 'break'
+	   do	${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
+		[[ $snapshot == $delete_name ]] ||
+		$IfRun  mv  $snapshot $delete_name || break # .rm removed??
+		$IfRun env rm -r $PWD/$delete_name || break # similarly?
+		${rm_snapshot_post_hook-} # could update database
+		did_rm=$true
+		break
+	done
+
+	[[ $drive_name != Z ]] || return
+	[[ $did_rm ]] || SECONDS=$restart_seconds # maybe don't write stats
+
+	set-writer_stats_msg--as-save-writer-stats $snapshot
+	(( $log_level >= 2 )) &&
+	[[ ! ( $debug_opt || $drive_name == Z ) ]] &&
+	    log "deleted $(basename $snapshot) $writer_stats_msg"
+}
+readonly -f delete-pruned-snapshot
+
+# ---------------------------------
+
 rm-pruned-snapshots() {
 	local snapshots_file=$1
 
@@ -2694,36 +2731,7 @@ rm-pruned-snapshots() {
 	# for S: rename S.rm to S.partial.rm (for action 'unrm'), then delete
 	[[ ! ( $debug_opt && $drive_name == Z ) ]] &&
 	for snapshot
-	    do	# is this snapshot already partially deleted?
-		if [[ $snapshot == *.partial* ]]
-		   then local restart_opt=-r
-		   else local restart_opt=
-		fi
-		[[ $drive_name != Z ]] &&
-		local  -i   starting_MB=0 &&
-		set-SECONDS-starting_MB--for-save-writer-stats \
-		    $restart_opt ${snapshot%.partial*}
-
-		shopt -u nullglob	 # helps catch bugs with 'env rm -r'
-		local did_rm=$false
-		while true; do		 # so following code can 'break'
-		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
-		[[ $snapshot == *.partial.rm ]] ||
-		$IfRun  mv  $snapshot ${snapshot%.rm}.partial.rm || break
-		$IfRun env rm -r $PWD/${snapshot%.rm}*.rm || break
-		${rm_snapshot_post_hook-} # could update database
-		did_rm=$true
-		break
-		done
-		shopt -s nullglob
-
-		[[ $drive_name != Z ]] || continue
-		[[ $did_rm ]] || SECONDS=-1123456789 # treat like restart
-
-		set-writer_stats_msg--as-save-writer-stats $snapshot
-		(( $log_level >= 2 )) &&
-		[[ ! ( $debug_opt || $drive_name == Z ) ]] &&
-		    log "deleted $(basename $snapshot) $writer_stats_msg"
+	    do	delete-pruned-snapshot $snapshot
 		suspend-tracing
 	done
 	restore-tracing
@@ -7682,24 +7690,28 @@ mkswap() {
 	[[ $priority =~ ^(|[0-9]+)$ ]] || abort "priority must be a number"
 
 	[[ $priority ]] && local pri_opt="-p $priority" || local pri_opt=
-	[[ $label ]] ||
-	  { label=$name; [[ $priority ]] && label=$label-$priority; }
+	[[ $label    ]] && local lbl_opt="-L $label"    || local lbl_opt=
 
 	local file=/var/swap/$name
-	sudo swapoff $file &> $dev_null	# probably not enabled
-	[[ ! -e $file ]] || abort "$file already exists"
+	$IfRun sudo swapoff $file &> $dev_null # probably not enabled
+	[[ -s $file ]] && $IfRun abort "$file already exists" && echo
+
 	$IfRun sudo mkdir -p -m 2750 $(dirname $file)
 	set-admin_group
 	$IfRun sudo chgrp $admin_group $(dirname $file)
 
 	$IfRun sudo dd if=/dev/zero of=$file bs=1M count=$size && echo &&
 	$IfRun sudo chmod 0600 $file &&
-	$IfRun sudo mkswap --label $label $file &&
+	$IfRun sudo mkswap $lbl_opt $file &&
 	$IfRun sudo swapon $pri_opt $file ||
 	    abort "failed to make or enable $file"
 	echo; swapon --show
 
-	local record="LABEL=$label\tnone\tswap\tsw\t\t0 0"
+	if [[ $label ]]
+	   then local fs_spec=LABEL=$label
+	   else local fs_spec=$file
+	fi
+	local record="$fs_spec\tnone\tswap\tsw\t\t0 0"
 	[[ $priority ]] && record="${record/sw\\t/sw,pri=$priority}"
 	echo -e "\nHere's a record for /etc/fstab:\n\n$record"
 }
@@ -8299,7 +8311,7 @@ case $action in
 	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs | cp* ) undo-action-abbrev copy-snapshots # cpss
-	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $# != 0 ]] || abort-with-action-Usage
 	is-arg1-in-arg2 -r "$@" && { create-jobs copy "$@"; exit-normally $?; }
 
 	local opts=
@@ -8314,6 +8326,7 @@ case $action in
 
    # rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
    ( rm | del* ) undo-action-abbrev rm
+	[[ $# != 0 ]] || abort-with-action-Usage
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] || continue
 		$IfRun sudo mv -v "$snapshot" "$snapshot.rm"
@@ -8321,6 +8334,7 @@ case $action in
 	;;
    # unrm snapshots: remove .rm suffixes, leaving good snapshot else .partial
    ( unrm | undel* ) undo-action-abbrev unrm
+	[[ $# != 0 ]] || abort-with-action-Usage
 	for snapshot
 	    do	[[ $snapshot == *.rm ]] || warn "$snapshot not *.rm" ||continue
 		set-drive_name- $snapshot
@@ -8330,6 +8344,7 @@ case $action in
 	;;
    # redo snapshots: rename snapshots to *.partial (update-drive will restore)
    ( redo | undo ) undo-action-abbrev redo
+	[[ $# != 0 ]] || abort-with-action-Usage
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] || warn "can't redo *.rm; see unrm" ||
 		    continue
@@ -8350,10 +8365,12 @@ case $action in
 
    # big-swapouts: search syslog files for warnings about high swapout rates
    ( big*swapouts | bs | so ) undo-action-abbrev big-swapouts
+	[[ $# == 0 ]] || abort-with-action-Usage
 	find-and-print-big-swapouts
 	;;
    # measure-swapout-bandwith swap-dev: to set max_swapout_MBps in configure.sh
    ( m*swap*b*w* ) undo-action-abbrev measure-swapout-bandwith
+	[[ $# == 1 ]] || abort-with-action-Usage
 	measure-swapout-MBps "$@"
 	;;
 
@@ -8385,7 +8402,7 @@ case $action in
    # kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
    ( kil* | k ) undo-action-abbrev kill
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
-	[[ $# == 2 || $1 == m* ]] || abort-with-action-Usage
+	[[ $# == 2 || ${1-} == m* ]] || abort-with-action-Usage
 	$Trace
 	# shellcheck disable=SC2086
 	kill-job-on-drives ${signal-} "$@"
@@ -8510,7 +8527,7 @@ case $action in
    # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
-	[[ $# != 0  ]] || abort-with-action-Usage
+	[[ $# != 0   ]] || abort-with-action-Usage
 	[[ $1 != -r  ]] && assert-not-option "$1"
 	[[ $# != 0   ]] || abort-with-action-Usage
 	set-drive_names--from-user-args "$@"
@@ -8543,6 +8560,7 @@ case $action in
 	;;
    # chroot-backup date,time [command]: chroot to snapshot on fastest drive
    ( chr* | cb ) undo-action-abbrev chroot-backup
+	[[ $# != 0 ]] || abort-with-action-Usage
 	$action "$@"
 	;;
 
@@ -8558,6 +8576,7 @@ case $action in
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today
    ( has*new*snapshots | hsn ) undo-action-abbrev has-new-snapshots
+	[[ $# == 1 ]] || abort "specify a name for a drive"
 	$action "$@"
 	;;
    # for "snapcrypt close": find drive with max # snapshots since last mounted
@@ -8571,6 +8590,10 @@ case $action in
 	 set-drive_dir-
 	echo "$drive_dir"
 	;;
+
+   ###########################################################################
+   # actions to test this program
+   ###########################################################################
 
    ( shellcheck | sc ) undo-action-abbrev shellcheck
 	have-cmd shellcheck ||
@@ -8587,6 +8610,7 @@ case $action in
 
    # run [-v var-names] func-name [args]: run func-name, echo var-names values;
    ( run | r ) undo-action-abbrev run
+	[[ $# != 0 ]] || abort-with-action-Usage -A1
 	local cmd=$1
 	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
