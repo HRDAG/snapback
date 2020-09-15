@@ -191,7 +191,7 @@ Usage: $our_name [options] action [options] [args]
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
-    predict-prune [-f span] name: see: grep 'prun\w*=' $config_file
+    predict-prune [-q] [-f span] names: run: grep 'prun\w*=' $config_file
     dump-state [tar-file-name]: store $our_name's full state in tarball
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
     add-extN-journal drive_name [FS_device [VG_name]]: fast external journal
@@ -2674,8 +2674,9 @@ rm-pruned-snapshots() {
 		return
 	fi
 
-	# delete .partial snapshots first, they're less useful
-	set -- $snapshot_glob.partial.rm $snapshot_glob.rm
+	# delete less-useful snapshots before more-useful ones
+	set --  $snapshot_glob.partial.rm $snapshot_glob.links.rm \
+		$snapshot_glob.rm
 	local snapshot_basenames=$* number_pruned_snapshots=$#
 
 	restore-tracing
@@ -2686,7 +2687,7 @@ rm-pruned-snapshots() {
 		$IfRun ln -s $(basename ${!#}) latest
 	fi
 
-	# finally, prune the contents of the *.rm snapshots
+	# for S: rename S.rm to S.partial.rm (for action 'unrm'), then delete
 	[[ ! ( $debug_opt && $drive_name == Z ) ]] &&
 	for snapshot
 	    do	# is this snapshot already partially deleted?
@@ -2703,7 +2704,7 @@ rm-pruned-snapshots() {
 		local did_rm=$false
 		while true; do		 # so following code can 'break'
 		${rm_snapshot_pre_hook-} # could remove .rm suffix, touch .keep
-		[[ $snapshot != $snapshot_glob.rm ]] || # already .partial.rm?
+		[[ $snapshot == *.partial.rm ]] ||
 		$IfRun  mv  $snapshot ${snapshot%.rm}.partial.rm || break
 		$IfRun env rm -r $PWD/${snapshot%.rm}*.rm || break
 		${rm_snapshot_post_hook-} # could update database
@@ -3075,7 +3076,8 @@ prune-type-to-file() {
 
 		shift $date_span 2> $dev_null || # skip span of newer dates
 		    shift $# # shift does nothing if try to shift more than $#
-		[[ ! $is_last_word ]] || shift $date_span_diff || shift $#
+		[[ ! $is_last_word ]] ||
+		    shift $date_span_diff 2> $dev_null || shift $#
 		remaining_reverse_sorted_snapshot_dates=$*
 		local newest_prune_date_in_this_pass=${1-}
 		[[ $newest_prune_date_in_this_pass ]] || break
@@ -4451,6 +4453,7 @@ readonly -f do-chores
 function set-drive_dirs--from-user-args() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
+	assert-not-option ${1-}
 
 	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
 	   then set-drive_dirs $all_opt
@@ -6374,22 +6377,30 @@ readonly -f watch
 # function to predict impact of changing pruning variables in configure.sh
 # ----------------------------------------------------------------------------
 
-# predict-prune [-f span] name: see: grep 'prun\w*=' $config_file
+# predict-prune [-q] [-f span] names: run: grep 'prun\w*=' $config_file
 predict-prune() {
-	local args=$*
+	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
+	local args=$* prune_opt=
+	[[ $1 == -f ]] && { prune_opt="$1 $2"; shift 2; }
+	set-drive_names--from-user-args "$@"
+	[[ $drive_names = *' '* ]] && is_quiet=$true
 
-	[[ ( ${1-} == -f && $# -ge 3 ) || ( ${1-} != -f && $# -ge 1 ) ]] ||
-	    abort-with-action-Usage
-
-	$our_path -d prune-drives "$@" > $tmp_1 || exit $?
-	sed -n -r '/^(mv|rm) /s@.*[/ ]@@p' $tmp_1 > $tmp_2 ||abort-function sed
-	sort $tmp_2
-	set -- $(wc -l < $tmp_2); rm $tmp_1 $tmp_2
-
-	echo -e "
+	local format="\
 	With current *prun* variable values in $config_file,
-	running '$our_name_ prune $args' would prune $1 snapshots.
-" >& 2
+	running '$our_name_ prune %s' would prune an extra %s snapshots."
+
+	local drive_name
+	for drive_name in $drive_names
+	    do	$our_path -d prune-drives $prune_opt $drive_name > $tmp_1 ||
+		    exit $?
+		grep -v '\.rm .*\.rm' $tmp_1 | 	# ignore: mv S.rm S.partial.rm
+		    sed -n -r '/^mv .*\.rm$/s@.*[/ ]@@p' > $tmp_2 ||
+			abort-function sed
+		[[ ! $is_quiet ]] &&
+		sort $tmp_2 && echo
+		set -- $(wc -l < $tmp_2); rm $tmp_1 $tmp_2
+		printf "$format\n\n" $drive_name $1
+	done
 }
 readonly -f predict-prune
 
