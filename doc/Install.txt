@@ -91,6 +91,12 @@ is less fragile (an XFS crash resulted in most files being moved to
 taking a long time.  But I use XFS anyway, because my filesystems have a huge
 number of hardlinks (because we use HRDAG's 'snap' aka 'snapshot').
 
+To see if a backup filesystem slows down as it fills up, study this file:
+
+    /var/log/snapback/drives/{drive-name}/usage-vs-speed.txt
+
+(if the current speed is too slow, use the methods in section
+'L. snapback tuning' to prune the drive faster).
 
 D. How do I encrypt a backup drive?
 
@@ -506,7 +512,16 @@ get these errors when "snapback watch" reports e.g.
 then you'll need to edit configure.sh and either increase '*backup_period',
 and/or decrease one of the four '*_per_span_for_*_prune' variables, and/or
 decrease pruning_span_scale_factor; carefully read the comments to figure out
-what these do.
+what these do.  BUT ...
+
+Before you start changing the tuning variables and observing the impact, you
+should run e.g.
+
+    sudo snapback prune-drive -s 1h all	   # to give yourself 1 hour to finish
+
+to prevent the every-5-minute cron-job from starting a prune when you're still
+experimenting.  The value after -s can be any 1-word value that's documented
+in 'man 1 sleep'.
 
 [If you'd rather that these variables were automagically tuned by snapback
 itself (with some tuning-priorities specified by you), ask sweikart@gmail.com
@@ -514,38 +529,41 @@ to implement something like the ideas in doc/extra-prune.txt .]
 
 After you change a *prun* variables, measure the impact with:
 
-    snapback predict-pruning [-f span] name(s)
+    snapback predict-pruning [-f span] all # can specify name(s) instead of all
 
 where the optional "-f span" specifies the Final span that will be pruned
-(e.g. with "-f hour", stop pruning after the "hour" span).  This will show and
-count all the snapshots that would be pruned, including the ones that have
-already been renamed to *.rm (and thus could be partially deleted).
+(e.g. with "-f hour", stop pruning after the "hour" span).  This will show
+(unless -q) and count all the _extra_ snapshots (i.e. not counting the ones
+that have already been pruned, the current .rm snapshots) that would be pruned
+if you killed all the sleeping prune jobs.
 
-Do *not* change variables close to the 5 minute mark, because that's when cron
-will kick off a prune, which will rename the to-be-pruned snapshots to
-Date,Hour.rm, and then start deleting them (but, if you set
-'is_multi_writer_drive=$false' because you're using disk drives not SSDs, then
-the prune won't be started until the backup finishes).
+Once you're happy with the prediction, you can let cron actually do the
+pruning with:
 
-Soon after cron kicks of a prune, "snapback watch" will show that your drive
-now has non-0 "Number pruned .rm snaps awaiting rm -r"; you'll need to wait
-until this value goes to 0, then decide if your tuning-change freed up enough
-disk space.  See doc/watch.txt for more details on watching how the system
-responds to tuning.
+    snapback kill prune all
+
+to kill all the prune jobs that are sleeping.
+
+Soon after cron kicks of new prune jobs, "snapback watch" will show that your
+drive now has non-0 "Number pruned .rm snaps awaiting rm -r"; you'll need to
+wait until this value goes to 0, then decide if your tuning-change freed up
+enough disk space.  See doc/watch.txt for more details on watching how the
+system responds to tuning.
 
 If you indvertently kick off a too-aggressive prune on multiple drives, you
-can recover with:
+can recover with something like (you can replace '/*/' with '/{drive-name}/'):
 
-    snapback k p all			# kill all prune jobs
-    snapback undelete /backup/*/*.rm	# rename *.rm snapshots to *.partial
-    snapback update-drive all		# restore *.partial from other drives
+    snapback prune-drive -s 5m all	# kill all prune jobs, sleep 5 minutes
+    snapback unrm /backup/*/*,??.rm	# restore snapshots awaiting deletion
+    snapback unrm /backup/*/*.rm	# restore *.partial (partially deleted)
+    snapback update-drive all		# refill  *.partial from other drives
 
 Remember, you don't need to change the global tuning variables, you can set a
-custom value for each partition that's running out of resources.  To see
-examples of this, search configure.sh for '[Z]', to see how very-small values
-are used for the pseudo-partition named 'Z' ('Z' is used for regression tests,
-and for studying how pruning works with the "-T 5" option to snapback), or
-search configure.sh for '[X]' (sample customizations).
+custom value for each drive (partition) that's running out of resources.  To
+see examples of this, search configure.sh for '[Z]', to see how very-small
+values are used for the pseudo-drive named 'Z' ('Z' is used for regression
+tests, and for studying how pruning works with the "-T 5" option to snapback);
+or search configure.sh for '[X]' (sample customizations).
 
 --
 
