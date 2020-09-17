@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# shellcheck disable=SC1007,SC2004,SC2015,SC2034,SC2059,SC2126,SC2128,SC2196,SC2197,SC2219
+# shellcheck disable=SC1007,SC2004,SC2015,SC2034,SC2059,SC2126,SC2128,SC2196,SC2197
 
 #    snapback (short for "snapshot backups") manages backups on multiple drives
 #
@@ -340,7 +340,7 @@ set-readable_du_size() {
 
 	local suffix=K
 	while (( $size >= 1024 ))
-	   do	let size/=1024
+	   do	((  size/=1024 ))
 		case $suffix in		# see: man du
 		    ( 'K' ) suffix=M ;;
 		    ( 'M' ) suffix=G ;;
@@ -2197,15 +2197,13 @@ function is-copy-higher-priority-than-prune() {
 	local copy_PGID
 	if is-drive-usage-too-high-for-copy
 	   then suspend-jobs copy
-		# shellcheck disable=SC2119
 		if set-copy_PGID--if-copy-src # 2 drives copying to each other?
 		   then local lock_paths
 			set-lock_paths prune
 			lockpid --release "$lock_paths" &> $dev_null
 		fi
 		continue-jobs prune # may do nothing if backup running
-	   else # shellcheck disable=SC2119
-		set-copy_PGID--if-copy-src && # is this a copy job's source?
+	   else set-copy_PGID--if-copy-src && # is this a copy job's source?
 		   return 0	    # don't suspend _or_ prune
 		continue-jobs copy  # may do nothing if backup running
 		is-multi-writer-drive || { suspend-jobs prune; return 0; }
@@ -2470,7 +2468,6 @@ set-SECONDS-starting_MB--for-save-writer-stats() {
 	   then SECONDS=$restart_seconds # our signal to not record stats
 	   else SECONDS=0		# else do
 		local -i used_MB size_MB
-		# shellcheck disable=SC2119
 		set-used_MB-size_MB
 		starting_MB=$used_MB
 	fi
@@ -2496,7 +2493,6 @@ set-writer_stats_msg--as-save-writer-stats() {
 		local writer_hours=$hours
 
 		local used_MB size_MB
-		# shellcheck disable=SC2119
 		set-used_MB-size_MB
 		local -i writer_MB=$used_MB-$starting_MB
 		set-division -2 "$writer_MB" 1024
@@ -2798,7 +2794,7 @@ rm-pruned-snapshots() {
 		   then  $sudo mv $verbose_opt "$snapshot" "$snapshot.rm"
 		   else $IfRun mv	       "$snapshot" "$snapshot.rm"
 		fi
-		let rm_count+=1;  rm_snapshots+="$snapshot "
+		(( rm_count+=1 )); rm_snapshots+="$snapshot "
 	done
 
 	update-snapshots-ls
@@ -3009,7 +3005,7 @@ validate-prune_globs() {
 		local -i span=0
 		local popped_word
 		while set-popped_word-is_last_word--from-list prune_type_globs
-		   do	let span+=1
+		   do	(( span+=1 ))
 			local prune_type_glob=$popped_word
 			local prune_glob
 			set-prune_glob "$type" "$prune_type_glob"
@@ -3527,7 +3523,6 @@ set-link_dest_opts--for-copy-snapshot() {
 	# older, then newer, then even-older, then even-newer, ...
 
 	local link_dest_fast_dirs=${previously_copied_snapshot-}
-	# shellcheck disable=SC2119
 	set-latest_snapshot && link_dest_fast_dirs+=" $latest_snapshot"
 
 	# $link_dest_fast_dirs usually has 2 dirs && num_full_link_dests == 2,
@@ -3536,7 +3531,7 @@ set-link_dest_opts--for-copy-snapshot() {
 
 	set-num_full_link_dests
 	[[ ${previously_copied_snapshot-} && $latest_snapshot ]] &&
-	    let num_full_link_dests-=1
+	    (( num_full_link_dests-=1 ))
 	TraceV 5  link_dest_fast_dirs num_full_link_dests
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set-older_link_dest_dirs-newer_link_dest_dirs "$new_snapshot" \
@@ -3965,7 +3960,6 @@ function backup-drive() {
 	if [[ ! $is_multi_writer_drive ]]
 	   then suspend-jobs copy prune
 		# if suspended a copy, it's now OK to prune its source drive
-		# shellcheck disable=SC2119
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
@@ -4214,7 +4208,6 @@ function copy-snapshot-rsync() {
 			unlock  backup		   # ... but don't hold lock
 		fi
 
-		# shellcheck disable=SC2119
 		set-copy_PGID--if-copy-src || # 2 drives copying to each other?
 		suspend-jobs prune    # cron will swap jobs if drive space low
 	fi
@@ -4352,7 +4345,6 @@ readonly -f _set-drive_dirs--for-update-srcs
 
 src_dirs-for-update() {
 
-	# shellcheck disable=SC2119
 	_set-drive_dirs--for-update-srcs ||
 	   abort "couldn't find any drives to copy to $drive_name"
 
@@ -4552,7 +4544,7 @@ function fill-in-unpruned-empty-snapshots() {
 
 			is-set     drive_name2speed_record ||
 			declare -A drive_name2speed_record
-			# shellcheck disable=SC2046,SC2086
+			# shellcheck disable=SC2046,SC2086 # *_opt may be null
 			set -- $(fastest-snapshots $force_opt "$@")
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync "$1" "$dst_snapshot" >&2
@@ -4601,7 +4593,6 @@ function update-drive() {
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
 	[[ $are_recursing ]] ||
 	IfRun= lock $lock_opt copy > $dev_null || exit-normally 1
-	# shellcheck disable=SC2119
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir ./*.partial &> $dev_null	# in case crashed
@@ -4997,7 +4988,6 @@ set-percent_usage() {
 	local drive_dir division
 	set-drive_dir-
 	local -i used_MB size_MB
-	# shellcheck disable=SC2119
 	set-used_MB-size_MB
 	local -i MB_100=$(( $MB*100 ))
 	set-division -2 "$MB_100" "$size_MB"
@@ -5239,7 +5229,7 @@ function count-snapshots-being-created-on-drive() {
 	# count snapshots we're creating
 	local path
 	for path
-	    do	is-active-lock "$path" && let count+=1
+	    do	is-active-lock "$path" && (( count+=1 ))
 	done
 
 	return "$count"
@@ -5678,7 +5668,7 @@ set-max_ps_width() {
 	ps_header=${ps_header%COMMAND}
 	set-max_drive_name_len "${drive_names-$drive_name}"
 	max_ps_width=${#ps_header}+${#rsync_ps_out}+max_drive_name_len
-	let max_ps_width+=1    # 'watch' executable requires blank last column
+	(( max_ps_width+=1 ))  # 'watch' executable requires blank last column
 }
 readonly -f set-max_ps_width
 
@@ -5842,7 +5832,7 @@ _set-ps_keywords--from-columns() {
 	local columns=$1
 
 	# deduct the width of the ps record with max wchan
-	let columns-=max_ps_wchan_width+max_ps_width # treating as columns_left
+	(( columns-=max_ps_wchan_width+max_ps_width )) # treat as columns_left
 	# if we still have columns left, can add more fields
 	(( columns >  3 )) && ps_keywords=${ps_keywords/,state,/,stat,}
 	(( columns > 13 )) && ps_keywords=${ps_keywords/,comm/,$cputime,comm}
@@ -5902,11 +5892,11 @@ set-min_rows-min_rows_with_df-rows_left() {
 	CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
 	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
 	BD=$(echo  "$bkp_rsync_cmds" | fgrep -c r); num_bkp_rsyncs=$BD
-	(( BD > 0 )) && let BD+=7	# header plus default variable values
-	(( BD > 0 )) && let BD+=$rows_for_one_detailed_rsync ||
-				 rows_for_one_detailed_rsync=0
+	(( BD > 0 )) && (( BD+=7 ))	# header plus default variable values
+	(( BD > 0 )) && (( BD+=$rows_for_one_detailed_rsync )) ||
+				rows_for_one_detailed_rsync=0
 	[[ $stats_opt ]] && PD=0 CS=0 BD=0
-	TraceV 1 PD CS BD && let rows_left-=3
+	TraceV 1 PD CS BD && (( rows_left-=3 ))
 
 	# min rows: 1 watch line, 1 blank line, 8+1 lines of section-1 stats,
 	#   4 lines of empty backup section.
@@ -5916,7 +5906,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
 	[[ $show_all || $functions ]] && rows_left=1222333000
-	TraceV 1 min_rows min_rows_with_df && let rows_left-=3 # one more ...
+	TraceV 1 min_rows min_rows_with_df && (( rows_left-=3 )) # one more ...
 	TraceV 1 rows_left
 }
 readonly -f set-min_rows-min_rows_with_df-rows_left
@@ -5974,11 +5964,11 @@ show-errors-in-syslog() {
 		esac
 		set-warning_string $type "$msg"
 		printf "%5d: %s\n" "$count" "$warning_string"
-		let rows_left-=1
+		(( rows_left-=1 ))
 	done < "$errors_count_msg_file"
 
 	echo
-	let rows_left-=2
+	(( rows_left-=2 ))
 
 	}
 
@@ -6012,7 +6002,7 @@ show-sudo-config-warning() {
 	header "statistics"
 	echo
 
-	let rows_left-=6		# only adjust for optional sections
+	(( rows_left-=6 ))		# only adjust for optional sections
 }
 readonly -f show-sudo-config-warning
 
@@ -6099,14 +6089,14 @@ show-stats-section-2-backup() {
 	    return
 	echo				# first row used
 	ech_ "Number of backups/day (usually by cron):  $jobs_per_day"
-	let rows_left-=1+1		# include blank line
+	(( rows_left-=1+1 ))		# include blank line
 
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages backup ||
 	    return
 	echo " Average GB used when create new backup:  $writer_GB_avgs"
 	echo "    Average GB used per day for backups:  $writer_GBs_per_day"
 	echo " Daily percentage-point change in usage:  $percent_usages_per_day"
-	let rows_left-=3
+	(( rows_left-=3 ))
 }
 readonly -f show-stats-section-2-backup
 
@@ -6131,7 +6121,7 @@ show-stats-section-2-prune() {
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $predicted_TB_sums"
 	echo "           ... predicted %-point change:  $predicted_percent_usages"
-	let rows_left-=$rows_used
+	(( rows_left-=$rows_used ))
 }
 readonly -f show-stats-section-2-prune
 
@@ -6144,7 +6134,7 @@ show-stats-section-2-copy() {
 
 	setup-snapshot-stats -e .partial ||
 	    { report-rows_left-if-parallelized; return; }
-	let rows_left-=$rows_used
+	(( rows_left-=$rows_used ))
 	report-rows_left-if-parallelized
 
 	ech_ " Number empty .partial dirs, for update:  $stats_numbers"
@@ -6185,7 +6175,7 @@ show-stats-section-3() {
 #	setup-snapshot-stats ''		# moved to show-stats-section-1
 #	echo "  Number complete/successful snapshots:  $stats_numbers"
 
-	let rows_left-=$rows_used
+	(( rows_left-=$rows_used ))
 }
 readonly -f show-stats-section-3
 
@@ -6208,7 +6198,7 @@ show-stats-section-4() {
 	setup-snapshot-stats '*'
 	echo "TOTAL snapshots (good+links+partial+rm):  $stats_numbers"
 
-	let rows_left-=$rows_used
+	(( rows_left-=$rows_used ))
 }
 readonly -f show-stats-section-4
 
@@ -6232,7 +6222,7 @@ set-FS_repair_cmds_file() {
 
 	# shellcheck disable=SC2155
 	local ps_line_count=$(wc -l < "$FS_repair_cmds_file")
-	let rows_left-=$(( 3 + $ps_line_count )) # 3 for header
+	(( rows_left-=$(( 3 + $ps_line_count )) )) # 3 for header
 }
 readonly -f set-FS_repair_cmds_file
 
@@ -6269,11 +6259,11 @@ show-filesystem-info-that-fits() {
 	local -i extra=$rows_for_one_detailed_rsync
 	(( $rows_left + $extra >= $min_rows_with_df )) && # see BD+=
 	local do_run_df=$true &&
-	let rows_left-=$num_drives+2
+	(( rows_left-=$num_drives+2 ))
 
 	(( $rows_left >= $min_rows_with_df )) && [[ ! $copy_rsync_cmds ]] &&
 	local do_run_lsblk=$true &&
-	let rows_left-=$num_drives+2
+	(( rows_left-=$num_drives+2 ))
 
 	report-rows_left-if-parallelized
 
@@ -6582,7 +6572,7 @@ watch() {
 	local -i rows_left=$rows      # the following functions decrement this
 
 	set-FS_repair_cmds_file
-	[[ -s $big_swapouts_file ]] && let rows_left-=2
+	[[ -s $big_swapouts_file ]] && (( rows_left-=2 ))
 
 	set-min_rows-min_rows_with_df-rows_left
 
@@ -6596,7 +6586,6 @@ watch() {
 
 	[[ $watch_opt ]] || $Trace
 
-	# shellcheck disable=SC2119
 	show-errors-in-syslog	  # before access disk (can trigger I/O error)
 
 	_start-monitor-drives-if-needed
@@ -6848,7 +6837,7 @@ dir-sizes() {
 	    do	# shellcheck disable=SC2046
 		set -- $(bzcat "$file.bz2" | sed -n ${decile_median_line}p)
 		echo "Decile $i has median directory size of ${1}B"
-		let   decile_median_line+=decile_count
+		((    decile_median_line+=decile_count ))
 	done
 	echo
 	}
@@ -6961,7 +6950,7 @@ has-new-snapshots() {
 
 	latest_date_time=$(basename "$latest_snapshot")
 	latest_day=${latest_date_time%,??}
-	# let latest_day-=1		# uncomment to debug
+	# (( latest_day-=1 ))		# uncomment to debug
 	set-date_time
 	day=${date_time%,??}
 	[[ $latest_day == "$day" ]] ||
@@ -8131,7 +8120,6 @@ readonly -f search-syslog-for-errors
 check-logs() {
 
 	search-syslog-for-errors
-	# shellcheck disable=SC2119
 	search-syslog-for-big-swapouts
 }
 readonly -f check-logs
@@ -8284,10 +8272,10 @@ mk-Z() {
 	start_secs=$(date -d "$start_date" '+%s') || abort start_secs=
 	  end_secs=$(date -d   "$end_date" '+%s') || abort   end_secs=
 	local -i secs=start_secs  secs_per_day=$(( 24*60*60 ))
-	let end_secs-=3600		# end at 11 PM on previous day
+	(( end_secs-=3600 ))		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
 	   do	set-day--from-secs $secs
-		let secs+=secs_per_day
+		(( secs+=secs_per_day ))
 		[[ $day == *01 || ! $is_months ]] || continue
 		[[ $day != 0* ]] || abort "start date must be after 1/1/2010"
 		for hour in $hours
@@ -8549,7 +8537,6 @@ function regression-test() {
 	# shellcheck disable=SC2086 # variable contains multiple values
 	_run-debug-cmds u update-drive $args
 
-	# shellcheck disable=SC2119
 	reset-priority			# will continue only one job
 	continue-jobs backup
 	[[ ${killed_dst-} ]] &&
