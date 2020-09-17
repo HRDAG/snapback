@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# shellcheck disable=SC1007,SC2004,SC2015,SC2034,SC2059,SC2126,SC2128,SC2196,SC2197
+# shellcheck disable=SC1007,SC2004,SC2015,SC2034,SC2059,SC2126,SC2128,SC2196,SC2197,SC2219
 
 #    snapback (short for "snapshot backups") manages backups on multiple drives
 #
@@ -32,9 +32,9 @@ readonly libsnap_project=git@github.com:HRDAG/libsnap
 # search for ######## in  libsnap.sh to see coding-conventions and environment
 [[ :$PATH: == *:/usr/local/bin:* ]] || PATH=/usr/local/bin:$PATH
 lib=libsnap.sh
-type -t  $lib > /dev/null || PATH=$PATH:${0%/*/*/*}/libsnap/bin
-source   $lib ||  # the shellcheck action replaces this command
-if which $lib > /dev/null
+type -t $lib > /dev/null || PATH=$PATH:${0%/*/*/*}/libsnap/bin
+source  $lib ||  # the shellcheck action replaces this command
+if command $lib 2> /dev/null
    then abort "$lib needs to end with 'true'"
    else echo "install $lib from $libsnap_project" >&2; exit 1
 fi
@@ -255,7 +255,7 @@ while getopts "C cnvqr: E:edtT: hk"  arg
 	   ( * ) abort "$Usage" ;;
 	esac
 done
-let OPTIND=$OPTIND-1
+let OPTIND-=1
 shift $OPTIND
 unset arg
 
@@ -466,7 +466,7 @@ rm-stale-locks() {
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 
 	local lock_path
-	for lock_path in $lock_dir/*.pid
+	for lock_path in "$lock_dir"/*.pid
 	    do	[[ -e $lock_path ]] || continue
 		sudo-lockpid -o "$lock_path" &> $dev_null &&
 		sudo-lockpid -r "$lock_path" # we grabbed it, i.e. it was stale
@@ -1552,6 +1552,7 @@ readonly -f source-drive-specific-config-file
 function set-customized_drv_names() {
 	local var_name=$1
 
+	# shellcheck disable=SC1087
 	eval \
 	    "customized_drv_names=\${!drv_name2$var_name[*]}"
 	[[  $customized_drv_names ]]
@@ -1610,7 +1611,9 @@ function _set-value--for-config-var() {
 		break
 	done
 	if [[ $is_customized ]]
-	   then eval "value=\${drv_name2$var_name[\$drv_name]}"
+	   then # shellcheck disable=SC1087
+		eval "value=\${drv_name2$var_name[\$drv_name]}"
+		# shellcheck disable=SC1087
 		Trace 2 "drv_name2$var_name[$drv_name] -> $var_name=$value"
 	   else value=${custom_config_var2default_value[$var_name]}
 	fi
@@ -2293,7 +2296,7 @@ handle-stats-when-multiple-writers() {
 	local multi_msg="multiple writers during this job, MB change unknown"
 
 	local lock_file did_find_multiple_writers=$false
-	for lock_file in stats/*/$MB_used_basename/*.pid
+	for lock_file in stats/*/"$MB_used_basename"/*.pid
 	    do	# remove stale lock, if any ... and also our own (old??) lock
 		lockpid "$lock_file" &> $dev_null && lockpid -r "$lock_file" &&
 		    continue
@@ -2442,6 +2445,7 @@ readonly -f save-writer-stats
 
 # ----------------------------------------------------------------------------
 
+# shellcheck disable=SC2120
 set-used_MB-size_MB() {
 	local drive_dir=${1:-$drive_dir}
 
@@ -2468,6 +2472,7 @@ set-SECONDS-starting_MB--for-save-writer-stats() {
 	   then SECONDS=$restart_seconds # our signal to not record stats
 	   else SECONDS=0		# else do
 		local -i used_MB size_MB
+		# shellcheck disable=SC2119
 		set-used_MB-size_MB
 		starting_MB=$used_MB
 	fi
@@ -2493,6 +2498,7 @@ set-writer_stats_msg--as-save-writer-stats() {
 		local writer_hours=$hours
 
 		local used_MB size_MB
+		# shellcheck disable=SC2119
 		set-used_MB-size_MB
 		local -i writer_MB=$used_MB-$starting_MB
 		set-division -2 "$writer_MB" 1024
@@ -2585,7 +2591,7 @@ write-drive-usage-vs-speed() {
 		printf "$header_format" "Use%" "backup"
 		printf "$header_format" "====" "======"
 
-		for file in $drive_dir/*,00$log_dir/cron-w.txt
+		for file in "$drive_dir"/*,00"$log_dir"/cron-w.txt
 		    do	[[ -s $file ]] || continue
 			# shellcheck disable=SC2046
 			set -- $(sed -n -r \
@@ -2699,6 +2705,7 @@ _prune-exclude-globs-from-all-snapshots() {
 	# prune exclude-globs from _all_ snapshots, very slow
 	pushd_ -q "$drive_dir"
 	local snapshot exclude_glob file
+	# shellcheck disable=SC2231
 	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot == *.rm ]] && continue
 		grep '^ */' "$exclude_file" | fgrep -v '**' |
@@ -3241,6 +3248,7 @@ function prune-snapshots-not-matching-backup_period() {
 	local regex=${backup_period2minimal_snapshot_regex[$backup_period]}
 	local valid_snapshot_regex="$regex(|\..*)"
 	local snapshot
+	# shellcheck disable=SC2231
 	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot =~ $valid_snapshot_regex ]] ||
 		   echo "$snapshot"
@@ -4985,8 +4993,9 @@ set-percent_usage() {
 	local drive_dir division
 	set-drive_dir-
 	local -i used_MB size_MB
-	set-used_MB-size_MB		# shellcheck disable=SC2125
-	local -i  MB_100=$(( $MB*100 ))
+	# shellcheck disable=SC2119
+	set-used_MB-size_MB
+	local -i MB_100=$(( $MB*100 ))
 	set-division -2 "$MB_100" "$size_MB"
 	[[ $division == -0.00 ]] && division=${division#-}
 	percent_usage=$division%
@@ -5512,7 +5521,7 @@ function run-lsblk() {
 	lsblk_fields=name,fstype,type,size,state,sched,opt-io,mountpoint
 	# shellcheck disable=SC2086
 	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>$dev_null ||
-	lsblk --output=$lsblk_fields $devices # shellcheck disable=SC2086
+	lsblk --output=$lsblk_fields $devices
 }
 readonly -f run-lsblk
 
@@ -5565,6 +5574,7 @@ function trim-copy-update-ps {
 
 	local cpss="$our_name_ c"
 	local   ud="$our_name_ u"
+	# shellcheck disable=SC1087
 	trim-ps |
 	sed -r \
 	    -e '/update-drive/s@ -s@ -s @' \
@@ -6067,7 +6077,7 @@ _do-have-stats() {
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
 	[[ $stats_opt ]] || { report-rows_left-if-parallelized; return 1; }
 
-	let pipe_rows_left=$rows_left-$rows_used
+	pipe_rows_left=$(( $rows_left - $rows_used ))
 	[[ ! ${skip_last_report-} ]] && report-rows_left-if-parallelized
 	return 0
 }
@@ -6946,7 +6956,7 @@ has-new-snapshots() {
 
 	latest_date_time=$(basename "$latest_snapshot")
 	latest_day=${latest_date_time%,??}
-	# let latest_day=latest_day-1		# uncomment to debug
+	# let latest_day-=1		# uncomment to debug
 	set-date_time
 	day=${date_time%,??}
 	[[ $latest_day == "$day" ]] ||
@@ -7334,6 +7344,7 @@ _create-and-mount-filesystem() {
 	RunCmd  $cmd
 	set-drive_log_dir-file_for_logging-is_regression_test "$drive_name"
 	archive-writer-stats-data
+	# shellcheck disable=SC2209
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p "$drive_dir"
 	# shellcheck disable=SC2086
@@ -7418,7 +7429,7 @@ function mkfs-backup-drive() {
 
 	[[ ! $debug_opt ]] || return 1
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046,SC2230
 	set -- $(which -a "$our_name_")
 	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
 	local _our_path=$1
@@ -7553,7 +7564,7 @@ copy-backup-drive() {
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
 	   else _assert-dst-big-enough
 		# show the user a sample fstab record
-		# shellcheck disable=SC2037
+		# shellcheck disable=SC2037,SC2209
 		IfRun=echo mkfs-backup-drive -f "$dst_device" "$dst_name" |&
 		  # search for the last two fields in the fstab record
 		  egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
@@ -7890,7 +7901,7 @@ find-and-print-big-swapouts() {
 	set-rows-columns-COLUMNS
 
 	local log regex=$big_swapouts_regex
-	for log in $syslog_path-* $syslog_path
+	for log in "$syslog_path"-* $syslog_path
 	    do	local date=${log##*-}; date=${date%.*}
 		[[ $date == /* ]] && date=today
 
@@ -8480,7 +8491,7 @@ function regression-test() {
 
 	is-arg1-in-arg2 c "$tests" && {
 	_show-test-header copy to Z
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC1087,SC2086
 	set -- $drive_dir_prefix[^Z]*/$snapshot_day_glob,00
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	src_snapshots=$1
@@ -8609,7 +8620,7 @@ case $action in
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
    # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
-   ( c*p*s*s* | cs | cp* ) undo-action-abbrev copy-snapshots # cpss
+   ( c*p*s*s* | cs | cps* ) undo-action-abbrev copy-snapshots # cpss
 	[[ $# != 0 ]] || abort-with-action-Usage
 	is-arg1-in-arg2 -r "$@" && { create-jobs copy "$@"; exit-normally $?; }
 
@@ -8899,10 +8910,10 @@ case $action in
 	have-cmd shellcheck ||
 	 abort "https://github.com/koalaman/shellcheck#user-content-installing"
 	tmp_cmd="$tmp_dir/$our_name_"
-	lib_path=$(which libsnap.sh)
+	lib_path=$(command -v libsnap.sh)
 	# make it easier for shellcheck to source our config file
 	sed -e "s@^source ..config_file. @source $config_file @" \
-	    -e "s@^source   .lib @source $lib_path @" "$our_path" > "$tmp_cmd"
+	    -e "s@^source  .lib @source $lib_path @" "$our_path" > "$tmp_cmd"
 	# diff -u $our_path $tmp_cmd; false && # uncomment to debug the above
 	$IfRun shellcheck -x "$tmp_cmd"
 	rm "$tmp_cmd"
