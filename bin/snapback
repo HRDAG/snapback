@@ -1869,7 +1869,7 @@ mon-process-finished-glob() {
 	   else set --			    $samples
 	fi
 	while (( $# > $sample_count )) ; do shift; done
-	echo-to-file "$@" "$msecs_file"
+	echo-to-file "$*" "$msecs_file"
 
 	local   snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d  $snapshots_dir ]] || mkdir "$snapshots_dir"
@@ -1959,7 +1959,7 @@ readonly -f mon-look-for-finished-globs
 
 # ----------------------------------------------------------------------------
 
-update-monitor-drive-config() {
+update-monitor-config() {
 	[[ ${1-} == -c ]] && { shift; local do_check=$true; } ||local do_check=
 	# shellcheck disable=SC2086
 	[[ $# == 0 ]] &&
@@ -1973,7 +1973,7 @@ update-monitor-drive-config() {
 
 		if [[ $do_check ]]
 		   then is-newer "$window_msecs_file" "$config_file" &&continue
-			$our_path update-monitor-drive-config #so reread config
+			$our_path update-monitor-config # so reread config.sh
 			break
 		fi
 
@@ -1988,7 +1988,7 @@ update-monitor-drive-config() {
 
 	popd_
 }
-readonly -f update-monitor-drive-config
+readonly -f update-monitor-config
 
 # ----------------------------------------------------------------------------
 
@@ -2012,7 +2012,7 @@ monitor-drives() {
 		# $mon_overhead_drive_name MUST be first, see $_drive_name code
 		drive_names="$mon_overhead_drive_name $drive_names"
 		# shellcheck disable=SC2086
-		update-monitor-drive-config -c $drive_names # new confgure.sh?
+		update-monitor-config -c $drive_names # new confgure.sh?
 		# shellcheck disable=SC2086
 		mon-launch-globs $drive_names
 		mon-look-for-finished-globs
@@ -8750,8 +8750,9 @@ case $action in
    # filesystem maintenance actions
    ###########################################################################
 
-   # update-monitor-drive: configure.sh's drive_response_averaging_window_secs
-   ( mon*u* | mu | um* ) undo-action-abbrev update-monitor-drive-config; $Trace
+   # update-monitor-config: configure.sh's drive_response_averaging_window_secs
+   ( upd*mon*conf* | mu | umc | um* )
+	undo-action-abbrev update-monitor-config; $Trace
 	$action
 	;;
    # monitor-drives: start run-forever monitor of drive response time
