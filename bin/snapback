@@ -104,7 +104,7 @@ for _var in $__config_vars__
     do	is-arg1-in-arg2 "$_var" "$uncustomizable_config_vars" && continue
 	_customizable_arrays+="drv_name2$_var "
 done
-# shellcheck disable=SC2086
+# shellcheck disable=SC2086 # variable containing multiple values
 declare -A $_customizable_arrays
 #
 # this grabs variables that control backup and pruning, and may also hold
@@ -255,8 +255,8 @@ while getopts "C cnvqr: E:edtT: hk"  arg
 	   ( * ) abort "$Usage" ;;
 	esac
 done
-let OPTIND-=1
-shift $OPTIND
+(( OPTIND-=1 ))
+shift "$OPTIND"
 unset arg
 
 [[ $debug_opt ]] && verbose_opt=-v || verbose_opt=
@@ -452,7 +452,7 @@ function sudo-lockpid() {
 	fi
 	[[ ${!#} == */* ]] && local opt= || local opt="--dir=$lock_dir"
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $sudo_lockpid" >&2
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *opt may be null
 	$IfRun $sudo_lockpid $opt ${is_optional:+-q} "$@" |
 	    sed "s/--pid=[0-9]*/--pid=PID/" # for regression-test, when $IfRun
 	[[ ${PIPESTATUS[0]} == 0 ]]
@@ -609,13 +609,13 @@ function lock-PID() {
 
 	local output_file=$tmp_1
 	set -f
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	set -- lockpid --dir="$lock_dir" $lock_opts "$lock_file"; set +f
 	[[ $UID == 0 || $debug_opt ]] ||
 	    { shift; set -- sudo lockpid --pid=$BASHPID "$@"; }
 	local lock_cmd=$*
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	$IfRun $lock_cmd &> "$output_file" ; local status=$?
 	lockpid_output=$(<  "$output_file")
 	rm "$output_file"
@@ -640,8 +640,7 @@ function lock-PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
-		# shellcheck disable=SC2086
-		print-call-stack ${drive_name-}
+		print-call-stack "${drive_name-}"
 	   else $xtrace; return $status
 	fi >&2				# echo problems to stderr
 	$xtrace
@@ -760,11 +759,11 @@ function lock() {
 	local extra_lock_msg="${lock_msg/$type/backup}, so can't $type"
 
 	local wait_opt
-	 _set-wait_opt $do_wait
+	 _set-wait_opt "$do_wait"
 
 	local lock_file
 	# be sure to grab primary lock first, so job appears on dashboard
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opt may be null
 	lock-PID $wait_opt "$type" "$lock_msg" ||
 	    { local status=$?; $xtrace; return $status; }
 	local primary_lock_file=$lock_file # lock-PID sets lock_file
@@ -773,7 +772,7 @@ function lock() {
 	# this 'if' logic is similar to the logic in _signal-job()
 	if is-multi-writer-drive || [[ $type == backup || $no_prune ]]
 	   then true
-	   else # shellcheck disable=SC2086
+	   else # shellcheck disable=SC2086 # *_opt may be null
 		lock-PID $wait_opt backup "$extra_lock_msg" &&
 		lock-PID --release backup "$extra_lock_msg" ||
 		   { local status=$?; sudo-lockpid -r "$primary_lock_file"
@@ -1141,7 +1140,7 @@ function ps-locks() {
 		[[ -s   $lock ]] ||
 		    { [[ -e $lock ]] && echo "empty lock file"; continue; }
 		set-lock_PGID "$lock" || continue
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # *_opts may be null or multiple
 		ps $ps_opts  $ps_opt_g $lock_PGID || 
 		ps $ps_opt_h $ps_opts  $lock_PGID
 		status=$?
@@ -1169,7 +1168,7 @@ list-drive-dirs() {
 	   else local regex=$drive_name_regex # for cron & nohup
 	fi
 	[[ ${1-} == -A ]] && regex=/ || regex="^$drive_dir_prefix$regex$"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opt* may be null or multiple
 	df --output=target $df_exclude_type_options --no-sync |
 	   egrep "$regex" | sort -u
 	$xtrace
@@ -1209,7 +1208,7 @@ function is-drive-mounted() {
 	[[ $drive_dir == *[-/][zZ] ]] && return 0 # Z is testing pseudo-drive
 
 	suspend-tracing
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $drive_dir/$snapshot_glob*
 	restore-tracing
 	[[ $# != 0 ]] || is-an-FS-device-mounted "$drive_dir"
@@ -1223,7 +1222,7 @@ set-oldest_snapshot() {
 	local oldest= FS
 	for FS in $(list-drive-dirs)
 	    do	suspend-tracing
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $FS/$snapshot_glob
 		[[ $# != 0 ]] || continue
 		restore-tracing
@@ -1669,7 +1668,7 @@ readonly -f set-customized_value--for-config-var-name
 
 validate-config-variables() {
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	declare -p $config_vars | grep -v '^declare -'
 	[[ ${PIPESTATUS[0]} == 0 ]] ||
 	    abort "must assign above variables, see $config_file_sample"
@@ -1696,8 +1695,7 @@ validate-config-variables() {
 	    abort "drive_response_averaging_window_secs too small"
 
 	# these config file(s) will be mentioned in the following error msg
-	# shellcheck disable=SC2086
-	set -- "$config_file" ${drive_specific_config_file-}
+	set -- "$config_file" "${drive_specific_config_file-}"
 
 	echo " $dirs_to_backup " | grep ' [^/]' &&
 	   abort "dirs_to_backup contains a non-absolute path in $*"
@@ -1768,7 +1766,7 @@ function create-monitor-dirs() {
 
 	local dirs="$_mon_globs_dir $drive_msecs_dir $window_msecs_dir
 		    $snapshots_replica_dir $non_empty_partial_dir"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	mkdir -p $dirs "$_mon_lock_dir" &&
 	chmod ugo+rwx  "$_mon_lock_dir"	# so don't need sudo-lockpid
 }
@@ -1783,7 +1781,7 @@ lock-replica-of-snapshots() {
 
 	local lockpid_opts="--dir=$_mon_lock_dir --sleep-msecs=$sleep_msecs"
 	umask 0				# so watch doesn't need sudo-lockpid
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opt* may be null or multiple
 	$IfRun lockpid $lockpid_opts "$@" "$lock_file" || print-call-stack
 	umask $umask
 }
@@ -1809,7 +1807,7 @@ mon-launch-globs() {
 		local -i epoch_msecs
 		set-epoch_msecs # takes ~1 msec to fork+exec (not if bash-5)
 		# if $ls_drive_name2PID[$drive_name] still alive, slows this:
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains a glob
 		( echo $snapshot_glob* > $glob_file; touch -r . $glob_file ) &
 		drive_name2PID[$drive_name]=$!
 		drive_name2msecs[$drive_name]=$epoch_msecs
@@ -1825,7 +1823,7 @@ mon-launch-globs() {
 		#
 		local partial_file=$non_empty_partial_dir/$drive_name
 		(
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob.partial
 		# shellcheck disable=SC2012
 		[[ $# == 0 ]] && true > "$partial_file" ||
@@ -1866,9 +1864,9 @@ mon-process-finished-glob() {
 	fi
 
 	local msecs_file=$drive_msecs_dir/$drive_name
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	if [[ -s $msecs_file ]]
-	   then # shellcheck disable=SC2046
+	   then # shellcheck disable=SC2046 # files contains multiple values
 		set -- $(< "$msecs_file") $samples
 	   else set --			  $samples
 	fi
@@ -1882,7 +1880,7 @@ mon-process-finished-glob() {
 	lock-replica-of-snapshots --wait # 'w' action uses same locking
 	rm -f ./*
 	subdirs=$(< "$glob_file") || abort subdirs=
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	[[ $subdirs ]] && touch $subdirs
 	touch -r "$glob_file" .
 	lock-replica-of-snapshots --release
@@ -1956,7 +1954,7 @@ mon-look-for-finished-globs() {
 			[[ $_drive_name ]] && wait $! && return
 		done
 
-		msleep $sleep_msecs
+		msleep "$sleep_msecs"
 	done
 }
 readonly -f mon-look-for-finished-globs
@@ -2015,9 +2013,9 @@ monitor-drives() {
 	    do	set-drive_names -a	# see if a new drive appeared
 		# $mon_overhead_drive_name MUST be first, see $_drive_name code
 		drive_names="$mon_overhead_drive_name $drive_names"
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains multiple values
 		update-monitor-config -c $drive_names # new confgure.sh?
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains multiple values
 		mon-launch-globs $drive_names
 		mon-look-for-finished-globs
 	done
@@ -2160,7 +2158,7 @@ function set-priority() {
 	[[ $action == prune-drive* && $drive_name == [zZ] ]] && return 0
 
 	{
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	$IfRun $CPU_priority_cmd $PGID && { [[ ! $IO_priority_cmd ]] ||
 	$IfRun  $IO_priority_cmd $PGID					; }
 	} 2> $dev_null |
@@ -2373,7 +2371,7 @@ prune-stats-files() {
 
 	pushd_ -q "$drive_log_dir"
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $stats_subdir/$snapshot_glob.txt # duplicated in for loop, below
 	[[ $# != 0 ]] && {
 
@@ -2383,7 +2381,7 @@ prune-stats-files() {
 	touch --date="$old_date" "$min_date_TS"
 	for file in "$@"
 	    do	[[ $file -ot $min_date_TS  ]] || continue
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $stats_subdir/$snapshot_glob.txt
 		(( $# > $min_stats_files_to_keep )) || break
 		$IfRun rm "$file"
@@ -2556,7 +2554,7 @@ function is-sleeping() {
 	set-executables--in-process-groups "$job_PGID" || {
 			warn "set-exe* -> $?"
 			print-call-stack "$drive_name"; ps-locks; return 1; }
-	is-arg1-in-arg2 sleep $executables
+	is-arg1-in-arg2 sleep "$executables"
 }
 readonly -f is-sleeping
 
@@ -2611,7 +2609,7 @@ readonly -f write-drive-usage-vs-speed
 
 function update-snapshots-ls {
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	[[ ! $debug_opt ]] &&
 	echo $snapshot_glob* | tr ' ' '\n' > "$drive_log_dir/snapshots.ls"
 	return 0			# so can precede and follow by '&&'
@@ -2682,6 +2680,7 @@ function sudo-unless-dir-writable() {
 	local path=${!#}
 
 	[[ $path == */* ]] && local dir=${path%/*} || local dir=.
+	# shellcheck disable=SC2086 # *_opt may be null
 	if [[ -w $dir ]]
 	   then "$@"
 	   else sudo $sudo_opt "$@"
@@ -2710,7 +2709,7 @@ _prune-exclude-globs-from-all-snapshots() {
 	    do	[[ $snapshot == *.rm ]] && continue
 		grep '^ */' "$exclude_file" | fgrep -v '**' |
 		while read -r exclude_glob
-		    do	# shellcheck disable=SC2086
+		    do	# shellcheck disable=SC2086 # variable contains a glob
 			set -- $snapshot$exclude_glob
 			for file	# can have SPACEs, need to quote it
 			   do	[[ -e "$file" ]] && echo "$PWD/$file"
@@ -2737,6 +2736,7 @@ delete-pruned-snapshot() {
 	   then local restart_opt=-r	delete_name=$snapshot
 	   else local restart_opt=	delete_name=${snapshot%.rm}.partial.rm
 	fi
+	# shellcheck disable=SC2086 # *_opt may be null
 	[[ $drive_name != Z ]] &&
 	local  -i   starting_MB=0 &&
 	set-SECONDS-starting_MB--for-save-writer-stats $restart_opt "$snapshot"
@@ -2793,6 +2793,7 @@ rm-pruned-snapshots() {
 		[[ ! ( $debug_opt || $drive_name == Z ) ]] &&
 		# could instead use: count-rsyncs-using-resource $snapshot
 		fuser -s "$snapshot/." && continue # don't rename if in-use
+		# shellcheck disable=SC2086 # *_opt may be null
 		if [[ $is_update ]]
 		   then  $sudo mv $verbose_opt "$snapshot" "$snapshot.rm"
 		   else $IfRun mv	       "$snapshot" "$snapshot.rm"
@@ -2819,7 +2820,7 @@ rm-pruned-snapshots() {
 	fi
 
 	# delete less-useful snapshots before more-useful ones
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set --  $snapshot_glob*.partial.rm $snapshot_glob.links.rm \
 		$snapshot_glob.rm
 	local snapshot_basenames=$* number_pruned_snapshots=$#
@@ -2827,7 +2828,7 @@ rm-pruned-snapshots() {
 	restore-tracing
 
 	if [[ ! -d latest ]]
-	   then # shellcheck disable=SC2086
+	   then # shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob # only the successful snapshots
 		[[ -d ${!#} ]] && $IfRun rm -f latest &&
 		$IfRun ln -s "$(basename "${!#}")" latest
@@ -3017,7 +3018,7 @@ validate-prune_globs() {
 			local pruned old_span new_spam
 			for pruned
 			    do	[[ ! -s $pruned ]] &&
-				    echo $span > "$pruned" && continue
+				    echo "$span" > "$pruned" && continue
 				old_span=$(< "$pruned") || abort old_span=
 				new_span=$span
 				abort "$pruned was pruned by spans $old_span and $new_span (first span is 1) in type2prune_type_globs[$type]"
@@ -3114,7 +3115,7 @@ readonly -f set-date_span--scaled
 reverse-sorted-snapshot-basenames() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	echo $snapshot_glob*  |		# prune everything
 	   tr ' ' '\n' | sort -u -r |
 	   grep -v '\.rm$'		# rm-pruned-snapshots handles *.rm
@@ -3174,7 +3175,7 @@ prune-type-to-file() {
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
 	local prune_type_globs=${type2prune_type_globs[$type]}
 	set -f
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $prune_type_globs; set +f
 	declare -i number_prune_globs=$#
 
@@ -3228,11 +3229,11 @@ prune-type-to-file() {
 		# delete all the old-enough prune matches
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\nDeleting ~$# snapshots: $ss"
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains multiple values
 		echo ${*##$oldest_snapshot*} # don't delete oldest snapshot
 	done >> "$file_of_snapshots_to_prune"
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	echo $remaining_reverse_sorted_snapshot_dates
 }
 readonly -f prune-type-to-file
@@ -3285,8 +3286,7 @@ function prune-drive() {
 	local  snapshots_to_prune_file=$tmp_4
 	rm -f "$snapshots_to_prune_file"
 
-	# shellcheck disable=SC2086
-	set-prune_types ${final_prune_type-}
+	set-prune_types "${final_prune_type-}"
 
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
 
@@ -3347,7 +3347,7 @@ function set-latest_snapshot() {
 	[[ -d $latest_snapshot ]] || { latest_snapshot= ; return 1; }
 
 	local absolute_dir
-	set-absolute_dir $latest_snapshot
+	set-absolute_dir "$latest_snapshot"
 	latest_snapshot=$absolute_dir
 	return 0
 }
@@ -3357,7 +3357,7 @@ readonly -f set-latest_snapshot
 
 function _have-full-snapshot {
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $snapshot_glob
 	[[ $# != 0 ]]
 }
@@ -3463,9 +3463,9 @@ set-link_dest_opts--for-backup-drive() {
 
 	set-num_full_link_dests
 	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_dirs "$new_snapshot" $useful_snapshots
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_opts $link_dest_dirs
 }
 readonly -f set-link_dest_opts--for-backup-drive
@@ -3486,7 +3486,7 @@ set-older_link_dest_dirs-newer_link_dest_dirs() {
 		older_snapshots+=" $snapshot"
 	done
 	restore-tracing
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_dirs "$new_snapshot" $older_snapshots # newest to older
 	older_link_dest_dirs=$link_dest_dirs
 	TraceV 5 older_link_dest_dirs
@@ -3500,7 +3500,7 @@ set-older_link_dest_dirs-newer_link_dest_dirs() {
 		newer_snapshots+=" $snapshot"
 	done
 	restore-tracing
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_dirs "$new_snapshot" $newer_snapshots # oldest to newer
 	newer_link_dest_dirs=$link_dest_dirs
 	TraceV 5 newer_link_dest_dirs
@@ -3538,15 +3538,15 @@ set-link_dest_opts--for-copy-snapshot() {
 	[[ ${previously_copied_snapshot-} && $latest_snapshot ]] &&
 	    let num_full_link_dests-=1
 	TraceV 5  link_dest_fast_dirs num_full_link_dests
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-older_link_dest_dirs-newer_link_dest_dirs "$new_snapshot" \
 						      $link_dest_fast_dirs
 
 	# For a server that has continually-added and never-deleted files
 	# (like a git or snapshot server), $latest_snapshot is almost as
 	# effective as $newer_link_dest_dirs; otherwise, you might want
-	# $newer_link_dest_dirs to precede $older_link_dest_dirs
-	# shellcheck disable=SC2086
+	# $newer_link_dest_dirs to precede $older_link_dest_dirs .
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_opts \
 	    $link_dest_fast_dirs $older_link_dest_dirs $newer_link_dest_dirs
 	TraceV 5 link_dest_opts
@@ -3599,7 +3599,7 @@ function _is-time-to-backup-drive {
 	# we're called more than hourly (to reset priorities, and to prune)
 	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-excluded_hours $excluded_backup_hours
 	is-arg1-in-arg2 "$current_hour" "$excluded_hours" && return 1
 
@@ -3670,7 +3670,7 @@ _handle-rsync-results() {
 	local error_msg=
 
 	if is-arg1-in-arg2 "$status" "$successful_rsync_exit_statuses"
-	   then # shellcheck disable=SC2086
+	   then # shellcheck disable=SC2086 # variable contains a glob
 		$IfRun mv "$new_snapshot.partial" "$new_snapshot" &&
 		[[ $new_snapshot != *.links ]] &&
 		set -- $snapshot_glob && [[ $# != 0 ]] &&
@@ -3749,14 +3749,14 @@ function _run-rsync-cmd() {
 	   then local restart_opt=-r
 	   else local restart_opt=
 	fi
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opt may be null
 	set-SECONDS-starting_MB--for-save-writer-stats \
 	    $restart_opt $partial_dst
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
 	$Trace
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opt may be null
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\
 		     $relative_opt	\
@@ -3830,7 +3830,7 @@ function backup-drive-rsync() {
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
 
 	suspend-tracing
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	run-rsync $dirs_to_backup "$new_snapshot"
 	restore-tracing			# this preserves $?
 }
@@ -3984,8 +3984,7 @@ function backup-drive() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then # before continue a copy, disable the pruning of its source
-		# shellcheck disable=SC2086
-		restore-lock ${prune_lock_path-} ${copy_PGID-}
+		restore-lock "${prune_lock_path-}" "${copy_PGID-}"
 		$IfRun create-jobs prune # also manages (continues) a copy job
 	fi
 
@@ -4125,7 +4124,7 @@ function copy-snapshot() {
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	assert-not-option -o "${1-}"
-	[[ $src     ]] && set -- $src "$1"
+	[[ $src     ]] && set -- "$src" "$1"
 	(( $# >= 2  )) || abort-function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*#$dst_drive_name}
@@ -4189,7 +4188,8 @@ function copy-snapshots() {
 	[[ $lock_bkp ]] && lock -w backup
 	local status=0
 	for src_snapshot in $src_snapshots
-	    do	copy-snapshot $quiet_opt "$src_snapshot" "$drive_name" ||
+	    do	# shellcheck disable=SC2086 # *_opt may be null
+		copy-snapshot $quiet_opt "$src_snapshot" "$drive_name" ||
 		    status=$?
 	done
 	[[ $lock_bkp ]] && unlock backup
@@ -4251,8 +4251,8 @@ wait-for-full-snapshots() {
 
 	while true
 	   do	suspend-tracing
-		# shellcheck disable=SC2086
-		set -- $drive_dir/$snapshot_glob
+		# shellcheck disable=SC2086 # variable contains a glob
+		set -- "$drive_dir"/$snapshot_glob
 		restore-tracing
 		(( $# > $min_full_snapshots )) && return # an extra one: safety
 		env sleep 1h
@@ -4391,7 +4391,7 @@ set-basename2dirs-basename2is_keep() {
 	   do	basename=${dir%/.keep}
 		basename=${basename##*/}
 
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains a glob
 		[[ $excluded_names_glob ]] &&
 		   set -- $drive_dir_prefix$excluded_names_glob/$basename &&
 		   [[ $# != 0 && -d $1 ]] && continue
@@ -4424,11 +4424,12 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	local snapshot basename
 	for snapshot
 	    do	local src_snapshots=${basename2dirs[$snapshot]}
-		# shellcheck disable=SC2086
-		copy-snapshot -u $src_snapshots $drive_name # loads a var
-		# shellcheck disable=SC2086
-		set -- $copy_snapshot_args   # variable set by copy-snapshot
-		[[ $# != 0 ]] || continue    # src might not have been needed
+		# shellcheck disable=SC2086 # variable contains multiple values
+		copy-snapshot -u $src_snapshots "$drive_name" # loads a var
+		# shellcheck disable=SC2086 # variable contains multiple values
+		set -- $copy_snapshot_args  # variable set by copy-snapshot
+		[[ $# != 0 ]] || continue   # src might not have been needed
+
 		local	   dst_snapshot=${!#} # last arg is destination
 		basename=${dst_snapshot##*/}
 		[[ -d $dst_snapshot.links ]] && continue # have upgradable dst?
@@ -4436,6 +4437,7 @@ mkdir-missing-snapshots-then-print-copy-args() {
 		# create a .partial dir for pruning (unless it has a /.keep).
 		# use env to avoid 'mkdir' builtin (which doesn't handle -v)
 		local dst_partial=$dst_snapshot.partial
+		# shellcheck disable=SC2086 # *_opt may be null
 		$sudo env mkdir $verbose_opt -p "$dst_partial" >&2
 		[[ ${basename2is_keep[$basename]-} ]] &&
 		          echo >"$dst_partial/.keep" && [[ $verbose_opt ]] &&
@@ -4550,7 +4552,7 @@ function fill-in-unpruned-empty-snapshots() {
 
 			is-set     drive_name2speed_record ||
 			declare -A drive_name2speed_record
-			# shellcheck disable=SC2046
+			# shellcheck disable=SC2046,SC2086
 			set -- $(fastest-snapshots $force_opt "$@")
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync "$1" "$dst_snapshot" >&2
@@ -4607,6 +4609,7 @@ function update-drive() {
 	# make sure that we're not using partially-created snapshots
 	# in rsync's --link-dest options
 	set-num_full_link_dests
+	# shellcheck disable=SC2086 # variable containing multiple values
 	[[ $do_force ]] || ! is-in-cron-job "$drive_name" ||
 	    $IfRun wait-for-full-snapshots $num_full_link_dests
 
@@ -4617,7 +4620,7 @@ function update-drive() {
 
 	fill-in-unpruned-empty-snapshots "$srcs_dst_file"
 	local status=$?
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	[[ $status == 0 ]] &&	  # did we do actually do some copying (slow)?
 	$IfRun update-drive -r ${update_drive_args#-r} # see if new snapshots
 
@@ -4652,7 +4655,8 @@ function set-drive_dirs--from-user-args() {
 	assert-not-option "${1-}"
 
 	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
-	   then set-drive_dirs $all_opt
+	   then # shellcheck disable=SC2086 # *_opt may be null
+		set-drive_dirs $all_opt
 		$xtrace
 		return $?
 	fi
@@ -4766,7 +4770,7 @@ create-jobs() {
 
 	if [[ $are_recursing ]]
 	   then $Trace
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
 		exit-normally $?
 	fi
@@ -4788,10 +4792,10 @@ create-jobs() {
 		if [[  ! $debug_opt   && $name != [zZ] ]]
 		   then trap '' HUP
 			# Want new process-group so can ps/kill independently.
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # var has multiple values
 			setsid \
 			$our_exe $opts -r $name &
-		   else # shellcheck disable=SC2086
+		   else # shellcheck disable=SC2086 # var has multiple values
 			$our_exe $opts -r $name # run in foreground for testing
 			echo
 		fi
@@ -4867,7 +4871,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 
 	pushd_ -q "$drives_log_dir/$drive_name"
 	local stats_subdir
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set-stats_subdir "$data_type" && cd_ "$stats_subdir" &&
 	    set -- $snapshot_glob.txt || set --
 	files=$*
@@ -4976,9 +4980,9 @@ set-writer_hour_avgs-writer_hour_maxs() {
 		hour_maxs+="$drive_name=$hour_max "
 	done
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v writer_hour_avgs "$stats_format" $hour_avgs
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v writer_hour_maxs "$stats_format" $hour_maxs
 	fix-padded-colorized-string-vars writer_hour_avgs
 	strip-trailing-whitespace writer_hour_avgs writer_hour_maxs
@@ -5050,16 +5054,16 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		   then local snapshots=${files//.txt/}
 
 			local hours=${snapshots//$snapshot_day_glob,/}
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # var has multiple values
 			set-uniques $hours
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # var has multiple values
 			set -- $uniques
 			local unique_hours=$#
 
 			local days=${snapshots//,??/}
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # var has multiple values
 			set-uniques $days
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # var has multiple values
 			set -- $uniques
 			local -i day_count=$#
 
@@ -5068,7 +5072,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 			# we usually get a few jobs before and after whole days
 			[[ $snap_1 != *,00 || $# -gt $days_to_keep_stats ]] &&
 			day_count=$day_count-1
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # var has multiple values
 			set -- $snapshots
 			local  file_count=$#
 			if [[ $file_count == "$count" ]]
@@ -5097,11 +5101,11 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		TraceV 1 unique_hours sum day_count MB_per_day percent_usage
 	done
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v           jobs_per_day "$stats_format"     $jobs_per_day
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v     writer_GBs_per_day "$stats_format"      $GBs_per_day
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v percent_usages_per_day "$stats_format" $percents_per_day
 	strip-trailing-whitespace \
 	    jobs_per_day     writer_GBs_per_day percent_usages_per_day
@@ -5126,18 +5130,18 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 
 		[[ $writer_type != backup ]] || continue
 
-		set-padded_number $predicted_TB_sum
+		set-padded_number "$predicted_TB_sum"
 		predicted_TBs+="$drive_name=$padded_number "
 
-		set-padded_number $predicted_percent_usage
+		set-padded_number "$predicted_percent_usage"
 		predicted_percents+="$drive_name=$padded_number "
 	done
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v writer_GB_avgs           "$stats_format" $GB_avgs
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v predicted_TB_sums        "$stats_format" $predicted_TBs
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v predicted_percent_usages "$stats_format" $predicted_percents
 	strip-trailing-whitespace \
 	    writer_GB_avgs     predicted_TB_sums predicted_percent_usages
@@ -5168,7 +5172,7 @@ set-drive_usages() {
 		set-drive_name- "$drive_dir"
 		percents+="$drive_name=$percent "
 	done
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v drive_usages "$stats_format" $percents
 	fix-padded-colorized-string-vars drive_usages # we're done with printf
 	strip-trailing-whitespace drive_usages
@@ -5213,7 +5217,7 @@ set-drive_responses() {
 		fi
 		responses+="$drive_name=$secs "
 	done
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v drive_responses "$stats_format" $responses
 	strip-trailing-whitespace drive_responses
 }
@@ -5228,7 +5232,7 @@ function count-snapshots-being-created-on-drive() {
 
 	local lock_paths
 	set-lock_paths backup,copy
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $lock_paths
 	[[ $# == 2 ]] && (( $(< "$1") == $(< "$2") )) && shift # duplicate PID?
 
@@ -5238,7 +5242,7 @@ function count-snapshots-being-created-on-drive() {
 	    do	is-active-lock "$path" && let count+=1
 	done
 
-	return $count
+	return "$count"
 }
 readonly -f count-snapshots-being-created-on-drive
 
@@ -5282,7 +5286,8 @@ _set-colorized_new() {
 	fi
 
 	if [[ $warning_string ]]
-	   then set-padded_colorized_string--for-printf "$new" $warning_string
+	   then set-padded_colorized_string--for-printf \
+		    "$new" "$warning_string"
 		warning_string=$padded_colorized_string
 	fi
 	colorized_new=${warning_string:-$new}
@@ -5303,7 +5308,7 @@ _recalculate-snapshot-stats-vars() {
 		cd_ -q "$dir"
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob$suffix
 		restore-tracing
 
@@ -5325,7 +5330,7 @@ _recalculate-snapshot-stats-vars() {
 			    prev_snap=$snap
 			[[ $skip_empty || $only_empty ]] || suspend-tracing
 		done
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains multiple values
 		set -- $snaps
 		}
 		restore-tracing
@@ -5346,7 +5351,7 @@ _recalculate-snapshot-stats-vars() {
 		   else local old=		new=
 		fi
 		if [[ ! $suffix && $watch_opt ]] # checking complete snapshots?
-		   then _set-colorized_new $new	 # warn if newest not today
+		   then _set-colorized_new "$new" # warn if newest not today
 			new=$colorized_new
 		fi
 		oldies+="$drive_name=$old "
@@ -5355,16 +5360,16 @@ _recalculate-snapshot-stats-vars() {
 	cd_ -q "$caller_PWD"
 	lock-replica-of-snapshots --release
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v stats_numbers     "$stats_format" $nums   ; [[ $dates ]] && {
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v stats_oldest_ages "$stats_format" $oldies
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v stats_newest_ages "$stats_format" $newies		    ; }
 	local vars="stats_numbers stats_oldest_ages stats_newest_ages"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	fix-padded-colorized-string-vars $vars # we're done with printf
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	strip-trailing-whitespace $vars
 }
 readonly -f _recalculate-snapshot-stats-vars
@@ -5489,7 +5494,7 @@ function run-df() {
 	fi
 	local df_opts="--block-size=G --output=$df_fields
 		       $df_exclude_type_options --no-sync"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	df $df_opts $drive_dirs | filter-df
 
 	[[ ${show_all-} ]] || return
@@ -5498,7 +5503,7 @@ function run-df() {
 	df_fields=${df_fields/,iused,ipcent,/,}
 	df_opts="-m --output=$df_fields
 		       $df_exclude_type_options --no-sync"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	df $df_opts $drive_dirs | filter-df
 }
 readonly -f run-df
@@ -5519,7 +5524,7 @@ function run-lsblk() {
 	echo
 	# fields that don't work: rm,model; unreliable fields: rota
 	lsblk_fields=name,fstype,type,size,state,sched,opt-io,mountpoint
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	lsblk --output=$lsblk_fields --sort mountpoint  $devices 2>$dev_null ||
 	lsblk --output=$lsblk_fields $devices
 }
@@ -5568,7 +5573,7 @@ readonly -f trim-prune-ps
 function trim-copy-update-ps {
 
 	set -f
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $rsync_backup_opts; set +f # readonly var
 	local   rsync_backup_opts_=$*	  # standardize whitespace
 
@@ -5604,14 +5609,14 @@ exec-watch-snapback-w() {
 
 	local w_opts="$ps_opt $no_errors $stats_opt $cron_opt $bg_opt"
 	if [[ $names ]]
-	   then # shellcheck disable=SC2086
+	   then # shellcheck disable=SC2086 # variable contains multiple values
 		set-drive_names--from-user-args $names ||
 		   warn "'$names' not mounted" || exit-normally $?
 		w_opts+=" -N ${drive_names// /,}"
 	fi
 	# n >= 0.5 is best for watching wchan (when -C , plus 'sudo ps' access)
 	local watch_opt_n=$mon_check_period_secs
-	# shellcheck disable=SC2086,SC2093
+	# shellcheck disable=SC2086,SC2093 # *_opts may be null or multiple
 	exec watch $watch_exe_options -n $watch_opt_n $opts \
 	     $our_path $our_opts w -w $w_opts "$@"
 	abort-function "exec failed"
@@ -5741,7 +5746,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	num_drives=$#
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null  |
      egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm|sync) ')
@@ -5753,7 +5758,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 		     ! /rsync/ { print }' ; } # use when don't have -H
 
 	# both update-drive and copy-snapshot use the copy lock
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
 			   # first -e ensures we don't see forked snapback also
@@ -5762,7 +5767,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 				-e "[0-9] $rsync_ps" -e " [s]ync "     )
 	[[ $ps_opt_H ]] ||
 	    copy_rsync_cmds=$(cmds-with-one-rsync "$copy_rsync_cmds")
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	! set-lock_PGIDs backup && bkp_rsync_cmds=  ||
 	bkp_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
 			     grep -e "[0-9] $rsync_ps" -e " [s]ync ")
@@ -5855,7 +5860,7 @@ _set-cron_cmds--from-PGIDs() {
 	local PIDs
 	set-PIDs--in-process-groups "$PGIDs"
 	#  option f for "forest"; run trim-backup-ps now, for next adjustment
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	cron_cmds=$($sudo ps $ps_opt_f -o $ps_keywords $PIDs | trim-backup-ps)
 	[[ $ps_opt_f ]] ||
 	# since no forest ascii-art to visually separate jobs, use blank lines
@@ -6120,7 +6125,7 @@ show-stats-section-2-prune() {
 	echo "  Average hours to delete *.rm snapshot:  $writer_hour_avgs"
 
 	declare -A drive_name2stats_number
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
@@ -6148,7 +6153,7 @@ show-stats-section-2-copy() {
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
 	declare -A drive_name2stats_number
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
@@ -6416,8 +6421,8 @@ _start-monitor-drives-if-needed() {
 	is-active-lock "$drive_monitor_lock_path" && return
 	}
 
-	# shellcheck disable=SC2086,SC2033
-	RunCmd sudo $our_path monitor-drives
+	# shellcheck disable=SC2033
+	RunCmd sudo "$our_path" monitor-drives
 	until [[ -d $(dirname "$mon_initialized_lock_path") ]]
 	   do	env sleep 0.12
 	done
@@ -6534,9 +6539,9 @@ watch() {
 	[[ ${1-} == -u ]] && { user_show=$1; shift; }
 	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	[[ ${do_drives-} ]] && set -- $show_drive_functions
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple or no values
 	[[ ${user_show-} ]] && set -- ${show_user_functions-}
 	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
 
@@ -6546,7 +6551,7 @@ watch() {
 	local all_drive_names=$drive_names
 	set-stats_format "$all_drive_names"
 	local all_drive_dirs=" $all_drive_names"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- ${all_drive_dirs// / $drive_dir_prefix}
 	all_drive_dirs=$*
 
@@ -6560,7 +6565,7 @@ watch() {
 
 	SECONDS=$(date '+%s')		# for _set-age()
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-drive_names-names_msg-names_glob-drive_dirs $names # set-lock_PGIDs
 	TraceV 1 drive_names names_glob ps_opt cron_opt show_all
 
@@ -6568,7 +6573,7 @@ watch() {
 
 	setup-ps-variables-and-ps_-function
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds $drive_names
 
 	[[ $cron_opt && $prune_cmds$bkp_rsync_cmds$copy_rsync_cmds ]] &&
@@ -6654,8 +6659,8 @@ predict-prune() {
 
 	local drive_name
 	for drive_name in $drive_names
-	    do	# shellcheck disable=SC2086
-		$our_path -d prune-drives $prune_opt $drive_name > $tmp_1 ||
+	    do	# shellcheck disable=SC2086 # *_opt may be null
+		$our_path -d prune-drives $prune_opt "$drive_name" > $tmp_1 ||
 		    exit $?
 		grep -v '\.rm .*\.rm' "$tmp_1" | # ignore: mv S.rm S.partial.rm
 		    sed -n -r '/^mv .*\.rm$/s@.*[/ ]@@p' > "$tmp_2" ||
@@ -6695,7 +6700,7 @@ dump-state() {
 	fi
 
 	shopt -u nullglob
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variables hold paths w/out spaces
 	$IfRun tar Jcvf $tar_file --exclude=*~ \
 	     ${config_dir#/}/*.sh ${log_dir#/} ${status_dir#/} ${lock_dir#/} \
 	     ${our_path#/} ${libsnap_path#/} $installed_paths
@@ -6803,7 +6808,7 @@ dir-sizes() {
 	   abort "use '-T 1' or '-t' instead of '-d' (-d only works with -f)"
 	[[ $UID == 0 ]] || abort "need to use sudo"
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	rsync --dry-run --verbose --recursive --relative \
 		  $excludes		      \
 		--include='*/' --exclude='*'  \
@@ -6946,7 +6951,7 @@ has-new-snapshots() {
 	is-drive-mounted "$drive_dir" || exit-normally 0
 
 	suspend-tracing
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $drive_dir/$snapshot_glob # all the _successful_ snapshots
 	restore-tracing
 
@@ -6974,7 +6979,7 @@ max-drive() {
 		echo "$drive_dir" && exit-normally 0
 	fi
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
 
@@ -6983,7 +6988,7 @@ max-drive() {
 	local max_drive=$1 new_drive; shift
 	for new_drive in "$@"
 	    do	for (( secs=$(date '+%s'); 1; secs-=secs_per_day ))
-		    do	set-day--from-secs $secs
+		    do	set-day--from-secs "$secs"
 
 			set -- "$new_drive/$day",??*
 			[[ $# != 0 ]] || break
@@ -7019,6 +7024,7 @@ function unmount-drives() {
 	local name drive_name drive_dir status=0
 	for name
 	    do	set-drive_name "$name"
+		# shellcheck disable=SC2086 # *_opt may be null
 		set-drive_dir $quiet_opt "$drive_name"
 		is-drive-mounted "$drive_dir" || continue
 		# shellcheck disable=SC2024
@@ -7090,7 +7096,7 @@ function add-extN-journal() {
 	mount_dir=$drive_dir
 	set-FS_label--from-mount_dir "$mount_dir" ; }
 							[[ $FS_device ]] ||
-	set-FS_device--from-FS-label $FS_label
+	set-FS_device--from-FS-label "$FS_label"
 	[[ ${mount_dir-} ]] ||
 	   set-mount_dir--from-FS-label  "$FS_label" ||
 	   set-mount_dir--from-FS-device "$FS_device"
@@ -7098,9 +7104,11 @@ function add-extN-journal() {
 
 	sudo tune2fs -l "$FS_device" | grep -q '^Journal ' &&	  {
 	warn "removing internal journal can take many minutes"
+	# shellcheck disable=SC2086 # *_opt may be null
 	$IfRun tune2fs $force_opt -O ^has_journal "$FS_device"	; }
 
-	set-FS_external_log $force_opt $FS_label "$VG_name" ||
+	# shellcheck disable=SC2086 # *_opt may be null
+	set-FS_external_log $force_opt "$FS_label" "$VG_name" ||
 	warn "invalid set-FS_external_log, or $config_file says log unwanted"||
 	   { $IfRun tune2fs -j "$FS_device"; return $?; }
 	label=${FS_external_log##*/}
@@ -7121,8 +7129,8 @@ function add-extN-journal() {
 	[[ $do_mount ]] || return "$status"
 
 	mount_options=$common_mount_options,$extN_mount_options
-	# shellcheck disable=SC2086
-	RunCmd mount -v -t ext4 -o ${mount_options%,} $FS_device $mount_dir
+	RunCmd \
+	mount -v -t ext4 -o "${mount_options%,}" "$FS_device" "$mount_dir"
 }
 readonly -f add-extN-journal
 
@@ -7176,7 +7184,7 @@ _set-blocks_per_inode-bytes_per_inode--for-extN() {
 
 	block_size=1024			# optimal, see above comments
 	set -f
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $opts; set +f
 	while [[ $# != 0 ]]
 	   do	[[ $1 == -b       ]] && block_size=${2-}
@@ -7340,15 +7348,14 @@ _create-and-mount-filesystem() {
 
 	[[ $mkfs_debug_opt ]] && local IfRun= # for RunCmd
 	header "$cmd"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	RunCmd  $cmd
 	set-drive_log_dir-file_for_logging-is_regression_test "$drive_name"
 	archive-writer-stats-data
 	# shellcheck disable=SC2209
 	[[ $mkfs_debug_opt ]] && IfRun=echo
 	$IfRun mkdir -p "$drive_dir"
-	# shellcheck disable=SC2086
-	RunCmd mount -v -t $FS_type -o $mount_opts $device $drive_dir
+	RunCmd mount -v -t "$FS_type" -o "$mount_opts" "$device" "$drive_dir"
 	fix-drive_dir-perms "$drive_dir"
 	run-df "$drive_dir"
 }
@@ -7398,7 +7405,7 @@ function mkfs-backup-drive() {
 	local mkfs_opts= opts_args=" $*"; set -f
 	[[ " $*" =~ ^([^/]*)\ (/|[^\ ]*[_A-Z]) ]] &&
 	    mkfs_opts=${BASH_REMATCH[1]}
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- ${opts_args#$mkfs_opts} ; set +f
 	[[ $# == [12] ]] || abort-with-action-Usage
 	local device=$1 name=${2-}
@@ -7408,7 +7415,7 @@ function mkfs-backup-drive() {
 	set-FS_label--from-mount_dir "$drive_dir"
 
 	set -f
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $mkfs_cmd_opts $mkfs_opts; set +f
 	local cmd=$1; shift; local opts="$* "  log_opt=
 	[[ $cmd != mke2fs   ]] || abort "use mkfs.extN instead of mke2fs"
@@ -7570,7 +7577,7 @@ copy-backup-drive() {
 	fi
 
 	set -f
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	set --	$our_path $our_opts finish-$action $action_opts \
 				$src_device $src_drive_dir \
 				$dst_device $dst_drive_dir	; set +f
@@ -7578,7 +7585,7 @@ copy-backup-drive() {
 
 	if [[ $debug_opt ]]
 	   then header "$our_name_ ${cmd#* }"
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # $*cmd contains its arguments
 		exec $cmd || abort "$cmd -> $?"
 	fi
 
@@ -7588,7 +7595,7 @@ copy-backup-drive() {
 	this takes about a day per TB of drive space.  Now running
 	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
 	"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	nohup $cmd > "$output_file" &
 	local copy_PID=$!
 	env sleep 0.2; set -x; exec tail --pid=$copy_PID -f $output_file
@@ -7655,7 +7662,7 @@ function _dump-restore-xfs-backup-drives {
 
 	trap '' INT			# don't interrupt xfsdump or xfsrestore
 	show-iostat "$dst_device"
-	# shellcheck disable=SC2086 # $restore_opt may be null
+	# shellcheck disable=SC2086 # *_opt may be null
 	time $IfRun    xfsdump -J -p 600       - "$src_drive_dir" |
 	     $IfRun xfsrestore -J $restore_opt - "$dst_drive_dir"
 	local status=$?
@@ -7742,18 +7749,17 @@ _copy-extN-backup-drive() {
 	local mount_options=$common_mount_options,$extN_mount_options
 	mount_options=${mount_options%,}
 
-	# shellcheck disable=SC2086
 	is-arg1-in-arg2 -M "$action_opts" || # don't want to re-Mount src?
-	RunCmd mount -v -t $FS_type -o$mount_options $src_device $src_drive_dir
+	RunCmd \
+	mount -vt "$FS_type" -o "$mount_options" "$src_device" "$src_drive_dir"
 
 	is-arg1-in-arg2 -F "$action_opts" || # don't want Fsck?
 	time RunCmd -m "better check $src_device ?!" \
 	e2fsck -f -p -t -t "$dst_device"
 
 	$IfRun mkdir -p "$dst_drive_dir"
-	# shellcheck disable=SC2086
 	RunCmd -m "make mount happen, then run resize2fs" \
-	mount -v -t $FS_type -o $mount_options $dst_device $dst_drive_dir
+	mount -vt "$FS_type" -o "$mount_options" "$dst_device" "$dst_drive_dir"
 
 	RunCmd resize2fs "$dst_device"	# do this _after_ mount, for speed
 }
@@ -7868,7 +7874,7 @@ function print-big-swapouts-file() {
 		fi
 	done
 	values=${values%, }
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set --  $values
 	[[ $# != 0 ]] || return 1
 
@@ -7935,11 +7941,10 @@ measure-swapout-MBps() {
 
 	local swapon_args="--raw --bytes --show=name,size,used,uuid,label"
 	if have-cmd swapon || [[ ! $debug_opt ]]
-	   then # shellcheck disable=SC2086
+	   then # shellcheck disable=SC2086 # variable contains multiple values
 		swapon $swapon_args > $tmp_1 ||
 		   abort "need a 'swapon' that supports $swapon_args"
-	   else # shellcheck disable=SC2086
-		echo swapon $swapon_args
+	   else echo "swapon $swapon_args"
 	fi
 	#
 	if [[ -s $tmp_1 || ! $debug_opt ]]
@@ -7967,7 +7972,7 @@ measure-swapout-MBps() {
 	fi
 
 	[[ $label ]] && label_opt="--label $label"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # *_opt may be null
 	RunCmd mkswap ${label_opt-} --uuid $UUID "$swap_dev"
 
 	$IfRun sudo swapon "$swap_dev"
@@ -8084,6 +8089,7 @@ search-syslog-for-errors() {
 	[[ $syslog_files == "$syslog_path" && $# != 0 && -s $1 ]] &&
 	    syslog_files+=" $1"
 	create-status_dir
+	# shellcheck disable=SC2086 # variable contains multiple values
 	fgrep --text -f    "$search_str_file" $syslog_files |
 	    fgrep -v -f "$ignorable_str_file" | echo-to-file - "$search_file"
 	rm "$search_str_file" "$ignorable_str_file"
@@ -8167,7 +8173,7 @@ function check-snapshot-hard-links() {
 		[[ $inum ]]
 	}
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $snapshot_glob*
 
 	local -A file2inum
@@ -8194,7 +8200,7 @@ function check-snapshot-hard-links() {
 						       shift && continue
 
 		$IfRun mkdir -p .rm
-		# shellcheck disable=SC2086
+		# shellcheck disable=SC2086 # variable contains multiple values
 		set -- $partials "$@"
 		warn "$drive_name: the following have broken hard-links: $*"
 		return 1
@@ -8218,7 +8224,7 @@ chroot-backup() {
 	done
 	[[ $snapshots ]] || abort "can't find snapshot matching $date_time"
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $snapshots
 	# shellcheck disable=SC2046,SC2086
 	[[ $# == 1 ]] || set -- $(fastest-snapshots -f $snapshots)
@@ -8239,7 +8245,7 @@ chroot-backup() {
 	[[ ! $is_cron ]] &&
 	echo -n "remounting $drive_dir, might take a minute ... "
 	$IfRun sudo mount -o remount,dev,suid	  "$drive_dir"; echo; $Trace
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	$IfRun sudo chroot $chroot_dir $command			  ; set +x
 	$IfRun sudo mount -o remount,nodev,nosuid "$drive_dir"
 
@@ -8339,13 +8345,13 @@ clone-stashed-mk-Z() {
 	set-drive_dir Z
 	cd_ "$drive_dir"
 	if [[ ! -d $stash ]]
-	   then # shellcheck disable=SC2086
+	   then # shellcheck disable=SC2086 # variable contains multiple values
 		$IfRun mk-Z -q ${prune_type2mk_Z_args[$type]} &&
 		$IfRun mv .mk-Z "$stash" && $IfRun rm -f "$stash/latest" ||
 		    abort "couldn't populate $stash"
 	fi
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains a glob
 	rm -rf $snapshot_glob* la* && cp -al $stash/* . ||
 	   abort "failed to clone $stash"
 	restore-tracing
@@ -8366,7 +8372,7 @@ test-prune() {
 	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
 	$Trace
 	cd_ "$drive_dir"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
 	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
 		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
@@ -8374,7 +8380,7 @@ test-prune() {
 		$IfRun rm -rf "$stash".*.ls
 		for cmd in $old_cmd $tst_cmd
 		    do	$IfRun clone-stashed-mk-Z "$type"
-			# shellcheck disable=SC2086
+			# shellcheck disable=SC2086 # *_opts has 0-n values
 			$IfRun $cmd $our_opts prune-drive Z
 			[[ $cmd == "$old_cmd" ]] && which=old || which=new
 			ls > "$stash.$which.ls"
@@ -8382,9 +8388,8 @@ test-prune() {
 		# shellcheck disable=SC2086
 		set-reversed_words $stash.{old,new}.ls; set -- $reversed_words
 		[[ $# == 2 ]] || abort "expected two files: $*"
-		# shellcheck disable=SC2086
-		diff -d -q "$@" && mv $stash.new.ls $stash.pruned.ls &&
-				   rm $stash.old.ls &&
+		diff -d -q "$@" && mv "$stash.new.ls" "$stash.pruned.ls" &&
+				   rm "$stash.old.ls" &&
 		   echo -e "\nSame results, see $stash*" && continue
 		warn "regression, see: diff -u $*"
 	done
@@ -8435,7 +8440,7 @@ _run-debug-cmds() {
 
 	$Trace
 				       _show-test-results "$tmp_o"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	RunCmd $tst_cmd_ &> "$tmp_t" ; _show-test-results "$tmp_t"
 	# shellcheck disable=SC2086
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
@@ -8443,12 +8448,12 @@ _run-debug-cmds() {
 
 	echo "
 	Since different results, regenerate data cached from installed cmd ..."
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	PATH=${old_cmd%/*}:$PATH \
 	RunCmd $old_cmd_ &> "$tmp_o" ; _show-test-results "$tmp_o"
 				       _show-test-results "$tmp_t"
-	# shellcheck disable=SC2086
-	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
+	[[ $test == u ]] &&
+	    set-srcs_dst_file && cp "$srcs_dst_file" "$tmp_o.args"
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
 
 	set +x
@@ -8497,15 +8502,15 @@ function regression-test() {
 	[[ $# != 0 ]] || abort "copy test needs at least one snapshot"
 	src_snapshots=$1
 	[[ -d $2 ]] && src_snapshots+=" ${!#}"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	_run-debug-cmds c copy-snapshot $src_snapshots Z
 	}
 
 	# --------------------------------------------
 
 	is-arg1-in-arg2 z "$tests" && {
-	# shellcheck disable=SC2086
-	set -- ${drive_dir_prefix}Z/$snapshot_glob
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- "$drive_dir_prefix"Z/$snapshot_glob
 	(( $# > 10 )) || $our_path test-prune || abort "can't setup Z"
 	_show-test-header prune Z
 	_run-debug-cmds z prune-drive Z
@@ -8525,7 +8530,7 @@ function regression-test() {
 	is-arg1-in-arg2 u "$tests" && [[ $drive_dirs == *' '* ]] && {
 	local args=${update_test_args-}
 	[[ $args ]] || abort "$config_file needs update_test_args= for 'u'"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $args
 	local dst=${!#}
 	_show-test-header update "$dst"
@@ -8541,7 +8546,7 @@ function regression-test() {
 	    $IfRun sudo rmdir ./*.partial &> $dev_null
 	}
 
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable contains multiple values
 	_run-debug-cmds u update-drive $args
 
 	# shellcheck disable=SC2119
@@ -8602,7 +8607,7 @@ case $action in
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 != -r ]] && assert-not-option "$1"
 	opts="${prune_sleep_time_opt-} ${final_prune_type_opt-}"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs prune $opts "$@"
 	[[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
@@ -8616,7 +8621,7 @@ case $action in
 	[[ $# != 0  ]] || abort-with-action-Usage
 	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}
 				 ${excluded_src_names_glob_opt-}"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
@@ -8631,8 +8636,8 @@ case $action in
 	set-drive_name   "${!#}"
 	src_snapshots=${*#${!#}}
 	src_snapshots=${src_snapshots% }
-	# shellcheck disable=SC2086
-	create-jobs copy -s${src_snapshots// / -s} $opts $drive_name
+	# shellcheck disable=SC2086 # $opts may be null or multi
+	create-jobs copy -s${src_snapshots// / -s} $opts "$drive_name"
 	;;
 
    # rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
@@ -8715,7 +8720,7 @@ case $action in
 	[[ ${1-} == -* ]] && { signal=$1; shift; }
 	[[ $# == 2 || ${1-} == m* ]] || abort-with-action-Usage
 	$Trace
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # variable may be null
 	kill-job-on-drives ${signal-} "$@"
 	;;
    # continue	   job-type-glob  name-glob: as above, but -CONT signal
