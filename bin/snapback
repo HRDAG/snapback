@@ -495,7 +495,7 @@ set-lock_path() {
 
 	is-arg1-in-arg2 "$type" "$writer_types" ||
 	   abort-function "'$type' is unknown lock type"
-	[[ $name ]] || abort-function "missing \$2 and \$drive_name null"
+	[[ $name ]] || abort-function "missing \$2, and \$drive_name null"
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	lock_path=$lock_dir/$type-$name.pid
 	$xtrace
@@ -1647,8 +1647,8 @@ readonly -f customize-config-variables
 
 function set-customized_value--for-config-var-name() {
 	local var_name=$1 resource=${2:-$drive_name}
-	[[ $var_name ]]    || abort-function ": \$1 empty"
-	is-set "$var_name" || abort-function ": $var_name is not set"
+	[[    $var_name ]] || abort-function ": \$1 empty"
+	[[ -v $var_name ]] || abort-function ": $var_name is not set"
 
 	set-custom_config_vars-custom_config_var2default_value
 
@@ -2301,11 +2301,9 @@ handle-stats-when-multiple-writers() {
 	done
 
 	local stats_subdir
-	set-stats_subdir MB || mkdir -p "$stats_subdir" || abort mkdir
+	set-stats_subdir MB || RunCmd mkdir -p "$stats_subdir"
 	local lock_file=$stats_subdir/$snapshot.pid
-	local lock_cmd="lockpid $lock_file"
-	# shellcheck disable=SC2086
-	$IfRun $lock_cmd || abort-function ": $lock_cmd -> $?"
+	RunCmd lockpid "$lock_file"
 	if [[ $did_find_multiple_writers &&
 	      # with disks: backup is the sole writer, and never suspended
 	      ( $writer_type != backup || $is_multi_writer_drive ) ]]
@@ -4867,7 +4865,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 
 	local  cache_type=${stats_subdir#stats/}
 	local  cache_dir=$watch_cache_dir/stats-dir/$drive_name
-	[[ -d $cache_dir ]] || mkdir -p "$cache_dir" || abort mkdir
+	[[ -d $cache_dir ]] || RunCmd mkdir -p "$cache_dir"
 	local  cache_file=$cache_dir/${cache_type//\//_}.sh
 	# shellcheck disable=SC1090
 	[[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file" &&
@@ -6408,7 +6406,7 @@ _start-monitor-drives-if-needed() {
 	}
 
 	# shellcheck disable=SC2086,SC2033
-	sudo $our_path monitor-drives || abort-function monitor-drives
+	RunCmd sudo $our_path monitor-drives
 	until [[ -d $(dirname "$mon_initialized_lock_path") ]]
 	   do	env sleep 0.12
 	done
@@ -6449,8 +6447,8 @@ function generate() {
 
 	[[ $do_parallel ]] || { $function; $xtrace; return $?; }
 
-	[[ -d  $generate_output_files_dir ]] ||
-	mkdir "$generate_output_files_dir" || abort-function mkdir
+	[[ -d $generate_output_files_dir ]] ||
+	RunCmd mkdir "$generate_output_files_dir"
 
 	true > "$rows_left_file"
 	local output_file=$generate_output_files_dir/out-$job_num
@@ -6886,7 +6884,7 @@ filesystem-geometry() {
 		# shellcheck disable=SC2001
 		[[ $FS_device == /dev/mapper/* ]] && dev= ||
 		dev=$(echo "$FS_device" | 
-			  sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//') || abort sed
+			  sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//') || abort dev=
 		case $FS_type in
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
@@ -7957,9 +7955,8 @@ measure-swapout-MBps() {
 	fi
 
 	[[ $label ]] && label_opt="--label $label"
-	local args="${label_opt-} --uuid $UUID $swap_dev"
 	# shellcheck disable=SC2086
-	$IfRun mkswap $args || abort "mkswap $args -> $?"
+	RunCmd mkswap ${label_opt-} --uuid $UUID "$swap_dev"
 
 	$IfRun sudo swapon "$swap_dev"
 	echo; swapon --show="${swapon_args/*--show=/},prio"
@@ -7970,7 +7967,7 @@ readonly -f measure-swapout-MBps
 
 # ----------------------------------------------------------------------------
 
-mkswap() {
+mkswapfile() {
 	local name=$1 size=$2 priority=${3-} label=${4-}
 
 	[[ $name != *[\ /]* ]] || abort "name=$name should be basename"
@@ -8008,7 +8005,7 @@ mkswap() {
 	[[ $priority ]] && record="${record/sw\\t/sw,pri=$priority}"
 	echo -e "\nHere's a record for /etc/fstab:\n\n$record"
 }
-readonly -f mkswap
+readonly -f mkswapfile
 
 # ----------------------------------------------------------------------------
 # check syslog for FS and OS errors
@@ -8265,8 +8262,8 @@ mk-Z() {
 	esac
 
 	local -i start_secs end_secs
-	start_secs=$(date -d "$start_date" '+%s') || abort "$start_date"
-	  end_secs=$(date -d   "$end_date" '+%s') || abort   "$end_date"
+	start_secs=$(date -d "$start_date" '+%s') || abort start_secs=
+	  end_secs=$(date -d   "$end_date" '+%s') || abort   end_secs=
 	local -i secs=start_secs  secs_per_day=$(( 24*60*60 ))
 	let end_secs-=3600		# end at 11 PM on previous day
 	while  ((  secs < end_secs ))
@@ -8424,17 +8421,19 @@ _run-debug-cmds() {
 	fi
 
 	$Trace
-					     _show-test-results "$tmp_o"
-	$tst_cmd_ &> "$tmp_t" || abort tst ; _show-test-results "$tmp_t"
+				       _show-test-results "$tmp_o"
+	# shellcheck disable=SC2086
+	RunCmd $tst_cmd_ &> "$tmp_t" ; _show-test-results "$tmp_t"
 	# shellcheck disable=SC2086
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
 
 	echo "
 	Since different results, regenerate data cached from installed cmd ..."
+	# shellcheck disable=SC2086
 	PATH=${old_cmd%/*}:$PATH \
-	$old_cmd_ &> "$tmp_o" || abort old ; _show-test-results "$tmp_o"
-					     _show-test-results "$tmp_t"
+	RunCmd $old_cmd_ &> "$tmp_o" ; _show-test-results "$tmp_o"
+				       _show-test-results "$tmp_t"
 	# shellcheck disable=SC2086
 	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_o.args
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
@@ -8676,7 +8675,7 @@ case $action in
    # mkswap name size [priority [label]]: create /var/swap/name and enable it
    ( mksw* ) undo-action-abbrev mkswap
 	[[ $# == [2-4] ]] || abort-with-action-Usage
-	$action "$@"
+	mkswapfile "$@"
 	;;
 
    # check-logs: update error cache: run this if dashboard fails with I/O error
