@@ -6444,7 +6444,7 @@ function generate() {
 	local function=$*
 
 	[[ ! $functions ]] ||
-	is-arg1-in-arg2 "$function" "$functions" || { $xtrace; return 1; }
+	is-arg1-in-arg2 "${function%% *}" "$functions" || { $xtrace;return 1; }
 
 	[[ $do_parallel ]] || { $function; $xtrace; return $?; }
 
