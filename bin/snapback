@@ -1,5 +1,7 @@
 #! /usr/bin/env bash
-# shellcheck disable=SC1007,SC2004,SC2015,SC2034,SC2059,SC2126,SC2128,SC2196,SC2197
+# shellcheck disable=SC1007,SC2004,SC2015,SC2059,SC2128,SC2196,SC2197
+# SC2004: emacs doesn't colorize variables not preceded by a '$'
+# SC2059: the printf format strings is usually a variable (used multiple times)
 
 #    snapback (short for "snapshot backups") manages backups on multiple drives
 #
@@ -311,9 +313,13 @@ readonly pruned_timestamp=.pruned.ts
 
 readonly our_opts=${our_opts% }
 # need to fork and exec ourselves for session control with 'setsid'
+# shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly   backup_drive_exe="$our_path $our_opts backup-drive"
+# shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly    prune_drive_exe="$our_path $our_opts  prune-drive"
+# shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly   update_drive_exe="$our_path $our_opts update-drive"
+# shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly copy_snapshots_exe="$our_path $our_opts copy-snapshots"
 
 readonly hostname=${HOSTNAME%%.*}
@@ -423,7 +429,6 @@ set-hours--from-minutes 10
 ##############################################################################
 
 readonly lock_dir=/var/lock/$our_name
-readonly LOCKPID_DIR=$lock_dir
 
 # use this instead of 'lockpid' when want/need to replace stale lock
 function sudo-lockpid() {
@@ -473,17 +478,6 @@ rm-stale-locks() {
 	done
 }
 readonly -f rm-stale-locks
-
-# ----------------------------------------------------------------------------
-
-set-lock_drive_name() {
-	local lock=$1
-
-	lock=${lock##*/}
-	lock=${lock#*-}
-	lock_drive_name=${lock%.pid}
-}
-readonly -f set-lock_drive_name
 
 # ----------------------------------------------------------------------------
 
@@ -1368,6 +1362,7 @@ readonly -f set-drive_log_dir-file_for_logging-is_regression_test
 
 # you could ask $coder to allow more characters
 # exclude '.' , since we use ${snapshot%%.*} to remove .partial.rm .links etc
+# shellcheck disable=SC2034 # used inside brackets, for glob matching
 readonly allowed_drive_dir_chars='-_a-zA-Z0-9' # '-' must be first
 
 # This is much faster than set-drive_name, but can only be used for
@@ -1813,8 +1808,7 @@ mon-launch-globs() {
 		drive_name2msecs[$drive_name]=$epoch_msecs
 
 		if [[ $drive_name == "$mon_overhead_drive_name" ]]
-		   then local mon_msec_increment=2  mon_sec_increment=0.002
-			mon-look-for-finished-globs "$drive_name"
+		   then mon-look-for-finished-globs "$drive_name"
 			continue	# don't need *.partial code
 		fi
 
@@ -3011,7 +3005,7 @@ validate-prune_globs() {
 			set-prune_glob "$type" "$prune_type_glob"
 			set +f; eval  "set -- $prune_glob"; set -f
 			[[ $debug_opt ]] && echo "span=$span will prune: " "$@"
-			local pruned old_span new_spam
+			local pruned old_span new_span
 			for pruned
 			    do	[[ ! -s $pruned ]] &&
 				    echo "$span" > "$pruned" && continue
@@ -3173,7 +3167,6 @@ prune-type-to-file() {
 	set -f
 	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $prune_type_globs; set +f
-	declare -i number_prune_globs=$#
 
 	Trace 5 "\n==> $type prune <=="
 	local -i period=$backup_period
@@ -5396,7 +5389,7 @@ function setup-snapshot-stats() {
 	[[ $1 == -h ]] && { shift;local  hour_ages=$true; } ||local  hour_ages=
 	[[ $1 == -e ]] && { shift;local only_empty=$true; } ||local only_empty=
 	[[ $1 == -E ]] && { shift;local skip_empty=$true; } ||local skip_empty=
-	local suffix=$1 _suffix=$1
+	local suffix=$1
 	local ignored_date_ending_type=${2:-NONE} # NONE used in prune arrays
 
 	[[ $suffix ]] &&
@@ -5886,7 +5879,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	#  prune-drive (PD) includes parent of  'rm'   process (also in -C)
 	#   copy-snap  (CS) includes parent of 'rsync' process (also in -C)
 	# backup-drive (BD) includes 'rsync' only
-	local -i  PD CD BD
+	local -i  PD CS BD
 	PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
 	(( PD > 0 )) && PD=$((PD*2 + 4)) # add in 'rm' plus section-overhead
 	CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
@@ -6072,7 +6065,7 @@ _do-have-stats() {
 	(( $rows_left >= ($min_rows_with_df + $rows_used) )) ||
 	[[ $stats_opt ]] || { report-rows_left-if-parallelized; return 1; }
 
-	pipe_rows_left=$(( $rows_left - $rows_used ))
+#	rows_left=$(( $rows_left - $rows_used )) # FIXME: is this needed?
 	[[ ! ${skip_last_report-} ]] && report-rows_left-if-parallelized
 	return 0
 }
@@ -6207,11 +6200,8 @@ readonly -f show-stats-section-4
 is-set   FS_repair_cmd_regex ||		# can set custom value in $config_file
 readonly FS_repair_cmd_regex='[x]fs_repair|[f]sck(\.[^ ]+)?'
 
-declare -i FS_repair_cmds_lines
-
 set-FS_repair_cmds_file() {
 
-	FS_repair_cmds_lines=0
 	FS_repair_cmds_file=$tmp_3
 	ps -o "$ps_keywords" -U root |
 	   egrep -e '%[M]EM' \
@@ -7019,6 +7009,7 @@ function unmount-drives() {
 		# shellcheck disable=SC2024
 		sudo umount -h &> $dev_null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
+		# shellcheck disable=SC2034
 		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
 			$IfRun env sleep 0.15
@@ -7462,8 +7453,8 @@ _assert-dst-big-enough() {
 
 			# FIXME: might be more accurate than the following fsck
 			# shellcheck disable=SC2046
-			set -- $(resize2fs -P "$src_device")
-			local -i min_blocks=${!#}
+			# set -- $(resize2fs -P "$src_device")
+			# local -i min_blocks=${!#}
 
 			set -f
 			# shellcheck disable=SC2046
@@ -7542,7 +7533,6 @@ copy-backup-drive() {
 	local src_name=$drive_name
 	local src_device=$FS_device
 	local src_drive_dir=$drive_dir
-	local src_FS_label=$FS_label
 
 	set-drive_name-FS_device-drive_dir-FS_label "$dst_name" "$dst_device"
 	local dst_name=$drive_name
@@ -8018,17 +8008,20 @@ readonly -f mkswapfile
 # check syslog for FS and OS errors
 # ----------------------------------------------------------------------------
 
+# shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
 # first is google-chrome error
 readonly OS_ignorable_error_strings="\
 :ERROR:mcs_client.cc
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
+# shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   OS_error_strings || 		# can set custom value in $config_file
 readonly OS_error_strings="\
 I/O error
 Failed to connect stdout to the journal socket, ignoring: "
 
+# shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   USB_error_strings || 		# can set custom value in $config_file
 readonly USB_error_strings="\
 abort
@@ -8037,12 +8030,14 @@ rejecting I/O to
 reset
 Synchronize Cache(10) failed"
 
+# shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   XFS_error_strings || 		# can set custom value in $config_file
 readonly XFS_error_strings="\
 Internal error
 xfs_do_force_shutdown
 Shutting down filesystem"
 
+# shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   extN_error_strings || 		# can set custom value in $config_file
 readonly extN_error_strings="\
 Corrupted index cache file
@@ -8417,8 +8412,9 @@ _run-debug-cmds() {
 	local tmp_o=$tmp_dir/o$test	# holds output from "old" cmd
 	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
 
-	local old_cmd_="$old_cmd -C -d  $trace_opt               $args"
-	local tst_cmd_="$tst_cmd -C -d ${trace_opt:-$_trace_opt} $args"
+	local opts="-C -d ${Trace_level_opt-}"
+	local old_cmd_="$old_cmd $opts  $trace_opt               $args"
+	local tst_cmd_="$tst_cmd $opts ${trace_opt:-$_trace_opt} $args"
 
 	if [[ $debug_opt ]]
 	   then echo "$old_cmd_ &> $tmp_o"
