@@ -1865,8 +1865,9 @@ mon-process-finished-glob() {
 	local msecs_file=$drive_msecs_dir/$drive_name
 	# shellcheck disable=SC2086
 	if [[ -s $msecs_file ]]
-	   then set -- "$(< "$msecs_file")" $samples
-	   else set --			    $samples
+	   then # shellcheck disable=SC2046
+		set -- $(< "$msecs_file") $samples
+	   else set --			  $samples
 	fi
 	while (( $# > $sample_count )) ; do shift; done
 	echo-to-file "$*" "$msecs_file"
