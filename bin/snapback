@@ -5561,14 +5561,12 @@ function trim-copy-update-ps {
 
 	set -f
 	# shellcheck disable=SC2086
-	set -- $rsync_backup_opts; set +f
-	rsync_backup_opts=$*		# standardize whitespace
+	set -- $rsync_backup_opts; set +f # readonly var
+	local   rsync_backup_opts_=$*	  # standardize whitespace
 
 	local cpss="$our_name_ c"
 	local   ud="$our_name_ u"
 	trim-ps |
-	# makes *.links copy wrap: -e "s@ $* /@ \$opts /@" \
-	# makes *.links copy wrap: -e 's@ --.* --link-dest=[^ ]* /@ $opts /@' \
 	sed -r \
 	    -e '/update-drive/s@ -s@ -s @' \
 	    -e "/   [^ ]*$ud/d"   \
@@ -5577,7 +5575,7 @@ function trim-copy-update-ps {
 	    -e "s@($cpss[^ ]+ +[^ ]+) +[^ ]+.* ([^ ]+) *\$@\1 ... \2@" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $our_name_/d" \
-	    -e "s@ $* /@ /@" \
+	    -e "s@ $rsync_backup_opts_ /@ /@" \
 	    -e "s@/[^/]*/\. /@/\$snap/. /@" \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
