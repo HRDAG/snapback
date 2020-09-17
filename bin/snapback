@@ -248,7 +248,7 @@ while getopts "C cnvqr: E:edtT: hk"  arg
 
 	   ( E ) ;;				 # handled at top of file
 	   ( e ) ;;				 # handled at top of file
-	   ( d ) IfRun="echo"	debug_opt=-d ;;	 # put $IfRun b4 'active' cmds
+	   ( d ) IfRun='echo'	debug_opt=-d ;;	 # put $IfRun b4 'active' cmds
 	   ( t ) [[ $Trace ]] && TraceAll=$Trace
 		 Trace="set -x" trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
@@ -334,7 +334,7 @@ readonly     status_dir=$run_dir/$our_name
 
 # these are used by log(), besides $log_level
 file_for_logging=$log_dir/messages.log	     # set-drive_log_dir-* sets it
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016 # this gets eval'ed
 log_msg_prefix=' ${action-} ${drive_name-}'  # this gets eval'ed each time
 
 ##############################################################################
@@ -815,7 +815,7 @@ function set-PID_ps_fields--in-process-groups() {
 
 	local PGID
 	for PGID
-	    do	# shellcheck disable=SC2046,SC2086
+	    do	# shellcheck disable=SC2046
 		set -- $(COLUMNS=999 ps -o "$column_name=" "$ps_opt_g" "$PGID")
 		[[ $# != 0 ]] && PID_ps_fields+="$* "
 	done
@@ -944,7 +944,7 @@ function sudo-kill() {
 
 	$IfRun kill "$@" 2> $dev_null && return 0 # kill is built-in, so cheap
 	is-process-alive "${PID#-}" || return 1
-	# shellcheck disable=SC2155
+	# shellcheck disable=SC2155 # don't need 'kill' status. we use stderr
 	local    kill_msg=$(kill "$@" 2>&1)
 	if   [[ $kill_msg == *"Operation not permitted"* ]]
 	   then sudo kill "$@"
@@ -1067,7 +1067,7 @@ function kill-job-on-drives() {
 			signal-job "$signal" "$path" && status=0
 			[[ $signal_is_stop && $type != b* ]] || continue
 
-			# shellcheck disable=SC2155
+			# shellcheck disable=SC2155 # 'basename' never fails
 			local lock=$(basename "$path")
 			local coder_msg="can ask $coder to fix this."
 			local cron_msg="cron (runs every 5 minutes by default)"
@@ -1535,7 +1535,7 @@ source-drive-specific-config-file() {
 	if [[ ! -s $_config_file ]]
 	   then drive_specific_config_file=		; true
 	   else drive_specific_config_file=$_config_file
-		# shellcheck disable=SC1090
+		# shellcheck disable=SC1090 # doesn't contain extra vars
 		source "$_config_file"
 	fi || abort-function "'source $_config_file' returned non-0"
 }
@@ -2035,7 +2035,7 @@ re-start-monitor-drives-if-needed() {
 		lock-replica-of-snapshots --release
 	fi
 
-	# shellcheck disable=SC2033,SC2024
+	# shellcheck disable=SC2024 # $dev_null always writable
 	is-active-lock "$drive_monitor_lock_path" ||
 	    sudo "$our_path" monitor-drives > $dev_null
 }
@@ -5813,7 +5813,7 @@ _set-sudo-wchan-max_ps_wchan_width-ps_keywords() {
 	fi
 
 	[[ $ps_wchan_width ]] && wchan=wchan:$ps_wchan_width || wchan=
-	# shellcheck disable=SC2024
+	# shellcheck disable=SC2024 # $dev_null always writable
 	[[ $wchan ]] && sudo -n ps &> $dev_null && sudo=sudo || sudo= wchan=
 	[[ $wchan ]] && ps_keywords=${ps_keywords/,stat/,$wchan,stat}
 }
@@ -5940,8 +5940,8 @@ show-errors-in-syslog() {
 
 	[[ ! ${no_errors-} && -s $errors_count_msg_file ]] && {
 
-	# shellcheck disable=SC2155
-	local header="count subset-of-$(basename $syslog_path)-record"
+	# shellcheck disable=SC2155  # 'basename' never fails
+	local header="count subset-of-$(basename "$syslog_path")-record"
 	set-warning_string warning "${header^^}"
 	echo "$warning_string"
 	while read -r count msg
@@ -6210,7 +6210,7 @@ set-FS_repair_cmds_file() {
 	[[ "$(< "$FS_repair_cmds_file")" == *[0-9]:[0-9]* ]] ||
 	    { true > "$FS_repair_cmds_file"; return 1; }
 
-	# shellcheck disable=SC2155
+	# shellcheck disable=SC2155 # just read from file, so 'wc' won't fail
 	local ps_line_count=$(wc -l < "$FS_repair_cmds_file")
 	(( rows_left-=$(( 3 + $ps_line_count )) )) # 3 for header
 }
@@ -6349,7 +6349,7 @@ show-cron-jobs() {
 
 	[[ $cron_cmds ]] || return
 
-	# shellcheck disable=SC2046,SC2086
+	# shellcheck disable=SC2046,SC2086 # multiple values
 	set -- $(ps -o stime= $cron_PGIDs | sort -u)
 	local stime=$*
 	local regex=${cron_job_regex%%s*}
@@ -6395,13 +6395,12 @@ readonly -f show-copy-cmds-with-full-details
 _start-monitor-drives-if-needed() {
 
 	is-active-lock "$drive_monitor_lock_path" && return
-	# shellcheck disable=SC2024
+	# shellcheck disable=SC2024 # $dev_null always writable
 	sudo -n "$our_path" -h &> $dev_null || { # need sudo password?
 	sleep 0.21			# wait for another process to start mon
 	is-active-lock "$drive_monitor_lock_path" && return
 	}
 
-	# shellcheck disable=SC2033
 	RunCmd sudo "$our_path" monitor-drives
 	until [[ -d $(dirname "$mon_initialized_lock_path") ]]
 	   do	env sleep 0.12
@@ -6717,7 +6716,7 @@ readonly -f set-total_dir_MB-avg_dir_KB
 dir-sizes() {
 	set-drive_log_dir-file_for_logging-is_regression_test
 	readonly sizes_dir=$log_dir/dir-sizes
-	# shellcheck disable=SC2174
+	# shellcheck disable=SC2174 # doesn't create parent dir
 	mkdir -p -m g+w,o-w "$sizes_dir" || abort "need to use sudo"
 	cd_ "$sizes_dir"
 
@@ -6749,7 +6748,7 @@ dir-sizes() {
 		file=$1
 	elif [[ $1 == -f ]]
 	   then # shellcheck disable=SC2046
-		set -- $(/bin/ls -- *.$suffix.bz2 | sed 's/\.bz2//')
+		set -- $(/bin/ls -- *."$suffix".bz2 | sed 's/\.bz2//')
 		[[ $# != 0 ]] || abort "don't have any old data files"
 		PS3="specify file number: "
 		select file
@@ -6798,16 +6797,15 @@ dir-sizes() {
 	   sed -r 's/^ *([0-9]+K) +/\1|/' | # pipe-separate fields
 	   sort -t '|' -k1n,1 -k2	  | # for histogram & compression
 	   awk  -F '|' '{ printf "%6s\t%s\n", $1, $2 }' | # more readable
-	   bzip2 -9 > "$file.partial.bz2" && mv "$file.partial.bz2" "$file.bz2"
-	   # shellcheck disable=SC2181
-	   [[ $? == 0 && ${PIPESTATUS[0]} == 0 ]] ||
+	   bzip2 -9 > "$file.partial.bz2" &&
+	   mv "$file.partial.bz2" "$file.bz2" ||
 	      abort "something bad happened"
 	}
 
 	file=${file%.bz2}
 	header "$file"
 
-	# shellcheck disable=SC2155
+	# shellcheck disable=SC2155 # 'wc' never fails
 	local -i dir_count=$(bzcat "$file.bz2" | wc -l)
 	local -i median_line=$dir_count/2
 	printf "\n%7s directories.\n" "$dir_count"
@@ -6876,14 +6874,14 @@ filesystem-geometry() {
 		set-FS_device--from-path "$drive_dir"
 		[[ -L $FS_device ]] &&
 		set-absolute_path "$FS_device" && FS_device=$absolute_path
-		# shellcheck disable=SC2001
+		# shellcheck disable=SC2001 # 'sed' too hairy for ${var//x/y}
 		[[ $FS_device == /dev/mapper/* ]] && dev= ||
 		dev=$(echo "$FS_device" | 
 			  sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//') || abort dev=
 		case $FS_type in
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
-			# shellcheck disable=SC2024
+			# shellcheck disable=SC2024 # $tmp_1 always writable
 			sudo -n tune2fs -l "$FS_device" > "$tmp_1" || return
 			[[ ! $dev ]] && sector= ||
 			sector=$(< "/sys/block/$dev/queue/physical_block_size")
@@ -7006,7 +7004,7 @@ function unmount-drives() {
 		# shellcheck disable=SC2086 # *_opt may be null
 		set-drive_dir $quiet_opt "$drive_name"
 		is-drive-mounted "$drive_dir" || continue
-		# shellcheck disable=SC2024
+		# shellcheck disable=SC2024 # $dev_null always writable
 		sudo umount -h &> $dev_null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
 		# shellcheck disable=SC2034
@@ -7118,7 +7116,7 @@ readonly -f add-extN-journal
 
 check-lost+found() {
 
-	# shellcheck disable=SC2024
+	# shellcheck disable=SC2024 # $dev_null always writable
 	sudo -n ls &> $dev_null || return
 
 	for dir in $(list-drive-dirs)
@@ -7332,8 +7330,7 @@ _create-and-mount-filesystem() {
 	RunCmd  $cmd
 	set-drive_log_dir-file_for_logging-is_regression_test "$drive_name"
 	archive-writer-stats-data
-	# shellcheck disable=SC2209
-	[[ $mkfs_debug_opt ]] && IfRun=echo
+	[[ $mkfs_debug_opt ]] && IfRun='echo'
 	$IfRun mkdir -p "$drive_dir"
 	RunCmd mount -v -t "$FS_type" -o "$mount_opts" "$device" "$drive_dir"
 	fix-drive_dir-perms "$drive_dir"
@@ -7416,7 +7413,7 @@ function mkfs-backup-drive() {
 
 	[[ ! $debug_opt ]] || return 1
 
-	# shellcheck disable=SC2046,SC2230
+	# shellcheck disable=SC2046,SC2230 # 'command' doesn't support -a
 	set -- $(which -a "$our_name_")
 	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
 	local _our_path=$1
@@ -7550,7 +7547,7 @@ copy-backup-drive() {
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
 	   else _assert-dst-big-enough
 		# show the user a sample fstab record
-		IfRun="echo" mkfs-backup-drive -f "$dst_device" "$dst_name" |&
+		IfRun='echo' mkfs-backup-drive -f "$dst_device" "$dst_name" |&
 		  # search for the last two fields in the fstab record
 		  egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 	fi
@@ -7680,7 +7677,7 @@ readonly -f _dump-restore-extN-backup-drives
 
 # --------------------------------------------
 
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016 # this string gets eval'ed
 readonly all_drives_go_offline_msg='
 	There are no other backup partitions mounted besides the ones used to
         copy $src_drive_dir to $dst_drive_dir ; if you let me unmount these
@@ -7832,7 +7829,7 @@ function print-big-swapouts-file() {
 	[[ -s $file ]] || return 1
 
 	if [[ ${is_action-} ]]
-	   then	# shellcheck disable=SC2155
+	   then	# shellcheck disable=SC2155 # 'basename' never fails
 		local prefix=$(basename "$file"); prefix=${prefix%.txt}
 	   else local prefix="big swapouts"
 	fi
@@ -7927,8 +7924,8 @@ measure-swapout-MBps() {
 	fi
 	#
 	if [[ -s $tmp_1 || ! $debug_opt ]]
-	   then # shellcheck disable=SC2046,SC2086
-		set -- $(grep "^$swap_dev " $tmp_1)
+	   then # shellcheck disable=SC2046
+		set -- $(grep "^$swap_dev " "$tmp_1")
 		(( $# >= 2 )) || abort "must first run: sudo swapon $swap_dev"
 		local size_B=$2 used_B=$3 UUID=$4 label=${5-}
 		local -i size_MB=$size_B/1024/1024   used_MB=$used_B/1024/1024
@@ -8083,8 +8080,9 @@ search-syslog-for-errors() {
 	# metadata I/O error: block B ("xfs_...") error 5 numblks N
 	#   Buffer I/O error on dev dm-30, logical block B, async page read
 	local file=$search_file
-	# shellcheck disable=SC2046,SC2086
-	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' $file| sort -nu)
+	# shellcheck disable=SC2046
+	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' "$file" |
+		 sort -u -n)
 	local sectors="$# sectors: $*"
 
 	local service_string="service: Failed to connect stdout to the journal"
@@ -8151,7 +8149,7 @@ function check-snapshot-hard-links() {
 	set-inum() {
 		[[ -r $1 ]] || abort "run with sudo"
 		# shellcheck disable=SC2046
-		set -- $(ls -i -d "$1" 2>$dev_null)
+		set -- $(ls -i -d "$1" 2> $dev_null)
 		inum=$1
 		[[ $inum ]]
 	}
@@ -8209,7 +8207,7 @@ chroot-backup() {
 
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $snapshots
-	# shellcheck disable=SC2046,SC2086
+	# shellcheck disable=SC2046,SC2086 # var has multiple values
 	[[ $# == 1 ]] || set -- $(fastest-snapshots -f $snapshots)
 	local chroot_dir=$1
 
@@ -8426,8 +8424,8 @@ _run-debug-cmds() {
 				       _show-test-results "$tmp_o"
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	RunCmd $tst_cmd_ &> "$tmp_t" ; _show-test-results "$tmp_t"
-	# shellcheck disable=SC2086
-	[[ $test == u ]] && set-srcs_dst_file && cp $srcs_dst_file $tmp_t.args
+	[[ $test == u ]] &&
+	    set-srcs_dst_file && cp "$srcs_dst_file" "$tmp_t.args"
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
 
 	echo "
@@ -8920,7 +8918,7 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	# shellcheck disable=SC1090
+	# shellcheck disable=SC1090 # don't need to check test code
 	source "$our_name_-test.sh" || exit-normally $?
 	;;
 
