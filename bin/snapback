@@ -7107,14 +7107,14 @@ function add-extN-journal() {
 
 	$Trace
 
-	RunCmd mke2fs -v -b 4096 -O journal_dev -L $label $FS_external_log
+	RunCmd mke2fs -v -b 4096 -O journal_dev -L "$label" "$FS_external_log"
 
 	suspend-tracing
 	RunCmd -d unmount-drives -q "${mount_dir:-$FS_device}"
 	restore-tracing
 	mount | fgrep -w "$FS_device" && $IfRun abort "must: umount $FS_device"
 
-	RunCmd tune2fs -J device=LABEL=$label "$FS_device"
+	RunCmd tune2fs -J device="LABEL=$label" "$FS_device"
 	$IfRun tune2fs -l "$FS_device" | grep -i "journal [id]"
 	local status=${PIPESTATUS[0]}
 
@@ -7228,10 +7228,10 @@ _set-opts-log_opt-mount_opts--for-extN() {
 	[[ $FS_type == ext4  ]] &&
 	mount_opts="$extN_mount_options" || mount_opts=
 
-	set-FS_external_log $FS_label &&
+	set-FS_external_log "$FS_label" &&
 	local log_label=${FS_external_log##*/} &&
 	$IfRun mke2fs -v -b "$block"_size -O journal_dev \
-		      -L $log_label $FS_external_log &&
+		      -L "$log_label" "$FS_external_log" &&
 	log_opt="-J device=$FS_external_log" || log_opt=
 }
 readonly -f _set-opts-log_opt-mount_opts--for-extN
@@ -7266,7 +7266,7 @@ _set-opts-log_opt-mount_opts--for-xfs() {
 
 	mount_opts="$XFS_mount_options"
 
-	set-FS_external_log $FS_label &&
+	set-FS_external_log "$FS_label" &&
 	logdev="logdev=$FS_external_log" &&
 	log_opt="-l $logdev"  mount_opts=$mount_opts,$logdev || log_opt=
 }
@@ -7504,13 +7504,13 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 
 	[[ $name == /dev/* ]] && device=$name && name=
 
-	[[ $name ]] && set-drive_name $name && name=$drive_name
+	[[ $name ]] && set-drive_name "$name" && name=$drive_name
 	if [[ ! $device ]]
 	   then if set-decryption_dev "$name"
 		   then device=$decryption_dev
 		   else set-drive_dir- "$name"
 			set-FS_label--from-mount_dir "$drive_dir_prefix$name"&&
-			set-FS_device--from-FS-label $FS_label &&
+			set-FS_device--from-FS-label "$FS_label" &&
 			device=$FS_device
 		fi
 	fi
@@ -7522,7 +7522,7 @@ set-drive_name-FS_device-drive_dir-FS_label() {
 	fi
 
 	FS_device=$device
-	set-drive_name- $name
+	set-drive_name- "$name"
 	set-drive_dir-
 	set-FS_label--from-mount_dir "$drive_dir"
 
@@ -7564,8 +7564,7 @@ copy-backup-drive() {
 	   then warn "'dump | restore' can take weeks; it's probably better to run another 'mkfs', then enable backups plus run 'update-drive $dst_name'"
 	   else _assert-dst-big-enough
 		# show the user a sample fstab record
-		# shellcheck disable=SC2037,SC2209
-		IfRun=echo mkfs-backup-drive -f "$dst_device" "$dst_name" |&
+		IfRun="echo" mkfs-backup-drive -f "$dst_device" "$dst_name" |&
 		  # search for the last two fields in the fstab record
 		  egrep -B 3 "[[:space:]][0-9]+[[:space:]]+[0-9]+[[:space:]]*$"
 	fi
@@ -7647,7 +7646,7 @@ function _dump-restore-xfs-backup-drives {
 
 	$IfRun set -x
 
-	$IfRun xfs_freeze -f $src_drive_dir
+	$IfRun xfs_freeze -f "$src_drive_dir"
 
 	if [[ -d $dst_drive_dir/xfsrestorehousekeepingdir ]]
 	   then local restore_opt=-R
@@ -7656,12 +7655,13 @@ function _dump-restore-xfs-backup-drives {
 
 	trap '' INT			# don't interrupt xfsdump or xfsrestore
 	show-iostat "$dst_device"
+	# shellcheck disable=SC2086 # $restore_opt may be null
 	time $IfRun    xfsdump -J -p 600       - "$src_drive_dir" |
 	     $IfRun xfsrestore -J $restore_opt - "$dst_drive_dir"
 	local status=$?
 	show-iostat "$dst_device"
 
-	$IfRun xfs_freeze -u $src_drive_dir
+	$IfRun xfs_freeze -u "$src_drive_dir"
 
 	return $status
 }
@@ -8002,6 +8002,7 @@ mkswapfile() {
 	set-admin_group
 	$IfRun sudo chgrp "$admin_group" "$(dirname "$file")"
 
+	# shellcheck disable=SC2086 # *_opt may be null
 	$IfRun sudo dd if=/dev/zero of="$file" bs=1M count=$size && echo &&
 	$IfRun sudo chmod 0600 "$file" &&
 	$IfRun sudo mkswap $lbl_opt "$file" &&
@@ -8066,7 +8067,7 @@ readonly syslog_search_string_var_names="
 readonly syslog_search_results_file=$syslog_errors_dir/_errors.txt
 
 search-syslog-for-errors() {
-	local  syslog_file=${1:-$syslog_path}
+	local syslog_files=${1:-$syslog_path}
 	local  search_file=${2:-$syslog_search_results_file}
 	local cnt_msg_file=${3:-$syslog_errors_count_msg_file}
 
@@ -8080,10 +8081,10 @@ search-syslog-for-errors() {
 
 	# in case /etc/logrotate.conf contains 'dateext' & 'delaycompress'
 	set -- $syslog_path-????????	# have yesterday's file?
-	[[ $syslog_file == "$syslog_path" && $# != 0 && -s $1 ]] &&
-	    syslog_file+=" $1"
+	[[ $syslog_files == "$syslog_path" && $# != 0 && -s $1 ]] &&
+	    syslog_files+=" $1"
 	create-status_dir
-	fgrep --text -f    "$search_str_file" "$syslog_file" |
+	fgrep --text -f    "$search_str_file" $syslog_files |
 	    fgrep -v -f "$ignorable_str_file" | echo-to-file - "$search_file"
 	rm "$search_str_file" "$ignorable_str_file"
 
@@ -8691,7 +8692,7 @@ case $action in
 	;;
 
    # check-logs: update error cache: run this if dashboard fails with I/O error
-   ( check*logs | cl ) undo-action-abbrev check-logs
+   ( check*logs | cl ) undo-action-abbrev check-logs; $Trace
 	$action
 	;;
 
@@ -8778,6 +8779,7 @@ case $action in
 		fi
 		[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
+		# shellcheck disable=SC2086 # *_opt may be null
 		PATH=/usr/local/bin:$PATH \
 		setsid "$our_name_" $debug_opt $trace_opt "$action" -r &
 	fi
