@@ -807,42 +807,43 @@ readonly -f unlock
 # enumerating/showing/signaling/killing process groups
 ##############################################################################
 
-function set-PID_ps_fields--in-process-groups() {
+function set-ps_fields--from-PGIDs() {
 	local column_name=$1; shift
 
 	setup-ps-options
-	PID_ps_fields=
+	ps_fields=
 
 	local PGID
 	for PGID
 	    do	# shellcheck disable=SC2046
 		set -- $(COLUMNS=999 ps -o "$column_name=" "$ps_opt_g" "$PGID")
-		[[ $# != 0 ]] && PID_ps_fields+="$* "
+		[[ $# != 0 ]] && ps_fields+="$* "
 	done
 
-	[[ $PID_ps_fields ]]
+	# set -f; set -- $ps_fields; set +f; ps_fields=$*
+	[[ $ps_fields ]]
 }
-readonly -f set-PID_ps_fields--in-process-groups
+readonly -f set-ps_fields--from-PGIDs
 
 # ---------------------------------
 
-function set-PIDs--in-process-groups() {
+function set-PIDs--from-PGIDs() {
 
 	PIDs=
-	set-PID_ps_fields--in-process-groups pid "$@" || return 1
-	PIDs=$PID_ps_fields
+	set-ps_fields--from-PGIDs pid "$@" || return 1
+	PIDs=$ps_fields
 }
-readonly -f set-PIDs--in-process-groups
+readonly -f set-PIDs--from-PGIDs
 
 # ---------------------------------
 
-set-state--in-process-groups() {
+set-state--from-PGIDs() {
 
-	executables=
-	set-PID_ps_fields--in-process-groups stat "$@" || return 1
-	state=$PID_ps_fields
+	state=
+	set-ps_fields--from-PGIDs stat "$@" || return 1
+	state=$ps_fields
 }
-readonly -f set-state--in-process-groups
+readonly -f set-state--from-PGIDs
 
 # ----------------------------------------------------------------------------
 
@@ -2529,7 +2530,7 @@ readonly -f count-rsyncs-using-resource
 function is-waiting() {
 	local job_type=$1 drive_name=${2:-$drive_name}
 
-	ps-locks $job_type $drive_name |
+	ps-locks "$job_type" "$drive_name" |
 	    egrep -q '[0-9]:[0-9][0-9] +(sleep [0-9]|lockpid.* --wait)'
 }
 readonly -f is-waiting
@@ -2541,7 +2542,7 @@ function is-suspended() {
 
 	set-drive_name- "$drive_name"
 	set-job_PGID "$writer_type" || return 1
-	set-state--in-process-groups "$job_PGID" || { warn "set-state** -> $?"
+	set-state--from-PGIDs "$job_PGID" || { warn "set-state** -> $?"
 			print-call-stack "$drive_name"; ps-locks; return 1; }
 	[[ $state == *T* ]]
 }
@@ -5827,7 +5828,7 @@ _set-cron_cmds--from-PGIDs() {
 	local PGIDs=$*
 
 	local PIDs
-	set-PIDs--in-process-groups "$PGIDs"
+	set-PIDs--from-PGIDs "$PGIDs"
 	#  option f for "forest"; run trim-backup-ps now, for next adjustment
 	# shellcheck disable=SC2086 # variable contains multiple values
 	cron_cmds=$($sudo ps $ps_opt_f -o $ps_keywords $PIDs | trim-backup-ps)
