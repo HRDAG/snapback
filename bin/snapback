@@ -836,23 +836,13 @@ readonly -f set-PIDs--in-process-groups
 
 # ---------------------------------
 
-set-executables--in-process-groups() {
-
-	executables=
-	set-PID_ps_fields--in-process-groups comm "$@" || return 1
-	executables=$PID_ps_fields
-}
-readonly -f set-executables--in-process-groups
-
-# ---------------------------------
-
 set-state--in-process-groups() {
 
 	executables=
 	set-PID_ps_fields--in-process-groups stat "$@" || return 1
 	state=$PID_ps_fields
 }
-readonly -f set-executables--in-process-groups
+readonly -f set-state--in-process-groups
 
 # ----------------------------------------------------------------------------
 
@@ -2536,17 +2526,13 @@ readonly -f count-rsyncs-using-resource
 
 # ---------------------------------
 
-function is-sleeping() {
-	local job_type=$1 drive_name=${2:-$drive_name} executables
+function is-waiting() {
+	local job_type=$1 drive_name=${2:-$drive_name}
 
-	set-drive_name- "$drive_name"
-	set-job_PGID "$job_type" || return 1
-	set-executables--in-process-groups "$job_PGID" || {
-			warn "set-exe* -> $?"
-			print-call-stack "$drive_name"; ps-locks; return 1; }
-	is-arg1-in-arg2 sleep "$executables"
+	ps-locks $job_type $drive_name |
+	    egrep -q '[0-9]:[0-9][0-9] +(sleep [0-9]|lockpid.* --wait)'
 }
-readonly -f is-sleeping
+readonly -f is-waiting
 
 # ---------------------------------
 
@@ -4451,7 +4437,7 @@ function _set-speed_record() {
 
 	local -i writer_count=0
 	have-job backup &&			      writer_count+=1
-	have-job copy	&& ! is-sleeping copy && ! is-suspended copy &&
+	have-job copy	&& ! is-waiting copy && ! is-suspended copy &&
 						      writer_count+=1
 	have-job prune	&& is-drive-usage-too-high && writer_count+=1
 
@@ -6648,7 +6634,7 @@ predict-prune() {
 		# 
 		count=$(wc -l < "$tmp_2"); rm "$tmp_1" "$tmp_2"
 		printf "$format\n\n" "$drive_name" "$count"
-		[[ $count == 0 ]] || is-sleeping prune ||
+		[[ $count == 0 ]] || is-waiting prune ||
 		    warn "you should probably run e.g.: $sleep_cmd"
 	done
 }
