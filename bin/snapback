@@ -6283,8 +6283,10 @@ show-filesystem-info-that-fits() {
 
 	if [[ $show_all && ! $stats_opt ]]
 	   then have-cmd snapcrypt && snapcrypt status all
-		filesystem-geometry "$drive_dirs"
-		filesystem-details  "$drive_dirs"
+		# shellcheck disable=SC2086 # variable contains multiple values
+		filesystem-geometry $drive_dirs
+		# shellcheck disable=SC2086 # variable contains multiple values
+		filesystem-details  $drive_dirs
 	   else	[[ ${do_run_df-} ]] &&
 		run-df "$drive_dirs"
 
@@ -6899,8 +6901,6 @@ filesystem-geometry() {
 	run-df    "$drive_dirs"
 	run-lsblk "$drive_dirs"
 	echo
-
-	[[ $UID == 0 || $action == df ]] || return
 
 	[[ $drive_dirs ]] || return
 	local dash="------" dsh="---------------" # alternate header
