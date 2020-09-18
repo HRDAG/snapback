@@ -61,7 +61,7 @@ readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
 # You could replace "noatime" with "strictatime,lazytime" .
 readonly common_mount_options="nodev,nosuid,noatime"
 readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
-readonly    XFS_mount_options="logbsize=256k"	 # for performance
+readonly    XFS_mount_options="logbsize=256k"	 # for speed, see: man xfs
 
 # ----------------------------------------------
 # Rotational hard disks need special handling. #
