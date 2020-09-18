@@ -6284,6 +6284,7 @@ show-filesystem-info-that-fits() {
 	if [[ $show_all && ! $stats_opt ]]
 	   then have-cmd snapcrypt && snapcrypt status all
 		filesystem-geometry "$drive_dirs"
+		filesystem-details  "$drive_dirs"
 	   else	[[ ${do_run_df-} ]] &&
 		run-df "$drive_dirs"
 
@@ -6871,6 +6872,24 @@ readonly -f dir-sizes
 
 # ----------------------------------------------------------------------------
 
+_set-FS_type-FS_device-dev--from-drive_dir() {
+
+	set-FS_type--from-path   "$drive_dir"
+	set-FS_device--from-path "$drive_dir"
+	[[ -L $FS_device ]] &&
+	    set-absolute_path "$FS_device" && FS_device=$absolute_path
+	# shellcheck disable=SC2001 # 'sed' too hairy for ${var//x/y}
+	if [[ $FS_device == /dev/mapper/* ]]
+	   then dev=
+	   else dev=$(echo "$FS_device" |
+			  sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//') ||
+		   abort device=
+	fi
+}
+readonly -f _set-FS_type-FS_device-dev--from-drive_dir
+
+# --------------------------------------------
+
 filesystem-geometry() {
 	local drive_dirs
 	set-drive_dirs--from-user-args "$@" ||
@@ -6894,14 +6913,7 @@ filesystem-geometry() {
 	format=${format/\%25s/%-15s  %8s}
 	local drive_dir			# protect caller's value
 	for drive_dir in $drive_dirs
-	    do	set-FS_type--from-path   "$drive_dir"
-		set-FS_device--from-path "$drive_dir"
-		[[ -L $FS_device ]] &&
-		set-absolute_path "$FS_device" && FS_device=$absolute_path
-		# shellcheck disable=SC2001 # 'sed' too hairy for ${var//x/y}
-		[[ $FS_device == /dev/mapper/* ]] && dev= ||
-		dev=$(echo "$FS_device" | 
-			  sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//') || abort dev=
+	    do	_set-FS_type-FS_device-dev--from-drive_dir
 		case $FS_type in
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
@@ -6938,6 +6950,34 @@ filesystem-geometry() {
 	rm -f "$tmp_1"
 }
 readonly -f filesystem-geometry
+
+# --------------------------------------------
+
+filesystem-details() {
+	local drive_dirs
+	set-drive_dirs--from-user-args "$@" || return
+
+	for drive_dir in $drive_dirs
+	    do	_set-FS_type-FS_device-dev--from-drive_dir
+		header "$drive_dir"
+		case $FS_type in
+		    ( ext? )
+			# output _sometimes_ contains SPACEs (e.g. for inode=)
+			# shellcheck disable=SC2024 # $tmp_1 always writable
+			sudo tune2fs -l "$FS_device"
+			;;
+		    ( xfs  )
+			xfs_info "$drive_dir"
+			;;
+		    (  *   )
+			printf "%-15s   %s is unknown FS type, email $coder\n"\
+				"$drive_dir" "$FS_type"
+			continue
+			;;
+		esac
+	done
+}
+readonly -f filesystem-details
 
 # ----------------------------------------------------------------------------
 # functions used by snapcrypt
