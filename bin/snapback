@@ -6913,13 +6913,13 @@ filesystem-geometry() {
 	echo
 
 	[[ $drive_dirs ]] || return
-	local dash="------" dsh="---------------" # alternate header
-	local dash="======" dsh="==============="
-	local    format="%-15s   %-8s%8s %8s %8s %8s %8s %8s\n"
+	local dash="-----" dsh="---------------" # alternate header
+	local dash="=====" dsh="==============="
+	local    format="%-15s   %-7s%7s%7s%7s%7s  %-5s  %7s  %7s\n"
 	local  f=$format strp="stripe " wdth="width  "
-      printf "$f" ""   ""	""	""	""	"dir " "$strp"  "$strp"
-      printf "$f" Mount	FS-type	sector	inode	block	block  "unit  "	"$wdth"
-      printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
+printf "$f" ""   ""	""	""	""	"dir "	""    "$strp"  "$strp"
+printf "$f" Mount type	sector	inode	block	block	" log" "unit  "	"$wdth"
+printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
 	local drive_dir
 	for drive_dir in $drive_dirs
@@ -6938,6 +6938,7 @@ filesystem-geometry() {
 			inode=$(sed -n 's/^Inode size:.* //p' "$tmp_1")
 			block=$(sed -n 's/^Block size:.* //p' "$tmp_1")
 			dir_block=$block
+			log=
 			sunit=
 			swidth=
 			;;
@@ -6947,8 +6948,13 @@ filesystem-geometry() {
 		      inode=$(sed -nr '/^m/ s/.* isize=([^ ]+) .*/\1/p' "$tmp")
 		      block=$(sed -nr '/^d/ s/.* bsize=([^ ]+) .*/\1/p' "$tmp")
 		  dir_block=$(sed -nr '/^n/ s/.* bsize=([^ ]+) .*/\1/p' "$tmp")
+		  log_block=$(sed -nr '/^l/ s/.* bsize=([^ ]+) .*/\1/p' "$tmp")
+		  log_count=$(sed -nr '/^l/s/.* blocks=([^ ]+),.*/\1/p' "$tmp")
 		      sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' "$tmp")
 		     swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' "$tmp")
+		     log_bytes=$(( $log_block * $log_count ))
+		     set-division -1 "$log_bytes" $(( 1024 * 1024 * 1024 ))
+		        log=${division}GB
 		      sunit="$sunit blks"
 		     swidth="$swidth blks"
 			;;
@@ -6959,7 +6965,8 @@ filesystem-geometry() {
 			;;
 		esac
 		printf "$format" "$drive_dir" "$FS_type" \
-		    "$sector" "$inode" "$block" "$dir_block" "$sunit" "$swidth"
+		    "${sector}B" "${inode}B" "${block}B" "${dir_block}B" \
+		    "$log" "$sunit" "$swidth"
 	done
 	rm -f "$tmp_1"
 }
