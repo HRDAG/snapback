@@ -6282,9 +6282,15 @@ show-filesystem-info-that-fits() {
 	report-rows_left-if-parallelized
 
 	if [[ $show_all && ! $stats_opt ]]
-	   then # shellcheck disable=SC2024 # $dev_null always writable 
-		have-cmd snapcrypt && sudo -n cryptsetup --help > $dev_null &&
-		   snapcrypt status all
+	   then if have-cmd snapcrypt
+		   then local cmd="snapcrypt status all"
+			# shellcheck disable=SC2024 # $dev_null always writable
+			if sudo -n cryptsetup --help &> $dev_null
+			   then # shellcheck disable=SC2086 # $cmd has its args
+				$cmd
+			   else warn "need 'cryptsetup' sudo perms for: $cmd"
+			fi
+		fi
 		# shellcheck disable=SC2086 # variable contains multiple values
 		filesystem-geometry $drive_dirs
 		# shellcheck disable=SC2086 # variable contains multiple values
@@ -6915,14 +6921,18 @@ filesystem-geometry() {
       printf "$f" Mount	FS-type	sector	inode	block	block  "unit  "	"$wdth"
       printf "$f" $dsh ==$dash	$dash	$dash	$dash	$dash	==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
-	local drive_dir			# protect caller's value
+	local drive_dir
 	for drive_dir in $drive_dirs
 	    do	_set-FS_type-FS_device-dev--from-drive_dir
 		case $FS_type in
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
 			# shellcheck disable=SC2024 # $tmp_1 always writable
-			sudo -n tune2fs -l "$FS_device" > "$tmp_1" || return
+			if ! sudo -n tune2fs -l "$FS_device" &> "$tmp_1"
+			   then local msg="need 'tune2fs' sudo perms for"
+				echo -e "$drive_dir\t\t[$msg this data]"
+				return
+			fi
 			[[ ! $dev ]] && sector= ||
 			sector=$(< "/sys/block/$dev/queue/physical_block_size")
 			inode=$(sed -n 's/^Inode size:.* //p' "$tmp_1")
@@ -6968,7 +6978,11 @@ filesystem-details() {
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
 			# shellcheck disable=SC2024 # $tmp_1 always writable
-			sudo -n tune2fs -l "$FS_device"
+			if ! sudo -n tune2fs -l "$FS_device" 2> $dev_null
+			   then echo -e \
+				   "[need 'tune2fs' sudo perms for full data]"
+				return
+			fi
 			;;
 		    ( xfs  )
 			xfs_info "$drive_dir"
