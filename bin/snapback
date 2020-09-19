@@ -6953,8 +6953,8 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 		      sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' "$tmp")
 		     swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' "$tmp")
 		     log_bytes=$(( $log_block * $log_count ))
-		     set-division -1 "$log_bytes" $(( 1024 * 1024 * 1024 ))
-		        log=${division}GB
+		     set-division -2 "$log_bytes" $(( 1024 * 1024 * 1024 ))
+		        log=${division}g
 		      sunit="$sunit blks"
 		     swidth="$swidth blks"
 			;;
@@ -6965,7 +6965,7 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 			;;
 		esac
 		printf "$format" "$drive_dir" "$FS_type" \
-		    "${sector}B" "${inode}B" "${block}B" "${dir_block}B" \
+		    "${sector}b" "${inode}b" "${block}b" "${dir_block}b" \
 		    "$log" "$sunit" "$swidth"
 	done
 	rm -f "$tmp_1"
