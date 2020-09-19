@@ -1569,7 +1569,7 @@ set-custom_config_vars-custom_config_var2default_value() {
 
 		custom_config_var2default_value[$var_name]=${!var_name}
 
-		suspend-tracing
+		suspend-tracing -l
 	done
 
 	custom_config_vars=${!custom_config_var2default_value[*]}
@@ -1622,7 +1622,7 @@ customize-config-variables() {
 	for var_name in $custom_config_vars
 	    do	_set-value--for-config-var "$var_name" "$drive_name" ||continue
 		eval "$var_name=\$value"
-		suspend-tracing
+		suspend-tracing -l
 	done
 	restore-tracing
 
@@ -2729,7 +2729,7 @@ _prune-exclude-globs-from-all-snapshots() {
 			   do	[[ -e "$file" ]] && echo "$PWD/$file"
 			done
 		done
-		suspend-tracing
+		suspend-tracing -l
 	done | tr '\n' '\0' | xargs -0 -r $IfRun rm -r # -0: files with SPACEs
 	popd_ -q
 
@@ -2852,7 +2852,7 @@ rm-pruned-snapshots() {
 	[[ ! ( $debug_opt && $drive_name == Z ) ]] &&
 	for snapshot
 	    do	delete-pruned-snapshot "$snapshot"
-		suspend-tracing
+		suspend-tracing -l
 	done
 	restore-tracing
 
@@ -3431,7 +3431,7 @@ set-link_dest_dirs() {
 				 link_dest_dirs+=" $PWD/$snapshot" && break ;;
 		esac
 		link_dest_dirs+=" $PWD/$snapshot"
-		suspend-tracing
+		suspend-tracing -l
 	done
 	restore-tracing link_dest_dirs
 }
@@ -5335,7 +5335,7 @@ _recalculate-snapshot-stats-vars() {
 			local snap=${snapshot%$ending$suffix}
 			[[ $prev_snap != "$snap" ]] && snaps+="$snap "
 			    prev_snap=$snap
-			[[ $skip_empty || $only_empty ]] || suspend-tracing
+			[[ $skip_empty || $only_empty ]] || suspend-tracing -l
 		done
 		# shellcheck disable=SC2086 # variable contains multiple values
 		set -- $snaps
@@ -6282,7 +6282,9 @@ show-filesystem-info-that-fits() {
 	report-rows_left-if-parallelized
 
 	if [[ $show_all && ! $stats_opt ]]
-	   then have-cmd snapcrypt && snapcrypt status all
+	   then # shellcheck disable=SC2024 # $dev_null always writable 
+		have-cmd snapcrypt && sudo -n cryptsetup --help > $dev_null &&
+		   snapcrypt status all
 		# shellcheck disable=SC2086 # variable contains multiple values
 		filesystem-geometry $drive_dirs
 		# shellcheck disable=SC2086 # variable contains multiple values
@@ -6467,15 +6469,17 @@ function generate() {
 	[[ ! $functions ]] ||
 	is-arg1-in-arg2 "${function%% *}" "$functions" || { $xtrace;return 1; }
 
-	[[ $do_parallel ]] || { $function; $xtrace; return $?; }
+	[[ $do_parallel ]] || { $xtrace; $function; return $?; }
 
 	[[ -d $generate_output_files_dir ]] ||
 	RunCmd mkdir "$generate_output_files_dir"
 
 	true > "$rows_left_file"
 	local output_file=$generate_output_files_dir/out-$job_num
+	$xtrace
 	$function &> "$output_file" &
 	job_num2PID[job_num++]=$!
+	[[ $xtrace ]] && set +x
 	Trace 1 "$output_file from $function"
 
 	# wouldn't need polling if used a fifo, but they're buggy in bash-4.4
@@ -6964,7 +6968,7 @@ filesystem-details() {
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
 			# shellcheck disable=SC2024 # $tmp_1 always writable
-			sudo tune2fs -l "$FS_device"
+			sudo -n tune2fs -l "$FS_device"
 			;;
 		    ( xfs  )
 			xfs_info "$drive_dir"
