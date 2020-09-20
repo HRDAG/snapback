@@ -6519,7 +6519,7 @@ readonly -f report-rows_left-if-parallelized
 
 quit-if-requested() {
 
-	read -r -n 1 -t 0.25 user_input
+	read -r -n 1 -t 0.3 user_input
 	[[ ${user_input-} == [qQ]* ]] && kill -1 $PPID # kill 'watch' binary
 }
 readonly -f quit-if-requested
