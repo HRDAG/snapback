@@ -2550,6 +2550,25 @@ readonly -f is-suspended
 
 # ----------------------------------------------------------------------------
 
+_echo-csv-record() {
+	local file=$1
+
+	# shellcheck disable=SC2046
+	set -- $(sed -n -r \
+	 -e "s/ *Average hours to create.* $drive_name=([^ ]+)( .*| *$)/\1/p" \
+	 -e "s/.*G +([^ ]+) .*% .backup.$drive_name$/\1/p" "$file")
+	[[ $# == 2 ]] || return
+	hours=${1%h} usage=${2%\%}
+	[[ $hours == ?.* ]] && hours=0$hours
+
+	date=${file%,??/*}
+	set-seconds--from-snapshot "$date,00"
+	echo -e "$usage\t$hours\t$date\t$seconds"
+}
+readonly -f _echo-csv-record
+
+# ----------------------
+
 _create-csv-file() {
 	local path_without_extension=$1
 
@@ -2561,17 +2580,7 @@ _create-csv-file() {
 
 	for file in *,00"$log_dir"/cron-w.txt
 	    do	[[ -s $file ]] || continue
-		# shellcheck disable=SC2046
-		set -- $(sed -n -r \
-	-e "s/ *Average hours to create.* $drive_name=([^ ]+)( .*| *$)/\1/p" \
-	-e "s/.*G +([^ ]+) .*% .backup.$drive_name$/\1/p" "$file")
-		[[ $# == 2 ]] || continue
-		hours=${1%h} usage=${2%\%}
-		[[ $hours == ?.* ]] && hours=0$hours
-
-		date=${file%,??/*}
-		set-seconds--from-snapshot "$date,00"
-		echo -e "$usage\t$hours\t$date\t$seconds"
+		_echo-csv-record "$file"
 	done | sort -u -n -k 1
 	} | echo-to-file - "$output_file"
 }
