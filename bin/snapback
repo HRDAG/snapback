@@ -2554,8 +2554,8 @@ _create-csv-file() {
 	local path_without_extension=$1
 
 	local output_file=$path_without_extension.csv
-	echo -e "usage_percent\tbackup_hours\tsample_date\tdate_seconds" \
-	     > "$output_file"
+	{
+	echo -e "usage_percent\tbackup_hours\tsample_date\tdate_seconds"
 
 	cd_ "$drive_dir"
 
@@ -2572,7 +2572,8 @@ _create-csv-file() {
 		date=${file%,??/*}
 		set-seconds--from-snapshot "$date,00"
 		echo -e "$usage\t$hours\t$date\t$seconds"
-	done | sort -n >> "$output_file" || abort "$output_file"
+	done | sort -u -n -k 1
+	} | echo-to-file - "$output_file"
 }
 readonly -f _create-csv-file
 
@@ -2596,7 +2597,7 @@ _create-txt-file() {
 			[[ $date > 2020-09-02 ]] && hours+=h
 			printf "$data_format" "$usage" " $hours" " $date"
 		done < "$path_without_extension.csv"
-	} > "$output_file" || abort "$output_file"
+	} | echo-to-file - "$output_file"
 }
 readonly -f _create-txt-file
 
