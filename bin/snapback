@@ -2581,7 +2581,7 @@ _create-csv-file() {
 	for file in *,00"$log_dir"/cron-w.txt
 	    do	[[ -s $file ]] || continue
 		_echo-csv-record "$file"
-	done | sort -n -k 1
+	done | sort -n -k 1,3
 	} | echo-to-file - "$output_file"
 }
 readonly -f _create-csv-file
