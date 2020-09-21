@@ -1659,6 +1659,10 @@ validate-config-variables() {
 	[[ ${PIPESTATUS[0]} == 0 ]] ||
 	    abort "must assign above variables, see $config_file_sample"
 
+	# shellcheck disable=SC2053 # RHS variable holds a glob
+	[[ $min_date_for_usage_vs_speed_data == $snapshot_day_glob ]] ||
+	    abort "min_date_for_usage_vs_speed_data is invalid date"
+
 	local var=snapshot_date_time_separator
 	[[ ${!var} == ',' ]] ||
 	   abort "$var is not implemented, email $coder"
@@ -2562,6 +2566,7 @@ _echo-csv-record() {
 	[[ $hours == ?.* ]] && hours=0$hours
 
 	date=${file%,??/*}
+	[[ $date < "$min_date_for_usage_vs_speed_data" ]] && return
 	set-seconds--from-snapshot "$date,00"
 	echo -e "$usage\t$hours\t$date\t$seconds"
 }
@@ -4095,7 +4100,7 @@ function is-src_snapshot-useful() {
 
 	[[ -d $src_snapshot ]] || bad-copy "no snapshot '$1'" || return 1
 	local  src_basename=${src_snapshot##*/}
-	# shellcheck disable=SC2053
+	# shellcheck disable=SC2053 # RHS variable holds a glob
 	[[ $src_basename == $snapshot_glob ||
 	   $src_basename == $snapshot_glob.links ]] ||
 	   bad-copy "$src_snapshot is not a reliable snapshot" || return 1

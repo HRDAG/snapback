@@ -82,9 +82,9 @@ drv_name2do_want_external_log[X]=$false	 # value for SSD / flash memory stick
 	 is_multi_writer_drive=$false	# non-striped rotational disk drive
 drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 
-# ----------------------------------
+# -------------------------------- #
 # Variables used by nonitor-drives #
-# ----------------------------------
+# -------------------------------- #
 
 # How long monitor-drives sleeps between checks to see if a drive responded;
 # this period is also 'watch' period, i.e. default value for watch's -n option.
@@ -94,16 +94,22 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 	   drive_response_averaging_window_secs=2.0
   drv_name2drive_response_averaging_window_secs[X]=1.0 # SSD
 
-# -----------------------
-# monitoring swapout rate
-# -----------------------
+# ------------------------------------------ #
+# monitoring swapout rate and usage-vs-speed #
+# ------------------------------------------ #
 
 # set this by running: snapback measure-swapout-bandwith $swap_device
 # declare -r -i max_swapout_MBps=50
 
-# --------------------------------------------------
+# This date is the last time you defragmented disk, changed size of journal,
+# substantially changed dirs_to_backup= (or dirs' contents), or etc.
+# To "protect" usage-vs-speed data, suspend defrag during the midnight backup.
+min_date_for_usage_vs_speed_data=2020-01-01
+  drv_name2min_date_for_usage_vs_speed_data[X]=2020-09-02 # recent X defrag
+
+# ------------------------------------------------ #
 # Variables used by backup-drive* and prune-drive* #
-# --------------------------------------------------
+# ------------------------------------------------ #
 
 # We append the drive name to this variable to get the mount point.
 # If change this, change comment at top of "snapback mkfs" action.
@@ -152,9 +158,9 @@ declare -r -A level2IO_priority_cmd=(
 # replace this if you have a command to set I/O priority
 declare -r -A level2IO_priority_cmd=([lower]= [medium]= [higher]=)
 
-# --------------------------------------
+# ------------------------------------ #
 # variables that control backup-drive* #
-# --------------------------------------
+# ------------------------------------ #
 
 # The directories we back up, *must* be absolute paths; can use bash globbing.
 	 dirs_to_backup="/"
@@ -209,11 +215,11 @@ declare -i backup_period_for_update=0	 # default to the same
 declare -i max_backup_period_for_pruning=0    # default to the same
   drv_name2max_backup_period_for_pruning[X]=4 # updating New disk, slow bkps
 
-# -----------------------------------------------------------------------------
+# --------------------------------------------------------------------------- #
 # Variables that control prune-drives.  NOTE: *backup_period, extra_excludes, #
 #    and excluded_backup_hours (above) are also used in pruning.  To see the  #
 #    impact of any changes, run: snapback predict-pruning [-f span] name(s)   #
-# -----------------------------------------------------------------------------
+# --------------------------------------------------------------------------- #
 
 # Maximum acceptable FileSystem usage (before make pruning highest priority).
 declare -i max_FS_usage_percent=95	# for "df" and "df -i"
@@ -262,9 +268,9 @@ declare -i decades_per_span_for_year_prune=5	# 'prune-drive -f month' skips
 drv_name2pruning_span_scale_factor[X]=1.5 # X is 50% bigger than other drives
 drv_name2pruning_span_scale_factor[Z]=1	  # Z: for pruning regression test
 
-# ----------------------------------------------------------------------------
-# End of variables that control prune-drives.
-# ----------------------------------------------------------------------------
+# ------------------------------------------- #
+# End of variables that control prune-drives. #
+# ------------------------------------------- #
 
 # Can optionally specify often-slow drive(s) to leave out of regression tests.
 flakey_drive_names_regex=
@@ -288,9 +294,9 @@ readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 #  from another backup drive that had the missing snapshots.]
 readonly very_old_immutable_files=
 
-# --------------------------------------------------------------------------
-# Drive naming policy.
-# --------------------------------------------------------------------------
+# ----------------------------------------------------------------- #
+# Drive naming policy (controlled by extended regular expressions). #
+# ----------------------------------------------------------------- #
 
 # Set to 'T' for ISO standard, code will automagically rename snapshots.
 # [Code is hard-wired to ',' ; email sweikart@gmail.com to implement variable.]
