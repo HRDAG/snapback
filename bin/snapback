@@ -268,7 +268,8 @@ unset arg
 trap print-call-stack EXIT
 exit-normally() {
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
-	exit "${1-}"
+	# shellcheck disable=SC2086 # $1 may be null
+	exit ${1-}
 }
 exit_() { exit-normally "$@"; }		# short form, for test action
 
