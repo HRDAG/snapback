@@ -8858,7 +8858,7 @@ case $action in
    ###########################################################################
 
    # update-monitor-config: configure.sh's drive_response_averaging_window_secs
-   ( upd*mon*conf* | mu | umc | um* )
+   ( upd*mon*conf* | mu | umc | um )
 	undo-action-abbrev update-monitor-config; $Trace
 	$action
 	;;
@@ -8981,7 +8981,7 @@ case $action in
    # WARNING: this should only be called by "snapcrypt close"
    # unmount names: for each name (can be 'all'), kill backup & unmount drive
    ( u*mount | u ) undo-action-abbrev unmount # umount
-	[[ $# != 0 ]] || abort "pass drive names"
+     [[ $# != 0 ]] || abort "pass drive names"
      unmount-drives "$@"
 	;;
    # for "snapcrypt close": don't eject if didn't get any backups today

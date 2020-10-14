@@ -104,8 +104,8 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # This date is the last time you defragmented disk, changed size of journal,
 # substantially changed dirs_to_backup= (or dirs' contents), or etc.
 # To "protect" usage-vs-speed data, suspend any defrag during backups.
-min_date_for_usage_vs_speed_data=2020-01-01
-  drv_name2min_date_for_usage_vs_speed_data[X]=2020-09-02 # recent X defrag
+	 min_date_for_usage_vs_speed_data=2020-01-01
+drv_name2min_date_for_usage_vs_speed_data[X]=2020-09-02 # recent X defrag
 
 # ------------------------------------------------ #
 # Variables used by backup-drive* and prune-drive* #
