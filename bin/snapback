@@ -368,6 +368,9 @@ assert-drive_dir-writable() {
 	local dir=${1:-$drive_dir}
 
 	[[ -f $dir ]] && dir=${dir%/*}
+	[[ -w $dir/. ]] || { set-admin_group
+			     sudo chgrp $admin_group $dir/.
+			     sudo chmod g+w $dir/.		; }
 	[[ -w $dir/. ]] ||
 	   abort "$dir mounted read-only??  Maybe corrupted, run fsck."
 }
