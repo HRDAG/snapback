@@ -8127,6 +8127,7 @@ is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
 # first is google-chrome error
 readonly OS_ignorable_error_strings="\
 :ERROR:mcs_client.cc
+Could not resolve keysym Invalid
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
@@ -8576,7 +8577,8 @@ function regression-test() {
 	[[ $tests == [A-Z]* ]] && tests=${regression_tests//[${tests,,}]/}
 
 	clone-stashed-mk-Z hour
-	[[ $tests == *[zpu]* ]] && validate-prune_globs
+	[[ $tests == *[zpu]* ]] &&
+	validate-prune_globs		# enables mkdir loadable builtin
 
 	[[ -x $old_cmd ]] || abort "fix old_cmd= in $config_file"
 	[[ -x $tst_cmd ]] || abort "fix tst_cmd= in $config_file"
