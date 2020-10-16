@@ -5036,6 +5036,18 @@ readonly -f set-percent_usage
 
 # ---------------------------------
 
+set-narrowed_decimal() {
+	local decimal=$1
+
+	[[ $decimal ==  ???.* ]] && decimal=${decimal%?}
+	[[ $decimal == ????.* ]] && decimal=${decimal%?}
+	[[ $decimal == *.     ]] && decimal=${decimal%?}
+	narrowed_decimal=$decimal
+}
+readonly -f set-narrowed_decimal
+
+# ---------------------------------
+
 set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 
 	local -i \
@@ -5047,6 +5059,8 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 	set-units g
 	set-division -2 $average 1024 # 2 decimal points
 	set-padded_number "$division"
+	set-narrowed_decimal "$padded_number"
+	padded_number=$narrowed_decimal
 	GB_avg=$padded_number$units
 
 	if [[ $writer_type != backup ]]
@@ -5115,11 +5129,12 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		set-units g
 		if (( $MB_per_day > 0 ))
 		   then set-division -2 "$MB_per_day" 1024
+			set-narrowed_decimal "$division"
+			division=$narrowed_decimal
 			set-padded_number "$division$units"
 		   else padded_number=
 		fi
 		GBs_per_day+="$drive_name=$padded_number "
-
 		if (( $MB_per_day > 0 ))
 		   then set-percent_usage "$MB_per_day"
 			set-padded_number "$percent_usage"
