@@ -5956,6 +5956,7 @@ readonly status_dir_lock_path=$lock_dir/status-dir.pid
 
 create-status_dir() {
 
+	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	[[ $UID == 0 ]] && lockpid --wait "$status_dir_lock_path" || return
 
 	[[ -d $status_dir ]] || {
