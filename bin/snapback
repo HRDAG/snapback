@@ -1105,7 +1105,7 @@ function ps-locks() {
 
 	local ps_opts=
 	# $1 types are (a)ll, (b)ackup, (c)opy, (p)rune, (m)on: so not 'ps' opt
-	while [[ ${1-} == -* || ${1-} == [^abcpm] || $# -ge 3 ]]
+	while [[ ${1-} == -* || ${1-} == [^abcupm] || $# -ge 3 ]]
 	   do ps_opts+="$1 "; shift; done
 	set-drive_dirs
 	set-rows-columns-COLUMNS
