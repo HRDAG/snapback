@@ -369,8 +369,8 @@ assert-drive_dir-writable() {
 
 	[[ -f $dir ]] && dir=${dir%/*}
 	[[ -w $dir/. ]] || { set-admin_group
-			     sudo chgrp $admin_group $dir/.
-			     sudo chmod g+w $dir/.		; }
+			     sudo chgrp "$admin_group" "$dir"/.
+			     sudo chmod g+w "$dir"/.		; }
 	[[ -w $dir/. ]] ||
 	   abort "$dir mounted read-only??  Maybe corrupted, run fsck."
 }
@@ -4467,6 +4467,8 @@ mkdir-missing-snapshots-then-print-copy-args() {
 		local dst_partial=$dst_snapshot.partial
 		# shellcheck disable=SC2086 # *_opt may be null
 		$sudo env mkdir $verbose_opt -p "$dst_partial" >&2
+		false &&
+		# FIXME: the following doesn't seem to make sense
 		[[ ${basename2is_keep[$basename]-} ]] &&
 		          echo >"$dst_partial/.keep" && [[ $verbose_opt ]] &&
 		    echo "echo > $dst_partial/.keep" >&2
