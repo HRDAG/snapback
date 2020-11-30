@@ -98,6 +98,7 @@ To see if a backup filesystem slows down as it fills up, study this file:
 (if the current speed is too slow, use the methods in section
 'L. snapback tuning' to prune the drive faster).
 
+
 D. How do I encrypt a backup drive?
 
 On a Mac, use the macOS encryption utility.
