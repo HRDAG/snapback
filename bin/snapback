@@ -5727,6 +5727,9 @@ readonly -f set-max_ps_width
 
 # ----------------------
 
+is-set   user_with_no_processes ||	# can set custom value in $config_file
+readonly user_with_no_processes=man	# owner of man pages
+
 declare cputime
 
 have-cmd \
@@ -5742,10 +5745,10 @@ set-ps_keywords-ps_header() {
 
 	# min fits in 80-column screen; grep's expect ends with cputime,command
 	ps_min_keywords=pid,pgid,%mem,stat,$cputime,command # cron_opt uses
-	ps_min_header="  PID  PGID %MEM STAT      TIME COMMAND"
+	ps_min_header=$(ps -o $ps_min_keywords -U $user_with_no_processes)
 	#
 	ps_max_keywords=pid,pgid,start,%mem,%cpu,stat,$cputime,command
-	ps_max_header="  PID  PGID  STARTED %MEM %CPU STAT      TIME COMMAND"
+	ps_max_header=$(ps -o $ps_max_keywords -U $user_with_no_processes)
 
 	if (( ${columns-0} >= $min_full_columns )) || [[ ${ps_opt-} == -f ]]
 	   then readonly is_wide=$true
