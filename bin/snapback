@@ -5728,7 +5728,7 @@ readonly -f set-max_ps_width
 # ----------------------
 
 is-set   user_with_no_processes ||	# can set custom value in $config_file
-readonly user_with_no_processes=man	# owner of man pages
+readonly user_with_no_processes=nobody
 
 declare cputime
 
