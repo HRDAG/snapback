@@ -4686,8 +4686,9 @@ function set-drive_dirs--from-user-args() {
 	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
 	   then # shellcheck disable=SC2086 # *_opt may be null
 		set-drive_dirs $all_opt
+		local status=$?
 		$xtrace
-		return $?
+		return $status
 	fi
 
 	[[ $1 != /* ]] && set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
