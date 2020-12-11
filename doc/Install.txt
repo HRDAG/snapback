@@ -233,7 +233,12 @@ Now, label your master partition.  First, to see a good fstab record, run e.g.:
 
     snapback -d mkfs -f $device A	# -d means Debug i.e. "simulation"
 
-which will also indicate the label to use with e.g. 'e2label'.
+which will also indicate the label to use with e.g. 'e2label'.  If you created
+an XFS filesystem and the %inodes gets really low, you'll probably need to run:
+
+    sudo xfs_growfs -m 0 $device	# make all space available for inodes
+
+since sometimes the "-i maxpct=0" option to mkfs.xfs doesn't work?!
 
 If you weren't able to use your smallest partition as the master, but the
 amount of disk space actually in-use on the master will fit in smaller backup
