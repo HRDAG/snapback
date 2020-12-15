@@ -1064,7 +1064,7 @@ function kill-job-on-drives() {
 
 			# shellcheck disable=SC2155 # 'basename' never fails
 			local lock=$(basename "$path")
-			local coder_msg="can ask $coder to fix this."
+			local coder_msg="can ask $coder to add -s to 'copy'."
 			local cron_msg="cron (runs every 5 minutes by default)"
 			warn "$cron_msg could un-suspend\n   $lock; $coder_msg"
 

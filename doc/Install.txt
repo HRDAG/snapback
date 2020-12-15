@@ -65,6 +65,7 @@ To get up and running quickly, here's the minimal edits to
 
 On GNU/Linux, run "sudo snapback mkfs ..."  to build a filesystem on each
 drive (which will *DESTROY* any existing data on the specified partition).
+[See section D. if you'd like to encrypt the drive.]
 
 On Darwin (macOS aka Mac OS-X), use an APFS filesystem labeled backup-{name},
 and set backup_dir_prefix=/Volumes/backup- in /etc/snapback/configure.sh .
