@@ -764,7 +764,7 @@ function lock() {
 	# shellcheck disable=SC2086 # *_opt may be null
 	lock-PID $wait_opt "$type" "$lock_msg" ||
 	    { local status=$?; $xtrace; return $status; }
-	local primary_lock_file=$lock_file # lock-PID sets lock_file
+	local primary_lock_file=$lock_file # lock-PID set lock_file
 
 	! [[ $action == update* && $debug_opt ]] && # not regression-test?
 	# this 'if' logic is similar to the logic in _signal-job()
@@ -3962,7 +3962,7 @@ prevent-pruning() {
 			    "$lock_msg: awaiting $drive_name lock" |
 			    tee -a "$file_for_logging"
 		fi
-		$IfRun env sleep 1.0
+		$IfRun env sleep 0.9
 	done
 	did_prevent_pruning_print_stack=$false # for future call
 }
