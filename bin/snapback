@@ -5296,7 +5296,7 @@ _set-age() {
 	local snapshot=$1
 
 	if [[ ${hour_ages-} ]]
-	   then local -i denominator=$(( 60*60    ))    # seconds/hour
+	   then local -i denominator=$(( 60*60    )) # seconds/hour
 	   else local -i denominator=$(( 60*60*24 )) # seconds/day
 	fi
 	set-seconds--from-snapshot "$snapshot"
@@ -5326,6 +5326,9 @@ _set-colorized_new() {
 	   then set-warning_string error NONE!
 	elif (( ${new%[a-zA-Z]} < $max_age ))
 	   then true
+	elif [[ $max_age == 2 || $drive_name =~ ^$drive_name_regex ]]
+	   then set-warning_string stale "$new"
+TraceV 0 drive_name drive_name_regex
 	   else set-warning_string warning "$new"
 	fi
 
