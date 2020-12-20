@@ -90,7 +90,12 @@ above 55% or 65% or 75% blocks used), _except_ when the drive is an SSD.  ext4
 is less fragile (an XFS crash resulted in most files being moved to
 /lost+found/); and xfs_repair wants to use an immense amount of RAM, besides
 taking a long time.  But I use XFS anyway, because my filesystems have a huge
-number of hardlinks (because we use HRDAG's 'snap' aka 'snapshot').
+number of hardlinks (because we use HRDAG's 'snap' aka 'snapshot').  And,
+there's one good thing with XFS: you get best time _and_ space performance
+with 4KB sectors, and this is a good match to modern disk drives (as long as
+you e.g. use 4KB sectors with LUKS2 if you encrypt drives on GNU/Linux); in
+this ideal case (when the filesystem has a 2 GB log file i.e. journal on flash
+memory), I'm not sure that XFS is slower than ext4.
 
 To see if a backup filesystem slows down as it fills up, study this file:
 
@@ -104,8 +109,8 @@ D. How do I encrypt a backup drive?
 
 On a Mac, use the macOS encryption utility.
 
-On GNU/Linux (and probably on *BSD), you can use HRDAG's 'snapcrypt' utility.
-Here's how to install it:
+On GNU/Linux, you can use HRDAG's 'snapcrypt' utility.  Here's how to install
+it:
 
     git clone git@github.com:HRDAG/snapcrypt.git
     cd snapcrypt
