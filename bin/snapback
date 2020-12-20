@@ -5322,14 +5322,16 @@ _set-colorized_new() {
 	# shellcheck disable=SC2125
 	local -i max_age=2*$customized_value
 	local warning_string=
+	local age=${new%[a-zA-Z]}
 	if [[ ! $new ]]
 	   then set-warning_string error NONE!
-	elif (( ${new%[a-zA-Z]} < $max_age ))
+	elif (( $age < $max_age ))
 	   then true
-	elif [[ $max_age == 2 || $drive_name =~ ^$drive_name_regex ]]
+	elif [[ $age == 2 ]]		# backup_period of 1 acts oddly
 	   then set-warning_string stale "$new"
-TraceV 0 drive_name drive_name_regex
-	   else set-warning_string warning "$new"
+	elif [[ $drive_name =~ ^$drive_name_regex$ ]] # should be backed up?
+	   then set-warning_string warning "$new"     # a problem!
+	   else set-warning_string  stale  "$new"     # not being backed up
 	fi
 
 	if [[ $warning_string ]]
