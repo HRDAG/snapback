@@ -132,7 +132,7 @@ readonly PS4		      # remove if some functions want to manipulate it
 #
 # We use these constants from libsnap.sh (and change $our_name)
 readonly tmp_dir our_path true false is_darwin max_call_stack_args
-readonly warning_level2tput_args
+readonly highlight_level2tput_args
 # We used these functions from libsnap.sh .
 # FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
 # set-FS_label--from-mount_dir, $config_file can replace them.
@@ -150,7 +150,7 @@ readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
 readonly -f cd_ pushd_ popd_ have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word-is_last_word--from-list
-readonly -f set-division set-warning_string
+readonly -f set-division set-highlighted_string
 readonly -f confirm run-function set-backup_suffix
 
 is-set coder ||				# can set custom value in $config_file
@@ -4874,8 +4874,8 @@ set-units ||			   # can define custom version in $config_file
 set-units() {			   # a stylistic function
 	local letter=$1
 
-	set-warning_string stale "$letter"
-	units=$warning_string		# doesn't work, confuses printf
+	set-highlighted_string stale "$letter"
+	units=$highlighted_string	# doesn't work, confuses printf
 	units=${letter,}		# lower-cased looks the best
 }
 
@@ -4988,9 +4988,9 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 		   then local type=warning
 		   else local type=error
 		fi
-		set-warning_string $type "$hour_avg"
+		set-highlighted_string $type "$hour_avg"
 		set-padded_colorized_string--for-printf \
-		    "$hour_avg" "$warning_string"
+		    "$hour_avg" "$highlighted_string"
 		hour_avg=$padded_colorized_string
 	fi
 }
@@ -5197,7 +5197,7 @@ readonly -f set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages
 
 set-drive_usages() {
 
-	local max_drive_usage_percent warning_string
+	local max_drive_usage_percent highlighted_string
 	for drive_dir in $all_drive_dirs
 	    do	# is-drive-usage-too-high sets max_drive_usage_percent
 		is-drive-usage-too-high && local warn=$true || local warn=
@@ -5205,12 +5205,12 @@ set-drive_usages() {
 		local  percent=${max_drive_usage_percent%-*}
 		((  ${#percent} ==   1 )) && percent=0$percent
 		if [[ $percent  == 100 && $watch_opt ]]
-		   then set-warning_string error FULL!
-			percent=$warning_string
+		   then set-highlighted_string error FULL!
+			percent=$highlighted_string
 		elif [[ $warn && $watch_opt ]]
 		   then [[ $percent == 99 ]] && _type=error || _type=warning
-			set-warning_string $_type "$percent%$type"
-			percent=$warning_string
+			set-highlighted_string $_type "$percent%$type"
+			percent=$highlighted_string
 		   else percent=$percent%$type
 		fi
 		set-drive_name- "$drive_dir"
@@ -5253,11 +5253,11 @@ set-drive_responses() {
 			set-padded_number "$secs"
 			local secs=$padded_number$units
 			if (( $msecs >= $drive_response_warning_msecs ))
-			   then set-warning_string warning "$secs"
-				secs=$warning_string
+			   then set-highlighted_string warning "$secs"
+				secs=$highlighted_string
 			fi
-		   else set-warning_string error HUNG!
-			local secs=$warning_string
+		   else set-highlighted_string error HUNG!
+			local secs=$highlighted_string
 		fi
 		responses+="$drive_name=$secs "
 	done
@@ -5321,25 +5321,25 @@ _set-colorized_new() {
 	set-customized_value--for-config-var-name backup_period
 	# shellcheck disable=SC2125
 	local -i max_age=2*$customized_value
-	local warning_string=
+	local highlighted_string=
 	local age=${new%[a-zA-Z]}
 	if [[ ! $new ]]
-	   then set-warning_string error NONE!
+	   then set-highlighted_string error NONE!
 	elif (( $age < $max_age ))
 	   then true
 	elif [[ $age == 2 ]]		# backup_period of 1 acts oddly
-	   then set-warning_string stale "$new"
+	   then set-highlighted_string stale "$new"
 	elif [[ $drive_name =~ ^$drive_name_regex$ ]] # should be backed up?
-	   then set-warning_string warning "$new"     # a problem!
-	   else set-warning_string  stale  "$new"     # not being backed up
+	   then set-highlighted_string warning "$new"     # a problem!
+	   else set-highlighted_string  stale  "$new"     # not being backed up
 	fi
 
-	if [[ $warning_string ]]
+	if [[ $highlighted_string ]]
 	   then set-padded_colorized_string--for-printf \
-		    "$new" "$warning_string"
-		warning_string=$padded_colorized_string
+		    "$new" "$highlighted_string"
+		highlighted_string=$padded_colorized_string
 	fi
-	colorized_new=${warning_string:-$new}
+	colorized_new=${highlighted_string:-$new}
 }
 readonly -f _set-colorized_new
 
@@ -6012,8 +6012,8 @@ show-errors-in-syslog() {
 
 	# shellcheck disable=SC2155  # 'basename' never fails
 	local header="count subset-of-$(basename "$syslog_path")-record"
-	set-warning_string warning "${header^^}"
-	echo "$warning_string"
+	set-highlighted_string warning "${header^^}"
+	echo "$highlighted_string"
 	while read -r count msg
 	   do	local -i msg_len=${#msg}
 		(( $msg_len > $columns - 8 )) && msg="${msg:0:$columns-12} ..."
@@ -6025,8 +6025,8 @@ show-errors-in-syslog() {
 			  local type=warning ;;
 		    ( * ) local type=error   ;;
 		esac
-		set-warning_string $type "$msg"
-		printf "%5d: %s\n" "$count" "$warning_string"
+		set-highlighted_string $type "$msg"
+		printf "%5d: %s\n" "$count" "$highlighted_string"
 		(( rows_left-=1 ))
 	done < "$errors_count_msg_file"
 
@@ -6111,7 +6111,7 @@ readonly -f set-drive_name2stats_number
 ech_() {
 
 	if [[ ${watch_opt-} ]]
-	   then set-warning_string stale "$*"; echo "$warning_string"
+	   then set-highlighted_string stale "$*"; echo "$highlighted_string"
 	   else echo "$*"
 	fi
 }
@@ -6296,8 +6296,8 @@ show-FS-repair-cmds() {
 	fgrep -q ' fsck.' "$FS_repair_cmds_file" &&
 	   local sed_opt='/ fsck /d' || local sed_opt='#'
 
-	set-warning_string warning "FS repair command(s), e.g. fsck"
-	header "$warning_string"
+	set-highlighted_string warning "FS repair command(s), e.g. fsck"
+	header "$highlighted_string"
 	echo
 	if [[ $watch_opt ]]
 	   then sed -r -e "$sed_opt" -e 's@ -.* (/dev/)@ ... \1@'
@@ -8581,8 +8581,8 @@ _run-debug-cmds() {
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
 
 	set +x
-	set-warning_string error DIFFERENT results
-	echo "-- $warning_string, compare with: diff -u $tmp_o $tmp_t | less"
+	set-highlighted_string error DIFFERENT results
+	echo "-- $highlighted_string, compare with: diff -u $tmp_o $tmp_t|less"
 	[[ $test != u ]] || cmp -s "$tmp_o.args" "$tmp_t.args" ||
 	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
 
@@ -8683,9 +8683,9 @@ function regression-test() {
 
 	if [[ $failed_tests ]]
 	   then warn "ERROR: regressions in these tests: ${failed_tests% }"
-	   else	set-warning_string ok \
+	   else	set-highlighted_string ok \
 		   "all the (specified) tests passed: $tests"
-		echo -e "\n$warning_string\n"
+		echo -e "\n$highlighted_string\n"
 	fi
 }
 readonly -f regression-test
