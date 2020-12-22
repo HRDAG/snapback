@@ -5854,6 +5854,7 @@ readonly -f _set-cron_PGIDs
 widest_wchan_value=call_rwsem_down_read_failed # linux-3.2
 widest_wchan_value=balance_dirty_pages.isra.17 # linux-3.2
 widest_wchan_value=balance_dirty_pages.isra.24 # linux-4.x
+widest_wchan_value=poll_schedule_timeout.constprop.0 # linux-5.x
 readonly widest_wchan_value
 
 is-set	   max_ps_wchan_width ||	# can set custom value in $config_file
