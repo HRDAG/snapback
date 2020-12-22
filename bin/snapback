@@ -6380,7 +6380,9 @@ show-copy-cmds() {
 
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] || return
 
-	header "copy (update-drive or copy-snapshots)"
+	local header_msg="copy (update-drive or copy-snapshots)"
+	set-highlighted_string notice $header_msg
+	header "$highlighted_string"
 	echo
 	echo "$ps_header"
 	echo "$copy_rsync_cmds" | trim-copy-update-ps
