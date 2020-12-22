@@ -6111,7 +6111,7 @@ readonly -f set-drive_name2stats_number
 ech_() {
 
 	if [[ ${watch_opt-} ]]
-	   then set-highlighted_string stale "$*"; echo "$highlighted_string"
+	   then set-highlighted_string notice "$*"; echo "$highlighted_string"
 	   else echo "$*"
 	fi
 }
