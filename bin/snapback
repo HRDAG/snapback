@@ -6414,7 +6414,10 @@ show-backup-cmds() {
 
 	report-rows_left-if-parallelized
 
-       header "backup-drive's most-CPU-intensive rsync processes (abbreviated)"
+	local \
+	  msg="backup-drive's most-CPU-intensive rsync processes (abbreviated)"
+	set-highlighted_string notice $msg
+	header "$highlighted_string"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
