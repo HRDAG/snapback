@@ -3937,16 +3937,6 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-restore-lock() {
-	local lock_path=${1-} lock_PGID=${2-}
-
-	[[ $lock_path ]] || return
-	sudo-lockpid --pid="$lock_PGID" "$lock_path"
-}
-readonly -f restore-lock
-
-# ----------------------
-
 did_prevent_pruning_print_stack=$false
 
 prevent-pruning() {
@@ -3969,6 +3959,24 @@ prevent-pruning() {
 readonly -f prevent-pruning
 
 # ----------------------
+
+restore-pruning() {
+	local resource=$1
+
+	unlock prune "$resource"
+}
+
+# ---------------------------------
+
+restore-lock() {
+	local lock_path=${1-} lock_PGID=${2-}
+
+	[[ $lock_path ]] || return
+	sudo-lockpid --pid="$lock_PGID" "$lock_path"
+}
+readonly -f restore-lock
+
+# -----------------------------------------
 
 # The locking & job-management policy is documented in front of function lock()
 
@@ -4263,7 +4271,7 @@ function copy-snapshot-rsync() {
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
 
-	[[ $did_lock_src_prune ]] && unlock prune "$src_snapshot"
+	[[ $did_lock_src_prune ]] && restore-pruning "$src_snapshot"
 
 	return $status
 }
@@ -8532,7 +8540,10 @@ readonly -f test-prune
 
 _show-test-header() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	header "$* (first number is md5sum of sorted data, second is unsorted)"
+
+	local msg="(first number is md5sum of sorted data, second is unsorted)"
+	[[ $* == *'('* ]] && msg=
+	header "$* $msg"
 	$xtrace
 }
 readonly -f _show-test-header
@@ -8664,7 +8675,8 @@ function regression-test() {
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $args
 	local dst=${!#}
-	_show-test-header update "$dst"
+	_show-test-header \
+	    update "$dst (using update_test_args= in $config_file)"
 
 	set-drive_name- "$dst"
 	set-drive_dir-
@@ -9002,7 +9014,7 @@ case $action in
 	;;
 
    # regression-test [tests]: check functionality, see $tmp_dir/?? for results
-   ( regression-test | rt ) undo-action-abbrev regression-test
+   ( regression*test | rt ) undo-action-abbrev regression-test
 	# $Trace
 	$action "$@"
 	;;
