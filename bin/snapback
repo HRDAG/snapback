@@ -788,7 +788,7 @@ readonly -f lock
 
 unlock() {
 #	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ ${1-} == -* ]] && { shift; local lock_opt=$1; } || local lock_opt=
+	[[ ${1-} == -* ]] && { local lock_opt=$1; shift; } || local lock_opt=
 	local type name
 	 _set-type-name "$@"
 
@@ -3942,13 +3942,32 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
+function is-prune-lock-owned-by-copy-job() {
+
+	local prune_lock_path copy_PGID
+	  set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy
+}
+readonly -f is-prune-lock-owned-by-copy-job
+
+# ----------------------
+
 did_prevent_pruning_print_stack=$false
+declare is_prune_lock_shared
 
 prevent-pruning() {
 	local resource=$1
 
+	is_prune_lock_shared=$false
 	until lock -P prune "$resource" > $dev_null
 	    do	local status=$?
+
+		# did another copy job lock the same source?
+		if is-prune-lock-owned-by-copy-job
+		   then lock -w -P prune "$resource" & # grab when available
+			is_prune_lock_shared=$true
+			return
+		fi
+
 		kill-job-on-drives prune "$resource"
 		if [[ ! $did_prevent_pruning_print_stack ]]
 		   then  did_prevent_pruning_print_stack=$true
@@ -3968,7 +3987,12 @@ readonly -f prevent-pruning
 restore-pruning() {
 	local resource=$1
 
-	unlock prune "$resource"
+	if [[ $is_prune_lock_shared ]]
+	   then local lock_opt=-q	# we don't own the lock
+	   else local lock_opt=
+	fi
+	# shellcheck disable=SC2086 # *_opt may be null
+	unlock $lock_opt prune "$resource"
 }
 
 # ---------------------------------
