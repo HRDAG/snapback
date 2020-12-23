@@ -854,6 +854,16 @@ set-state--from-PGIDs() {
 }
 readonly -f set-state--from-PGIDs
 
+# ---------------------------------
+
+set-command--from-PGIDs() {
+
+	command=
+	set-ps_fields--from-PGIDs command "$@" || return 1
+	command=$ps_fields
+}
+readonly -f set-command--from-PGIDs
+
 # ----------------------------------------------------------------------------
 
 function set-lock_PGID() {
@@ -1559,8 +1569,9 @@ readonly -f set-customized_drv_names
 declare -A custom_config_var2default_value
 
 set-custom_config_vars-custom_config_var2default_value() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
-	[[ $custom_config_vars ]] && return
+	[[ $custom_config_vars ]] && { $xtrace; return; }
 
 	remember-tracing		# since suspend-tracing maybe not run
 
@@ -1585,6 +1596,7 @@ set-custom_config_vars-custom_config_var2default_value() {
 	readonly custom_config_vars custom_config_var2default_value
 
 	restore-tracing custom_config_vars
+	$xtrace
 }
 readonly -f set-custom_config_vars-custom_config_var2default_value
 
@@ -1643,7 +1655,8 @@ readonly -f customize-config-variables
 # ---------------------------------
 
 function set-customized_value--for-config-var-name() {
-	local var_name=$1 resource=${2:-$drive_name}
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local  var_name=$1 resource=${2:-$drive_name}
 	[[    $var_name ]] || abort-function ": \$1 empty"
 	[[ -v $var_name ]] || abort-function ": $var_name is not set"
 
@@ -1652,8 +1665,8 @@ function set-customized_value--for-config-var-name() {
 	local drive_name value
 	 set-drive_name- "$resource"
 	if _set-value--for-config-var "$var_name" "$drive_name"
-	   then customized_value=$value       && return 0
-	   else customized_value=${!var_name} && return 1
+	   then customized_value=$value       && { $xtrace; return 0; }
+	   else customized_value=${!var_name} && { $xtrace; return 1; }
 		abort-function ": $var_name is unbound"
 	fi
 }
@@ -3942,12 +3955,18 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-function is-prune-lock-owned-by-copy-job() {
+function is-prune-lock-held-by-prune-job() {
+	local resource=$1
 
-	local prune_lock_path copy_PGID
-	  set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy
+	local drive_name
+	  set-drive_name- "$resource"
+
+	 local lock_paths lock_PGID command
+	 set-lock_paths prune && set-lock_PGID "$lock_paths" || return 1
+	 set-command--from-PGIDs "$lock_PGID"
+	 [[ $command =~ ' prune-drives? ' ]]
 }
-readonly -f is-prune-lock-owned-by-copy-job
+readonly -f is-prune-lock-held-by-prune-job
 
 # ----------------------
 
@@ -3962,7 +3981,7 @@ prevent-pruning() {
 	    do	local status=$?
 
 		# did another copy job lock the same source?
-		if is-prune-lock-owned-by-copy-job
+		if ! is-prune-lock-held-by-prune-job "$resource"
 		   then lock -w -P prune "$resource" & # grab when available
 			is_prune_lock_shared=$true
 			return
