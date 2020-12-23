@@ -788,18 +788,23 @@ readonly -f lock
 
 unlock() {
 #	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ ${1-} == -* ]] && { shift; local lock_opt=$1; } || local lock_opt=
 	local type name
 	 _set-type-name "$@"
 
 	local lock_file=${_lock_type_name2lock_file[$type,$name]-}
 	[[   $lock_file ]] || abort "don't hold lock: type=$type, name=$name"
+
 	if [[ $debug_opt ]]
 	   then local lock_prefix="$IfRun "
 	elif [[ $UID == 0 ]]
 	   then local lock_prefix=
 	   else local lock_prefix=sudo-
 	fi
-	${lock_prefix}lockpid --dir="$lock_dir" --release "$lock_file"
+	local lock_cmd=${lock_prefix}lockpid
+
+	# shellcheck disable=SC2086 # *_opt may be null
+	$lock_cmd --dir="$lock_dir" --release $lock_opt "$lock_file"
 	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
 
@@ -6390,7 +6395,7 @@ show-copy-cmds() {
 	[[ $copy_rsync_cmds && ( $show_all || ! $cron_opt ) ]] || return
 
 	local header_msg="copy (update-drive or copy-snapshots)"
-	set-highlighted_string notice $header_msg
+	set-highlighted_string notice "$header_msg"
 	header "$highlighted_string"
 	echo
 	echo "$ps_header"
@@ -6424,7 +6429,7 @@ show-backup-cmds() {
 
 	local \
 	  msg="backup-drive's most-CPU-intensive rsync processes (abbreviated)"
-	set-highlighted_string notice $msg
+	set-highlighted_string notice "$msg"
 	header "$highlighted_string"
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
