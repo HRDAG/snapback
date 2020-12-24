@@ -3983,7 +3983,8 @@ prevent-pruning() {
 
 		# did another copy job lock the same source?
 		if set-lock_path--if-non-prune-job-holds-prune-lock "$resource"
-		   then lock -w -P prune "$resource" & # grab when available
+		   then # we want the lock if the other copy finishes before us
+			lockpid --wait --pid=$BASHPID "$lock_path" &
 			prevent_pruning_lock_path=$lock_path
 			return
 		fi
