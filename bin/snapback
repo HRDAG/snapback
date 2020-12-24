@@ -3955,7 +3955,7 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-function is-prune-lock-held-by-prune-job() {
+function set-lock_path--if-non-prune-job-holds-prune-lock() {
 	local resource=$1
 
 	local drive_name
@@ -3963,27 +3963,28 @@ function is-prune-lock-held-by-prune-job() {
 
 	 local lock_paths lock_PGID command
 	 set-lock_paths prune && set-lock_PGID "$lock_paths" || return 1
+	 lock_path=$lock_paths
 	 set-command--from-PGIDs "$lock_PGID"
-	 [[ $command =~ ' prune-drives? ' ]]
+	 ! [[ $command =~ ' prune-drives? ' ]]
 }
-readonly -f is-prune-lock-held-by-prune-job
+readonly -f set-lock_path--if-non-prune-job-holds-prune-lock
 
 # ----------------------
 
 did_prevent_pruning_print_stack=$false
-declare is_prune_lock_shared
+declare prevent_pruning_lock_path
 
 prevent-pruning() {
 	local resource=$1
 
-	is_prune_lock_shared=$false
+	prevent_pruning_lock_path=
 	until lock -P prune "$resource" > $dev_null
-	    do	local status=$?
+	    do	local status=$? lock_path
 
 		# did another copy job lock the same source?
-		if ! is-prune-lock-held-by-prune-job "$resource"
+		if set-lock_path--if-non-prune-job-holds-prune-lock "$resource"
 		   then lock -w -P prune "$resource" & # grab when available
-			is_prune_lock_shared=$true
+			prevent_pruning_lock_path=$lock_path
 			return
 		fi
 
@@ -4006,12 +4007,9 @@ readonly -f prevent-pruning
 restore-pruning() {
 	local resource=$1
 
-	if [[ $is_prune_lock_shared ]]
-	   then local lock_opt=-q	# we don't own the lock
-	   else local lock_opt=
-	fi
-	# shellcheck disable=SC2086 # *_opt may be null
-	unlock $lock_opt prune "$resource"
+	[[ $prevent_pruning_lock_path ]] || { unlock prune "$resource";return;}
+	# can't use unlock when lock was backgrounded
+	lockpid -r -q "$prevent_pruning_lock_path" # -q cuz might not own lock
 }
 
 # ---------------------------------
