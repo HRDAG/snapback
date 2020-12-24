@@ -736,8 +736,9 @@ declare -A _lock_type_name2lock_file
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
 #	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ ${1-} == -w ]] && { shift; local  do_wait=$true;} || local  do_wait=
-	[[ ${1-} == -P ]] && { shift; local no_prune=$true;} || local no_prune=
+	[[ ${1-} == -w ]] && { local  do_wait=$true;shift; } || local  do_wait=
+	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
+	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
 	assert-not-option "${1-}"
 	[[ $# == [12] ]] || abort-function "[-w] [-P] type resource"
 	local type name
@@ -766,8 +767,8 @@ function lock() {
 	if is-multi-writer-drive || [[ $type == backup || $no_prune ]]
 	   then true
 	   else # shellcheck disable=SC2086 # *_opt may be null
-		lock-PID $wait_opt backup "$extra_lock_msg" &&
-		lock-PID --release backup "$extra_lock_msg" ||
+		lock-PID $wait_opt $lock_opt backup "$extra_lock_msg" &&
+		lock-PID --release $lock_opt backup "$extra_lock_msg" ||
 		   { local status=$?; sudo-lockpid -r "$primary_lock_file"
 		     $xtrace; return $status; }
 	fi
@@ -3973,7 +3974,7 @@ prevent-pruning() {
 	local resource=$1
 
 	prevent_pruning_lock_path=
-	until lock -P prune "$resource" > $dev_null
+	until lock -P -q prune "$resource" > $dev_null
 	    do	local status=$? lock_path
 
 		# did another copy job lock the same source?
