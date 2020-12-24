@@ -605,18 +605,13 @@ function lock-PID() {
 	[[ $lock_holder_action == holds* ]] ||
 	    lock_holder_action="is $lock_holder_action"
 
-	local output_file=$tmp_1
-	set -f
-	# shellcheck disable=SC2086 # *_opts may be null or multiple
-	set -- lockpid --dir="$lock_dir" $lock_opts "$lock_file"; set +f
-	[[ $UID == 0 || $debug_opt ]] ||
-	    { shift; set -- sudo lockpid --pid=$BASHPID "$@"; }
-	local lock_cmd=$*
+	[[ $UID == 0 || $debug_opt ]] && local sudo= || local sudo=sudo
+	lock_opts="--pid=$BASHPID --dir=$lock_dir $lock_opts"
+	local lock_cmd="$sudo lockpid $lock_opts $lock_file"
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
-	$IfRun $lock_cmd &> "$output_file" ; local status=$?
-	lockpid_output=$(<  "$output_file")
-	rm "$output_file"
+	lockpid_output=$($IfRun $lock_cmd 2>&1)
+	local status=$?
 
 	if [[ $status == 0 ]]
 	   then if [[ $lockpid_output ]]
