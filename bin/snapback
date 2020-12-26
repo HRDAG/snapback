@@ -6791,6 +6791,7 @@ predict-prune() {
 		count=$(wc -l < "$tmp_2"); rm "$tmp_1" "$tmp_2"
 		printf "$format\n\n" "$drive_name" "$count"
 		[[ $count == 0 ]] || is-waiting prune ||
+		! [[ $drive_name =~ ^$drive_name_regex$ ]] || # cron ignores?
 		    warn "you should probably run e.g.: $sleep_cmd"
 	done
 }
