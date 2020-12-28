@@ -2221,7 +2221,7 @@ function is-copy-higher-priority-than-prune() {
 readonly -f is-copy-higher-priority-than-prune
 
 # users besides prune just need a simple/clear name
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 reset-priority() { is-copy-higher-priority-than-prune "$@"; }
 readonly -f reset-priority
 
@@ -2448,7 +2448,7 @@ readonly -f save-writer-stats
 
 # ----------------------------------------------------------------------------
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 set-used_MB-size_MB() {
 	local drive_dir=${1:-$drive_dir}
 
@@ -3383,7 +3383,7 @@ readonly -f prune-drive
 
 latest_snapshot=
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 function set-latest_snapshot() {
 	local drive_dir=${1:-$drive_dir}
 
@@ -3883,7 +3883,7 @@ readonly -f backup-drive-rsync
 
 # ----------------------------
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 function set-copy_PGID--if-copy-src() {
 	local resource=${1:-$drive_name}
 
@@ -3941,7 +3941,7 @@ readonly -f set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy
 
 # ----------------------
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 function _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
 
 	set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy "${1-}" &&
@@ -4400,7 +4400,7 @@ readonly -f _set-src_names_regex
 
 # --------------------------------
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 _set-drive_dirs--for-update-srcs() {
 	local drive_name=${1:-$drive_name}
 	set-drive_dir-
@@ -6058,7 +6058,7 @@ readonly -f create-status_dir
 
 # --------------------------------------------
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 show-errors-in-syslog() {
 	local errors_count_msg_file=${1:-$syslog_errors_count_msg_file}
 
@@ -8008,7 +8008,7 @@ readonly -f _set-big_swapouts_record--from-syslog-file
 
 readonly big_swapouts_file=$syslog_errors_dir/big-swapouts.txt
 
-# shellcheck disable=SC2120
+# shellcheck disable=SC2120 # drive_name args are optional
 search-syslog-for-big-swapouts() {
 	local log=${1:-$syslog_search_results_file}
 
