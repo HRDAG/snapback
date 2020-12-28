@@ -2113,7 +2113,7 @@ readonly -f is-drive-usage-too-high
 is-set   max_drive_usage_percent_for_copy || # custom value in $config_file?
 readonly max_drive_usage_percent_for_copy=95
 
-function is-drive-usage-too-high-for-copy() {
+function is-drive-usage-too-high-for-copy {
 
 	is-drive-usage-too-high "$drive_dir" || return 1
 
@@ -2201,18 +2201,16 @@ function is-copy-higher-priority-than-prune() {
 
 	have-job copy || { continue-jobs prune; return 1; }
 
-	local copy_PGID
 	if is-drive-usage-too-high-for-copy
 	   then suspend-jobs copy
-		if set-copy_PGID--if-copy-src # 2 drives copying to each other?
+		if is-copy-src		# 2 drives copying to each other?
 		   then local lock_paths
 			set-lock_paths prune
 			lockpid --release "$lock_paths" &> $dev_null
 		fi
-		continue-jobs prune # may do nothing if backup running
-	   else set-copy_PGID--if-copy-src && # is this a copy job's source?
-		   return 0	    # don't suspend _or_ prune
-		continue-jobs copy  # may do nothing if backup running
+		continue-jobs prune	# may do nothing if backup running
+	   else is-copy-src && return 0	# might not suspend _or_ prune
+		continue-jobs copy	# may do nothing if backup running
 		is-multi-writer-drive || { suspend-jobs prune; return 0; }
 	fi
 
@@ -3884,10 +3882,8 @@ readonly -f backup-drive-rsync
 # ----------------------------
 
 # shellcheck disable=SC2120 # drive_name args are optional
-function set-copy_PGID--if-copy-src() {
+function is-copy-src() {
 	local resource=${1:-$drive_name}
-
-	copy_PGID=
 
 	if ! [[ $resource == $lock_dir/* || $resource == *.pid ]]
 	   then local lock_path
@@ -3904,14 +3900,12 @@ function set-copy_PGID--if-copy-src() {
 	local lock_path
 	for lock_path in $lock_paths
 	    do	set-lock_PGID "$lock_path"
-		(( $lock_PGID == $prune_lock_PGID )) || continue
-		copy_PGID=$lock_PGID
-		return 0
+		(( $lock_PGID == $prune_lock_PGID )) && return 0
 	done
 
 	return 1
 }
-readonly -f set-copy_PGID--if-copy-src
+readonly -f is-copy-src
 
 # ----------------------
 
@@ -4297,8 +4291,8 @@ function copy-snapshot-rsync() {
 			unlock  backup		   # ... but don't hold lock
 		fi
 
-		set-copy_PGID--if-copy-src || # 2 drives copying to each other?
-		suspend-jobs prune    # cron will swap jobs if drive space low
+		is-copy-src ||	       # 2 drives copying to each other?
+		    suspend-jobs prune # cron will swap jobs if drive space low
 	fi
 
 	if is-multi-writer-drive   "$src_snapshot" ||
