@@ -3961,7 +3961,7 @@ readonly -f set-lock_path--if-non-prune-job-holds-prune-lock
 
 # ----------------------
 
-did_prevent_pruning_print_stack=$false
+_did_prevent_pruning_print_stack=$false
 declare prevent_pruning_lock_path
 
 prevent-pruning() {
@@ -3982,8 +3982,8 @@ prevent-pruning() {
 		fi
 
 		kill-job-on-drives prune "$resource"
-		if [[ ! $did_prevent_pruning_print_stack ]]
-		   then  did_prevent_pruning_print_stack=$true
+		if [[ ! $_did_prevent_pruning_print_stack ]]
+		   then  _did_prevent_pruning_print_stack=$true
 			local lock_msg="lock returned $status"
 			print-call-stack \
 			    "$lock_msg: awaiting $drive_name lock" |
@@ -3991,7 +3991,7 @@ prevent-pruning() {
 		fi
 		$IfRun env sleep 0.9
 	done
-	did_prevent_pruning_print_stack=$false # for future call
+	_did_prevent_pruning_print_stack=$false # for future call
 }
 readonly -f prevent-pruning
 
