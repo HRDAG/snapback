@@ -596,7 +596,9 @@ function lock-PID() {
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
-	local type=${1:-$writer_type} lock_holder_action=$2
+	local type=${1:-$writer_type} lock_holder_action=${2-}
+	[[ $lock_holder_action || $lock_opts == *-q* ]] || abort-function \
+	    "[-n drive_name] [lockpid-opts] [type] [lock-holder-description]"
 
 	local lock_path
 	set-lock_path "$type" "$name"
@@ -2203,11 +2205,8 @@ function is-copy-higher-priority-than-prune() {
 
 	if is-drive-usage-too-high-for-copy
 	   then suspend-jobs copy
-		if is-copy-src		# 2 drives copying to each other?
-		   then local lock_paths
-			set-lock_paths prune
-			lockpid --release "$lock_paths" &> $dev_null
-		fi
+		is-copy-src &&		# 2 drives copying to each other?
+		    lock-PID --release --quiet prune # might not exist???
 		continue-jobs prune	# may do nothing if backup running
 	   else is-copy-src && return 0	# might not suspend _or_ prune
 		continue-jobs copy	# may do nothing if backup running
