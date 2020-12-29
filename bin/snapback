@@ -1662,7 +1662,7 @@ function set-customized_value--for-config-var-name() {
 	set-custom_config_vars-custom_config_var2default_value
 
 	local drive_name value
-	 set-drive_name- "$resource"
+	  set-drive_name- "$resource"
 	if _set-value--for-config-var "$var_name" "$drive_name"
 	   then customized_value=$value       && { $xtrace; return 0; }
 	   else customized_value=${!var_name} && { $xtrace; return 1; }
@@ -3945,7 +3945,7 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-function set-lock_path--if-non-prune-job-holds-prune-lock() {
+function does-non-prune-job-hold-prune-lock() {
 	local resource=$1
 
 	local drive_name
@@ -3953,31 +3953,26 @@ function set-lock_path--if-non-prune-job-holds-prune-lock() {
 
 	 local lock_paths lock_PGID command
 	 set-lock_paths prune && set-lock_PGID "$lock_paths" || return 1
-	 lock_path=$lock_paths
 	 set-command--from-PGIDs "$lock_PGID"
 	 ! [[ $command =~ ' prune-drives? ' ]]
 }
-readonly -f set-lock_path--if-non-prune-job-holds-prune-lock
+readonly -f does-non-prune-job-hold-prune-lock
 
 # ----------------------
 
 _did_prevent_pruning_print_stack=$false
-declare prevent_pruning_lock_path
 
 prevent-pruning() {
 	local resource=$1
 
-	prevent_pruning_lock_path=
-	until lock -P -q prune "$resource" > $dev_null
-	    do	local status=$? lock_path
+	until lock -P --quiet prune "$resource"
+	    do	local status=$?
 
 		# did another copy job lock the same source?
-		if set-lock_path--if-non-prune-job-holds-prune-lock "$resource"
+		if does-non-prune-job-hold-prune-lock "$resource"
 		   then # we want the lock if the other copy finishes before us
-			local lock_args="--wait --pid=$BASHPID $lock_path"
-			# shellcheck disable=SC2086 # *_args has multiple arg
-			lockpid $lock_args & # must use the parent's PID
-			prevent_pruning_lock_path=$lock_path
+			local lockpid_opt="--pid=$BASHPID" # us, not child ...
+			lock -w -P $lockpid_opt prune "$resource" &
 			return
 		fi
 
@@ -3997,13 +3992,14 @@ readonly -f prevent-pruning
 
 # ----------------------
 
-restore-pruning() {
+allow-pruning() {
 	local resource=$1
 
-	[[ $prevent_pruning_lock_path ]] || { unlock prune "$resource";return;}
-	# can't use unlock when lock was backgrounded
-	lockpid -r -q "$prevent_pruning_lock_path" # -q cuz might not own lock
+	local drive_name
+	  set-drive_name- "$resource"
+	lock-PID --release --quiet prune # -q cuz we might not hold it
 }
+readonly -f allow-pruning
 
 # ---------------------------------
 
@@ -4295,12 +4291,9 @@ function copy-snapshot-rsync() {
 		    suspend-jobs prune # cron will swap jobs if drive space low
 	fi
 
-	if is-multi-writer-drive   "$src_snapshot" ||
-	   is-drive-usage-too-high "$src_snapshot"
-	   then local did_lock_src_prune=$false
-	   else local did_lock_src_prune=$true
-		prevent-pruning "$src_snapshot"
-	fi
+	is-multi-writer-drive   "$src_snapshot" ||
+	is-drive-usage-too-high "$src_snapshot" ||
+	   prevent-pruning "$src_snapshot"
 
 	set-priority copy
 
@@ -4310,7 +4303,7 @@ function copy-snapshot-rsync() {
 	[[ ! $is_multi_writer_drive ]] &&
 	continue-jobs prune
 
-	[[ $did_lock_src_prune ]] && restore-pruning "$src_snapshot"
+	allow-pruning "$src_snapshot"
 
 	return $status
 }
