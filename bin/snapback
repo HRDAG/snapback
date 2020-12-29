@@ -3962,8 +3962,11 @@ readonly -f does-non-prune-job-hold-prune-lock
 
 _did_prevent_pruning_print_stack=$false
 
-prevent-pruning() {
+maybe-prevent-pruning() {
 	local resource=$1
+
+	is-multi-writer-drive   "$resource" && return # simultaneous pruning?
+	is-drive-usage-too-high "$resource" && return # really need pruning?
 
 	until lock -P --quiet prune "$resource"
 	    do	local status=$?
@@ -3988,7 +3991,7 @@ prevent-pruning() {
 	done
 	_did_prevent_pruning_print_stack=$false # for future call
 }
-readonly -f prevent-pruning
+readonly -f maybe-prevent-pruning
 
 # ----------------------
 
@@ -4291,9 +4294,7 @@ function copy-snapshot-rsync() {
 		    suspend-jobs prune # cron will swap jobs if drive space low
 	fi
 
-	is-multi-writer-drive   "$src_snapshot" ||
-	is-drive-usage-too-high "$src_snapshot" ||
-	   prevent-pruning "$src_snapshot"
+	maybe-prevent-pruning "$src_snapshot"
 
 	set-priority copy
 
