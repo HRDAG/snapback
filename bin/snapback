@@ -884,13 +884,31 @@ function set-job_PGID() {
 	local job_type=$1 lock_path lock_PGID
 
 	set-lock_path "$job_type"
-	set-lock_PGID "$lock_path"
+	set-lock_PGID "$lock_path" || { job_PGID= ; $xtrace; return 1; }
 	job_PGID=$lock_PGID
-
 	$xtrace
-	[[ $job_PGID ]]
 }
 readonly -f set-job_PGID
+
+# ----------------------------------------
+
+set-rsync_src_dir--from-job() {
+	local type=$1
+
+	local job_PGID PIDs PID
+	set-job_PGID "$type" &&
+	set-PIDs--from-PGIDs "$job_PGID" &&
+	for PID in $PIDs
+	    do	# shellcheck disable=SC2046
+		set -- $(COLUMNS=999 ps -o "command=" "$PID")
+		[[ $1 == rsync ]] || continue
+		set -- "${@: 1: $#-1}"	# remove last word (destination)
+		rsync_src_dir=${!#}
+		return
+	done
+	rsync_src_dir=
+}
+readonly -f set-rsync_src_dir--from-job
 
 # ----------------------------------------------------------------------------
 
@@ -2204,12 +2222,18 @@ function is-copy-higher-priority-than-prune() {
 
 	have-job copy || { continue-jobs prune; return 1; }
 
+	local rsync_src_dir
+	  set-rsync_src_dir--from-job copy
+	local  copy_src_dir=$rsync_src_dir
+
 	if is-drive-usage-too-high-for-copy
 	   then suspend-jobs copy
+		allow-pruning "$copy_src_dir"
 		is-copy-src &&		# 2 drives copying to each other?
 		    lock-PID --release --quiet prune # might not exist???
 		continue-jobs prune	# may do nothing if backup running
 	   else is-copy-src && return 0	# might not suspend _or_ prune
+		maybe-prevent-pruning "$copy_src_dir"
 		continue-jobs copy	# may do nothing if backup running
 		is-multi-writer-drive || { suspend-jobs prune; return 0; }
 	fi
@@ -9113,6 +9137,7 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
+	_exit() { exit-normally "$@"; }
 	# shellcheck disable=SC1090 # don't need to check test code
 	source "$our_name_-test.sh" || exit-normally $?
 	;;
