@@ -89,7 +89,7 @@ readonly uncustomizable_config_vars="
 #
 _set-__config_vars__() {
 
-      # shellcheck disable=SC2046
+      # shellcheck disable=SC2046 # we want word splitting
       set -- $(
       # toss functions before looking for variable assignments
       sed -n -r	-e '/(^[ 	]*function\b.*|\(\)) *\{.*\}/d'		\
@@ -823,7 +823,7 @@ function set-ps_fields--from-PGIDs() {
 
 	local PGID
 	for PGID
-	    do	# shellcheck disable=SC2046
+	    do	# shellcheck disable=SC2046 # we want word splitting
 		set -- $(COLUMNS=999 ps -o "$column_name=" "$ps_opt_g" "$PGID")
 		[[ $# != 0 ]] && ps_fields+="$* "
 	done
@@ -870,7 +870,7 @@ function set-lock_PGID() {
 
 	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
 	lock_PGID=
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	[[ -s $lock ]] && set -- $(< "$lock") && [[ $# != 0 ]] || return 1
 	lock_PGID=$1
 	return 0
@@ -899,7 +899,7 @@ set-rsync_src_dir--from-job() {
 	set-job_PGID "$type" &&
 	set-PIDs--from-PGIDs "$job_PGID" &&
 	for PID in $PIDs
-	    do	# shellcheck disable=SC2046
+	    do	# shellcheck disable=SC2046 # we want word splitting
 		set -- $(COLUMNS=999 ps -o "command=" "$PID")
 		[[ $1 == rsync ]] || continue
 		set -- "${@: 1: $#-1}"	# remove last word (destination)
@@ -1200,7 +1200,7 @@ readonly -f list-drive-dirs
 
 function set-drive_dirs() {
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(list-drive-dirs "$@")
 	drive_dirs=$*
 	[[ $drive_dirs ]]
@@ -1213,7 +1213,7 @@ readonly escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
 
 function set-drive_names() {
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(list-drive-dirs "$@")
 	drive_names=${*//$escaped_drive_dir_prefix/}
 	[[ $drive_names ]]
@@ -1285,7 +1285,7 @@ function set-admin_group {
 	done
 
 	if [[ ! $user || $user == root ]] # run from cron?
-	   then # shellcheck disable=SC2046
+	   then # shellcheck disable=SC2046 # we want word splitting
 		set -- $(ls -ld "$log_dir" 2>$dev_null)
 		readonly admin_group=${4:-}
 		[[ $admin_group ]]
@@ -2597,7 +2597,7 @@ readonly -f is-suspended
 _echo-csv-record() {
 	local file=$1
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(sed -n -r \
 	 -e "s/ *Average hours to create.* $drive_name=([^ ]+)( .*| *$)/\1/p" \
 	 -e "s/.*G +([^ ]+) .*% .backup.$drive_name$/\1/p" "$file")
@@ -2844,7 +2844,7 @@ rm-pruned-snapshots() {
 	suspend-tracing
 
 	# sort snapshots, for regression-test
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(tr ' ' '\n' < "$snapshots_file" | sort -u)
 	rm "$snapshots_file"
 
@@ -3232,7 +3232,7 @@ set-date_span_diff() {
 
 prune-type-to-file() {
 	local type=${1%s} file_of_snapshots_to_prune=$2; shift 2
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(echo "$@" | tr ' ' '\n' | cut -d. -f1 | shorten-date "$type")
 	is-arg1-in-arg2 "$type" "$prune_types" || { echo "$@"; return; }
 	local remaining_reverse_sorted_snapshot_dates=$*
@@ -3284,7 +3284,7 @@ prune-type-to-file() {
 		# skip over the snapshot prune-matches that aren't old enough,
 		# i.e. the ones that were handled in earlier passes (spans)
 		TraceV 5 date_suffix_glob newest_prune_date_in_this_pass
-		# shellcheck disable=SC2046
+		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(echo "$@" | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
 		   do	[[ $1 == [^1-9]* ]] && shift && continue # skip junk
@@ -3361,17 +3361,17 @@ function prune-drive() {
 	[[ ${prune_sleep_time-} ]] && env sleep "$prune_sleep_time"
 
 	$Trace
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(reverse-sorted-snapshot-basenames)
 	local oldest_snapshot=${!#}
 	# prune-type-to-file returns dates remaining, to check for more pruning
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(prune-type-to-file hour  "$snapshots_to_prune_file" "$@")
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(prune-type-to-file day   "$snapshots_to_prune_file" "$@")
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(prune-type-to-file month "$snapshots_to_prune_file" "$@")
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(prune-type-to-file year  "$snapshots_to_prune_file" "$@")
 
 	rm-pruned-snapshots "$snapshots_to_prune_file" # it deletes the file
@@ -3626,7 +3626,7 @@ readonly -f set-link_dest_opts--for-copy-snapshot
 
 set-excluded_hours() {
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(
 	for hour
 	    do	[[ $hour == 0?   ]] && hour=${hour#0} # zero-padded, not octal
@@ -3652,7 +3652,7 @@ function _is-time-to-backup-drive {
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(date '+%k %M')
 	local -i current_hour=$1 current_minute=${2#0}
 
@@ -3694,7 +3694,7 @@ _links-error-msg() {
 	while read -r dst_file
 	    do	src_file=${dst_file#$drive_dir/$snapshot_glob.partial}
 		[[ -f $src_file ]] || continue
-		# shellcheck disable=SC2046
+		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(ls -l "$src_file")
 		((    $max_src_links >= $2 )) && continue
 		       max_src_links=$2
@@ -3747,7 +3747,7 @@ _handle-rsync-results() {
 		[[ $new_snapshot == *,00 || $log_level -gt 0 ||
 		   ! $is_cron || $debug_opt ]] && $IfRun \
 		    log "created $(basename "$new_snapshot") $writer_stats_msg"
-	   else # shellcheck disable=SC2046
+	   else # shellcheck disable=SC2046 # we want word splitting
 		set -- $(bzcat "$log" 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
@@ -4479,7 +4479,7 @@ set-basename2dirs-basename2is_keep() {
 	local excluded_names_glob=$name_glob
 
 	local dir basename
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	while read -r dir
 	   do	basename=${dir%/.keep}
 		basename=${basename##*/}
@@ -4833,7 +4833,7 @@ create-jobs() {
 		set -- ${drive_name-}
 	elif [[ $1 == all || $1 == '*' ]]
 	   then set-excluded_drive_dirs_regex
-		# shellcheck disable=SC2046
+		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 		if [[ $is_cron && $type == backup ]]
@@ -5772,7 +5772,7 @@ set-rows-columns-COLUMNS() {
 
 	if [[ ${watch_opt-} || -t 1 || -t 2 ]]
 	   then set -f
-		# shellcheck disable=SC2046
+		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(stty -a); set +f
 		rows=${5%;} columns=${7%;}
 	   else rows=999999 columns=9999
@@ -5902,7 +5902,7 @@ function _set-cron_PGIDs() {
 	   awk '/[ \/]rm / || /[ \/]rsync / {print $1}' > \
 	       "$rsync_or_rm_cmd_PGIDs_file"
 	cron_job_regex=' -C backup-drives? ' # put into configure.sh ??
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(ps -U root -o pgid,command |
 			egrep "$cron_job_regex" |
 			fgrep -w -f "$rsync_or_rm_cmd_PGIDs_file" |
@@ -6853,7 +6853,7 @@ set-total_dir_MB-avg_dir_KB() {
 	local file=${1%.bz2}.bz2
 
 	isize=$(echo "$file" | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $( bzcat "$file" |
 		  awk -F K -v isize="$isize" \
 			'{ sub(/K$/, "", $1); space += ($1*1024) + isize;
@@ -6902,7 +6902,7 @@ dir-sizes() {
 		[[ $# == 1 ]] || abort "can't find a single file for $2"
 		file=$1
 	elif [[ $1 == -f ]]
-	   then # shellcheck disable=SC2046
+	   then # shellcheck disable=SC2046 # we want word splitting
 		set -- $(/bin/ls -- *."$suffix".bz2 | sed 's/\.bz2//')
 		[[ $# != 0 ]] || abort "don't have any old data files"
 		PS3="specify file number: "
@@ -6969,7 +6969,7 @@ dir-sizes() {
 	     END { printf "Average directory size is %.1f KB\n",
 				KB/count }'
 
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(bzcat "$file.bz2" | sed -n "${median_line}p")
 	echo -e " Median directory size is ${1%K} KB ...\n"
 	$Trace
@@ -6977,7 +6977,7 @@ dir-sizes() {
 	local -i decile_count=$(( ($dir_count + 5) / 10 )) i
 	local -i decile_median_line=decile_count/2
 	for i in {0..9}
-	    do	# shellcheck disable=SC2046
+	    do	# shellcheck disable=SC2046 # we want word splitting
 		set -- $(bzcat "$file.bz2" | sed -n ${decile_median_line}p)
 		echo "Decile $i has median directory size of ${1}B"
 		((    decile_median_line+=decile_count ))
@@ -7655,19 +7655,19 @@ _assert-dst-big-enough() {
 		(( KB_missing > 0 )) || return
 
 		if [[ $FS_type == ext? ]]
-		   then # shellcheck disable=SC2046
+		   then # shellcheck disable=SC2046 # we want word splitting
 			set -- $(tune2fs -l "$src_device" |grep '^Block size:')
 			local -i block_KB=$(( ${!#} / 1024 ))
 
 			$IfRun sync --file-system "$src_device" &> $dev_null
 
 			# FIXME: might be more accurate than the following fsck
-			# shellcheck disable=SC2046
+			# shellcheck disable=SC2046 # we want word splitting
 			# set -- $(resize2fs -P "$src_device")
 			# local -i min_blocks=${!#}
 
 			set -f
-			# shellcheck disable=SC2046
+			# shellcheck disable=SC2046 # we want word splitting
 			set -- $(fsck -n "$src_device" | sed 's/blocks$//')
 			set +f
 			local     used_total_blocks=${!#}
@@ -7906,7 +7906,7 @@ _copy-extN-backup-drive() {
 	is-arg1-in-arg2 -f "$action_opts" ||
 	for drive_dir in $src_drive_dir $dst_drive_dir; do
 	if is-drive-mounted "$drive_dir"
-	   then # shellcheck disable=SC2046
+	   then # shellcheck disable=SC2046 # we want word splitting
 		set -- $(list-drive-dirs |
 			 fgrep -v -w -e "$src_drive_dir" -e "$dst_drive_dir")
 		if [[ $# == 0 ]]
@@ -8010,7 +8010,7 @@ _set-big_swapouts_record--from-syslog-file() {
 
 	local cat_cmd regex=$big_swapouts_regex
 	  set-cat_cmd "$log"
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $($cat_cmd "$log" | sed -n -r "s/$regex/\1/p" | sort -nr)
 	big_swapouts_record=$*
 }
@@ -8103,7 +8103,7 @@ find-and-print-big-swapouts() {
 		local  cache_file=$big_swapouts_dir/$date.txt
 		[[ -f $cache_file && $cache_file -nt $log ]] || {
 		set-cat_cmd "$log"
-		# shellcheck disable=SC2046
+		# shellcheck disable=SC2046 # we want word splitting
 		set -- $($cat_cmd "$log" | sed -n -r "s/$regex/\1/p" |sort -nr)
 		[[ $# != 0 ]] && echo "$@"
 		} | echo-to-file - "$cache_file"
@@ -8137,7 +8137,7 @@ measure-swapout-MBps() {
 	fi
 	#
 	if [[ -s $tmp_1 || ! $debug_opt ]]
-	   then # shellcheck disable=SC2046
+	   then # shellcheck disable=SC2046 # we want word splitting
 		set -- $(grep "^$swap_dev " "$tmp_1")
 		(( $# >= 2 )) || abort "must first run: sudo swapon $swap_dev"
 		local size_B=$2 used_B=$3 UUID=$4 label=${5-}
@@ -8294,13 +8294,13 @@ search-syslog-for-errors() {
 	# metadata I/O error: block B ("xfs_...") error 5 numblks N
 	#   Buffer I/O error on dev dm-30, logical block B, async page read
 	local file=$search_file
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' "$file" |
 		 sort -u -n)
 	local sectors="$# sectors: $*"
 
 	local service_string="service: Failed to connect stdout to the journal"
-	# shellcheck disable=SC2046
+	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(sed -r -n "s/.* ([^ ]*)\\.$service_string.*/\\1/p" "$file" |
 		 sort -u)
 	local services=$*
@@ -8362,7 +8362,7 @@ function check-snapshot-hard-links() {
 
 	set-inum() {
 		[[ -r $1 ]] || abort "run with sudo"
-		# shellcheck disable=SC2046
+		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(ls -i -d "$1" 2> $dev_null)
 		inum=$1
 		[[ $inum ]]
@@ -8975,7 +8975,7 @@ case $action in
 	if [[ ${1-} == -r ]]
 	   then shift
 		$IfRun "$action" "$@"
-	   else	# shellcheck disable=SC2046
+	   else	# shellcheck disable=SC2046 # we want word splitting
 		set -- $(list-drive-dirs -a)
 		if [[ $# == 0 ]]
 		   then [[ -t 1 ]] &&
