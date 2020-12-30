@@ -866,13 +866,16 @@ readonly -f set-command--from-PGIDs
 # ----------------------------------------------------------------------------
 
 function set-lock_PGID() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local lock=$1
 
 	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
 	lock_PGID=
 	# shellcheck disable=SC2046 # we want word splitting
-	[[ -s $lock ]] && set -- $(< "$lock") && [[ $# != 0 ]] || return 1
+	[[ -s $lock ]] &&
+	set -- $(< "$lock") && [[ $# != 0 ]] || { $xtrace; return 1; }
 	lock_PGID=$1
+	$xtrace
 	return 0
 }
 readonly -f set-lock_PGID
@@ -1395,7 +1398,7 @@ readonly allowed_drive_dir_chars='-_a-zA-Z0-9' # '-' must be first
 # This is much faster than set-drive_name, but can only be used for
 # already-existing-and-initialized backup directories and their names.
 # This checks name-validity, and fixex the case of valid names.
-set-drive_name-() {
+function set-drive_name-() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
