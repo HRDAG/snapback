@@ -787,12 +787,16 @@ readonly -f lock
 
 unlock() {
 #	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ ${1-} == -* ]] && { local lock_opt=$1; shift; } || local lock_opt=
+	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
+	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
 	local type name
 	 _set-type-name "$@"
 
 	local lock_file=${_lock_type_name2lock_file[$type,$name]-}
-	[[   $lock_file ]] || abort "don't hold lock: type=$type, name=$name"
+	if [[ ! $lock_file ]]
+	   then [[ $no_prune ]] && { $xtrace; return; }
+		abort "don't hold lock: type=$type, name=$name"
+	fi
 
 	if [[ $debug_opt ]]
 	   then local lock_prefix="$IfRun "
@@ -807,7 +811,7 @@ unlock() {
 	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
 
-#	$xtrace
+	$xtrace
 }
 readonly -f unlock
 
@@ -1404,6 +1408,7 @@ function set-drive_name-() {
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
 	assert-not-option -o "$1"
 	local name=$1
+	[[ $name ]] || { $xtrace; return 1; }
 	[[ $name == $snapshot_glob* ]] && name=$PWD/$name
 	name=${name#$drive_dir_prefix}
 	name=${name%/$snapshot_glob*}
@@ -3972,11 +3977,7 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-function does-non-prune-job-hold-prune-lock() {
-	local resource=$1
-
-	local drive_name
-	  set-drive_name- "$resource"
+function does-non-prune-job-hold-prune-lock {
 
 	 local lock_paths lock_PGID command
 	 set-lock_paths prune && set-lock_PGID "$lock_paths" || return 1
@@ -3990,24 +3991,24 @@ readonly -f does-non-prune-job-hold-prune-lock
 _did_prevent_pruning_print_stack=$false
 
 maybe-prevent-pruning() {
-	local resource=$1
-	[[ $resource ]] || return
+	local resource=$1 drive_name
+	set-drive_name- "$resource" || return
 
-	is-multi-writer-drive   "$resource" && return # simultaneous pruning?
-	is-drive-usage-too-high "$resource" && return # really need pruning?
+	is-multi-writer-drive   && return # simultaneous pruning?
+	is-drive-usage-too-high && return # really need pruning?
 
-	until lock -P --quiet prune "$resource"
+	until lock -P --quiet prune
 	    do	local status=$?
 
 		# did another copy job lock the same source?
-		if does-non-prune-job-hold-prune-lock "$resource"
+		if does-non-prune-job-hold-prune-lock
 		   then # we want the lock if the other copy finishes before us
 			local lockpid_opt="--pid=$BASHPID" # us, not child ...
-			lock -w -P $lockpid_opt prune "$resource" &
+			lock -w -P $lockpid_opt prune &
 			return
 		fi
 
-		kill-job-on-drives prune "$resource"
+		kill-job-on-drives prune
 		if [[ ! $_did_prevent_pruning_print_stack ]]
 		   then  _did_prevent_pruning_print_stack=$true
 			local lock_msg="lock returned $status"
@@ -4024,12 +4025,10 @@ readonly -f maybe-prevent-pruning
 # ----------------------
 
 allow-pruning() {
-	local resource=${1-}
+	local resource=$1 drive_name
+	set-drive_name- "$resource" || return
 
-	[[ $resource ]] || return
-	local drive_name
-	  set-drive_name- "$resource"
-	lock-PID --release --quiet prune # -q cuz we might not hold it
+	unlock -P prune
 }
 readonly -f allow-pruning
 
