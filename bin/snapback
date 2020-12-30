@@ -901,7 +901,7 @@ set-rsync_src_dir--from-job() {
 	for PID in $PIDs
 	    do	# shellcheck disable=SC2046 # we want word splitting
 		set -- $(COLUMNS=999 ps -o "command=" "$PID")
-		[[ $1 == rsync ]] || continue
+		[[ $# != 0 && $1 == rsync ]] || continue
 		set -- "${@: 1: $#-1}"	# remove last word (destination)
 		rsync_src_dir=${!#}
 		return
@@ -3988,6 +3988,7 @@ _did_prevent_pruning_print_stack=$false
 
 maybe-prevent-pruning() {
 	local resource=$1
+	[[ $resource ]] || return
 
 	is-multi-writer-drive   "$resource" && return # simultaneous pruning?
 	is-drive-usage-too-high "$resource" && return # really need pruning?
@@ -4020,8 +4021,9 @@ readonly -f maybe-prevent-pruning
 # ----------------------
 
 allow-pruning() {
-	local resource=$1
+	local resource=${1-}
 
+	[[ $resource ]] || return
 	local drive_name
 	  set-drive_name- "$resource"
 	lock-PID --release --quiet prune # -q cuz we might not hold it
