@@ -597,7 +597,7 @@ function lock-PID() {
 	local lock_opts=
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
 	local type=${1:-$writer_type} lock_holder_action=${2-}
-	[[ $lock_holder_action || $lock_opts == *-q* ]] || abort-function \
+	[[ $lock_holder_action || $lock_opts == *-[rq]* ]] || abort-function \
 	    "[-n drive_name] [lockpid-opts] [type] [lock-holder-description]"
 
 	local lock_path
@@ -789,6 +789,7 @@ unlock() {
 #	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
+	[[ $# == 1 ]] || abort-function "[-P] [lockpid-opts] type"
 	local type name
 	 _set-type-name "$@"
 
@@ -798,16 +799,8 @@ unlock() {
 		abort "don't hold lock: type=$type, name=$name"
 	fi
 
-	if [[ $debug_opt ]]
-	   then local lock_prefix="$IfRun "
-	elif [[ $UID == 0 ]]
-	   then local lock_prefix=
-	   else local lock_prefix=sudo-
-	fi
-	local lock_cmd=${lock_prefix}lockpid
+	lock-PID --release $lock_opt $type
 
-	# shellcheck disable=SC2086 # *_opt may be null
-	$lock_cmd --dir="$lock_dir" --release $lock_opt "$lock_file"
 	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
 
