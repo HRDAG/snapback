@@ -265,8 +265,8 @@ unset arg
 
 [[ $Trace && $debug_opt ]] && IfRun=:
 
-trap print-call-stack EXIT
-exit-normally() {
+trap print-call-stack EXIT		# show stack if unexpected exit
+exit-normally() {			# ... but not if want to exit
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
 	# shellcheck disable=SC2086 # $1 may be null
 	exit ${1-}
