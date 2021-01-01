@@ -9135,7 +9135,6 @@ case $action in
    ( true )				# used to test for needed options
 	true ;;
    ( test | t ) undo-action-abbrev test; $Trace
-	_exit() { exit-normally "$@"; }
 	# shellcheck disable=SC1090 # don't need to check test code
 	source "$our_name_-test.sh" || exit-normally $?
 	;;
