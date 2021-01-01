@@ -271,7 +271,7 @@ exit-normally() {
 	# shellcheck disable=SC2086 # $1 may be null
 	exit ${1-}
 }
-exit_() { exit-normally "$@"; }		# short form, for test action
+exit_() { exit-normally "$@"; }		# short form, for 'test' action
 
 # $tmp_1 and $tmp_2 are used then deleted in the same function. so don't
 # need to check the whole script to see if someone else is using them.
@@ -789,7 +789,7 @@ unlock() {
 #	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
-	[[ $# == 1 ]] || abort-function "[-P] [lockpid-opts] type"
+	[[ $# == 1 ]] || abort-function "[-P] [lockpid-opt] type"
 	local type name
 	 _set-type-name "$@"
 
@@ -6837,6 +6837,7 @@ dump-state() {
 	local status=$?
 	(( $status <= 1 )) ||		# non-fatal error?
 	    abort "tarball probably bad, 'tar' returned $status"
+	shopt -s nullglob
 	echo
 	du -h "$tar_file"
 }
