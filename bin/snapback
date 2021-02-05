@@ -8222,6 +8222,7 @@ is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
 readonly OS_ignorable_error_strings="\
 :ERROR:mcs_client.cc
 Could not resolve keysym Invalid
+JS ERROR: TypeError:
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
