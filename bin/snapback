@@ -268,6 +268,7 @@ unset arg
 trap print-call-stack EXIT		# show stack if unexpected exit
 exit-normally() {			# ... but not if want to exit
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
+	rm -rf "${generate_output_files_dir-}"
 	# shellcheck disable=SC2086 # $1 may be null
 	exit ${1-}
 }
@@ -799,7 +800,8 @@ unlock() {
 		abort "don't hold lock: type=$type, name=$name"
 	fi
 
-	lock-PID --release $lock_opt $type
+	# shellcheck disable=SC2086 # *_opt may be null
+	lock-PID --release $lock_opt "$type"
 
 	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
