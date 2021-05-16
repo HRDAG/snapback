@@ -7593,12 +7593,13 @@ readonly -f _mkfs-warnings
 function mkfs-backup-drive() {
 	[[ ${1-} == -f ]] && { local force_opt=$1; shift; } || local force_opt=
 	local mkfs_opts= opts_args=" $*"; set -f
-	[[ " $*" =~ ^([^/]*)\ (/|[^\ ]*[_A-Z]) ]] &&
+	[[ $1 == [fs]d[a-zA-Z][1-9] ]] && local dev=/dev/ || local dev=
+	[[ " $dev$*" =~ ^([^/]*)\ (/|[^\ ]*[_A-Z]) ]] &&
 	    mkfs_opts=${BASH_REMATCH[1]}
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- ${opts_args#$mkfs_opts} ; set +f
 	[[ $# == [12] ]] || abort-with-action-Usage
-	local device=$1 name=${2-}
+	local device=$dev$1 name=${2-}
 	_mkfs-warnings
 
 	_set-device-drive_name-drive_dir-is_new_dev "$device" "$name"
