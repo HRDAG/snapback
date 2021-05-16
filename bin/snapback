@@ -4270,6 +4270,7 @@ function copy-snapshots() {
 	local src_snapshots=  src_snapshot
 	while [[ $1 == -s* ]]
 	   do	src_snapshot=${1#-s}
+		[[ $src_snapshot == /* ]] || src_snapshot=$PWD/$src_snapshot
 		src_snapshots+="${src_snapshot%/.keep} "
 		shift
 	done
@@ -9044,7 +9045,6 @@ case $action in
    # Actions for regression tests.
    ###########################################################################
 
-   # NOTE: this must appear before copy-snapshots (it has 'cs' as a shortcut)
    # check-snapshot-hard-links names: find snapshots with broken hard links
    ( c*s*h*l* ) undo-action-abbrev check-snapshot-hard-links
 	[[ $# != 0   ]] || abort-with-action-Usage
