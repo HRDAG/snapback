@@ -150,8 +150,9 @@ Encrypt the drive, then create a decrypted mapping:
     # you can use snapcrypt's default sector size:
 	snapcrypt init $drive_name $raw_device
 
-    # If it fails and syslog says "Device size is not multiple of sector_size",
-    # you have options (some of which WILL *DESTROY* all the drive's data):
+    # If it fails with "Device size is not aligned to requested sector size.",
+    # and syslog says  "Device size is not multiple of sector_size", then you
+    # have some options (some of which WILL *DESTROY* all the drive's data):
 
     # 0. easiest, but least efficient: re-run 'init' with the smallest
     # sector-size that will work, i.e. copy-and-paste the following 3 lines:
