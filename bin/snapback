@@ -1830,7 +1830,8 @@ mon-launch-globs() {
 
 	local drive_name drive_dir
 	for drive_name
-	    do	 set-drive_dir- "$drive_name" || abort "bad $drive_name"
+	    do	 set-drive_dir- "$drive_name" ||
+		    continue		# I/O error, watch will show it
 		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
 
 		cd "$drive_dir" || continue
