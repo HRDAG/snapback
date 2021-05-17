@@ -165,16 +165,19 @@ Encrypt the drive, then create a decrypted mapping:
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition 1,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
-    # then run 'w' to write the results and DESTROY what's on the drive
+    # then run 'w' to write the results and DESTROY what's on the drive.
+    # If it won't accept +119.5G ...
 
-    # 2. safely retain data: to use the *last* partition on the drive, run
+    # 2. DESTROY data: raw_device=${raw_device%?} # wipe out disk label
+
+    # 3. safely retain data: to use the *last* partition on the drive, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete the *last* partition,
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
     # then run 'w' to write the results
 
-    # 3. gently redo early partition: to use an earlier partition, run
+    # 4. gently redo early partition: to use an earlier partition, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete your partition, then
     # run 'n' & '#' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' & # to re-create partition,
