@@ -154,6 +154,11 @@ Encrypt the drive, then create a decrypted mapping:
     # and syslog says  "Device size is not multiple of sector_size", then you
     # have some options (some of which WILL *DESTROY* all the drive's data):
 
+    # -1. DESTROY data: raw_device=${raw_device%?} # don't have disk label.
+    # If this doesn't work, you can restore the disk label by running
+    # "fdisk $raw_device" then 'g' (to create a new GPT label) then 'n',
+    # and go back to a partition e.g. raw_device=${raw_device}1
+
     # 0. easiest, but least efficient: re-run 'init' with the smallest
     # sector-size that will work, i.e. copy-and-paste the following 3 lines:
          snapcrypt init -s 2048 $drive_name $raw_device ||
@@ -168,16 +173,14 @@ Encrypt the drive, then create a decrypted mapping:
     # then run 'w' to write the results and DESTROY what's on the drive.
     # If it won't accept +119.5G ...
 
-    # 2. DESTROY data: raw_device=${raw_device%?} # wipe out disk label
-
-    # 3. safely retain data: to use the *last* partition on the drive, run
+    # 2. safely retain data: to use the *last* partition on the drive, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete the *last* partition,
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
     # then run 'w' to write the results
 
-    # 4. gently redo early partition: to use an earlier partition, run
+    # 3. gently redo early partition: to use an earlier partition, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete your partition, then
     # run 'n' & '#' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' & # to re-create partition,
