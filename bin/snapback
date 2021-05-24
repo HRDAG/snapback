@@ -5390,7 +5390,8 @@ _set-colorized_new() {
 	local highlighted_string=
 	local age=${new%[a-zA-Z]}
 	if [[ ! $new ]]
-	   then set-highlighted_string error NONE!
+	   then  new=NONE!
+		set-highlighted_string error "$new"
 	elif (( $age < $max_age ))
 	   then true
 	elif [[ $age == 2 ]]		# backup_period of 1 acts oddly
