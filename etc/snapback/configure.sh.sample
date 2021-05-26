@@ -91,7 +91,7 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 # readonly mon_check_period_secs=1.0 # uncomment if want slower 'watch' refresh
 
 # Time period over which we calculate a moving-average of drive_response.
-	   drive_response_averaging_window_secs=2.0
+	   drive_response_averaging_window_secs=5.0
   drv_name2drive_response_averaging_window_secs[X]=1.0 # SSD
 
 # ------------------------------------------ #
