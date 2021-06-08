@@ -2438,7 +2438,7 @@ archive-writer-stats-data() {
 			set-stats_subdir "$data_type" || continue
 			# shellcheck disable=SC2086
 			set -- $stats_subdir/*.txt
-			[[ $# != 0 ]] || continue
+			[[ $# != 0 && -e $1 ]] || continue
 
 			set-date_time -r "$stats_subdir"
 			local  dst_subdir=$stats_subdir/.${date_time%,*}
@@ -7464,7 +7464,7 @@ _set-opts-log_opt-mount_opts--for-xfs() {
 	[[ $opts == *"-b size="* ]] || opts+="-b size=4096 "
 	[[ $opts == *"-n size="* ]] || opts+="-n size=4096 "
 	[[ $opts == *"-i size="* ]] || opts+="-i size=512 "
-	[[ $opts == *maxpct=*    ]] || opts+="-i maxpct=0 " # need lotsa inodes
+	[[ $opts == *maxpct=*    ]] || opts+="-i maxpct=99 " # need lotsa inode
 
 	mount_opts="$XFS_mount_options"
 

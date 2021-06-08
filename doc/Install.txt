@@ -155,9 +155,9 @@ Encrypt the drive, then create a decrypted mapping:
     # have some options (some of which WILL *DESTROY* all the drive's data):
 
     # -1. DESTROY data: raw_device=${raw_device%?} # don't have disk label.
-    # If this doesn't work, you can restore the disk label by running
-    # "fdisk $raw_device" then 'g' (to create a new GPT label) then 'n',
-    # and go back to a partition e.g. raw_device=${raw_device}1
+    # If this doesn't work, you can restore the disk label by running:
+    #	"fdisk $raw_device" then 'g' (to create a new GPT label) then 'n'
+    # and then switch back to a partition e.g. raw_device=${raw_device}1
 
     # 0. easiest, but least efficient: re-run 'init' with the smallest
     # sector-size that will work, i.e. copy-and-paste the following 3 lines:
