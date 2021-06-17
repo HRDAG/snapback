@@ -5184,7 +5184,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 			# shellcheck disable=SC2086 # var has multiple values
 			set -- $snapshots
 			local  file_count=$#
-			if [[ $file_count == "$count" ]]
+			if [[ $file_count == "$count" && $day_count != 0 ]]
 			   then MB_per_day=$sum/$day_count
 			   else # some MB values unknown, have to estimate
 			        MB_per_day=$(( $average*$unique_hours ))
