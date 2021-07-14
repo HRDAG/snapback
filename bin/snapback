@@ -5770,6 +5770,9 @@ readonly -f set-drive_names-names_msg-names_glob-drive_dirs
 
 declare -i rows columns rows_left
 
+declare max_rows=999999
+declare max_columns=9999
+
 set-rows-columns-COLUMNS() {
 
 	[[ ${rows-} ]] && return
@@ -5779,10 +5782,10 @@ set-rows-columns-COLUMNS() {
 		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(stty -a); set +f
 		rows=${5%;} columns=${7%;}
-	   else rows=999999 columns=9999
+	   else rows=$max_rows columns=$max_columns
 	fi
 	rows_left=$rows
-	export COLUMNS=9999	     # for 'ps' (we shorten the COMMAND value)
+	export COLUMNS=$max_columns	     # for 'ps' (we shorten the COMMAND value)
 }
 readonly -f set-rows-columns-COLUMNS
 
@@ -8224,6 +8227,21 @@ readonly -f mkswapfile
 # check syslog for FS and OS errors
 # ----------------------------------------------------------------------------
 
+setup-limited-list() {
+	local type=$1; shift
+
+	local list="$# $type: $*"
+	set-rows-columns-COLUMNS
+	(( $columns<$max_columns )) ||
+	    columns=1000
+	if (( ${#list} > $columns ))
+	   then  list=${list:1:$columns}
+		 list="${list% *} ..."	# don't want truncated final item
+	fi
+	eval "$type=\$list"
+}
+readonly -f setup-limited-list
+
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
 # first is google-chrome error
@@ -8300,18 +8318,16 @@ search-syslog-for-errors() {
 	#    print_req_error: I/O error, dev sda, sector B
 	# metadata I/O error: block B ("xfs_...") error 5 numblks N
 	#   Buffer I/O error on dev dm-30, logical block B, async page read
-	local file=$search_file
+	local file=$search_file sectors daddrs
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(sed -r -n 's/.* sector +([0-9]+)[^0-9]*/\1/p' "$file" |
+	set -- $(sed -r -n 's/.* sector +([0-9]+)\b.*/\1/p' "$file" |
 		 sort -u -n)
-	local sectors="$# sectors: $*"
+	setup-limited-list sectors "$@"
 	#
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(sed -r -n 's/.* daddr +(0x[0-9a-f]+)\b.*/\1/p' "$file" |
 		 sort -u)
-	# handle 1000 column screen
-	(( $# * 10 > 1000 )) && set -- "${@:1:1000/10}"
-	local daddrs="$# daddrs: $*"
+	setup-limited-list daddrs "$@"
 
 	local service_string="service: Failed to connect stdout to the journal"
 	# shellcheck disable=SC2046 # we want word splitting
