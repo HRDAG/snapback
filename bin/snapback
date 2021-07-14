@@ -5770,8 +5770,10 @@ readonly -f set-drive_names-names_msg-names_glob-drive_dirs
 
 declare -i rows columns rows_left
 
-declare max_rows=999999
-declare max_columns=9999
+is-set   max_rows ||			# can set custom value in $config_file
+readonly max_rows=999999
+is-set   max_columns ||			# can set custom value in $config_file
+readonly max_columns=9999
 
 set-rows-columns-COLUMNS() {
 
@@ -8227,13 +8229,16 @@ readonly -f mkswapfile
 # check syslog for FS and OS errors
 # ----------------------------------------------------------------------------
 
+is-set   max_screen_columns ||		# can set custom value in $config_file
+readonly max_screen_columns=1000
+
 setup-limited-list() {
 	local type=$1; shift
 
 	local list="$# $type: $*"
 	set-rows-columns-COLUMNS
 	(( $columns<$max_columns )) ||
-	    columns=1000
+	    columns=$max_screen_columns
 	if (( ${#list} > $columns ))
 	   then  list=${list:1:$columns}
 		 list="${list% *} ..."	# don't want truncated final item
@@ -8241,6 +8246,8 @@ setup-limited-list() {
 	eval "$type=\$list"
 }
 readonly -f setup-limited-list
+
+# ----------------------------------------------------------------------------
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
 is-set   OS_ignorable_error_strings ||  # can set custom value in $config_file
