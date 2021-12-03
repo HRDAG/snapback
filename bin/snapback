@@ -2444,7 +2444,8 @@ archive-writer-stats-data() {
 			set-date_time -r "$stats_subdir"
 			local  dst_subdir=$stats_subdir/.${date_time%,*}
 			$IfRun mkdir -p    "$dst_subdir"
-			$IfRun mv -v "$stats_subdir/*.txt" "$dst_subdir" |
+			# shellcheck disable=SC2086 # we want the glob
+			$IfRun mv -v  $stats_subdir/*.txt "$dst_subdir" |
 			sed "s@named '$stats_subdir/@@"
 		done
 	done
@@ -9029,6 +9030,7 @@ case $action in
 	;;
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
+	[[ $# != 0 ]] || abort-with-action-Usage
 	$action "$@"
 	;;
 
