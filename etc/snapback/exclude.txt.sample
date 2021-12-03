@@ -172,6 +172,9 @@
 /home/*/*/R/library/*
 /home/*/*/R/rlib/*
 
+# miscellaneous files that don't need to be saved (on a non-Mac)
+.DS_Store
+
 # --------------------------------------------------------------------
 # subdirectories that the 'snapshot' command backs up, can be *huge* #
 # --------------------------------------------------------------------
