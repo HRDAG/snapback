@@ -123,11 +123,13 @@ it:
 Find the drive's device name with:
     ls -lt /dev/sd*[^0-9]	# most-recently-plugged-in-drive at the top
 
-Save the device name, and specify the drive-name you will use
+Save the device name, and specify the drive-name you will use (you can study
+the output of dmesg to map serial number to device; the "scsi hostNN" record
+has the join key):
     raw_device=/dev/sd?  drive_name=?
 
 Verify it's the drive you want:
-    sudo fdisk -l ${raw_device%%[0-9]*}
+    sudo fdisk -l $raw_device
 
 Choose the partition you want:
     raw_device=${raw_device}?	# you could instead encrypt the whole drive
@@ -144,11 +146,11 @@ Create an encryption keypair (if don't already have one you want to use):
 Encrypt the drive, then create a decrypted mapping:
     # If you're going to use ext4 with snapback's default block size (-b 1024),
     # then you'll need to encrypt the drive with the matching sector size:
-	snapcrypt init -s 1024 $drive_name $raw_device
+	sudo snapcrypt init -s 1024 $drive_name $raw_device
 
     # If you'll instead use XFS, which defaults to a block size of 4096,
     # you can use snapcrypt's default sector size:
-	snapcrypt init $drive_name $raw_device
+	sudo snapcrypt init $drive_name $raw_device
 
     # If it fails with "Device size is not aligned to requested sector size.",
     # and syslog says  "Device size is not multiple of sector_size", then you
@@ -161,9 +163,9 @@ Encrypt the drive, then create a decrypted mapping:
 
     # 0. easiest, but least efficient: re-run 'init' with the smallest
     # sector-size that will work, i.e. copy-and-paste the following 3 lines:
-         snapcrypt init -s 2048 $drive_name $raw_device ||
-         snapcrypt init -s 1024 $drive_name $raw_device ||
-         snapcrypt init -s  512 $drive_name $raw_device
+         sudo snapcrypt init -s 2048 $drive_name $raw_device ||
+         sudo snapcrypt init -s 1024 $drive_name $raw_device ||
+         sudo snapcrypt init -s  512 $drive_name $raw_device
 
     # 1. DESTROY data: if the drive has no needed data, then run
     # ' fdisk ${raw_device%%[0-9]*} ', run 'g' to create a new GPT disklabel,
@@ -188,7 +190,7 @@ Encrypt the drive, then create a decrypted mapping:
     # a size that's slightly smaller than the remembered size, e.g. +119.4G
     # then run 'w' to write the results
 
-    snapcrypt will have created a udev rule for the device, test it with:
+    # snapcrypt will have created a udev rule for the device, test it with:
 
       udevadm test $(udevadm info $raw_device | sed -n 's/^P: //p') |& tail -n1
 
