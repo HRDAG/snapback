@@ -38,7 +38,7 @@ Why write such a serious program in bash:
    Supports tracing of all commands, for deep debugging (or learning new code).
    Supports simulation, which allows trivial creation of fast regression tests.
    Supports flexible logging and debug-printing; prints a call stack on error.
-   Can use shellcheck (lint for bash) to catch errors (e.g. mis-spelled names).
+   Can use shellcheck (lint for bash) to catch errors (e.g. mis-spelled vars).
    Simple support of background processes with control of session groups: jobs.
    Config file holds shell commands (eg functions, arrays, maps, computation).
    Auto-magically maintain list of config variables:
