@@ -1484,13 +1484,15 @@ readonly -f set-drive_name
 
 # only call this with a known-valid drive_name, for speed
 function set-drive_dir-() {
+	[[ ${1-} == -W ]] && { local do_warn= ; shift; } || local do_warn=$true
 	local name=${1:-$drive_name}
 
 	if [[ $name == "$mon_overhead_drive_name" ]]
 	   then drive_dir=$mon_overhead_drive_dir
 	   else drive_dir=$drive_dir_prefix$name
 	fi
-	[[ -d $drive_dir ]] || warn "no mount directory for '$name'"
+	[[ -d $drive_dir || ! $do_warn ]] ||
+	    warn "no mount directory for '$name'"
 }
 readonly -f set-drive_dir-
 
@@ -7485,6 +7487,7 @@ readonly -f _set-opts-log_opt-mount_opts--for-xfs
 # -------------------------------------------------------
 
 _set-device-drive_name-drive_dir-is_new_dev() {
+	[[ $1 == -W ]] && { local warn_opt=$1; shift; } || local warn_opt=
 	device=$1; local name=${2-} dir
 
 	[[ $device = /* ]] ||
@@ -7507,7 +7510,8 @@ _set-device-drive_name-drive_dir-is_new_dev() {
 	name=$drive_name
 	[[ ${name,,} != all ]] ||
 	    abort "drive_name '$name' is a reserved word"
-	set-drive_dir-
+	# shellcheck disable=SC2086 # *_opt* may be null
+	set-drive_dir- $warn_opt
 	TraceV 2 mkfs_opts device drive_name drive_dir && echo
 
 	if [[ $(df --output=source "$device" 2> $dev_null) != *$device ]]
@@ -7613,7 +7617,7 @@ function mkfs-backup-drive() {
 	local device=$dev$1 name=${2-}
 	_mkfs-warnings
 
-	_set-device-drive_name-drive_dir-is_new_dev "$device" "$name"
+	_set-device-drive_name-drive_dir-is_new_dev -W "$device" "$name"
 	set-FS_label--from-mount_dir "$drive_dir"
 
 	set -f
