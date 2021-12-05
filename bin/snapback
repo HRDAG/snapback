@@ -1768,8 +1768,7 @@ customize-and-validate-configuration-variables() {
 	local name=${1-}
 
 	# avoid infinite loop
-	# shellcheck disable=SC2086
-	set -- ${FUNCNAME[*]} ; shift
+	set -- "${FUNCNAME[@]}" ; shift
 	is-arg1-in-arg2 "$FUNCNAME" "$@" && return
 
 	suspend-tracing
@@ -1965,8 +1964,8 @@ mon-look-for-finished-globs() {
 	for (( sleep_msecs=0, slept_msecs=0;
 	       slept_msecs + sleep_msecs < $mon_check_period_msecs;
 	       slept_msecs+=$sleep_msecs, sleep_msecs+=$mon_msecs_increment ))
-	   do	set -- ${drive_name2PID[*]} # any backgrounded globbing?
-		if [[ $# == 0 ]]	    # if not, stop looking
+	   do	set -- "${drive_name2PID[@]}" # any backgrounded globbing?
+		if [[ $# == 0 ]]	      # if not, stop looking
 		   then [[ $_drive_name ]] && abort-function "logic error"
 			lockpid --wait "$mon_initialized_lock_path" > $dev_null
 			set-epoch_msecs
@@ -2671,6 +2670,7 @@ write-drive-usage-vs-speed() {
 
 	local drive_names drive_name drive_dir
 	set-drive_names -a
+	# shellcheck disable=SC2048 # 'for' manages whitespace
 	for drive_name in  ${*:-$drive_names}
 	    do	set-drive_name "$drive_name"
 		set-drive_dir- "$drive_name"
@@ -3309,6 +3309,7 @@ prune-type-to-file() {
 		# delete all the old-enough prune matches
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\nDeleting ~$# snapshots: $ss"
+		# shellcheck disable=SC2048 # 'echo' manages whitespace
 		echo ${*##"$oldest_snapshot"*} # don't delete oldest snapshot
 	done >> "$file_of_snapshots_to_prune"
 
@@ -7180,6 +7181,7 @@ max-drive() {
 		echo "$drive_dir" && exit-normally 0
 	fi
 
+	# shellcheck disable=SC2048 # 'set' manages whitespace
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- ${*:-$(list-drive-dirs)}	# for debugging: | tac
 	[[ $# != 0 ]] || abort "no backup drives are mounted"
