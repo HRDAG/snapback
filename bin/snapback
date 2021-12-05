@@ -67,7 +67,7 @@ unset _args _root
 
 config_file_sample=$config_file.sample
 if [[ $our_path == */$our_name/bin/$our_name ]]
-   then   git_home=${our_path%/bin/$our_name}
+   then  git_home=${our_path%"/bin/$our_name"}
 	config_file_sample=$git_home$config_file_sample
 fi ;						readonly config_file_sample
 
@@ -1405,7 +1405,8 @@ function set-drive_name-() {
 	local name=$1
 	[[ $name ]] || { $xtrace; return 1; }
 	[[ $name == $snapshot_glob* ]] && name=$PWD/$name
-	name=${name#$drive_dir_prefix}
+	name=${name#"$drive_dir_prefix"}
+	# shellcheck disable=SC2295 # need to glob
 	name=${name%/$snapshot_glob*}
 	name=${name%/latest*}
 
@@ -1469,7 +1470,7 @@ set-drive_name() {
 		[[  $drive_dir =~ \
 		   ^$drive_dir_prefix$admin_drive_name_regex$ ]] ||
 		   abort "$name is not drive-dir or FS-label or valid-name"
-		name=${drive_dir#$drive_dir_prefix}
+		name=${drive_dir#"$drive_dir_prefix"}
 	fi
 	set-drive_name- "$name"	  # call again, for globbing and case-control
 	TraceV 3 drive_name
@@ -1500,7 +1501,7 @@ readonly -f set-drive_dir-
 
 function set-decryption_dev() {
 	local name=${1:-$drive_name} drive_dir FS_label
-	name=${1#$drive_dir_prefix}	# might be $drive_dir
+	name=${1#"$drive_dir_prefix"}	# might be $drive_dir
 
 	drive_dir=$drive_dir_prefix$name
 	set-FS_label--from-mount_dir "$drive_dir"
@@ -2985,6 +2986,7 @@ declare -r -A type2date_suffix_glob=(
 	[month]="-??-??,??"
 	 [year]="?-??-??,??"
 )
+# shellcheck disable=SC2295 # need to glob
 [[ ${snapshot_glob%${type2date_suffix_glob[year]}} != \
    "$snapshot_glob" ]] ||
 	abort "snapshot_glob has to end with type2date_suffix_glob[year]"
@@ -3026,6 +3028,7 @@ set-prune_glob() {
 	local type=$1 prune_type_glob=$2
 
 	local date_suffix_glob=${type2date_suffix_glob[$type]}
+	# shellcheck disable=SC2295 # need to glob
 	local date_prefix_glob=${snapshot_glob%$date_suffix_glob}
 	case $type in
 	   (  hour ) local date_suffix_type=NONE  ;;
@@ -3296,6 +3299,7 @@ prune-type-to-file() {
 		set -- $(echo "$@" | tr ' ' '\n' | sort -r)
 		while [[ $# != 0 ]]
 		   do	[[ $1 == [^1-9]* ]] && shift && continue # skip junk
+			# shellcheck disable=SC2295 # need to glob
 			local date=${1%$date_suffix_glob*}
 			[[   $date > $newest_prune_date_in_this_pass ]] ||
 			    break
@@ -3305,8 +3309,7 @@ prune-type-to-file() {
 		# delete all the old-enough prune matches
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\nDeleting ~$# snapshots: $ss"
-		# shellcheck disable=SC2086 # variable contains multiple values
-		echo ${*##$oldest_snapshot*} # don't delete oldest snapshot
+		echo ${*##"$oldest_snapshot"*} # don't delete oldest snapshot
 	done >> "$file_of_snapshots_to_prune"
 
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -3701,7 +3704,8 @@ _links-error-msg() {
 	local -i max_src_links=0
 	bzcat "$log" | tr -d '"' | cut -d' ' -f3 |
 	while read -r dst_file
-	    do	src_file=${dst_file#$drive_dir/$snapshot_glob.partial}
+	    do	# shellcheck disable=SC2295 # need to glob
+		src_file=${dst_file#$drive_dir/$snapshot_glob.partial}
 		[[ -f $src_file ]] || continue
 		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(ls -l "$src_file")
@@ -3852,7 +3856,7 @@ readonly -f _run-rsync-cmd
 function run-rsync() {
 	assert-not-option "${1-}"
 	local dst_snapshot=${!#}
-	local src_dirs=${*#$dst_snapshot}
+	local src_dirs=${*#"$dst_snapshot"}
 
 	local date_time=${dst_snapshot##*/}
 	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
@@ -3922,7 +3926,7 @@ function is-copy-src() {
 	   then local lock_path
 		set-lock_path prune || return 1
 		local prune_lock_path=$lock_path
-	   else local prune_lock_path=$lock_dir/${resource#$lock_dir/}
+	   else local prune_lock_path=$lock_dir/${resource#"$lock_dir/"}
 	fi
 
 	local lock_PGID
@@ -4232,7 +4236,7 @@ function copy-snapshot() {
 	[[ $src     ]] && set -- "$src" "$1"
 	(( $# >= 2  )) || abort-function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
-	local src_snapshots=${*#$dst_drive_name}
+	local src_snapshots=${*#"$dst_drive_name"}
 	src_snapshot=${src_snapshot%/.keep}
 	local drive_name=$drive_name drive_dir=${drive_dir-} # protect caller
 	copy_snapshot_args=		# holds result when $is_update
@@ -5446,7 +5450,7 @@ _recalculate-snapshot-stats-vars() {
 				[[ $skip_empty &&   $is_empty ]] && continue
 				[[ $only_empty && ! $is_empty ]] && continue
 			fi
-			local snap=${snapshot%$ending$suffix}
+			local snap=${snapshot%"$ending$suffix"}
 			[[ $prev_snap != "$snap" ]] && snaps+="$snap "
 			    prev_snap=$snap
 			[[ $skip_empty || $only_empty ]] || suspend-tracing -l
@@ -7611,8 +7615,7 @@ function mkfs-backup-drive() {
 	[[ ${1-} == [fs]d[a-zA-Z][1-9] ]] && local dev=/dev/ || local dev=
 	[[ " $dev$*" =~ ^([^/]*)\ (/|[^\ ]*[_A-Z]) ]] &&
 	    mkfs_opts=${BASH_REMATCH[1]}
-	# shellcheck disable=SC2086 # variable contains multiple values
-	set -- ${opts_args#$mkfs_opts} ; set +f
+	set -- ${opts_args#"$mkfs_opts"} ; set +f
 	[[ $# == [12] ]] || abort-with-action-Usage
 	local device=$dev$1 name=${2-}
 	_mkfs-warnings
@@ -7984,8 +7987,8 @@ function finish-copy-backup-drive() {
 	local src_device=$1 src_drive_dir=$2
 	local dst_device=$3 dst_drive_dir=$4
 
-	local src_name=${src_drive_dir#$drive_dir_prefix}
-	local dst_name=${dst_drive_dir#$drive_dir_prefix}
+	local src_name=${src_drive_dir#"$drive_dir_prefix"}
+	local dst_name=${dst_drive_dir#"$drive_dir_prefix"}
 
 	customize-and-validate-configuration-variables "$dst_name"
 
@@ -8876,8 +8879,8 @@ case $action in
 	local opts=
 	while [[ ${1-} == -* ]] ; do opts+="$1 "; shift; done
 	(( $# >= 2 )) || abort-with-action-Usage
-	set-drive_name   "${!#}"
-	src_snapshots=${*#${!#}}
+	set-drive_name    "${!#}"
+	src_snapshots=${*#"${!#}"}
 	src_snapshots=${src_snapshots% }
 	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs copy -s${src_snapshots// / -s} $opts "$drive_name"
@@ -9165,7 +9168,7 @@ case $action in
 	sed -e "s@^source ..config_file. @source $config_file @" \
 	    -e "s@^source  .lib @source $lib_path @" "$our_path" > "$tmp_cmd"
 	# diff -u $our_path $tmp_cmd; false && # uncomment to debug the above
-	$IfRun shellcheck -x "$tmp_cmd"
+	$IfRun shellcheck -x "$@" "$tmp_cmd"
 	rm "$tmp_cmd"
 	;;
 
