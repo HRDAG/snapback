@@ -2653,6 +2653,7 @@ _create-txt-file() {
 		printf "$header_format" "Use%" " backup"  "    date"
 		printf "$header_format" "====" "========" "=========="
 
+		# shellcheck disable=SC2030 # 'hours' is supposed to be local
 		while read -r usage hours date seconds
 		    do	[[ $usage != [a-z]* ]] || continue # header?
 			usage=$usage%
@@ -5047,10 +5048,12 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 
 	local hours
 	set-hours--from-minutes -2 $average # 2 decimal points
+	# shellcheck disable=SC2031 # there is no subshell
 	set-padded_number "$hours"
 	hour_avg=$padded_number$units
 
 	set-hours--from-minutes -2 $maximum
+	# shellcheck disable=SC2031 # there is no subshell
 	set-padded_number "$hours"
 	hour_max=$padded_number$units
 
