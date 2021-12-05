@@ -3310,6 +3310,7 @@ prune-type-to-file() {
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\nDeleting ~$# snapshots: $ss"
 		# shellcheck disable=SC2048 # 'echo' manages whitespace
+		# shellcheck disable=SC2086 # 'echo' manages whitespace
 		echo ${*##"$oldest_snapshot"*} # don't delete oldest snapshot
 	done >> "$file_of_snapshots_to_prune"
 
@@ -7617,6 +7618,8 @@ function mkfs-backup-drive() {
 	[[ ${1-} == [fs]d[a-zA-Z][1-9] ]] && local dev=/dev/ || local dev=
 	[[ " $dev$*" =~ ^([^/]*)\ (/|[^\ ]*[_A-Z]) ]] &&
 	    mkfs_opts=${BASH_REMATCH[1]}
+	# shellcheck disable=SC2048 # 'set' manages whitespace
+	# shellcheck disable=SC2086 # 'set' manages whitespace
 	set -- ${opts_args#"$mkfs_opts"} ; set +f
 	[[ $# == [12] ]] || abort-with-action-Usage
 	local device=$dev$1 name=${2-}
