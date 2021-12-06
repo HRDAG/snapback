@@ -398,7 +398,7 @@ set-secs--from-msecs() {
 	fi
 
 	local division
-	set-division "$decimal_digits_opt" "$msecs" 1000
+	set-division -w5 "$decimal_digits_opt" "$msecs" 1000
 	secs=$division
 }
 readonly -f set-secs--from-msecs
@@ -421,7 +421,7 @@ set-hours--from-minutes() {
 	fi
 
 	local division
-	set-division "$decimal_digits_opt" "$minutes" 60
+	set-division -w5 "$decimal_digits_opt" "$minutes" 60
 	hours=$division
 }
 readonly -f set-hours--from-minutes
@@ -2532,7 +2532,7 @@ set-writer_stats_msg--as-save-writer-stats() {
 		local used_MB size_MB
 		set-used_MB-size_MB
 		local -i writer_MB=$used_MB-$starting_MB
-		set-division -2 "$writer_MB" 1024
+		set-division -w5 -2 "$writer_MB" 1024
 		local writer_GB=$division
 		[[ $writer_GB == -0.00 ]] && writer_GB=${writer_GB#-}
 
@@ -5109,7 +5109,7 @@ set-percent_usage() {
 	local -i used_MB size_MB
 	set-used_MB-size_MB
 	local -i MB_100=$(( $MB*100 ))
-	set-division -2 "$MB_100" "$size_MB"
+	set-division -w5 -2 "$MB_100" "$size_MB"
 	[[ $division == -0.00 ]] && division=${division#-}
 	percent_usage=$division%
 }
@@ -5138,7 +5138,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
 	set-units g
-	set-division -2 $average 1024 # 2 decimal points
+	set-division -w5 -2 $average 1024 # 2 decimal points
 	set-padded_number "$division"
 	set-narrowed_decimal "$padded_number"
 	padded_number=$narrowed_decimal
