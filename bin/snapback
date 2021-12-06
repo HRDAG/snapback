@@ -5103,7 +5103,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	local writer_type=$1
 
 	jobs_per_day= GBs_per_day= percents_per_day=
-	local drive_name padded_number division percent_usage
+	local drive_name division percent_usage
 	for drive_name in $all_drive_names
 	    do	local -i MB_per_day=0  unique_hours=0 \
 		       count average maximum sum
@@ -5173,7 +5173,6 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 	local writer_type=$1
 
 	local GB_avgs= predicted_TBs= predicted_percents=
-	local drive_name padded_number
 	for drive_name in $all_drive_names
 	    do	local \
 		    GB_avg predicted_TB_sum predicted_percent_usage
@@ -5249,7 +5248,7 @@ set-drive_responses() {
 	set-msecs--from-secs $drive_response_warning_secs
 	local drive_response_warning_msecs=$msecs
 
-	local drive_name secs padded_number responses=
+	local drive_name secs responses=
 	for drive_name in $all_drive_names
 	    do	set-average "$drive_msecs_dir/$drive_name"
 		local -i msecs=$average-$overhead_msecs
