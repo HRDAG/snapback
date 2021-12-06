@@ -391,43 +391,12 @@ readonly -f set-msecs--from-secs
 
 # ----------------------------------------------------------------------------
 
-set-secs--from-msecs() {
-	if [[ $1 == -* ]]
-	   then local decimal_digits_opt=$1  msecs=$2
-	   else local decimal_digits_opt=-2  msecs=$1
-	fi
-
-	local division
-	set-division -w5 "$decimal_digits_opt" "$msecs" 1000
-	secs=$division
-}
-readonly -f set-secs--from-msecs
-
-# ----------------------------------------------------------------------------
-
 set-minutes--from-secs() {
 	local secs=$1
 
 	minutes=$(( ($secs + 30) / 60 ))
 }
 readonly -f set-minutes--from-secs
-
-# ----------------------------------------------------------------------------
-
-set-hours--from-minutes() {
-	if [[ $1 == -* ]]
-	   then local decimal_digits_opt=$1  minutes=$2
-	   else local decimal_digits_opt=-2  minutes=$1
-	fi
-
-	local division
-	set-division -w5 "$decimal_digits_opt" "$minutes" 60
-	hours=$division
-}
-readonly -f set-hours--from-minutes
-
-set-hours--from-minutes 10
-[[ $hours == 0.17 ]] || abort "10 minutes != $hours hours"
 
 ##############################################################################
 # lock management
@@ -1971,9 +1940,9 @@ mon-look-for-finished-globs() {
 			set-epoch_msecs
 			local -i used_msecs=$epoch_msecs-$start_msecs
 			local -i left_msecs=$mon_check_period_msecs-$used_msecs
-			set-secs--from-msecs -3 "$left_msecs"
-			[[ $secs != *-* ]] && # avoid negative values
-			env sleep "$secs"     # want it to appear in ps
+			set-division -3 "$left_msecs" 1000
+			[[ $division != *-* ]] && # avoid negative values
+			env sleep "$division"     # want it to appear in ps
 			return
 		fi
 
@@ -2526,8 +2495,8 @@ set-writer_stats_msg--as-save-writer-stats() {
 		# we use varnames writer_{data_type}; see stats_data_types=
 		set-minutes--from-secs $SECONDS
 		local -i writer_minutes=$minutes
-		set-hours--from-minutes "$writer_minutes"
-		local writer_hours=$hours
+		set-division -w5 -z -2 "$writer_minutes" 60
+		local writer_hours=$division
 
 		local used_MB size_MB
 		set-used_MB-size_MB
@@ -4959,20 +4928,6 @@ set-units() {			   # a stylistic function
 
 # ----------------------------------------------------------------------------
 
-# dashboard's decimal numbers should have a 2-digit integeral, otherwise 0-pad
-set-padded_number() {
-	local number=${1-}
-
-	if [[ $number == ?.* ]]
-	   then padded_number=0$number
-	   else padded_number=$number
-	fi
-	[[ $padded_number ]]
-}
-readonly -f set-padded_number
-
-# ----------------------------------------------------------------------------
-
 function set-count-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local data_type=$1
@@ -5046,16 +5001,11 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 	    { hour_avg= hour_max= ; return; }
 	set-units h
 
-	local hours
-	set-hours--from-minutes -2 $average # 2 decimal points
-	# shellcheck disable=SC2031 # there is no subshell
-	set-padded_number "$hours"
-	hour_avg=$padded_number$units
+	set-division -w5 -z -2 $average 60 # 2 decimal points
+	hour_avg=$division$units
 
-	set-hours--from-minutes -2 $maximum
-	# shellcheck disable=SC2031 # there is no subshell
-	set-padded_number "$hours"
-	hour_max=$padded_number$units
+	set-division -w5 -z -2 $maximum 60
+	hour_max=$division$units
 
 	[[ $writer_type == backup ]] || return
 
@@ -5109,8 +5059,8 @@ set-percent_usage() {
 	local -i used_MB size_MB
 	set-used_MB-size_MB
 	local -i MB_100=$(( $MB*100 ))
-	set-division -w5 -2 "$MB_100" "$size_MB"
-	[[ $division == -0.00 ]] && division=${division#-}
+	set-division -w5 -z -2 "$MB_100" "$size_MB"
+	[[ $division == -00.00 ]] && division=${division#-}
 	percent_usage=$division%
 }
 readonly -f set-percent_usage
@@ -5126,18 +5076,16 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
 	set-units g
-	set-division -w5 -2 $average 1024 # 2 decimal points
-	set-padded_number "$division"
-	GB_avg=$padded_number$units
+	set-division -w5 -z -2 $average 1024 # 2 decimal points
+	GB_avg=$division$units
 
 	if [[ $writer_type != backup ]]
 	   then local -i stats_number=${drive_name2stats_number[$drive_name]}
 		if (( $stats_number > 0 && $average != 0 ))
 		   then set-units t
 			local -i predicted_sum=$(( $average*$stats_number ))
-			set-division -2 "$predicted_sum" $((1024*1024))
-			set-padded_number "$division"
-			predicted_TB_sum=$padded_number$units
+			set-division -w5 -z -2 "$predicted_sum" $((1024*1024))
+			predicted_TB_sum=$division$units
 
 			set-percent_usage "$predicted_sum"
 			predicted_percent_usage=$percent_usage
@@ -5195,17 +5143,15 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 
 		set-units g
 		if (( $MB_per_day > 0 ))
-		   then set-division -w5 -2 "$MB_per_day" 1024
-			set-padded_number "$division$units"
-		   else padded_number=
+		   then set-division -w5 -z -2 "$MB_per_day" 1024
+		   else     division=
 		fi
-		GBs_per_day+="$drive_name=$padded_number "
+		GBs_per_day+="$drive_name=$division "
 		if (( $MB_per_day > 0 ))
 		   then set-percent_usage "$MB_per_day"
-			set-padded_number "$percent_usage"
-		   else padded_number=
+		   else     percent_usage=
 		fi
-		percents_per_day+="$drive_name=$padded_number "
+		percents_per_day+="$drive_name=$percent_usage "
 		TraceV 1 unique_hours sum day_count MB_per_day percent_usage
 	done
 
@@ -5233,16 +5179,13 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 		    GB_avg predicted_TB_sum predicted_percent_usage
 		set-GB_avg-predicted_TB_sum-predicted_percent_usage
 
-		set-padded_number "$GB_avg"
-		GB_avgs+="$drive_name=$padded_number "
+		GB_avgs+="$drive_name=$GB_avg "
 
 		[[ $writer_type != backup ]] || continue
 
-		set-padded_number "$predicted_TB_sum"
-		predicted_TBs+="$drive_name=$padded_number "
+		predicted_TBs+="$drive_name=$predicted_TB_sum "
 
-		set-padded_number "$predicted_percent_usage"
-		predicted_percents+="$drive_name=$padded_number "
+		predicted_percents+="$drive_name=$predicted_percent_usage "
 	done
 
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -5313,9 +5256,8 @@ set-drive_responses() {
 		(( $msecs < 0 )) && msecs=0
 
 		if (( $msecs <= 99999 )) # fits in alloted format?
-		   then set-secs--from-msecs "$msecs"
-			set-padded_number "$secs"
-			local secs=$padded_number$units
+		   then set-division -w5 -z -2 "$msecs" 1000
+			local secs=$division$units
 			if (( $msecs >= $drive_response_warning_msecs ))
 			   then set-highlighted_string warning "$secs"
 				secs=$highlighted_string
