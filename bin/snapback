@@ -4887,7 +4887,7 @@ readonly -f create-jobs
 ##############################################################################
 ##############################################################################
 
-# If change this value, adjust the width of the -* suffix on
+# If change this value, adjust the width of the -xxx suffix on
 # max_drive_usage_percent's value in is-drive-usage-too-high() .
 readonly watch_field_width=5+1		# +1 for 'unit' suffix
 
@@ -4928,7 +4928,7 @@ set-units() {			   # a stylistic function
 
 # ----------------------------------------------------------------------------
 
-function set-count-average-maximum-sum-files--from-stats-files() {
+function set-count-last-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local data_type=$1
 
@@ -4950,7 +4950,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 
 	while [[ $do_compute ]]; do	# we can use 'break' to do cleanup
 
-	[[ $# != 0 ]] || { count=0 average=0 maximum=0 sum=0; break; }
+	[[ $# != 0 ]] || { count=0 last=0 average=0 maximum=0 sum=0; break; }
 
 	if [[ ${writer_type-} == prune && ${data_type-} == MB ]]
 	   then local is_negative=$true
@@ -4973,6 +4973,7 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 		(( maximum<number )) &&
 		   maximum=number
 	done
+	last=${number-0}
 
 	(( $count > 0 )) || { average=0  maximum=0; break; }
 	average=$(( ( $sum + ($count/2) ) / $count ))
@@ -4981,27 +4982,30 @@ function set-count-average-maximum-sum-files--from-stats-files() {
 	done
 
 	[[ $do_compute ]] &&
-	local data="count=$count average=$average maximum=$maximum sum=$sum" &&
+	local data="count=$count last=$last average=$average maximum=$maximum sum=$sum" &&
 	echo-to-file "$data" "$cache_file"
 
 	popd_ -q
-	TraceV 2 count average maximum sum
+	TraceV 2 count last average maximum sum
 	$xtrace
 	[[ $files ]]
 }
-readonly -f set-count-average-maximum-sum-files--from-stats-files
+readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
 # ---------------------------------
 
-set-hour_avg-hour_max--from-files-of-minutes() {
+set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 
 	local -i \
-	    count average maximum sum
-	set-count-average-maximum-sum-files--from-stats-files minutes ||
-	    { hour_avg= hour_max= ; return; }
+	    count last average maximum sum
+	set-count-last-average-maximum-sum-files--from-stats-files minutes ||
+	    { hour_last= hour_avg= hour_max= ; return; }
 	set-units h
 
-	set-division -w5 -z -2 $average 60 # 2 decimal points
+	set-division -w5 -z -2 $last    60
+	hour_last=$division$units
+
+	set-division -w5 -z -2 $average 60
 	hour_avg=$division$units
 
 	set-division -w5 -z -2 $maximum 60
@@ -5024,30 +5028,34 @@ set-hour_avg-hour_max--from-files-of-minutes() {
 		hour_avg=$padded_colorized_string
 	fi
 }
-readonly -f set-hour_avg-hour_max--from-files-of-minutes
+readonly -f set-hour_last-hour_avg-hour_max--from-files-of-minutes
 
 # --------------------------------------------
 
-set-writer_hour_avgs-writer_hour_maxs() {
+set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs() {
 	local writer_type=$1
 
 	local drive_name hour_avgs= hour_maxs=
 	for drive_name in $all_drive_names
 	    do	local \
-		    hour_avg hour_max
-		set-hour_avg-hour_max--from-files-of-minutes
+		    hour_last hour_avg hour_max
+		set-hour_last-hour_avg-hour_max--from-files-of-minutes
+	       hour_lasts+="$drive_name=$hour_last "
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
 	done
 
 	# shellcheck disable=SC2086 # variable contains multiple values
-	printf -v writer_hour_avgs "$stats_format" $hour_avgs
+	printf -v writer_hour_lasts "$stats_format" $hour_lasts
 	# shellcheck disable=SC2086 # variable contains multiple values
-	printf -v writer_hour_maxs "$stats_format" $hour_maxs
+	printf -v writer_hour_avgs  "$stats_format" $hour_avgs
+	# shellcheck disable=SC2086 # variable contains multiple values
+	printf -v writer_hour_maxs  "$stats_format" $hour_maxs
 	fix-padded-colorized-string-vars writer_hour_avgs
-	strip-trailing-whitespace writer_hour_avgs writer_hour_maxs
+	strip-trailing-whitespace \
+	    writer_hour_lasts writer_hour_avgs writer_hour_maxs
 }
-readonly -f set-writer_hour_avgs-writer_hour_maxs
+readonly -f set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs
 
 # ----------------------------------------------------------------------------
 
@@ -5071,7 +5079,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 
 	local -i \
 	    count average maximum sum
-	set-count-average-maximum-sum-files--from-stats-files MB
+	set-count-last-average-maximum-sum-files--from-stats-files MB
 	(( $count > 0 )) ||
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
@@ -5107,7 +5115,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	for drive_name in $all_drive_names
 	    do	local -i MB_per_day=0  unique_hours=0 \
 		       count average maximum sum
-		if set-count-average-maximum-sum-files--from-stats-files MB
+		if set-count-last-average-maximum-sum-files--from-stats-files MB
 		   then local snapshots=${files//.txt/}
 
 			local hours=${snapshots//$snapshot_day_glob,/}
@@ -5325,13 +5333,13 @@ _set-colorized_new() {
 
 	set-customized_value--for-config-var-name backup_period
 	# shellcheck disable=SC2125
-	local -i max_age=2*$customized_value
+	local -i max_age=$((2*$customized_value + 1))
 	local highlighted_string=
 	local age=${new%[a-zA-Z]}
 	if [[ ! $new ]]
 	   then  new=NONE!
 		set-highlighted_string error "$new"
-	elif (( $age < $max_age ))
+	elif (( $age < $max_age || $backup_period == 0 ))
 	   then true
 	elif [[ $age == 2 ]]		# backup_period of 1 acts oddly
 	   then set-highlighted_string stale "$new"
@@ -6090,7 +6098,8 @@ show-stats-section-1() {
 
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
-	set-writer_hour_avgs-writer_hour_maxs backup
+	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs backup
+	echo " Recent hours to create backup snapshot:  $writer_hour_lasts"
 	echo "Average hours to create backup snapshot:  $writer_hour_avgs"
 	echo "Maximum hours to create backup snapshot:  $writer_hour_maxs"
 	setup-snapshot-stats -h ''
@@ -6186,7 +6195,7 @@ show-stats-section-2-prune() {
 
 	ech_ " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
 
-	set-writer_hour_avgs-writer_hour_maxs prune
+	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs prune
 	echo "  Average hours to delete *.rm snapshot:  $writer_hour_avgs"
 
 	declare -A drive_name2stats_number
@@ -6214,7 +6223,7 @@ show-stats-section-2-copy() {
 
 	ech_ " Number empty .partial dirs, for update:  $stats_numbers"
 
-	set-writer_hour_avgs-writer_hour_maxs copy
+	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
 	declare -A drive_name2stats_number
