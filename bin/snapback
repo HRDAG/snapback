@@ -4890,6 +4890,7 @@ readonly -f create-jobs
 # If change this value, adjust the width of the -xxx suffix on
 # max_drive_usage_percent's value in is-drive-usage-too-high() .
 readonly watch_field_width=5+1		# +1 for 'unit' suffix
+readonly watch_division_opts="-w$(($watch_field_width-1)) -z -d2"
 
 # this is used by set-padded_colorized_string--for-printf in libsnap.sh
 readonly default_padded_colorized_string_field_width=$watch_field_width
