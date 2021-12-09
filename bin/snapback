@@ -5002,7 +5002,7 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 	    { hour_last= hour_avg= hour_max= ; return; }
 	set-units h
 
-	set-division -w5 -z -2 $last    60
+	set-division -w5 -z -2 "$last"  60
 	hour_last=$division$units
 
 	set-division -w5 -z -2 $average 60
