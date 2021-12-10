@@ -5149,9 +5149,10 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 		if (( $MB_per_day > 0 ))
 		   then # shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts "$MB_per_day" 1024
-		   else     division=
+			local GB=$division$units
+		   else local GB=
 		fi
-		GBs_per_day+="$drive_name=$division "
+		GBs_per_day+="$drive_name=$GB "
 		if (( $MB_per_day > 0 ))
 		   then set-percent_usage "$MB_per_day"
 		   else     percent_usage=
@@ -5342,8 +5343,8 @@ _set-colorized_new() {
 	elif [[ $age == 2 ]]		# backup_period of 1 acts oddly
 	   then set-highlighted_string stale "$new"
 	elif [[ $drive_name =~ ^$drive_name_regex$ ]] # should be backed up?
-	   then set-highlighted_string warning "$new"     # a problem!
-	   else set-highlighted_string  stale  "$new"     # not being backed up
+	   then set-highlighted_string warning "$new" # a problem!
+	   else set-highlighted_string  stale  "$new" # not being backed up
 	fi
 
 	if [[ $highlighted_string ]]
@@ -5359,12 +5360,12 @@ readonly -f _set-colorized_new
 
 _recalculate-snapshot-stats-vars() {
 
-	[[ ${hour_ages-} ]] && local units=H || local units=D
+	[[ ${hour_ages-} ]] && local units=h || local units=d
 	local caller_PWD=$PWD
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
 	local drive_name nums= oldies= newies=
 	for drive_name in $all_drive_names
-	    do	local    dir=$snapshots_replica_dir/$drive_name
+	    do	local dir=$snapshots_replica_dir/$drive_name
 		cd_ -q "$dir"
 		ending=${type2date_suffix_glob[$ignored_date_ending_type]}
 		suspend-tracing
