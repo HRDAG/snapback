@@ -4917,18 +4917,6 @@ readonly -f set-stats_format
 
 # ----------------------------------------------------------------------------
 
-have-cmd \
-set-units ||			   # can define custom version in $config_file
-set-units() {			   # a stylistic function
-	local letter=$1
-
-	set-highlighted_string stale "$letter"
-	units=$highlighted_string	# doesn't work, confuses printf
-	units=${letter,}		# lower-cased looks the best
-}
-
-# ----------------------------------------------------------------------------
-
 function set-count-last-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local data_type=$1
@@ -5001,7 +4989,7 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 	    count last average maximum sum
 	set-count-last-average-maximum-sum-files--from-stats-files minutes ||
 	    { hour_last= hour_avg= hour_max= ; return; }
-	set-units h
+	units=h
 
 	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts "$last"  60
@@ -5088,7 +5076,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 	(( $count > 0 )) ||
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
-	set-units g
+	units=g
 	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts $average 1024 # 2 decimal points
 	GB_avg=$division$units
@@ -5096,7 +5084,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 	if [[ $writer_type != backup ]]
 	   then local -i stats_number=${drive_name2stats_number[$drive_name]}
 		if (( $stats_number > 0 && $average != 0 ))
-		   then set-units t
+		   then units=t
 			local -i predicted_sum=$(( $average*$stats_number ))
 			# shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts \
@@ -5157,7 +5145,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 
 		jobs_per_day+="$drive_name=$unique_hours "
 
-		set-units g
+		units=g
 		if (( $MB_per_day > 0 ))
 		   then # shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts "$MB_per_day" 1024
@@ -5253,7 +5241,7 @@ readonly drive_response_warning_secs=1.0
 
 set-drive_responses() {
 
-	set-units s
+	units=s
 	local overhead_msecs_file=$drive_msecs_dir/$mon_overhead_drive_name
 	if [[ -s $overhead_msecs_file ]]
 	   then local -i average
@@ -5372,7 +5360,6 @@ readonly -f _set-colorized_new
 _recalculate-snapshot-stats-vars() {
 
 	[[ ${hour_ages-} ]] && local units=H || local units=D
-	set-units $units
 	local caller_PWD=$PWD
 	lock-replica-of-snapshots --wait # wait for $snapshots_replica_dir
 	local drive_name nums= oldies= newies=
