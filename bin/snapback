@@ -5003,12 +5003,15 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 	    { hour_last= hour_avg= hour_max= ; return; }
 	set-units h
 
+	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts "$last"  60
 	hour_last=$division$units
 
+	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts $average 60
 	hour_avg=$division$units
 
+	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts $maximum 60
 	hour_max=$division$units
 
@@ -5068,6 +5071,7 @@ set-percent_usage() {
 	local -i used_MB size_MB
 	set-used_MB-size_MB
 	local -i MB_100=$(( $MB*100 ))
+	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts "$MB_100" "$size_MB"
 	[[ $division == -00.00 ]] && division=${division#-}
 	percent_usage=$division%
@@ -5085,6 +5089,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
 
 	set-units g
+	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts $average 1024 # 2 decimal points
 	GB_avg=$division$units
 
@@ -5093,6 +5098,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 		if (( $stats_number > 0 && $average != 0 ))
 		   then set-units t
 			local -i predicted_sum=$(( $average*$stats_number ))
+			# shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts \
 				     "$predicted_sum" $((1024*1024))
 			predicted_TB_sum=$division$units
@@ -5153,7 +5159,8 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 
 		set-units g
 		if (( $MB_per_day > 0 ))
-		   then set-division $watch_division_opts "$MB_per_day" 1024
+		   then # shellcheck disable=SC2086 # var w/multiple values
+			set-division $watch_division_opts "$MB_per_day" 1024
 		   else     division=
 		fi
 		GBs_per_day+="$drive_name=$division "
@@ -5265,7 +5272,8 @@ set-drive_responses() {
 		(( $msecs < 0 )) && msecs=0
 
 		if (( $msecs <= 99999 )) # fits in alloted format?
-		   then set-division $watch_division_opts "$msecs" 1000
+		   then # shellcheck disable=SC2086 # var w/multiple values
+			set-division $watch_division_opts "$msecs" 1000
 			local secs=$division$units
 			if (( $msecs >= $drive_response_warning_msecs ))
 			   then set-highlighted_string warning "$secs"
