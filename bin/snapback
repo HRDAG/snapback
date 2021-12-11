@@ -1069,6 +1069,7 @@ function kill-job-on-drives() {
 			local lock=$(basename "$path")
 			local coder_msg="can ask $coder to add -s to 'copy'."
 			local cron_msg="cron (runs every 5 minutes by default)"
+			[[ $our_rsync_opts != *--quiet* ]] &&
 			warn "$cron_msg could un-suspend\n   $lock; $coder_msg"
 
 		fi
@@ -8918,8 +8919,8 @@ case $action in
    # suspend	   job-type-glob  name-glob: as above, but -STOP signal
    # stop	   job-type-glob  name-glob: as above, but -STOP signal
    ( sus* | st*p | s ) undo-action-abbrev suspend
-	[[ $1 == -l ]] && { shift; local do_loop=$true; } || local do_loop=
-	[[ $# ==  2 ]] || abort-with-action-Usage
+	[[ ${1-} == -l ]] && { shift; local do_loop=$true; } || local do_loop=
+	[[ $#    ==  2 ]] || abort-with-action-Usage
 	if [[ $do_loop ]]
 	   then $Trace
 		while true
