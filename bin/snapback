@@ -1993,8 +1993,8 @@ update-monitor-config() {
 		local customized_value
 		set-customized_value--for-config-var-name \
 		    drive_response_averaging_window_secs
-		set-msecs--from-secs "$customized_value"
-		echo-to-file "$msecs" "$window_msecs_file"
+		set-product "$customized_value" 1000 # convert to millisecs
+		echo-to-file "$product" "$window_msecs_file"
 	done
 
 	popd_
@@ -5344,10 +5344,8 @@ _set-colorized_new() {
 	if [[ ! $new ]]
 	   then  new=NONE!
 		set-highlighted_string error "$new"
-	elif (( $age < $max_age || $backup_period == 0 ))
+	elif (( $age <= $max_age || $backup_period == 0 )) # <= cuz rounding
 	   then true
-	elif [[ $age == 2 ]]		# backup_period of 1 acts oddly
-	   then set-highlighted_string stale "$new"
 	elif [[ $drive_name =~ ^$drive_name_regex$ ]] # should be backed up?
 	   then set-highlighted_string warning "$new" # a problem!
 	   else set-highlighted_string  stale  "$new" # not being backed up
