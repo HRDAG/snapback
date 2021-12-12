@@ -385,13 +385,13 @@ readonly -f assert-drive_dir-writable
 # functions to switch between msecs (milliseconds), secs, minutes, hours
 # ----------------------------------------------------------------------------
 
-set-msecs--from-secs() {
+set-millisecs--from-secs() {
 
 	local -i product
 	set-product "$1" 1000
-	msecs=$product
+	millisecs=$product
 }
-readonly -f set-msecs--from-secs
+readonly -f set-millisecs--from-secs
 
 # ----------------------------------------------------------------------------
 
@@ -1916,8 +1916,8 @@ readonly -f do-have-snapshots-of-type
 
 is-set		mon_check_period_secs || # can set custom value in $config_file
 readonly	mon_check_period_secs=0.5 # when look for newly-attached drives
-set-msecs--from-secs $mon_check_period_secs # and also used for watch -n period
-declare -r -i	mon_check_period_msecs=$msecs
+set-millisecs--from-secs $mon_check_period_secs # also used for watch -n period
+declare -r -i	mon_check_period_msecs=$millisecs
 #
 is-set        mon_msecs_increment || # can set custom value in $config_file
 declare -r -i mon_msecs_increment=1  # lower -> more precision, more CPU usage
@@ -5256,8 +5256,8 @@ set-drive_responses() {
 	   else local -i overhead_msecs=0  average
 	fi
 
-	set-msecs--from-secs $drive_response_warning_secs
-	local drive_response_warning_msecs=$msecs
+	set-millisecs--from-secs $drive_response_warning_secs
+	local drive_response_warning_msecs=$millisecs
 
 	local drive_name secs responses=
 	for drive_name in $all_drive_names
