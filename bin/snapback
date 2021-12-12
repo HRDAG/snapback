@@ -1622,7 +1622,6 @@ function _set-value--for-config-var() {
 	fi
 	return 0
 }
-
 readonly -f _set-value--for-config-var
 
 # ---------------------------------
@@ -1657,6 +1656,7 @@ function set-customized_value--for-config-var-name() {
 	[[    $var_name ]] || abort-function ": \$1 empty"
 	[[ -v $var_name ]] || abort-function ": $var_name is not set"
 
+	[[ ${custom_config_var2default_value-} ]] ||
 	set-custom_config_vars-custom_config_var2default_value
 
 	local drive_name value
@@ -5256,9 +5256,6 @@ set-drive_responses() {
 	   else local -i overhead_msecs=0  average
 	fi
 
-	set-millisecs--from-secs $drive_response_warning_secs
-	local drive_response_warning_msecs=$millisecs
-
 	local drive_name secs responses=
 	for drive_name in $all_drive_names
 	    do	set-average "$drive_msecs_dir/$drive_name"
@@ -5269,7 +5266,10 @@ set-drive_responses() {
 		   then # shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts "$msecs" 1000
 			local secs=$division$units
-			if (( $msecs >= $drive_response_warning_msecs ))
+			set-customized_value--for-config-var-name \
+			    drive_response_warning_secs
+			set-product $customized_value 1000
+			if (( $msecs >= $product ))
 			   then set-highlighted_string warning "$secs"
 				secs=$highlighted_string
 			fi
