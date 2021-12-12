@@ -159,6 +159,8 @@ is-set coder ||				# can set custom value in $config_file
 [[ -s $exclude_file ]] ||
    abort "install/edit $exclude_file, see included .sample"
 
+Trace_log_default=$tmp_dir/$our_name.trace
+
 readonly Usage="
 Usage: $our_name [options] action [options] [args]
 
@@ -230,12 +232,13 @@ Usage: $our_name [options] action [options] [args]
 	-d: Debug shell script (don't run commands, just show them): simulation
 	-t: Trace shell script (show commands as they execute)
 	-T level: control whether Trace & TraceV functions run echoE & echoEV
+	-l: also log echoE & echoEV output to $Trace_log_default
 "
 
 is_cron=$false cron_opt=
 IfRun= Trace= TraceAll= debug_opt= trace_opt=  our_rsync_opts=
 our_opts=
-while getopts "C cnvqr: E:edtT: hk"  arg
+while getopts "C cnvqr: E:edtT:l hk"  arg
     do	our_opts+="-$arg ${OPTARG-} "
 	case $arg in
 	   ( C ) is_cron=$true	cron_opt=-C ;;
@@ -252,6 +255,7 @@ while getopts "C cnvqr: E:edtT: hk"  arg
 	   ( t ) [[ $Trace ]] && TraceAll=$Trace
 		 Trace="set -x" trace_opt=-t ;;
 	   ( T ) Trace_level=$OPTARG Trace_level_opt="-T $OPTARG" ;;
+	   ( l ) Trace_log=$Trace_log_default ;;
 
 	   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
 	   ( * ) abort "$Usage" ;;
@@ -5332,8 +5336,9 @@ _set-colorized_new() {
 	local new=${1-}
 
 	set-customized_value--for-config-var-name backup_period
+	local backup_period=$customized_value
 	# shellcheck disable=SC2125
-	local -i max_age=$((2*$customized_value + 1))
+	local -i max_age=$((2*$backup_period))
 	local highlighted_string=
 	local age=${new%[a-zA-Z]}
 	if [[ ! $new ]]
