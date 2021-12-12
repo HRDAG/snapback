@@ -94,6 +94,10 @@ drv_name2is_multi_writer_drive[X]=$true	# no (or little) seek penalty
 	   drive_response_averaging_window_secs=5.0
   drv_name2drive_response_averaging_window_secs[X]=1.0 # SSD
 
+# when do we warn about slow drives?
+         drive_response_warning_secs=1.2
+drv_name2drive_response_warning_secs[X]=0.4 # SSD
+
 # ------------------------------------------ #
 # monitoring swapout rate and usage-vs-speed #
 # ------------------------------------------ #
