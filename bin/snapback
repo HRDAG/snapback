@@ -77,7 +77,7 @@ fi ;						readonly config_file_sample
 readonly optional_config_vars="
 	    mkfs_cmd_opts do_want_external_log FS_log_VG max_swapout_MBps
 	    common_mount_options extN_mount_options XFS_mount_options
-	    flakey_drive_names_regex drive_specific_config_file"
+	    drive_specific_config_file"
 
 # For each config var, create associative array for per-drive customization.
 # [customize-config-variables currently fails when try to customize an array.]
@@ -94,31 +94,34 @@ _set-__config_vars__() {
       # toss functions before looking for variable assignments
       sed -n -r	-e '/(^[ 	]*function\b.*|\(\)) *\{.*\}/d'		\
 		-e '/(^[ 	]*function\b.*|\(\)) *\{/,/^[ 	]*\}/d'	\
-		-e 's/^[^#=]*\b([^_]\w+)=.*$/\1/p' "$config_file_sample" |
+		-e 's/^[^#=]*\b([a-zA-Z]\w+)=.*$/\1/p' "$config_file_sample" |
 	  sort -u
       )
       __config_vars__=" $* " # 'for _var in $optional_config_vars' needs SPACEs
 }
 _set-__config_vars__
 #
-_customizable_arrays=
+custom_config_maps=
 for _var in $__config_vars__
     do	is-arg1-in-arg2 "$_var" "$uncustomizable_config_vars" && continue
-	_customizable_arrays+="drv_name2$_var "
+	custom_config_maps+="drv_name2$_var "
 done
+readonly custom_config_maps
 # shellcheck disable=SC2086 # variable containing multiple values
-declare -A $_customizable_arrays
+declare -A $custom_config_maps
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizing functions (like source-drive-specific-config-file and *hooks)
 source "$config_file" || abort "source'd $config_file ended with non-0 status"
 
+for _map in $custom_config_maps
+    do	eval "[[ \${$_map[*]-} ]]" || continue
+	_var=${_map#drv_name2}
+	[[ -v $_var ]] || abort "can't set $_map without setting $_var"
+done
+
 for _var in $optional_config_vars
-    do	is-set "$_var" && continue
-	__config_vars__=${__config_vars__/ $_var / }
-	_map_var=drv_name2$_var
-	is-set "$_map_var" && abort "can't set $_map_var without setting $_var"
-	unset  "$_map_var"
+    do	[[ -v $_var ]] || __config_vars__=${__config_vars__/ $_var / }
 done
 readonly config_vars=$__config_vars__
 
