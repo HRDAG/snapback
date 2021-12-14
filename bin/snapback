@@ -1561,7 +1561,7 @@ readonly -f source-drive-specific-config-file
 
 # ----------------------------------------------------------------------------
 
-set-max_drive_names() {
+set-max_drive_names-max_drive_count() {
 
 	pushd_ -q $drive_dir_prefix
 	set -- *[!~]	   # duplicated in update-monitor-config
@@ -1574,7 +1574,7 @@ set-max_drive_names() {
 	done
 	popd_ -q
 }
-readonly -f set-max_drive_names
+readonly -f set-max_drive_names-max_drive_count
 
 # ---------------------------------
 
@@ -1588,7 +1588,7 @@ fully-populate-custom-config-maps() {
 
 	remember-tracing		# since suspend-tracing maybe not run
 
-	set-max_drive_names
+	set-max_drive_names-max_drive_count
 
 	local -A drive_name2class
 	local drive_name
@@ -1992,7 +1992,7 @@ update-monitor-config() {
 		echo-to-file "$product" "$window_msecs_file"
 	done
 
-	set -- $drive_dir_prefix/*[!~]	# duplicated in set-max_drive_names
+	set -- $drive_dir_prefix/*[!~] #see set-max_drive_names-max_drive_count
 	[[ $# != "$max_drive_count" && $do_check ]] && exec $our_path monitor
 
 	popd_
@@ -2011,7 +2011,7 @@ monitor-drives() {
 	create-status_dir &&
 	create-monitor-dirs || abort-function "couldn't create dirs"
 
-	set-max_drive_names		# for update-monitor-config
+	set-max_drive_names-max_drive_count # for update-monitor-config
 
 	exec &> "$_monitor_dir/monitor.log" # to catch problems
 
