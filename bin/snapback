@@ -1872,7 +1872,7 @@ mon-process-finished-glob() {
 
 	local   snapshots_dir=$snapshots_replica_dir/$drive_name
 	[[ -d  $snapshots_dir ]] || mkdir "$snapshots_dir"
-	cd_   "$snapshots_dir"
+	cd    "$snapshots_dir" || abort "cd $snapshots_dir"
 	local glob_file=$_mon_globs_dir/$drive_name subdirs
 	lock-replica-of-snapshots --wait # 'w' action uses same locking
 	rm -f ./*
@@ -1985,7 +1985,7 @@ update-monitor-config() {
 		echo-to-file "$product" "$window_msecs_file"
 	done
 
-	set -- *[!~]			# duplicated in set-max_drive_names
+	set -- $drive_dir_prefix/*[!~]	# duplicated in set-max_drive_names
 	[[ $# != "$max_drive_count" && $do_check ]] && exec $our_path monitor
 
 	popd_
@@ -2003,6 +2003,8 @@ monitor-drives() {
 
 	create-status_dir &&
 	create-monitor-dirs || abort-function "couldn't create dirs"
+
+	set-max_drive_names		# for update-monitor-config
 
 	exec &> "$_monitor_dir/monitor.log" # to catch problems
 
