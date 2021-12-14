@@ -121,7 +121,8 @@ declare -A $custom_config_maps
 source "$config_file" || abort "source'd $config_file ended with non-0 status"
 
 for _map in $custom_config_maps
-    do	eval "[[ \${$_map[*]-} ]]" || continue
+    do	# shellcheck disable=SC1087 # shellcheck confused by eval
+	eval "[[ \${$_map[*]-} ]]" || continue
 	_var=${_map#drv_name2}
 	[[ -v $_var ]] || abort "can't set $_map without setting $_var"
 done
@@ -1563,8 +1564,8 @@ readonly -f source-drive-specific-config-file
 set-max_drive_names() {
 
 	pushd_ -q $drive_dir_prefix
-	set -- *[!~]	    # duplicated in update-monitor-config
-	max_drives_count=$# # monitor restarts if # possible mount dirs changes
+	set -- *[!~]	   # duplicated in update-monitor-config
+	max_drive_count=$# # monitor restarts if # possible mount dirs changes
 	max_drive_names=$*
 	popd_ -q
 }
@@ -1597,6 +1598,7 @@ fully-populate-custom-config-maps() {
 	for map_name in $custom_config_maps
 	    do	var_name=${map_name#drv_name2}
 		[[ -v $var_name ]] || abort "set '$var_name=' in $config_file"
+		# shellcheck disable=SC1087 # confused by eval
 		eval "[[ \${$map_name[*]} ]]" || continue
 		is-readonly-var "$var_name" &&
 		  abort "can't use $map_name, $var_name is marked readonly"
@@ -1604,8 +1606,11 @@ fully-populate-custom-config-maps() {
 		custom_config_var2default_value[$var_name]=$default_value
 		for drive_name in $max_drive_names
 		    do	[[ $drive_name == nohup.out  ]] && continue
+			# shellcheck disable=SC1087 # confused by -v
 			[[ -v $map_name[$drive_name] ]] && continue
+			# shellcheck disable=SC2034 # confused by eval
 			local class=${drive_name2class[$drive_name]-.}
+			# shellcheck disable=SC1087 # confused by eval
 			eval "$map_name[\$drive_name]=\${$map_name[\$class]-\$default_value}"
 			suspend-tracing -l
 		done
@@ -1641,7 +1646,8 @@ customize-config-variables() {
 	remember-tracing
 	local var_name value
 	for var_name in $custom_config_vars
-	    do	eval "$var_name=\${drv_name2$var_name[\$drive_name]}"
+	    do	# shellcheck disable=SC1087 # confused by eval
+		eval "$var_name=\${drv_name2$var_name[\$drive_name]}"
 		suspend-tracing -l
 	done
 	restore-tracing
@@ -1973,13 +1979,14 @@ update-monitor-config() {
 
 		[[ $drive_name == "$mon_overhead_drive_name" ]] &&
 		    drive_name=$1	# need a valid drive_name
+		# shellcheck disable=SC2154 # drv_name2XXX peopulated by func
 		set-product 1000 \
 		"${drv_name2drive_response_averaging_window_secs[$drive_name]}"
 		echo-to-file "$product" "$window_msecs_file"
 	done
 
 	set -- *[!~]			# duplicated in set-max_drive_names
-	[[ $# != $max_drive_names && $do_check ]] && exec $our_path monitor
+	[[ $# != "$max_drive_count" && $do_check ]] && exec $our_path monitor
 
 	popd_
 }
@@ -4121,7 +4128,8 @@ set-backup_type() {
 	backup_type=
 	local var_name value
 	for var_name in dirs_to_backup extra_excludes
-	    do	eval "value=\${drv_name2$var_name[\$drive_name]-\$$var_name}"
+	    do	# shellcheck disable=SC1087 # confused by eval
+		eval "value=\${drv_name2$var_name[\$drive_name]-\$$var_name}"
 		backup_type+="$value|"
 	done
 	backup_type=$backup_type$exclude_file # exclude_file is read-only
@@ -5230,6 +5238,7 @@ readonly -f set-drive_usages
 
 # ----------------------------------------------------------------------------
 
+# shellcheck disable=SC2034 # used to populate name2drive_response_warning_secs
 is-set   drive_response_warning_secs || # custom value in $config_file?
 readonly drive_response_warning_secs=1.0
 
