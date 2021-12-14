@@ -5382,8 +5382,8 @@ _recalculate-snapshot-stats-vars() {
 		local snapshot snap prev_snap= snaps=
 		for snapshot in "$@"
 		    do	if [[ $skip_empty || $only_empty ]]
-			   then is-arg1-in-arg2 "$snapshot" "$partials" &&
-				   local is_empty=$false ||local is_empty=$true
+			then [[ " $partials " == *" $snapshot "* ]] &&
+				 local is_empty=$false || local is_empty=$true
 				[[ $skip_empty &&   $is_empty ]] && continue
 				[[ $only_empty && ! $is_empty ]] && continue
 			fi
@@ -6599,7 +6599,7 @@ show-generated-output() {
 		wait  $PID
 		local output_file=$generate_output_files_dir/out-$job_num
 		cat  "$output_file" &&
-		: rm "$output_file"	# uncomment to debug
+		: rm "$output_file"	# remove ':' to debug
 	done
 	rm -r "$generate_output_files_dir"
 }
