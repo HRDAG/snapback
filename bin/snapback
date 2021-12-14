@@ -61,7 +61,7 @@ for dir in ~/etc /usr/local/etc /etc
     do	[[ -d $_root$dir/$our_name ]] && break
 done
 readonly   config_dir=${config_dir:-$_root$dir/$our_name}
-readonly exclude_file=$config_dir/exclude.txt
+readonly exclude_file=$config_dir/exclude.txt # set-backup_type assumes RO
 readonly  config_file=$config_dir/configure.sh
 unset _args _root
 
@@ -74,18 +74,24 @@ fi ;						readonly config_file_sample
 [[ -s $config_file_sample ]] ||
    abort "have to install $config_file_sample"
 
-readonly optional_config_vars="
-	    mkfs_cmd_opts do_want_external_log FS_log_VG max_swapout_MBps
-	    common_mount_options extN_mount_options XFS_mount_options
-	    drive_specific_config_file"
+_set-optional_config_vars() {
+    set --  mkfs_cmd_opts do_want_external_log FS_log_VG max_swapout_MBps \
+	    common_mount_options extN_mount_options XFS_mount_options	  \
+	    drive_specific_config_file
+    readonly optional_config_vars=" $* "
+}
+_set-optional_config_vars
 
 # For each config var, create associative array for per-drive customization.
 # [customize-config-variables currently fails when try to customize an array.]
-readonly uncustomizable_config_vars="
-	    drive_dir_prefix level2CPU_priority_cmd level2IO_priority_cmd
-	    flakey_drive_names_regex old_cmd tst_cmd update_test_dst_drive
-	    is_drive_name_capitalized drive_name_regex admin_drive_name_regex
-	    is_drive_name_upper_cased drive_class_regex"
+_set-uncustomizable_config_vars() {
+    set --  drive_dir_prefix level2CPU_priority_cmd level2IO_priority_cmd     \
+	    flakey_drive_names_regex old_cmd tst_cmd update_test_dst_drive    \
+	    is_drive_name_capitalized drive_name_regex admin_drive_name_regex \
+	    is_drive_name_upper_cased drive_class_regex
+    readonly uncustomizable_config_vars=" $* " # SPACEs for custom_config_maps
+}
+_set-uncustomizable_config_vars
 #
 _set-__config_vars__() {
 
@@ -103,7 +109,7 @@ _set-__config_vars__
 #
 custom_config_maps=
 for _var in $__config_vars__
-    do	is-arg1-in-arg2 "$_var" "$uncustomizable_config_vars" && continue
+    do	[[ $uncustomizable_config_vars == *" $_var "* ]] && continue
 	custom_config_maps+="drv_name2$_var "
 done
 readonly custom_config_maps
@@ -1538,6 +1544,7 @@ source-drive-specific-config-file ||# can define custom version in $config_file
 source-drive-specific-config-file() {
 	[[ $# == 0 ]] && return
 	local _name=$1  _main_config_file=${2:-${config_file-}}
+	[[ $_name ]] || return
 	set-drive_name- "$_name"
 	[[ $_main_config_file ]] || abort "pass config_file as 2nd arg"
 
@@ -1553,43 +1560,55 @@ readonly -f source-drive-specific-config-file
 
 # ----------------------------------------------------------------------------
 
-function set-customized_drv_names() {
-	local var_name=$1
+set-max_drive_names() {
 
-	# shellcheck disable=SC1087
-	eval \
-	    "customized_drv_names=\${!drv_name2$var_name[*]}"
-	[[  $customized_drv_names ]]
+	pushd_ -q $drive_dir_prefix
+	set -- *[!~]	    # duplicated in update-monitor-config
+	max_drives_count=$# # monitor restarts if # possible mount dirs changes
+	max_drive_names=$*
+	popd_ -q
 }
-readonly -f set-customized_drv_names
+readonly -f set-max_drive_names
 
 # ---------------------------------
 
 	   custom_config_vars=
 declare -A custom_config_var2default_value
 
-set-custom_config_vars-custom_config_var2default_value() {
+fully-populate-custom-config-maps() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	[[ $custom_config_vars ]] && { $xtrace; return; }
 
 	remember-tracing		# since suspend-tracing maybe not run
 
-	local var_name customized_drv_names
-	for var_name in $config_vars
-	    do	is-set "$var_name" || abort "set '$var_name=' in $config_file"
-		local drv_name2var=drv_name2$var_name
-		if ! set-customized_drv_names "$var_name" # not customized?
-		   then unset "$drv_name2var"
-			readonly "$var_name"
-			continue
-		fi
-		is-readonly-var "$var_name" &&
-		  abort "can't use $drv_name2var, $var_name is marked readonly"
+	set-max_drive_names
 
-		custom_config_var2default_value[$var_name]=${!var_name}
-
+	local -A drive_name2class
+	local drive_name
+	for drive_name in $max_drive_names
+	    do	[[ $drive_name =~ $drive_class_regex ]] || continue
+		drive_name2class[$drive_name]=${BASH_REMATCH[0]}
 		suspend-tracing -l
+	done
+	restore-tracing
+
+	local map_name var_name
+	for map_name in $custom_config_maps
+	    do	var_name=${map_name#drv_name2}
+		[[ -v $var_name ]] || abort "set '$var_name=' in $config_file"
+		eval "[[ \${$map_name[*]} ]]" || continue
+		is-readonly-var "$var_name" &&
+		  abort "can't use $map_name, $var_name is marked readonly"
+		local default_value=${!var_name}
+		custom_config_var2default_value[$var_name]=$default_value
+		for drive_name in $max_drive_names
+		    do	[[ $drive_name == nohup.out  ]] && continue
+			[[ -v $map_name[$drive_name] ]] && continue
+			local class=${drive_name2class[$drive_name]-.}
+			eval "$map_name[\$drive_name]=\${$map_name[\$class]-\$default_value}"
+			suspend-tracing -l
+		done
 	done
 
 	custom_config_vars=${!custom_config_var2default_value[*]}
@@ -1598,41 +1617,23 @@ set-custom_config_vars-custom_config_var2default_value() {
 	restore-tracing custom_config_vars
 	$xtrace
 }
-readonly -f set-custom_config_vars-custom_config_var2default_value
+readonly -f fully-populate-custom-config-maps
 
-# ---------------------------------
-
-function _set-value--for-config-var() {
-	local var_name=$1 drive_name=$2 customized_drv_names
-
-	set-customized_drv_names "$var_name" || return 1 # not customized?
-
-	[[ $drive_name =~ $drive_class_regex ]] || abort-function "no class"
-	local drive_class=${BASH_REMATCH[0]}
-
-	local drv_name is_customized=$false
-	for drv_name in $drive_name $drive_class # try most-specific name first
-	    do	is-arg1-in-arg2 "$drv_name" "$customized_drv_names" || continue
-		is_customized=$true
-		break
-	done
-	if [[ $is_customized ]]
-	   then # shellcheck disable=SC1087
-		eval "value=\${drv_name2$var_name[\$drv_name]}"
-		# shellcheck disable=SC1087
-		Trace 2 "drv_name2$var_name[$drv_name] -> $var_name=$value"
-	   else value=${custom_config_var2default_value[$var_name]}
-	fi
-	return 0
+false && {
+fully-populate-custom-config-maps
+for var in is_multi_writer_drive extra_excludes max_FS_usage_percent
+    do	declare -p drv_name2$var
+done
+abort "test fully-populate-custom-config-maps"
 }
-readonly -f _set-value--for-config-var
 
 # ---------------------------------
 
 customize-config-variables() {
 	local drive_name=${1-}
 
-	set-custom_config_vars-custom_config_var2default_value
+	[[ $custom_config_vars ]] ||
+	fully-populate-custom-config-maps
 
 	[[ $drive_name ]] || return
 	[[ $drive_name == [zZ] ]] && is_regression_test=$true
@@ -1640,8 +1641,7 @@ customize-config-variables() {
 	remember-tracing
 	local var_name value
 	for var_name in $custom_config_vars
-	    do	_set-value--for-config-var "$var_name" "$drive_name" ||continue
-		eval "$var_name=\$value"
+	    do	eval "$var_name=\${drv_name2$var_name[\$drive_name]}"
 		suspend-tracing -l
 	done
 	restore-tracing
@@ -1651,28 +1651,7 @@ customize-config-variables() {
 }
 readonly -f customize-config-variables
 
-# ---------------------------------
-
-function set-customized_value--for-config-var-name() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local  var_name=$1 resource=${2:-$drive_name}
-	[[    $var_name ]] || abort-function ": \$1 empty"
-	[[ -v $var_name ]] || abort-function ": $var_name is not set"
-
-	[[ ${custom_config_var2default_value-} ]] ||
-	set-custom_config_vars-custom_config_var2default_value
-
-	local drive_name value
-	  set-drive_name- "$resource"
-	if _set-value--for-config-var "$var_name" "$drive_name"
-	   then customized_value=$value       && { $xtrace; return 0; }
-	   else customized_value=${!var_name} && { $xtrace; return 1; }
-		abort-function ": $var_name is unbound"
-	fi
-}
-readonly -f set-customized_value--for-config-var-name
-
-# ------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 validate-config-variables() {
 
@@ -1986,19 +1965,21 @@ update-monitor-config() {
 	    do	local window_msecs_file=$drive_name
 
 		if [[ $do_check ]]
-		   then is-newer "$window_msecs_file" "$config_file" &&continue
+		   then [[ "$window_msecs_file" -nt "$config_file" ]] &&
+			    continue
 			$our_path update-monitor-config # so reread config.sh
 			break
 		fi
 
 		[[ $drive_name == "$mon_overhead_drive_name" ]] &&
 		    drive_name=$1	# need a valid drive_name
-		local customized_value
-		set-customized_value--for-config-var-name \
-		    drive_response_averaging_window_secs
-		set-product "$customized_value" 1000 # convert to millisecs
+		set-product 1000 \
+		"${drv_name2drive_response_averaging_window_secs[$drive_name]}"
 		echo-to-file "$product" "$window_msecs_file"
 	done
+
+	set -- *[!~]			# duplicated in set-max_drive_names
+	[[ $# != $max_drive_names && $do_check ]] && exec $our_path monitor
 
 	popd_
 }
@@ -2067,9 +2048,12 @@ readonly -f re-start-monitor-drives-if-needed
 function is-multi-writer-drive() {
 	local drive_name=${1:-$drive_name}
 
-	set-customized_value--for-config-var-name is_multi_writer_drive
+	[[ $custom_config_vars ]] ||
+	fully-populate-custom-config-maps
 
-	[[ $customized_value ]]
+	local flag=$is_multi_writer_drive
+	# sometimes undefined for some reason
+	[[ ${drv_name2is_multi_writer_drive[$drive_name]-$flag} ]]
 }
 readonly -f is-multi-writer-drive
 
@@ -2084,10 +2068,9 @@ function is-drive-usage-too-high() {
 	fi
 	local drive_dir=${1:-$drive_dir}
 
-	local drive_name
-	 set-drive_name- "$drive_dir"
-	set-customized_value--for-config-var-name max_FS_usage_percent &&
-	local max_FS_usage_percent=$customized_value
+	local drive_name max_FS_usage_percent
+	  set-drive_name- "$drive_dir"
+	max_FS_usage_percent=${drv_name2max_FS_usage_percent[$drive_name]}
 
 	suspend-tracing
 	local -i pcent ipcent
@@ -4132,13 +4115,16 @@ set-backup_type() {
 	backup_type=${drive_name2backup_type[$drive_name]-}
 	[[ $backup_type ]] && return	# was it in the cache?
 
+	[[ $custom_config_vars ]] ||
+	fully-populate-custom-config-maps
+
 	backup_type=
-	local variable_name
-	for variable_name in dirs_to_backup exclude_file extra_excludes
-	    do	set-customized_value--for-config-var-name $variable_name
-		backup_type+="$customized_value|"
+	local var_name value
+	for var_name in dirs_to_backup extra_excludes
+	    do	eval "value=\${drv_name2$var_name[\$drive_name]-\$$var_name}"
+		backup_type+="$value|"
 	done
-	backup_type=${backup_type%|}
+	backup_type=$backup_type$exclude_file # exclude_file is read-only
 	drive_name2backup_type[$drive_name]=$backup_type # cache it
 }
 readonly -f set-backup_type
@@ -4953,12 +4939,12 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	   then local is_negative=$true
 	   else local is_negative=$false
 	fi
-	count=0  maximum=-1123456789  sum=0
-	local file file_contents
+	count=0  maximum=-1123456789  sum=0 # caller declares these -i
+	local file file_contents number
 	for file
 	    do	file_contents=$(< "$file") || abort file_contents=
 		[[ $file_contents == [-0-9]* ]] || continue
-		local -i number=$file_contents
+		number=$file_contents
 
 		if [[ $is_negative && $number != 0 ]]
 		   then (( $number < 0 )) ||
@@ -5014,8 +5000,7 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 	[[ $writer_type == backup ]] || return
 
 	# drv_name2backup_period_for_update -> localize period
-	set-customized_value--for-config-var-name backup_period &&
-	local -i backup_period=$customized_value
+	local -i backup_period=${drv_name2backup_period[$drive_name]}
 	local -i backup_period_mins=$(( $backup_period*60 ))
 	if (( average >= backup_period_mins && backup_period_mins > 0 ))
 	   then if (( average == backup_period_mins ))
@@ -5079,7 +5064,7 @@ readonly -f set-percent_usage
 set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 
 	local -i \
-	    count average maximum sum
+	    count last average maximum sum
 	set-count-last-average-maximum-sum-files--from-stats-files MB
 	(( $count > 0 )) ||
 	    { GB_avg= predicted_TB_sum= predicted_percent_usage= ; return; }
@@ -5118,7 +5103,7 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	local drive_name division percent_usage
 	for drive_name in $all_drive_names
 	    do	local -i MB_per_day=0  unique_hours=0 \
-		       count average maximum sum
+		       count last average maximum sum
 		if set-count-last-average-maximum-sum-files--from-stats-files MB
 		   then local snapshots=${files//.txt/}
 
@@ -5268,10 +5253,9 @@ set-drive_responses() {
 		if (( $msecs <= 99999 )) # fits in alloted format?
 		   then # shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts "$msecs" 1000
-			local secs=$division$units
-			set-customized_value--for-config-var-name \
-			    drive_response_warning_secs
-			set-product $customized_value 1000
+			local secs=$division$units w
+			w=${drv_name2drive_response_warning_secs[$drive_name]}
+			set-product $w 1000
 			if (( $msecs >= $product ))
 			   then set-highlighted_string warning "$secs"
 				secs=$highlighted_string
@@ -5338,8 +5322,7 @@ readonly -f set-oldest_age-newest_age
 _set-colorized_new() {
 	local new=${1-}
 
-	set-customized_value--for-config-var-name backup_period
-	local backup_period=$customized_value
+	local backup_period=${drv_name2backup_period[$drive_name]}
 	# shellcheck disable=SC2125
 	local -i max_age=$((2*$backup_period))
 	local highlighted_string=
@@ -6636,7 +6619,10 @@ watch() {
 	[[ ${do_drives-} ]] && set -- $show_drive_functions
 	# shellcheck disable=SC2086 # variable contains multiple or no values
 	[[ ${user_show-} ]] && set -- ${show_user_functions-}
-	[[ $action == watch ]] && exec-watch-snapback-w "$@" # 'watch' options
+	[[ $action == watch ]] &&
+	    customize-and-validate-configuration-variables &&
+	    exec-watch-snapback-w "$@" || # 'watch' options
+		fully-populate-custom-config-maps
 
 	_set-functions "$@" ; shift $#
 
