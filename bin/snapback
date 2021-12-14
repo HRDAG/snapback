@@ -952,18 +952,19 @@ readonly -f is-our-lock
 # ---------------------------------------
 
 function sudo-kill() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local PID=${!#}
 
 	$IfRun kill "$@" 2> $dev_null && return 0 # kill is built-in, so cheap
-	is-process-alive "${PID#-}" || return 1
+	is-process-alive "${PID#-}" || { $xtrace; return 1; }
 	# shellcheck disable=SC2155 # don't need 'kill' status. we use stderr
 	local    kill_msg=$(kill "$@" 2>&1)
 	if   [[ $kill_msg == *"Operation not permitted"* ]]
-	   then sudo kill "$@"
+	   then sudo kill "$@"		# this sets return value
 	elif [[ $kill_msg == *"No such process"* ]]
-	   then return 1
+	   then $xtrace; return 1
 	   else echo "$kill_msg" >&2
-		return 1
+		$xtrace; return 1
 	fi
 }
 readonly -f sudo-kill
@@ -6623,17 +6624,21 @@ filesystem-info-that-fits"
 watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
-	[[ ${1-} == -w ]] && { watch_opt=$1; shift; } # internal option
-	[[ ${1-} == -f ]] && {    ps_opt=$1; shift; }
-	[[ ${1-} == -E ]] && { no_errors=$1; shift; }
-	[[ ${1-} == -s ]] && { stats_opt=$1; shift; }
-	[[ ${1-} == -C ]] && {  cron_opt=$1; shift; }
-	[[ ${1-} == -f ]] && {    ps_opt=$1; shift; }
-	[[ ${1-} == -P ]] && {    bg_opt=$1; shift; }
-	[[ ${1-} == -d ]] && { do_drives=$1; shift; }
-	[[ ${1-} == -u ]] && { user_show=$1; shift; }
-	[[ ${1-} == -N ]] && {     names=$2; shift 2; }
-
+	local OPTIND opt
+	while getopts "wfEsCPduN:" opt
+	   do	case $opt in
+		   ( w ) watch_opt=-$opt ;; # internal option
+		   ( f )    ps_opt=-$opt ;;
+		   ( E ) no_errors=-$opt ;;
+		   ( s ) stats_opt=-$opt ;;
+		   ( C )  cron_opt=-$opt ;;
+		   ( P )    bg_opt=-$opt ;;
+		   ( d ) do_drives=-$opt ;;
+		   ( u ) user_show=-$opt ;;
+		   ( N )     names=$OPTARG ;;
+		esac
+	done
+	shift $((OPTIND-1))
 	# shellcheck disable=SC2086 # variable contains multiple values
 	[[ ${do_drives-} ]] && set -- $show_drive_functions
 	# shellcheck disable=SC2086 # variable contains multiple or no values
