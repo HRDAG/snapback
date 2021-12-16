@@ -4481,9 +4481,9 @@ set-basename2dirs-basename2is_keep() {
 		basename=${basename##*/}
 
 		# shellcheck disable=SC2086 # variable contains a glob
-		[[ $excluded_names_glob ]] &&
+		[[ $excluded_names_glob ]] && { # braces fixed bash bug
 		   set -- $drive_dir_prefix$excluded_names_glob/$basename &&
-		   [[ $# != 0 && -d $1 ]] && continue
+		   [[ $# != 0 && -d $1 ]] && continue; }
 
 		if [[ $dir == */.keep ]]
 		   then basename2is_keep[$basename]=$true
