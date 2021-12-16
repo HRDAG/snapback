@@ -7209,7 +7209,7 @@ readonly -f unmount-drives
 
 # ----------------------------------------------------------------------------
 
-[[ -v	      FS_type2external_log_size ]] || # custom value in $config_file?
+is-set	      FS_type2external_log_size || # set custom value in $config_file?
 declare -r -A FS_type2external_log_size=(
     [extN]=400M				# max journal size for ext4
     [XFS]=2036M				# max journal size for (modern) XFS
