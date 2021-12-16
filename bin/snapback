@@ -2978,6 +2978,7 @@ declare -r -A backup_period2minimal_snapshot_glob=(
     [8]="$snapshot_day_glob,{00,08,16}"
    [12]="$snapshot_day_glob,{00,12}"
    [24]="$snapshot_day_glob,00"
+    [0]="$snapshot_day_glob,00"
 )
 readonly valid_backup_periods=${!backup_period2minimal_snapshot_glob[*]}
 #
@@ -6621,6 +6622,12 @@ readonly show_drive_functions="stats-section-1
 stats-section-2-backup stats-section-2-prune stats-section-2-copy
 filesystem-info-that-fits"
 
+watch-usage() {
+	m="[-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs"
+	abort "$m"
+}
+readonly -f watch-usage
+
 watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
@@ -6636,6 +6643,7 @@ watch() {
 		   ( d ) do_drives=-$opt ;;
 		   ( u ) user_show=-$opt ;;
 		   ( N )     names=$OPTARG ;;
+		   ( * ) watch-usage ;;
 		esac
 	done
 	shift $((OPTIND-1))
@@ -8877,7 +8885,7 @@ case $action in
    ###########################################################################
 
    # w: show full details on all jobs and drives
-   # watch [-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs)
+   # watch: repetitively print what's fast (and sections that fit on screen)
    ( watch | wa* | wt* | w ) [[ $action != w ]] && undo-action-abbrev watch
 	watch "$@"
 	;;
