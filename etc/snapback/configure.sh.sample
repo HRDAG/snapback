@@ -18,7 +18,7 @@
 renice 1 $$ &> /dev/null		# lower priority than logins
 
 ##############################################################################
-# Most variables can have per-drive values (must remove -r or readonly label),
+# The variables not marked read-only can have per-drive values,
 #   using either source-drive-specific-config-file (which can be modified) or
 #   e.g.: drv_name2backup_period[D]=24 # D drive has Daily backups.
 # $drive_class_regex (end of this file) defines a drive class: by default,
