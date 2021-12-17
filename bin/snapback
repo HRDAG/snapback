@@ -1606,10 +1606,8 @@ fully-populate-custom-config-maps() {
 		[[ -v $var_name ]] || abort "set '$var_name=' in $config_file"
 		local default_value=${!var_name}
 		custom_config_var2default_value[$var_name]=$default_value
-		# shellcheck disable=SC1087 # confused by eval
-		eval "[[ \${$map_name[*]} ]]" || continue
 		is-readonly-var "$var_name" &&
-		  abort "can't use $map_name, $var_name is marked readonly"
+		    abort "$var_name in $config_file must be writable"
 		for drive_name in $max_drive_names
 		    do	# shellcheck disable=SC1087 # confused by -v
 			[[ -v $map_name[$drive_name] ]] && continue
@@ -2087,6 +2085,7 @@ function is-drive-usage-too-high() {
 
 	local drive_name max_FS_usage_percent
 	  set-drive_name- "$drive_dir"
+	# shellcheck disable=SC2154 # doesn't know about populate-* func
 	max_FS_usage_percent=${drv_name2max_FS_usage_percent[$drive_name]}
 
 	suspend-tracing
@@ -3208,7 +3207,7 @@ set-date_span_diff() {
 	date_span_diff=0
 
 	local span_var=${type2date_span_var[$type]}
-	local default_date_span=${custom_config_var2default_value[$span_var]-}
+	local default_date_span=${custom_config_var2default_value[$span_var]}
 	[[ $default_date_span && ! $is_regression_test ]] || return
 
 	local -i custom_date_span=$date_span
@@ -4139,9 +4138,8 @@ set-backup_type() {
 	backup_type=
 	local var_name value
 	for var_name in dirs_to_backup extra_excludes
-	    do	value=${custom_config_var2default_value[$var_name]}
-		# shellcheck disable=SC1087 # confused by eval
-		eval "value=\${drv_name2$var_name[\$drive_name]-\$value}"
+	    do	# shellcheck disable=SC1087 # confused by eval
+		eval "value=\${drv_name2$var_name[\$drive_name]}"
 		backup_type+="$value|"
 	done
 	backup_type=$backup_type$exclude_file # exclude_file is read-only
@@ -5293,9 +5291,10 @@ set-drive_responses() {
 		if (( $msecs <= 99999 )) # fits in alloted format?
 		   then # shellcheck disable=SC2086 # var w/multiple values
 			set-division $watch_division_opts "$msecs" 1000
-			local secs=$division$units w
-			w=${drv_name2drive_response_warning_secs[$drive_name]}
-			set-product $w 1000
+			local secs=$division$units
+			# shellcheck disable=SC2154 # doesn't know populate-*
+			set-product 1000 \
+			"${drv_name2drive_response_warning_secs[$drive_name]}"
 			if (( $msecs >= $product ))
 			   then set-highlighted_string warning "$secs"
 				secs=$highlighted_string
