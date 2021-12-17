@@ -4395,16 +4395,17 @@ readonly -f set-regex--from-glob
 
 # ----------------------
 
-_set-src_names_regex() {
+set-src_names_glob-src_names_regex() {
 
-	[[ ${src_names_glob-} ]] || { src_names_regex=. ; return ; }
+	[[ ${src_names_glob=*} ]] || { src_names_regex=. ; return ; }
 
 	local name_glob regex
 	set-name_glob "$src_names_glob"
-	set-regex--from-glob "$name_glob"
+	src_names_glob=$name_glob
+	set-regex--from-glob "$src_names_glob"
 	src_names_regex=$regex
 }
-readonly -f _set-src_names_regex
+readonly -f set-src_names_glob-src_names_regex
 
 # --------------------------------
 
@@ -4414,7 +4415,6 @@ _set-drive_dirs--for-update-srcs() {
 	set-drive_dir-
 
 	set-excluded_drive_dirs_regex
-	_set-src_names_regex
 
 	set-backup_type "$drive_name"
 	dst_backup_type=$backup_type
@@ -4518,7 +4518,7 @@ mkdir-missing-snapshots-then-print-copy-args() {
 		copy-snapshot -u $src_snapshots "$drive_name" # loads a var
 		# shellcheck disable=SC2086 # variable contains multiple values
 		set -- $copy_snapshot_args  # variable set by copy-snapshot
-		[[ $# != 0 ]] || continue   # src might not have been needed
+		[[ $# != 0 ]] || continue   # destination has the snapshot?
 
 		local	   dst_snapshot=${!#} # last arg is destination
 		basename=${dst_snapshot##*/}
@@ -4565,8 +4565,9 @@ function _set-speed_record() {
 	count-rsyncs-using-resource " $drive_dir/"
 	local rsync_count=$?
 
-	# this must match _set-not_multi_writer-writer_count-rsync_count()
-	speed_record="$not_multi_writer|$writer_count|$rsync_count|$snapshot"
+	# matches _set-not_multi_writer-writer_count-rsync_count()
+	speed_record="$not_multi_writer|$writer_count|$rsync_count"
+	drive_name2speed_record[$drive_name]=$speed_record
 }
 readonly -f _set-speed_record
 
@@ -4597,6 +4598,7 @@ fastest-snapshots() {
 	   else local do_force=$false
 	fi
 
+	local snapshots_file=$tmp_3
 	local snapshot not_multi_writer writer_count rsync_count
 	for snapshot
 	    do	_set-speed_record "$snapshot" || continue
@@ -4609,8 +4611,9 @@ fastest-snapshots() {
 		[[ ( $writer_count -gt 0 || $rsync_count -gt 0 ) &&
 		   $ignore_slow_sources && ! $do_force ]] && continue
 
-		echo "$speed_record"
-	done | sort -t\| -n |		# numeric sort
+		echo "$speed_record|$snapshot"
+	done       > "$snapshots_file"	# so _set-speed_record caching works
+	sort -t\| -n "$snapshots_file"|	# numeric sort
 	# cat; return			# uncomment to debug with action 'test'
 	cut -d\| -f4
 }
@@ -4618,11 +4621,21 @@ readonly -f fastest-snapshots
 
 # -------------------------------------------------------
 
+dump-update-state-and-abort() {
+
+	declare -p src_names_regex speed_record drive_name2speed_record >&2
+	abort "fastest snapshots: $*"
+}
+readonly -f dump-update-state-and-abort
+
+# ---------------------------------
+
 function fill-in-unpruned-empty-snapshots() {
 	local copy_args_file=$1
 
 	local status=1			# assume we did no work
 
+	local fastest_snapshots_file=$tmp_4
 	local skipped_copy_args_file=$tmp_5
 	local force_opt= # to force one copy per pass (if all sources are busy)
 	while true
@@ -4639,13 +4652,17 @@ function fill-in-unpruned-empty-snapshots() {
 			set -- $dst_snapshot*
 			[[ $# != 0 ]] || continue # was it pruned away?
 			# desired snapshot could be newly created, or pruned...
-			set -- "$drive_dir_prefix"*/"${src_snapshot_1##*/}"
+			# shellcheck disable=SC2086 # we want to glob
+			set -- "$drive_dir_prefix"$src_names_glob/"${src_snapshot_1##*/}"
 			[[ $# != 0 ]] || continue # sources pruned away?
 
 			is-set     drive_name2speed_record ||
 			declare -A drive_name2speed_record
 			# shellcheck disable=SC2046,SC2086 # *_opt may be null
-			set -- $(fastest-snapshots $force_opt "$@")
+			fastest-snapshots $force_opt "$@" \
+			        >  "$fastest_snapshots_file" # so no subprocess
+			# shellcheck disable=SC2046 # we want word splitting
+			set -- $(< "$fastest_snapshots_file")
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync "$1" "$dst_snapshot" >&2
 				status=0 # we did some work
@@ -4705,6 +4722,7 @@ function update-drive() {
 	    $IfRun wait-for-full-snapshots $num_full_link_dests
 
 	set-srcs_dst_file
+	set-src_names_glob-src_names_regex # used by following plus later
 	mkdir-missing-snapshots-then-print-copy-args > "$srcs_dst_file"
 
 	prune-drive "$drive_name"
