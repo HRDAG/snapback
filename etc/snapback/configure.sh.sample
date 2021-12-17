@@ -46,29 +46,29 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 #    ~20% more snapshots than size=4096, but is disallowed in Ubuntu 18.04.
 # Note that you can over-ride any of the individual defaults, but see the
 # long comments near _set-opts-log_opt-mount_opts--for-xfs in snapback.
-# readonly mkfs_cmd_opts="mkfs.xfs" # XFS needed if apps use many hard-links
-# readonly mkfs_cmd_opts="mkfs.xfs -i size=1024" # action 'dir-sizes' suggests?
+# mkfs_cmd_opts="mkfs.xfs"	      # XFS needed if apps use many hard-links
+# mkfs_cmd_opts="mkfs.xfs -i size=1024"	# action 'dir-sizes' suggests?
 
 # Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
 # but first read the long comments near _set-opts-log_opt-mount_opts--for-extN.
 # Small block sizes are best, see the comment above about mkfs-backup-drive .
 # Use -I 256 to backup nanosecond timestamps and/or file creation time.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
-readonly mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
-# readonly mkfs_cmd_opts="mkfs.ext4 -b 2048" # action 'dir-sizes' suggests?
+mkfs_cmd_opts="mkfs.ext4"		# typical GNU/Linux server or laptop
+# mkfs_cmd_opts="mkfs.ext4 -b 2048"	# action 'dir-sizes' suggests?
 
 # You probably won't need to change these.
 # You could replace "noatime" with "strictatime,lazytime" .
-readonly common_mount_options="nodev,nosuid,noatime"
-readonly   extN_mount_options="journal_checksum" # for reliability (for ext4)
-readonly    XFS_mount_options="logbsize=256k"	 # for speed, see: man xfs
+common_mount_options="nodev,nosuid,noatime"
+  extN_mount_options="journal_checksum" # for reliability (for ext4)
+   XFS_mount_options="logbsize=256k"	# for speed, see: man xfs
 
 # ----------------------------------------------
 # Rotational hard disks need special handling. #
 # ----------------------------------------------
 
 # This is used by set-FS_external_log(), which you can replace.
-readonly FS_log_VG=			# should be fast & reliable
+FS_log_VG=				# should be fast & reliable
 
 # Used by set-FS_external_log: should it setup an external filesystem journal?
 	 do_want_external_log=$FS_log_VG # value for (RAID of) rotational disks
@@ -121,7 +121,7 @@ drv_name2min_date_for_usage_vs_speed_data[X]=2020-09-02 # recent X defrag
 readonly drive_dir_prefix=/backup/
 
 # Where send warning and error messages.
-readonly sysadmin_email_addresses=
+sysadmin_email_addresses=
 
 # level 0: log when create *,00 snapshot; log # pruned & also # *.rm deleted
 # level 1: log every backup (plus above)
@@ -174,15 +174,15 @@ drv_name2dirs_to_backup[Z]=/var/tmp/small-dir # for testing with pseudo-drive Z
 # Basic options for "rsync"; add --acls if it's supported.
 # preallocate: slight ext4 speedup; hopefully works with --sparse
 # preallocate error: rsync: do_fallocate <path> "Operation not supported (95)
-readonly rsync_backup_opts="--archive --hard-links --xattrs --sparse --preallocate"
+rsync_backup_opts="--archive --hard-links --xattrs --sparse --preallocate"
 
 # See: https://stackoverflow.com/a/20738063 or "EXIT VALUES" in man page.
 # Vanished source files (status=24) are common if backup tmp directories.
-readonly successful_rsync_exit_statuses="0 24"
+successful_rsync_exit_statuses="0 24"
 #
 # We ignore SIGUSR1 or SIGINT (status=20) since partial snapshots are handled.
 # Instead of logging failures for Too many links (status=31), speedup pruning.
-readonly no_log_rsync_exit_statuses="20" # can add 31
+no_log_rsync_exit_statuses="20"		# can add 31
 
 # If some drives are smaller and their filesystem usage gets too high, you can
 # exclude directories rather than speed-up pruning; this is better than
@@ -198,10 +198,10 @@ readonly no_log_rsync_exit_statuses="20" # can add 31
 # a full exclude-style prune run is needed, so new excludes delete files.
 #
 # Best not to customize, since that prevents use by update-drives (see above).
-readonly extra_excludes=		# per-drive custom excludes
+extra_excludes=				# per-drive custom excludes
 
 # Skip backups when there aren't many users, to avoid 'Too many links" problem.
-readonly excluded_backup_hours="23 1 3"
+excluded_backup_hours="23 1 3"
 #
 # The number of hours (1, 2, 3, 4, 6, 8, 12, or 24) between cron-based backups;
 # note that some backups are pruned faster unless use a power of 2 (or 24).
@@ -296,7 +296,7 @@ readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 #  be moved into .rm/ and then deleted, to be replaced by running
 #  'update-drive' and rebuilding those snapshots (with correct hard links)
 #  from another backup drive that had the missing snapshots.]
-readonly very_old_immutable_files=
+very_old_immutable_files=
 
 # ----------------------------------------------------------------- #
 # Drive naming policy (controlled by extended regular expressions). #
@@ -304,7 +304,7 @@ readonly very_old_immutable_files=
 
 # Set to 'T' for ISO standard, code will automagically rename snapshots.
 # [Code is hard-wired to ',' ; email sweikart@gmail.com to implement variable.]
-readonly snapshot_date_time_separator=','
+snapshot_date_time_separator=','
 
 # Default policy: drives are named as capitalized alpha strings optionally
 # followed by a number.  You can set your own policy by simply changing
