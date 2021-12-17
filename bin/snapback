@@ -122,7 +122,7 @@ source "$config_file" || abort "source'd $config_file ended with non-0 status"
 
 for _map in $custom_config_maps
     do	# shellcheck disable=SC1087 # shellcheck confused by eval
-	eval "[[ \${$_map[*]-} ]]" || continue
+	eval "[[ \${!$_map[*]} ]]" || continue
 	_var=${_map#drv_name2}
 	[[ -v $_var ]] || abort "can't set $_map without setting $_var"
 done
@@ -131,6 +131,7 @@ for _var in $optional_config_vars
     do	[[ -v $_var ]] || __config_vars__=${__config_vars__/ $_var / }
 done
 readonly config_vars=$__config_vars__
+unset __config_vars__ _map _var
 
 [[ $is_drive_name_capitalized || $is_drive_name_upper_cased ]] &&
     shopt -s nocaseglob			# we mostly glob drive names or dirs
@@ -1647,13 +1648,10 @@ customize-config-variables() {
 	[[ $drive_name == [zZ] ]] && is_regression_test=$true
 
 	remember-tracing
-	local var_name map_name
+	local var_name
 	for var_name in $custom_config_vars
-	    do	map_name=drv_name2$var_name
-		# shellcheck disable=SC1087 # confused by eval
-		eval "[[ \${$map_name[*]} ]]" || continue
-		# shellcheck disable=SC1087 # confused by eval
-		eval "$var_name=\${$map_name[\$drive_name]}"
+	    do	# shellcheck disable=SC1087 # confused by eval
+		eval "$var_name=\${drv_name2$var_name[\$drive_name]}"
 		suspend-tracing -l
 	done
 	restore-tracing
