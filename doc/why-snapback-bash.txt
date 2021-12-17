@@ -46,4 +46,5 @@ Why write such a serious program in bash:
       per-variable customization (associative array maps drive name to value).
    Start with a simple script, evolve it into a reliable, featureful one
       (with regression-testing after each change).
-   [But if someone rewrote it in python, with similar features, I'd adopt it!]
+   [But if someone rewrites parts of it in Python, such as the monitor-drives
+      and watch actions, I'll adopt them!)
