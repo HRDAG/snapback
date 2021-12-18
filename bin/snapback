@@ -1698,7 +1698,7 @@ validate-config-variables() {
 	# these config file(s) will be mentioned in the following error msg
 	set -- "$config_file" "${drive_specific_config_file-}"
 
-	echo " $dirs_to_backup " | grep ' [^/]' &&
+	[[ " $dirs_to_backup" != *" "[^/]* ]] ||
 	   abort "dirs_to_backup contains a non-absolute path in $*"
 
 	is-arg1-in-arg2 "$backup_period" "$valid_backup_periods" ||
@@ -5848,9 +5848,9 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
-	cmds-with-one-rsync() { echo "$@" |
+	cmds-with-one-rsync() {
 		awk '  /rsync/ { if (second) {print; second=0} else second=1 }
-		     ! /rsync/ { print }' ; } # use when don't have -H
+		     ! /rsync/ { print }' <<<"$*" ; } # use when don't have -H
 
 	# both update-drive and copy-snapshot use the copy lock
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -5993,12 +5993,12 @@ set-min_rows-min_rows_with_df-rows_left() {
 	#   copy-snap  (CS) includes parent of 'rsync' process (also in -C)
 	# backup-drive (BD) includes 'rsync' only
 	local -i  PD CS BD
-	PD=$(echo    "$prune_cmds"   | fgrep -c 'prune-drive')
+	PD=$(fgrep -c 'prune-drive' <<<"$prune_cmds")
 	(( PD > 0 )) && PD=$((PD*2 + 4)) # add in 'rm' plus section-overhead
-	CS=$(echo "$copy_rsync_cmds" | egrep -c '(update|copy)-')
+	CS=$(egrep -c '(update|copy)-' <<<"$copy_rsync_cmds")
 	(( CS > 0 )) && CS=$((CS*2 + 4)) # add in 'rsync' plus section-overhead
-	BD=$(echo  "$bkp_rsync_cmds" | fgrep -c r); num_bkp_rsyncs=$BD
-	(( BD > 0 )) && (( BD+=7 ))	# header plus default variable values
+	BD=$(fgrep -c r <<<"$bkp_rsync_cmds"); num_bkp_rsyncs=$BD
+	(( BD > 0 )) && (( BD+=7 ))	 # header plus default variable values
 	(( BD > 0 )) && (( BD+=$rows_for_one_detailed_rsync )) ||
 				rows_for_one_detailed_rsync=0
 	[[ $stats_opt ]] && PD=0 CS=0 BD=0
@@ -6410,7 +6410,7 @@ show-prune-cmds() {
 	[[ $prune_cmds || $show_all ]] && header "prune-drive" && echo
 	if [[ $prune_cmds ]]
 	   then echo "$ps_header"
-		echo "$prune_cmds" | trim-prune-ps
+		trim-prune-ps <<<"$prune_cmds"
 	elif [[ $show_all ]]
 	   then echo -e "No pruning is being done$names_msg."
 	fi
@@ -6430,7 +6430,7 @@ show-copy-cmds() {
 	header "$highlighted_string"
 	echo
 	echo "$ps_header"
-	echo "$copy_rsync_cmds" | trim-copy-update-ps
+	trim-copy-update-ps <<<"$copy_rsync_cmds"
 }
 readonly -f show-copy-cmds
 
@@ -6465,7 +6465,7 @@ show-backup-cmds() {
 	[[ $bkp_rsync_cmds ]] && {
 	echo "$rsync_abbrev_msg"; echo
 	echo "$ps_header"
-	echo "$bkp_rsync_cmds" | trim-backup-ps | sort -ty -k2 # rs(y)nc
+	trim-backup-ps <<<"$bkp_rsync_cmds" | sort -ty -k2 # rs(y)nc
 	} || echo -e "\nNo backups are running$names_msg."
 
 }
@@ -6501,7 +6501,8 @@ show-backup-cmds-with-full-details() {
       header "backup-drive's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
-	echo "$bkp_rsync_cmds" | sed "s@ $HOME/@ ~/@g" | sort -ty -k2 # rs(y)nc
+	# shellcheck disable=SC2001 # too dangerous for //, strings contain /
+	sed "s@ $HOME/@ ~/@g" <<<"$bkp_rsync_cmds" | sort -ty -k2 # rs(y)nc
 }
 readonly -f show-backup-cmds-with-full-details
 
@@ -6516,7 +6517,7 @@ show-copy-cmds-with-full-details() {
        header "copy/update's most-CPU-intensive rsync processes (full details)"
 	echo
 	echo "$ps_header"
-	echo "$copy_rsync_cmds" | sed -n "s@ $HOME/@ ~/@g; /\brsync /p" |
+	sed -n "s@ $HOME/@ ~/@g; /\brsync /p" <<<"$copy_rsync_cmds" |
 	   sort -ty -k2		      # sort on 'y' in rs(y)nc (never in STAT)
 }
 readonly -f show-copy-cmds-with-full-details
@@ -6846,7 +6847,7 @@ readonly -f dump-state
 set-total_dir_MB-avg_dir_KB() {
 	local file=${1%.bz2}.bz2
 
-	isize=$(echo "$file" | sed -r 's/.*-inode=([0-9]+)-.*/\1/')
+	isize=$(sed -r 's/.*-inode=([0-9]+)-.*/\1/' <<<"$file")
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $( bzcat "$file" |
 		  awk -F K -v isize="$isize" \
@@ -7005,8 +7006,7 @@ _set-FS_type-FS_device-dev--from-drive_dir() {
 	# shellcheck disable=SC2001 # 'sed' too hairy for ${var//x/y}
 	if [[ $FS_device == /dev/mapper/* ]]
 	   then dev=
-	   else dev=$(echo "$FS_device" |
-			  sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//') ||
+	   else dev=$(sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//' <<<"$FS_device") ||
 		   abort device=
 	fi
 }
@@ -7959,8 +7959,8 @@ readonly -f _copy-extN-backup-drive
 function finish-copy-backup-drive() {
 	local action_opts= cmd
 	while [[ ${1-} == -* ]] ; do action_opts+="$1 "; shift; done
-	cmd=$(echo "$Usage" |
-		  grep copy-drive | sed "s/^ */$our_name_ -d /; s/:.*//") ||
+	cmd=$(grep copy-drive <<<"$Usage" |
+		  sed "s/^ */$our_name_ -d /; s/:.*//") ||
 	    abort cmd=
 	[[ $# == 4 ]] || abort "to see args, run: $cmd"
 
@@ -8296,8 +8296,7 @@ search-syslog-for-errors() {
 	for var_name in $syslog_search_string_var_names
 	    do	echo "${!var_name}"
 	done | echo-to-file - "$search_str_file"
-	echo "$OS_ignorable_error_strings" | 
-	    echo-to-file - "$ignorable_str_file"
+	echo-to-file "$OS_ignorable_error_strings" "$ignorable_str_file"
 
 	# in case /etc/logrotate.conf contains 'dateext' & 'delaycompress'
 	set -- $syslog_path-????????	# have yesterday's file?
@@ -8593,8 +8592,7 @@ test-prune() {
 	enable -f mkdir mkdir		# WARNING: buggy with -p in bash-4.4
 	$Trace
 	cd_ "$drive_dir"
-	# shellcheck disable=SC2086 # variable contains multiple values
-	for type in $(echo ${!prune_type2mk_Z_args[*]} | tr ' ' '\n' | sort)
+	for type in $(tr ' ' '\n' <<<"${!prune_type2mk_Z_args[*]}" | sort)
 	    do	mk_Z_args=${prune_type2mk_Z_args[$type]}
 		header "prune '$type' snapshots, created by: mk-Z $mk_Z_args"
 		stash=.mk-Z.$type
@@ -8606,8 +8604,9 @@ test-prune() {
 			[[ $cmd == "$old_cmd" ]] && which=old || which=new
 			ls > "$stash.$which.ls"
 		done
-		# shellcheck disable=SC2086
-		set-reversed_words $stash.{old,new}.ls; set -- $reversed_words
+		set-reversed_words "$stash".{old,new}.ls
+		# shellcheck disable=SC2086 # want word splitting
+		set -- $reversed_words
 		[[ $# == 2 ]] || abort "expected two files: $*"
 		diff -d -q "$@" && mv "$stash.new.ls" "$stash.pruned.ls" &&
 				   rm "$stash.old.ls" &&
