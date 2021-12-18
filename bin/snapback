@@ -4662,9 +4662,8 @@ function fill-in-unpruned-empty-snapshots() {
 			if [[ $# != 0 ]]
 			   then copy-snapshot-rsync "$1" "$dst_snapshot" >&2
 				status=0 # we did some work
-				[[ ! $debug_opt ]] &&
 				# copy-* took a long time, recheck drive speeds
-				unset drive_name2speed_record # force a rebuild
+				$IfRun unset drive_name2speed_record >&2
 				force_opt= # do 1 force per pass
 			   else did_skip_a_snapshot=$true
 				echo "$args" # save for next pass
