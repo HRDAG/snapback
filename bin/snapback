@@ -301,8 +301,9 @@ have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
 
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
-shopt -s nullglob			# $# is 0 if pathname expansion "fails"
+shopt -s lastpipe			# don't fork last cmd of pipeline
 shopt -s globasciiranges		# range expressions assume C locale
+shopt -s nullglob			# $# is 0 if pathname expansion "fails"
 shopt -s shift_verbose			# print error message if bad shift
 
 readonly umask=02			# log dirs are setgid sudo/etc
