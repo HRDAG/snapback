@@ -277,7 +277,7 @@ unset arg
 trap print-call-stack EXIT		# show stack if unexpected exit
 exit-normally() {			# ... but not if want to exit
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
-	[[ $watch_PID == $BASHPID ]] && rm -rf "${generate_output_files_dir-}"
+	[[ $watch_PID == $BASHPID ]] && rm -rf "$generate_output_files_dir"
 	# shellcheck disable=SC2086 # $1 may be null
 	exit ${1-}
 }
@@ -594,7 +594,11 @@ function lock-PID() {
 	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	lockpid_output=$($IfRun $lock_cmd 2>&1)
-	local status=$?
+	local  status=$?
+	if [[ $status == 13 && ( $lock_opts == *-r* ) ]] # failed release?
+	   then lockpid_output=$(sudo $lock_cmd 2>&1)
+		status=$?
+	fi
 
 	if [[ $status == 0 ]]
 	   then if [[ $lockpid_output ]]
@@ -2038,7 +2042,7 @@ function did-re-start-monitor-drives-if-needed() {
 	[[ ${1-} == -f ]] && { shift;local do_force=$true; } || local do_force=
 
 	[[ $UID == 0 ]] ||
-	{ sudo -n kill && sudo -n "$our_path"; } &> $dev_null ||
+	{ sudo -n kill -V && sudo -n "$our_path" -h; } &> $dev_null ||
 	    return 1
 
 	if [[ $do_force ]] ||
