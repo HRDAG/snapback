@@ -277,7 +277,7 @@ unset arg
 trap print-call-stack EXIT		# show stack if unexpected exit
 exit-normally() {			# ... but not if want to exit
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
-	rm -rf "${generate_output_files_dir-}"
+	[[ $watch_PID == $BASHPID ]] && rm -rf "${generate_output_files_dir-}"
 	# shellcheck disable=SC2086 # $1 may be null
 	exit ${1-}
 }
@@ -616,6 +616,10 @@ function lock-PID() {
 		log  "process $lock_holder_PID $lock_holder_action"
 	elif [[ $lock_opts != *-q* ]]
 	   then log "$lock_cmd -> $lockpid_output (status=$status)"
+		if [[ $lock_file == /* ]]
+		   then ls -ld		 $lock_file
+		   else ls -ld $lock_dir/$lock_file
+		fi
 		print-call-stack "${drive_name-}"
 	   else $xtrace; return $status
 	fi >&2				# echo problems to stderr
@@ -6575,6 +6579,7 @@ readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
 [[ ! -d $generate_output_files_dir ]] || rm -r "$generate_output_files_dir"
 readonly rows_left_file=$generate_output_files_dir/rows_left
 
+watch_PID=
 function generate() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local function=$*
@@ -6586,11 +6591,12 @@ function generate() {
 
 	[[ -d $generate_output_files_dir ]] ||
 	RunCmd mkdir "$generate_output_files_dir"
+	watch_PID=$BASHPID		# the only process allowed to rmdir
 
 	true > "$rows_left_file"
-	local output_file=$generate_output_files_dir/out-$job_num
 	$xtrace
-	$function &> "$output_file" &
+	local output_file=$generate_output_files_dir/out-$job_num
+	$function > "$output_file" &
 	job_num2PID[job_num++]=$!
 	[[ $xtrace ]] && set +x
 	Trace 1 "$output_file from $function"
