@@ -1186,6 +1186,7 @@ list-drive-dirs() {
 	# shellcheck disable=SC2086 # *_opt* may be null or multiple
 	df --output=target $df_exclude_type_options --no-sync |
 	   egrep "$regex" | sort -u
+	fully-populate-custom-config-maps # ensure we support new drives
 	$xtrace
 }
 readonly -f list-drive-dirs
@@ -6607,7 +6608,8 @@ function generate() {
 
 	# wouldn't need polling if used a fifo, but they're buggy in bash-4.4
 	#    (and might block if generated too much output)
-	# fixme: could try to use a coproc
+	# fixme: could try to use 'coproc' commands, but debugging is easier
+	#    when the output of the background processes are saved to files
 	until [[ -s $rows_left_file ]] ; do msleep 1; done
 	read -r rows_left < "$rows_left_file" # let child modify our global
 
