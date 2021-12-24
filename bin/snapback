@@ -1576,12 +1576,15 @@ function did-set-max_drive_names() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	pushd_ -q $drive_dir_prefix
+
 	local old_max_drive_names=$max_drive_names
+		  max_drive_names=
 	local dir
 	for dir in *[!~]
 	    do	[[ -d $dir ]] && max_drive_names+="$dir "
 	done
 	max_drive_names=${max_drive_names% }
+
 	popd_ -q
 	$xtrace
 	[[ $old_max_drive_names != "$max_drive_names" ]]
@@ -1999,8 +2002,7 @@ update-monitor-config() {
 		echo-to-file "$product" "$window_msecs_file"
 	done
 
-	# this caused infinite loop, killed it with: fuser -9 -k -v monitor.log
-	# [[ $do_check ]] && did-set-max_drive_names && exec $our_path monitor
+	[[ $do_check ]] && did-set-max_drive_names && exec $our_path monitor
 
 	popd_
 }
