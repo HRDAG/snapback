@@ -1834,13 +1834,16 @@ mon-launch-globs() {
 		(
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob.partial
-		# shellcheck disable=SC2012
-		[[ $# == 0 ]] && true > "$partial_file" ||
-		# snapshot is non-empty if has subdirectories: check link count
-		ls -ld "$@" |
-		    awk '$2 > 2 { print $(NF) }' >  "$partial_file.new" &&
-			     mv "$partial_file.new" "$partial_file"
-		) &
+		if [[ $# == 0 ]]
+		   then true > "$partial_file"
+		   else	local partial_file_new=$partial_file.$BASHPID
+			# snapshot non-empty if has subdirectories: link count
+			# shellcheck disable=SC2012
+			ls -ld "$@" |
+			awk '$2 > 2 { print $(NF) }' > "$partial_file_new" &&
+				mv "$partial_file_new" "$partial_file"
+		fi
+		) &			# this can take a while
 		ls_drive_name2PID[$drive_name]=$!
 	done
 
