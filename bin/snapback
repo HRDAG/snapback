@@ -1077,7 +1077,7 @@ function kill-job-on-drives() {
 			local did_loop=$false
 			until signal-job "$signal" "$path"
 			   do	echo -n .
-				env sleep 0.1
+				sleep-exe 0.1
 				did_loop=$true
 			done
 			[[ $did_loop ]] && echo
@@ -1149,7 +1149,7 @@ function ps-locks() {
 	local status=1 PID		# assume all locks are missing/stale
 	for lock in $lock_paths
 	    do	# race: lockpid has created file but not yet written pid
-		[[ -s   $lock ]] || env sleep 0.01
+		[[ -s   $lock ]] || sleep-exe 0.01
 		[[ -e   $lock ]] || continue
 		header "$lock"
 		[[ -s   $lock ]] ||
@@ -1954,7 +1954,7 @@ mon-look-for-finished-globs() {
 			local -i left_msecs=$mon_check_period_msecs-$used_msecs
 			set-division -d3 "$left_msecs" 1000
 			[[ $division != *-* ]] && # avoid negative values
-			env sleep "$division"     # want it to appear in ps
+			sleep-exe "$division"     # want it to appear in ps
 			return
 		fi
 
@@ -2059,7 +2059,7 @@ function did-re-start-monitor-drives-if-needed() {
 	     is-newer "$our_path" "$drive_monitor_lock_path" )
 	   then lock-replica-of-snapshots --wait    # don't interrupt monitor
 		until signal-job -KILL "$drive_monitor_lock_path"
-		   do	$IfRun env sleep 0.09 # wait for globs/etc; watch hangs
+		   do	$IfRun sleep-exe 0.09 # wait for globs/etc; watch hangs
 		done
 		lock-replica-of-snapshots --release
 	fi
@@ -3363,7 +3363,7 @@ function prune-drive() {
 
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
 
-	[[ ${prune_sleep_time-} ]] && env sleep "$prune_sleep_time"
+	[[ ${prune_sleep_time-} ]] && sleep-exe "$prune_sleep_time"
 
 	$Trace
 	# shellcheck disable=SC2046 # we want word splitting
@@ -3864,7 +3864,7 @@ function run-rsync() {
 	[[ $debug_opt ]] ||  # use 'sleep 9' to wait for rsync to modify mtime
 	for (( n = 0; n < 20; n++ ))
 	    do [[ -e $partial_dst || -e $dst_snapshot ]] && break
-	       env sleep 9
+	       sleep-exe 9
 	done
 	[[ -d  $partial_dst ]] && $IfRun \
 	touch "$partial_dst"		# in case we crash before next 'touch'
@@ -4015,7 +4015,7 @@ maybe-prevent-pruning() {
 			    "$lock_msg: awaiting $drive_name lock" |
 			    tee -a "$file_for_logging"
 		fi
-		$IfRun env sleep 0.9
+		$IfRun sleep-exe 0.9
 	done
 	_did_prevent_pruning_print_stack=$false # for future call
 }
@@ -4357,7 +4357,7 @@ wait-for-full-snapshots() {
 		set -- "$drive_dir"/$snapshot_glob
 		restore-tracing
 		(( $# > $min_full_snapshots )) && return # an extra one: safety
-		env sleep 1h
+		sleep-exe 1h
 	done
 }
 readonly -f wait-for-full-snapshots
@@ -4690,7 +4690,7 @@ function fill-in-unpruned-empty-snapshots() {
 		[[   $force_opt || $ignore_slow_sources ]] ||
 		    { force_opt=-f; continue; }
 		[[ ! $debug_opt ]] || warn "no work to do" || break
-		env sleep 5m		# wait for source(s) to become unbusy
+		sleep-exe 5m		# wait for source(s) to become unbusy
 	done
 	$IfRun rm "$copy_args_file" "$skipped_copy_args_file" |
 	    sed 's/-[0-9]*$/-PID/'
@@ -4864,7 +4864,7 @@ create-jobs() {
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 		if [[ $is_cron && $type == backup ]]
 		   then $IfRun do-chores & # echo appears whenever, unless ...
-			[[ $is_regression_test ]] && env sleep 0.05 # ... wait
+			[[ $is_regression_test ]] && sleep-exe 0.05 # ... wait
 		fi
 	   else # shellcheck disable=SC2048,SC1075
 		if set-drive_names--from-user-args "$@"
@@ -6562,11 +6562,11 @@ _start-monitor-drives-if-needed() {
 
 	RunCmd sudo "$our_path" monitor-drives
 	until [[ -d $(dirname "$mon_initialized_lock_path") ]]
-	   do	env sleep 0.12
+	   do	sleep-exe 0.12
 	done
 	while   lockpid    "$mon_initialized_lock_path"
 	   do	lockpid -r "$mon_initialized_lock_path"
-		env sleep 0.13
+		sleep-exe 0.13
 	done > $dev_null
 }
 readonly -f _start-monitor-drives-if-needed
@@ -7243,7 +7243,7 @@ function unmount-drives() {
 		# shellcheck disable=SC2034
 		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
-			$IfRun env sleep 0.15
+			$IfRun sleep-exe 0.15
 		done &> $output
 		is-drive-mounted "$drive_dir" || continue
 		$umount_cmd || status=$? # this time, show the error message
@@ -7818,7 +7818,7 @@ copy-backup-drive() {
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	nohup $cmd > "$output_file" &
 	local copy_PID=$!
-	env sleep 0.2; set -x; exec tail --pid=$copy_PID -f $output_file
+	sleep-exe 0.2; set -x; exec tail --pid=$copy_PID -f $output_file
 }
 readonly -f copy-backup-drive
 
@@ -9000,7 +9000,7 @@ case $action in
 		while true
 		    do	kill-job-on-drives -s "$@"
 			set +x
-			env sleep 1
+			sleep-exe 1
 		done
 	   else $Trace
 		kill-job-on-drives -s "$@"
