@@ -6469,7 +6469,7 @@ set-rsync_abbrev_msg() {
 	rsync_abbrev_msg="
 	  default opts=\"$rsync_backup_opts\"$var_name
 	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)" ; readonly \
-	rsync_abbrev_msg=${rsync_abbrev_msg//#	/} # strip leading TABs
+	rsync_abbrev_msg=${rsync_abbrev_msg//	/} # strip leading TABs
 }
 readonly -f set-rsync_abbrev_msg
 
