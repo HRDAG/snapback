@@ -274,6 +274,7 @@ unset arg
 
 [[ $Trace && $debug_opt ]] && IfRun=:
 
+watch_PID=
 trap print-call-stack EXIT		# show stack if unexpected exit
 exit-normally() {			# ... but not if want to exit
 	trap 'set +x; rm -f $tmp_1 $tmp_2 $tmp_3 $tmp_4 $tmp_5; trap EXIT' EXIT
@@ -1606,9 +1607,9 @@ fully-populate-custom-config-maps() {
 	done
 	restore-tracing
 
-	local var_name map_name
+	local var_name
 	for var_name in $custom_config_vars
-	    do	map_name=drv_name2$var_name
+	    do	local -n map=drv_name2$var_name
 		[[ -v $var_name ]] || abort "set '$var_name=' in $config_file"
 		local default_value=${!var_name}
 		custom_config_var2default_value[$var_name]=$default_value
@@ -1616,11 +1617,11 @@ fully-populate-custom-config-maps() {
 		    abort "$var_name in $config_file must be writable"
 		for drive_name in $max_drive_names
 		    do	# shellcheck disable=SC1087 # confused by -v
-			[[ -v $map_name[$drive_name] ]] && continue
+			[[ -v map[$drive_name] ]] && continue
 			# shellcheck disable=SC2034 # confused by eval
 			local class=${drive_name2class[$drive_name]-.}
 			# shellcheck disable=SC1087 # confused by eval
-			eval "$map_name[\$drive_name]=\${$map_name[\$class]-\$default_value}"
+			map[$drive_name]=${map[$class]-$default_value}
 			suspend-tracing -l
 		done
 	done
@@ -1652,8 +1653,8 @@ customize-config-variables() {
 	remember-tracing
 	local var_name
 	for var_name in $custom_config_vars
-	    do	# shellcheck disable=SC1087 # confused by eval
-		eval "$var_name=\${drv_name2$var_name[\$drive_name]}"
+	    do	local -n var=$var_name map=drv_name2$var_name
+		var=${map[$drive_name]}
 		suspend-tracing -l
 	done
 	restore-tracing
@@ -2450,7 +2451,7 @@ save-writer-stats() {
 	for data_type in $stats_data_types
 	    do	   set-stats_subdir "$data_type" ||
 		create-stats_subdir-and-symlink-to-it "$stats_subdir"
-		eval "local data=\$writer_$data_type"
+		local -n data=writer_$data_type
 		 save-stats-file  "$stats_subdir" "$snapshot" "$data" &&
 		prune-stats-files "$stats_subdir"
 	done
@@ -3001,8 +3002,7 @@ if is-set type2prune_type_globs		# can set custom value in $config_file
 	[[ "${type2prune_type_globs[hour]-}" == \
 	   "${type2prune_type_globs_[hour]}" ]] ||
 	   abort "your custom type2prune_type_globs[hour] must match $our_name"
-   else _array_declare=$(declare -p type2prune_type_globs_)
-	eval "${_array_declare/type2prune_type_globs_=/type2prune_type_globs=}"
+   else declare -n type2prune_type_globs=type2prune_type_globs_
 fi
 
 # each set of globs skips one value in the range of possibilities, since
@@ -4145,9 +4145,8 @@ set-backup_type() {
 	backup_type=
 	local var_name value
 	for var_name in dirs_to_backup extra_excludes
-	    do	# shellcheck disable=SC1087 # confused by eval
-		eval "value=\${drv_name2$var_name[\$drive_name]}"
-		backup_type+="$value|"
+	    do	local -n map=drv_name2$var_name
+		backup_type+="${map[$drive_name]}|"
 	done
 	backup_type=$backup_type$exclude_file # exclude_file is read-only
 	drive_name2backup_type[$drive_name]=$backup_type # cache it
@@ -6163,8 +6162,9 @@ readonly -f show-stats-section-1
 # ----------------------------------------------------------------------------
 
 set-drive_name2stats_number() {
-	local  stats_number=" $*"
-	local  init=${stats_number// / [}
+
+	local  stats_numbers=" $*"
+	local  init=${stats_numbers// / [}
 	init=${init//=/]=}
 	eval "drive_name2stats_number=( $init )"
 }
@@ -6584,7 +6584,6 @@ readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
 [[ ! -d $generate_output_files_dir ]] || rm -r "$generate_output_files_dir"
 readonly rows_left_file=$generate_output_files_dir/rows_left
 
-watch_PID=
 function generate() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local function=$*
@@ -8255,7 +8254,8 @@ setup-limited-list() {
 	   then  list=${list:1:$columns}
 		 list="${list% *} ..."	# don't want truncated final item
 	fi
-	eval "$type=\$list"
+	local -n var=$type
+	var=$list
 }
 readonly -f setup-limited-list
 
