@@ -4824,7 +4824,7 @@ _set-function-our_exe-writer_type() {
 	   ( copy   ) function=copy-snapshots	writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
-	local our_exe_varname=${function/-/_}_exe
+	local our_exe_varname=${function//-/_}_exe
 	our_exe=${!our_exe_varname}
 }
 readonly -f _set-function-our_exe-writer_type
@@ -6469,7 +6469,7 @@ set-rsync_abbrev_msg() {
 	rsync_abbrev_msg="
 	  default opts=\"$rsync_backup_opts\"$var_name
 	  default dirs=\"$dirs_to_backup\" (\$dirs_to_backup)" ; readonly \
-	rsync_abbrev_msg=${rsync_abbrev_msg//	/} # strip leading TAB
+	rsync_abbrev_msg=${rsync_abbrev_msg//#	/} # strip leading TABs
 }
 readonly -f set-rsync_abbrev_msg
 
