@@ -1654,7 +1654,8 @@ customize-config-variables() {
 	remember-tracing
 	local var_name
 	for var_name in $custom_config_vars
-	    do	local -n var=$var_name map=drv_name2$var_name
+	    do	# shellcheck disable=SC2178 # shellcheck is confused
+		local -n var=$var_name map=drv_name2$var_name
 		var=${map[$drive_name]}
 		suspend-tracing -l
 	done
@@ -4146,7 +4147,8 @@ set-backup_type() {
 	backup_type=
 	local var_name value
 	for var_name in dirs_to_backup extra_excludes
-	    do	local -n map=drv_name2$var_name
+	    do	# shellcheck disable=SC2178 # shellcheck is confused
+		local -n map=drv_name2$var_name
 		backup_type+="${map[$drive_name]}|"
 	done
 	backup_type=$backup_type$exclude_file # exclude_file is read-only
