@@ -549,7 +549,7 @@ function set-lock_paths() {
 	   else set-name_glob "$name_glob"
 	fi
 
-	eval "set -- $lock_dir/$type_glob*-$name_glob.pid"
+	eval "set -- $lock_dir/$type_glob*-$name_glob.pid" # eval for {}
 	lock_paths=$*
 	[[ -e $drive_monitor_lock_path && $type_glob == [*m]* &&
 	   $name_glob == '*' ]] &&
@@ -1108,7 +1108,7 @@ function set-lock_PGIDs() {
 	lock_PGIDs=
 
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
-	eval "set -- $lock_dir/$type-$names_glob.pid"
+	eval "set -- $lock_dir/$type-$names_glob.pid" # eval for {}
 
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+="$lock "; done
@@ -3061,7 +3061,7 @@ validate-prune_globs() {
 		esac
 
 		set +f; rm -f ./*; set -f
-		eval "set -- {$tst_seq}"
+		eval "set -- {$tst_seq}" # eval for {}
 		local tst
 		for tst
 		    do	[[ $type != year && $tst == ? ]] && tst=0$tst
@@ -3078,7 +3078,7 @@ validate-prune_globs() {
 			local prune_type_glob=$popped_word
 			local prune_glob
 			set-prune_glob "$type" "$prune_type_glob"
-			set +f; eval  "set -- $prune_glob"; set -f
+			set +f; eval "set -- $prune_glob"; set -f # eval for {}
 			[[ $debug_opt ]] && echo "span=$span will prune: " "$@"
 			local pruned old_span new_span
 			for pruned
@@ -3273,7 +3273,7 @@ prune-type-to-file() {
 
 		set-prune_glob "$type" "$prune_type_glob"
 		TraceV 5 prune_type_glob prune_glob is_last_word
-		eval "set -- $prune_glob"
+		eval "set -- $prune_glob" # eval for {}
 		(( $# < 10 )) && local ss=$* || ss="$1 ${2-} ${3-} ... ${!#}"
 		Trace 5 "\n Matched  $# snapshots: $ss"
 
@@ -3635,7 +3635,7 @@ set-excluded_hours() {
 		[[ $hour != *-0 ]] ||abort "$var_name range can't end with 0"
 		first=${hour%-*} last=${hour#*-}
 		if (( $first <= $last ))
-		   then eval "echo {$first..$last}"
+		   then eval "echo {$first..$last}"	    # eval for {}
 		   else eval "echo {$first..23} {1..$last}" # exclude midnight
 		fi
 	done
@@ -8521,7 +8521,7 @@ mk-Z() {
 	case $period in
 	    ( 0 ) ;;
 	    ( month* ) is_months=$true ;;
-	    ( * ) eval "set -- {$period}" ; hours=$* ;;
+	    ( * ) eval "set -- {$period}" ; hours=$* ;; # eval for {}
 	esac
 
 	local -i start_secs end_secs
