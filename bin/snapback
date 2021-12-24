@@ -4973,7 +4973,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	    local do_compute=$false || local do_compute=$true
 	#[[ $do_compute ]] || echo -n "C: " # uncomment to ensure caching works
 
-	while [[ $do_compute ]]; do	# we can use 'break' to do cleanup
+	while [[ $do_compute ]]; do	# so we can use 'break' to do cleanup
 
 	[[ $# != 0 ]] || { count=0 last=0 average=0 maximum=0 sum=0; break; }
 
