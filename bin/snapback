@@ -163,7 +163,7 @@ readonly -f confirm run-function set-backup_suffix
 
 Trace_log_default=$tmp_dir/$our_name.trace
 
-readonly Usage="
+Usage="
 Usage: $our_name [options] action [options] [args]
 
   $our_name (snapshot backups) maintains multiple, uniquely-named,
@@ -5725,7 +5725,7 @@ exec-watch-snapback-w() {
 	local opts=
 	while [[ ${1-} == -* || ${1-} == [0-9]* ]]; do opts+="$1 "; shift; done
 
-	local w_opts="$ps_opt $no_errors $stats_opt $cron_opt $bg_opt"
+	local w_opts="$no_errors $stats_opt $cron_opt $bg_opt"
 	if [[ $names ]]
 	   then # shellcheck disable=SC2086 # variable contains multiple values
 		set-drive_names--from-user-args $names ||
@@ -6671,25 +6671,30 @@ readonly -f show-generated-output
 
 # ---------------------------------
 
-[[ -v    show_drive_functions ]] ||	# can set custom value in $config_file
-readonly show_drive_functions="stats-section-1
+[[ -v    drive_watch_functions ]] ||	# can set custom value in $config_file
+readonly drive_watch_functions="stats-section-1
 stats-section-2-backup stats-section-2-prune stats-section-2-copy
 filesystem-info-that-fits"
 
-watch-usage() {
-	m="[-f][-C][-N names] [watch-opts]: dashboard (-f: wide; -C: cron jobs"
-	abort "$m"
-}
-readonly -f watch-usage
-
 watch() {
+	local Usage
+	read -d '\0' -r Usage <<-EOF
+	Usage: watch [options] [-- watch-options] [section-function-names]
+	our options:
+	   -E: don't show syslog errors
+	   -s: always show descriptive statistics
+	   -C: also show jobs run by cron
+	   -P: don't parallelize generation of sections
+	   -d: show sections describing drives only (not processes)
+	   -u: show sections you specify in config w/user_watch_functions=
+	   -N names: only show drive names
+	EOF
 	# most of these variables are accessed in exec-watch-snapback-w
-	local watch_opt= ps_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
+	local watch_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
 	local OPTIND opt
-	while getopts "wfEsCPduN:" opt
+	while getopts "wEsCPduN: hk" opt
 	   do	case $opt in
 		   ( w ) watch_opt=-$opt ;; # internal option
-		   ( f )    ps_opt=-$opt ;;
 		   ( E ) no_errors=-$opt ;;
 		   ( s ) stats_opt=-$opt ;;
 		   ( C )  cron_opt=-$opt ;;
@@ -6697,14 +6702,16 @@ watch() {
 		   ( d ) do_drives=-$opt ;;
 		   ( u ) user_show=-$opt ;;
 		   ( N )     names=$OPTARG ;;
-		   ( * ) watch-usage ;;
+
+		   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
+		   ( * ) abort "$Usage" ;;
 		esac
 	done
 	shift $((OPTIND-1))
 	# shellcheck disable=SC2086 # variable contains multiple values
-	[[ ${do_drives-} ]] && set -- $show_drive_functions
+	[[ ${do_drives-} ]] && set -- "$@" $drive_watch_functions
 	# shellcheck disable=SC2086 # variable contains multiple or no values
-	[[ ${user_show-} ]] && set -- ${show_user_functions-}
+	[[ ${user_show-} ]] && set -- "$@" ${user_watch_functions-}
 	[[ $action == watch ]] &&
 	    customize-and-validate-configuration-variables &&
 	    exec-watch-snapback-w "$@" || # 'watch' options
