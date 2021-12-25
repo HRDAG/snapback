@@ -6613,7 +6613,7 @@ function generate() {
 	true > "$rows_left_file"
 	$xtrace
 	local output_file=$generate_output_files_dir/out-$job_num
-	output_file+=-${function%% *}	# makes debugging easier
+	output_file+=.${function%% *}	# makes debugging easier
 	$function > "$output_file" &
 	job_num2PID[job_num++]=$!
 	[[ $xtrace ]] && set +x
@@ -6660,7 +6660,7 @@ show-generated-output() {
 	for (( job_num=0; $job_num <= $max_job_num; job_num++ ))
 	    do	local  PID=${job_num2PID[$job_num]}
 		wait  $PID
-		set -- "$generate_output_files_dir/out-$job_num"-*
+		set -- "$generate_output_files_dir/out-$job_num".*
 		local output_file=$1
 		cat  "$output_file" &&
 		: rm "$output_file"	# remove ':' to debug
