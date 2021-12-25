@@ -5910,7 +5910,7 @@ function _set-cron_PGIDs() {
 	ps -U root -o pgid,command |
 	   awk '/[ \/]rm / || /[ \/]rsync / {print $1}' > \
 	       "$rsync_or_rm_cmd_PGIDs_file"
-	cron_job_regex=' -C backup-drives? ' # put into configure.sh ??
+	cron_job_regex=' -C backup-drives? | backup-drive -r '
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(ps -U root -o pgid,command |
 			egrep "$cron_job_regex" |
@@ -5932,7 +5932,7 @@ widest_wchan_value=poll_schedule_timeout.constprop.0 # linux-5.x
 readonly widest_wchan_value
 
 [[ -v	   max_ps_wchan_width ]] ||	# can set custom value in $config_file
-declare -i max_ps_wchan_width=${#widest_wchan_value}+1
+declare -i max_ps_wchan_width=${#widest_wchan_value}
 [[ -v	   min_ps_wchan_width ]] ||	# can set custom value in $config_file
 declare -i min_ps_wchan_width=10	# minimum useful value
 
@@ -6516,7 +6516,7 @@ show-cron-jobs() {
 	set -- $(ps -o stime= $cron_PGIDs | sort -u)
 	local stime=$*
 	local regex=${cron_job_regex%%s*}
-	header "$stime: '$regex' cron job(s), PGID='$cron_PGIDs'"; echo
+	header "$stime: backup cron job(s), PGID='$cron_PGIDs'"; echo
 	(( $rows_left < $min_rows )) && echo "${rsync_abbrev_msg#?}" && echo
 	echo "$cron_cmds"	   # we used trim-backup-ps when we created it
 }
@@ -6671,23 +6671,18 @@ readonly -f show-generated-output
 
 # ---------------------------------
 
-[[ -v    drive_watch_functions ]] ||	# can set custom value in $config_file
-readonly drive_watch_functions="stats-section-1
-stats-section-2-backup stats-section-2-prune stats-section-2-copy
-filesystem-info-that-fits"
-
 watch() {
 	local Usage
 	read -d '\0' -r Usage <<-EOF
 	Usage: watch [options] [-- watch-options] [section-function-names]
 	our options:
 	   -E: don't show syslog errors
-	   -s: always show descriptive statistics
-	   -C: also show jobs run by cron
-	   -P: don't parallelize generation of sections
-	   -d: show sections describing drives only (not processes)
+	   -C: also show backup-drive jobs run by cron
+	   -s: only show descriptive statistics
+	   -d: only show 'df' (so can watch Used and IUsed)
 	   -u: show sections you specify in config w/user_watch_functions=
-	   -N names: only show drive names
+	   -N names: limit display to drive-names
+	   -P: don't parallelize generation of sections
 	EOF
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
@@ -6696,20 +6691,19 @@ watch() {
 	   do	case $opt in
 		   ( w ) watch_opt=-$opt ;; # internal option
 		   ( E ) no_errors=-$opt ;;
-		   ( s ) stats_opt=-$opt ;;
 		   ( C )  cron_opt=-$opt ;;
-		   ( P )    bg_opt=-$opt ;;
-		   ( d ) do_drives=-$opt ;;
+		   ( s ) stats_opt=-$opt ;;
+		   ( d )    df_opt=-$opt ;;
 		   ( u ) user_show=-$opt ;;
-		   ( N )     names=$OPTARG ;;
+		   ( P )    bg_opt=-$opt ;;
+		   ( N ) names+=$OPTARG, ;;
 
 		   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
 		   ( * ) abort "$Usage" ;;
 		esac
 	done
 	shift $((OPTIND-1))
-	# shellcheck disable=SC2086 # variable contains multiple values
-	[[ ${do_drives-} ]] && set -- "$@" $drive_watch_functions
+	[[ ${df_opt-}    ]] && set -- "$@" filesystem-info-that-fits
 	# shellcheck disable=SC2086 # variable contains multiple or no values
 	[[ ${user_show-} ]] && set -- "$@" ${user_watch_functions-}
 	[[ $action == watch ]] &&
