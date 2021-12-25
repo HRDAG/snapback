@@ -1569,6 +1569,27 @@ readonly -f source-drive-specific-config-file
 
 # ----------------------------------------------------------------------------
 
+fix-days-value() {
+	local -n var=$1
+	local backup_period=$2
+
+	[[ " 0 24 " == *" $backup_period "* ]] ||
+	    abort "can't have backup_days unless backup_period is 24 (or 0)"
+
+	set -f
+	# shellcheck disable=SC2086 # we want word splitting
+	set -- $var
+	set +f
+	local day
+	for day
+	    do	[[ " Mon Tue Wed Thu Fri Sat Sun " == *" $day "* ]] && continue
+		abort "$day must be capitalized, 3-letter day-of-week abbrev"
+	done
+	var=$*
+}
+
+# ---------------------------------
+
 max_drive_names=
 
 function did-set-max_drive_names() {
@@ -1609,18 +1630,26 @@ fully-populate-custom-config-maps() {
 		suspend-tracing -l
 	done
 	restore-tracing
-
 	local var_name
-	for var_name in $custom_config_vars
+	# do backup_period first, for call to fix-days-value
+	for var_name in backup_period ${custom_config_vars/ backup_period / }
 	    do	local -n map=drv_name2$var_name
 		[[ -v $var_name ]] || abort "set '$var_name=' in $config_file"
 		local default_value=${!var_name}
+		[[ $default_value && $var_name ==  backup_days ]] &&
+		    fix-days-value default_value "$backup_period"
 		custom_config_var2default_value[$var_name]=$default_value
 		is-readonly-var "$var_name" &&
 		    abort "$var_name in $config_file must be writable"
 		for drive_name in $max_drive_names
 		    do	# shellcheck disable=SC1087 # confused by -v
-			[[ -v map[$drive_name] ]] && continue
+			if [[ -v map[$drive_name] ]]
+			   then [[ $var_name == backup_days ]] || continue
+				local -n days=map[$drive_name]
+				fix-days-value days \
+				    ${drv_name2backup_period[$drive_name]}
+				continue
+			fi
 			# shellcheck disable=SC2034 # confused by eval
 			local class=${drive_name2class[$drive_name]-.}
 			# shellcheck disable=SC1087 # confused by eval
@@ -1636,7 +1665,7 @@ readonly -f fully-populate-custom-config-maps
 
 false && {
 fully-populate-custom-config-maps
-for var in is_multi_writer_drive extra_excludes max_FS_usage_percent
+for var in is_multi_writer_drive max_FS_usage_percent backup_days
     do	declare -p drv_name2$var
 done
 abort "test fully-populate-custom-config-maps"
@@ -3663,8 +3692,8 @@ function _is-time-to-backup-drive {
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(date '+%k %M')
-	local -i current_hour=$1 current_minute=${2#0}
+	set -- $(date '+%k %M %a')
+	local -i current_hour=$1 current_minute=${2#0} DoW=$3
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
@@ -3682,6 +3711,8 @@ function _is-time-to-backup-drive {
 
 	(( $backup_period == 0 )) && return 1 # not backing up this drive?
 	(( $current_hour % $backup_period == 0 )) || return 1
+	[[ ! $backup_days ]] || is-arg1-in-arg2 "$DoW" "$backup_days" ||
+	    return 1
 
 	# FIXME: need to send email if this happens
 	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) && return 1
