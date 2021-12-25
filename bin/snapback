@@ -4160,7 +4160,8 @@ set-backup_type() {
 		local -n map=drv_name2$var_name
 		backup_type+="${map[$drive_name]}|"
 	done
-	drive_name2backup_type[$drive_name]=${backup_type%|} # cache it
+	backup_type=${backup_type%|}
+	drive_name2backup_type[$drive_name]=$backup_type # cache it
 }
 readonly -f set-backup_type
 
@@ -6037,7 +6038,7 @@ set-min_rows-min_rows_with_df-rows_left() {
 	#   4 lines of empty backup section.
 	# the copy (CS) section is only printed if there's some activity.
 	min_rows=$(( 1 + 1 + 8+1 + 4 + PD + CS + BD )); [[ $cron_cmds ]] &&
-	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + bzip
+	min_rows+=$((4 + 5*$num_bkp_rsyncs)) # 5: $our_name + 3 rsyncs + xz
 	min_rows_with_df=$((min_rows + 2 + num_drives))
 	[[ -s $big_swapouts_file ]] && min_rows_with_df+=2
 	[[ $show_all || $functions ]] && rows_left=1222333000
@@ -6658,7 +6659,7 @@ show-generated-output() {
 	for (( job_num=0; $job_num <= $max_job_num; job_num++ ))
 	    do	local  PID=${job_num2PID[$job_num]}
 		wait  $PID
-		set -- $generate_output_files_dir/out-$job_num-*
+		set -- "$generate_output_files_dir/out-$job_num"-*
 		local output_file=$1
 		cat  "$output_file" &&
 		: rm "$output_file"	# remove ':' to debug
