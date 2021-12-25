@@ -445,7 +445,6 @@ function sudo-lockpid() {
 	# shellcheck disable=SC2086 # *opt may be null
 	$IfRun $sudo_lockpid $opt ${is_optional:+-q} "$@" |
 	    sed "s/--pid=[0-9]*/--pid=PID/" # for regression-test, when $IfRun
-	[[ ${PIPESTATUS[0]} == 0 ]]
 }
 readonly -f sudo-lockpid
 
