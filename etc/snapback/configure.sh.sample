@@ -200,6 +200,8 @@ no_log_rsync_exit_statuses="20"		# can add 31
 # Best not to customize, since that prevents use by update-drives (see above).
 extra_excludes=				# per-drive custom excludes
 
+exclude_file_suffix=			# to create e.g. exclude-big.txt
+
 # Skip backups when there aren't many users, to avoid 'Too many links" problem.
 excluded_backup_hours="23 1 3"
 #
@@ -321,21 +323,23 @@ snapshot_date_time_separator=','
 # the sysadmin runs a command, or for the 'watch' action ('list-drives -a').
 # So, when you want to do maintenance on a drive, i.e. you want to suspend
 # backups and pruning, remove the drive's name from drive_name_regex= (only).
-      drive_name_regex='[A-Z]'		# only drives being backed-up & pruned
-admin_drive_name_regex='[A-Za-z]'	# all, for watch & list-drives -a
+readonly       drive_name_regex='[A-Z]'	# only drives being backed-up & pruned
+readonly admin_drive_name_regex='[A-Za-z]' # all, for watch & list-drives -a
 
 # This regex is matched against $drive_name to determine the drive_class,
 # an alternate key for drv_name2{var} if the array has no key for $drive_name .
 drive_class_regex="^."	# make the first character of $drive_name be the class
 drive_class_regex="^$admin_drive_name_regex+" # Hr2 & Hr-2 use Hr customization
+readonly drive_class_regex
 
 _drive_version_regex='[-._]?[0-9]*'	# support AB, CD-2, E.3, D_4, etc
 drive_name_regex=$drive_name_regex$admin_drive_name_regex*$_drive_version_regex
 admin_drive_name_regex="$admin_drive_name_regex+$_drive_version_regex"
-readonly is_drive_name_capitalized=$true  # best to not change this
-readonly is_drive_name_upper_cased=$false
+readonly drive_name_regex admin_drive_name_regex
 
-readonly drive_name_regex admin_drive_name_regex drive_class_regex
+# the first one 't' lets sysadmin access *all* drives w/lower-case letters ...
+readonly is_drive_name_capitalized=$true # ... so best to not change this.
+readonly is_drive_name_upper_cased=$false
 
 # ----------------------------------------------------------------------------
 

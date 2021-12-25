@@ -60,9 +60,8 @@ fi
 for dir in ~/etc /usr/local/etc /etc
     do	[[ -d $_root$dir/$our_name ]] && break
 done
-readonly   config_dir=${config_dir:-$_root$dir/$our_name}
-readonly exclude_file=$config_dir/exclude.txt # set-backup_type assumes RO
-readonly  config_file=$config_dir/configure.sh
+readonly config_dir=${config_dir:-$_root$dir/$our_name}
+readonly config_file=$config_dir/configure.sh
 unset _args _root
 
 config_file_sample=$config_file.sample
@@ -160,9 +159,6 @@ readonly -f confirm run-function set-backup_suffix
 
 [[ -v coder ]] ||			# can set custom value in $config_file
       coder=sweikart@gmail.com
-
-[[ -s $exclude_file ]] ||
-   abort "install/edit $exclude_file, see included .sample"
 
 Trace_log_default=$tmp_dir/$our_name.trace
 
@@ -1663,6 +1659,12 @@ customize-config-variables() {
 		suspend-tracing -l
 	done
 	restore-tracing
+
+	[[ $exclude_file_suffix == [!-]* ]] &&
+	    exclude_file_suffix=-$exclude_file_suffix
+	exclude_file=$config_dir/exclude$exclude_file_suffix.txt
+	[[ -s $exclude_file ]] ||
+	    abort "install/edit $exclude_file, see included .sample"
 
 	(( $backup_period_for_update > 0 )) && [[ $is_update ]] &&
 	    backup_period=$backup_period_for_update
@@ -4151,13 +4153,12 @@ set-backup_type() {
 
 	backup_type=
 	local var_name value
-	for var_name in dirs_to_backup extra_excludes
+	for var_name in dirs_to_backup extra_excludes exclude_file_suffix
 	    do	# shellcheck disable=SC2178 # shellcheck is confused
 		local -n map=drv_name2$var_name
 		backup_type+="${map[$drive_name]}|"
 	done
-	backup_type=$backup_type$exclude_file # exclude_file is read-only
-	drive_name2backup_type[$drive_name]=$backup_type # cache it
+	drive_name2backup_type[$drive_name]=${backup_type%|} # cache it
 }
 readonly -f set-backup_type
 
