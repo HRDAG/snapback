@@ -289,6 +289,7 @@ readonly tmp_4=$tmp_dir/$our_name-4-$BASHPID
 readonly tmp_5=$tmp_dir/$our_name-5-$BASHPID
 
 have-cmd lockpid || abort "'make' then install lockpid from $libsnap_project"
+have-cmd xz || abort "need to install 'xz' command"
 
 shopt -s checkhash			# sometimes move commands for testing
 shopt -s extglob			# useful for args to set-glob
@@ -3698,7 +3699,7 @@ _links-error-msg() {
 	# shellcheck disable=SC2155
 	local -i max_src_links=$(
 	local -i max_src_links=0
-	bzcat "$log" | tr -d '"' | cut -d' ' -f3 |
+	xzcat "$log" | tr -d '"' | cut -d' ' -f3 |
 	while read -r dst_file
 	    do	# shellcheck disable=SC2295 # need to glob
 		src_file=${dst_file#$drive_dir/$snapshot_glob.partial}
@@ -3736,12 +3737,12 @@ _handle-rsync-results() {
 	local new_snapshot=$1 status=$2 log=$3
 
 	if [[ -s $log ]]
-	   then [[ $IfRun ]] && { bzcat "$log"; rm "$log"; }
+	   then [[ $IfRun ]] && { xzcat "$log"; rm "$log"; }
 	   else rm -f "$log"
 	fi
 
 	# uncomment next line to debug link_fail_count code with -d option
-	# echo 'link failed: Too many links (31)' | bzip2 >> $log; status=31
+	# echo 'link failed: Too many links (31)' | xz >> $log; status=31
 
 	local error_msg=
 
@@ -3757,12 +3758,12 @@ _handle-rsync-results() {
 		   ! $is_cron || $debug_opt ]] && $IfRun \
 		    log "created $(basename "$new_snapshot") $writer_stats_msg"
 	   else # shellcheck disable=SC2046 # we want word splitting
-		set -- $(bzcat "$log" 2>$dev_null | # might be empty file
+		set -- $(xzcat "$log" 2>$dev_null | # might be empty file
 			 grep -c ': Too many links (31) *$')
 		local  link_fail_count=$1 # see test, above
 		if (( $link_fail_count == 0 ))
 		   then # shellcheck disable=SC2155
-			local err=$(bzcat "$log" | tail -n2)
+			local err=$(xzcat "$log" | tail -n2)
 			((  $(echo "$err" | wc -l) > 1 )) &&
 			err=$(echo "$err" | sed '1s/.*: //' |
 						tr '\n' '|' | sed 's/|/; /')
@@ -3774,7 +3775,7 @@ _handle-rsync-results() {
 			    "$new_snapshot"
 		fi
 		if is-arg1-in-arg2 "$status" "$no_log_rsync_exit_statuses" ||
-		   (( $(bzcat "$log" | wc -l) == 0 ))
+		   (( $(xzcat "$log" | wc -l) == 0 ))
 		   then rm -f "$log"
 			error_msg="$error_msg; Partial snapshot still useful"
 		   else error_msg="$error_msg; See $log"
@@ -3838,7 +3839,7 @@ function _run-rsync-cmd() {
 		     $relative_opt	\
 		     $link_dest_opts	\
 		     $excludes		\
-			$src_dirs $partial_dst/ |& bzip2 -9 > $log
+			$src_dirs $partial_dst/ |& xz -9 > $log
 	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
 
 	shopt -s nullglob
@@ -3855,7 +3856,7 @@ function run-rsync() {
 	local src_dirs=${*#"$dst_snapshot"}
 
 	local date_time=${dst_snapshot##*/}
-	local log=$tmp_dir/$drive_name-${date_time%%.*}.bz2
+	local log=$tmp_dir/$drive_name-${date_time%%.*}.xz
 
 	assert-drive_dir-writable "${dst_snapshot%/*}"
 
@@ -6879,11 +6880,11 @@ readonly -f dump-state
 # ----------------------------------------------------------------------------
 
 set-total_dir_MB-avg_dir_KB() {
-	local file=${1%.bz2}.bz2
+	local file=${1%.xz}.xz
 
 	isize=$(sed -r 's/.*-inode=([0-9]+)-.*/\1/' <<<"$file")
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $( bzcat "$file" |
+	set -- $( xzcat "$file" |
 		  awk -F K -v isize="$isize" \
 			'{ sub(/K$/, "", $1); space += ($1*1024) + isize;
 			   count += 1 }
@@ -6909,7 +6910,7 @@ dir-sizes() {
 	if [[ $# == 0 ]]
 	   then echo -e "\nThe actual drive-space consumed by a directory is"
 		echo -e "the size of: its directory block(s) plus its inode:\n"
-		set -- *.$suffix.bz2
+		set -- *.$suffix.xz
 		[[ $# != 0 ]] ||
 		   abort "no saved data files, you need to run: $our_name name"
 		for file
@@ -6924,7 +6925,7 @@ dir-sizes() {
 
 	if [[ $1 == -f && ${2-} =~ ^[0-9]+$ ]]
 	   then index=$2
-		set -- *.$suffix.bz2
+		set -- *.$suffix.xz
 		eval "file=\${$index}"
 	elif [[ $1 == -f && ${2-} ]]
 	   then set -- *"$2"*
@@ -6932,7 +6933,7 @@ dir-sizes() {
 		file=$1
 	elif [[ $1 == -f ]]
 	   then # shellcheck disable=SC2046 # we want word splitting
-		set -- $(/bin/ls -- *."$suffix".bz2 | sed 's/\.bz2//')
+		set -- $(/bin/ls -- *."$suffix".xz | sed 's/\.xz//')
 		[[ $# != 0 ]] || abort "don't have any old data files"
 		PS3="specify file number: "
 		select file
@@ -6981,25 +6982,25 @@ dir-sizes() {
 	   sed -r 's/^ *([0-9]+K) +/\1|/' | # pipe-separate fields
 	   sort -t '|' -k1n,1 -k2	  | # for histogram & compression
 	   awk  -F '|' '{ printf "%6s\t%s\n", $1, $2 }' | # more readable
-	   bzip2 -9 > "$file.partial.bz2" &&
-	   mv "$file.partial.bz2" "$file.bz2" ||
+	   xz -9 > "$file.partial.xz" &&
+	   mv "$file.partial.xz" "$file.xz" ||
 	      abort "something bad happened"
 	}
 
-	file=${file%.bz2}
+	file=${file%.xz}
 	header "$file"
 
 	# shellcheck disable=SC2155 # 'wc' never fails
-	local -i dir_count=$(bzcat "$file.bz2" | wc -l)
+	local -i dir_count=$(xzcat "$file.xz" | wc -l)
 	local -i median_line=$dir_count/2
 	printf "\n%7s directories.\n" "$dir_count"
-	bzcat "$file.bz2" |
+	xzcat "$file.xz" |
 	awk '    { KB += $1; count += 1 }
 	     END { printf "Average directory size is %.1f KB\n",
 				KB/count }'
 
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(bzcat "$file.bz2" | sed -n "${median_line}p")
+	set -- $(xzcat "$file.xz" | sed -n "${median_line}p")
 	echo -e " Median directory size is ${1%K} KB ...\n"
 	$Trace
 	(( $dir_count > 100 )) && {
@@ -7007,7 +7008,7 @@ dir-sizes() {
 	local -i decile_median_line=decile_count/2
 	for i in {0..9}
 	    do	# shellcheck disable=SC2046 # we want word splitting
-		set -- $(bzcat "$file.bz2" | sed -n ${decile_median_line}p)
+		set -- $(xzcat "$file.xz" | sed -n ${decile_median_line}p)
 		echo "Decile $i has median directory size of ${1}B"
 		((    decile_median_line+=decile_count ))
 	done
@@ -7017,10 +7018,10 @@ dir-sizes() {
 	echo "--> histogram of directory sizes <--"
 	echo "  count size"
 	echo "  ----- ----"
-	bzcat "$file.bz2" | cut -f1 | uniq -c | sort -nr | head
+	xzcat "$file.xz" | cut -f1 | uniq -c | sort -nr | head
 	echo -e "    ...\n"
 
-	set-total_dir_MB-avg_dir_KB "$file.bz2"
+	set-total_dir_MB-avg_dir_KB "$file.xz"
 	echo "BUT...  The actual drive-space consumed by a directory is"
 	echo "the size of its directory block(s) plus the size of its inode:"
 	space="$total_dir_MB MB/snapshot"
