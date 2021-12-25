@@ -62,6 +62,7 @@ for dir in ~/etc /usr/local/etc /etc
 done
 readonly config_dir=${config_dir:-$_root$dir/$our_name}
 readonly config_file=$config_dir/configure.sh
+exclude_file=$config_dir/exclude.txt	# can be customized
 unset _args _root
 
 config_file_sample=$config_file.sample
