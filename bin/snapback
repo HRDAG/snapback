@@ -5066,6 +5066,7 @@ readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
 set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 
+	minute_avg=			# not set for type 'backup'
 	local -i \
 	    count last average maximum sum
 	set-count-last-average-maximum-sum-files--from-stats-files minutes ||
@@ -5076,8 +5077,6 @@ set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 	set-division $watch_division_opts "$last"  60
 	hour_last=$division$units
 
-	set-division -d1 "$sum" "$count"
-	minute_avg=$division
 	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts $average 60
 	hour_avg=$division$units
@@ -5086,9 +5085,12 @@ set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 	set-division $watch_division_opts $maximum 60
 	hour_max=$division$units
 
-	[[ $writer_type == backup ]] || return
+	if [[ $writer_type != backup ]]
+	   then set-division -d1 "$sum" "$count"
+		minute_avg=$division
+		return
+	fi
 
-	# drv_name2backup_period_for_update -> localize period
 	local -i backup_period=${drv_name2backup_period[$drive_name]}
 	local -i backup_period_mins=$(( $backup_period*60 ))
 	if (( average >= backup_period_mins && backup_period_mins > 0 ))
@@ -5117,13 +5119,14 @@ set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals() {
 	    do	local \
 		    hour_last minute_avg hour_avg hour_max
 		set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files
+
 	       hour_lasts+="$drive_name=$hour_last "
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
 		[[ $writer_type == backup ]] && continue
 
 		local stats_number=${drive_name2stats_number[$drive_name]}
-		(( $stats_number == 0 )) &&
+		(( $stats_number == 0 )) || [[ ! $minute_avg ]] &&
 		    _writer_totals+="$drive_name= " && continue
 		set-product "$minute_avg" "$stats_number"
 		# shellcheck disable=SC2086 # var containing multiple values
@@ -5435,7 +5438,7 @@ _set-colorized_new() {
 	local backup_period=${drv_name2backup_period[$drive_name]}
 	# shellcheck disable=SC2125
 	local -i max_age=$((2*$backup_period))
-	# shellcheck disable=SC2086 # wamt word splitting
+	# shellcheck disable=SC2086,SC2154 # want word splitting
 	set -- ${drv_name2backup_days[$drive_name]}
 	[[ $# != 0 ]] && max_age+=$(( 24*(7+$#)/$# )) # round up (roughly)
 
