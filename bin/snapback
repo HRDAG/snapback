@@ -6746,7 +6746,7 @@ watch() {
 	   -d: only show 'df' (so can watch Used and IUsed)
 	   -u: show sections you specify in config w/user_watch_functions=
 	   -N names: limit display to drive-names
-	   -P: don't parallelize generation of sections
+	   -P: don't parallelize generation of sections; debug with: w -P ...
 	EOF
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
