@@ -3693,7 +3693,8 @@ function _is-time-to-backup-drive {
 
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(date '+%k %M %a')
-	local -i current_hour=$1 current_minute=${2#0} DoW=$3
+	local -i current_hour=$1 current_minute=${2#0}
+	local DoW=$3
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
