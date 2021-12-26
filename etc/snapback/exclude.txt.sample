@@ -43,7 +43,7 @@
 /usr/share/fonts/truetype/ttf-dejavu/*
 
 # you could keep more or fewer, could be 1 MB each
-/var/backups/dpkg.status.[3-9].gz
+/var/backups/dpkg.status.[3-9].*z*
 
 /var/cache/*/*
 /var/lib/apt/lists/*
@@ -88,66 +88,70 @@
 /var/snap/*
 /var/staging/*
 /var/swap/*
-/var/tmp/*cache*
+/var/tmp/*[Cc]ache*
 
 # -------------------------------------------------------
 # home-directory user stuff				#
 # -------------------------------------------------------
 
 # mostly application caches
-/home/*/.[Cc]ache/*
+# the first one may obviate the following chrome/firefox patterns
+/home/*/.**[Cc]ache*
+/home/*/snap/**[Cc]ache*
 /home/*/.conda/*
 /home/*/.torch/*
 /home/*/.*/bundle/*
 /home/*/tmp/*
 /home/*/[Tt]rash/*
-/home/**/*[cC]ache/*
-/home/**/[cC]ache*/*
 /home/**/Favicons
 
 # Google Chrome files that can disappear, or are very large and change often
-/home/*/.config/google-chrome/Default/Bookmarks.bak
-/home/*/.config/google-chrome/Default/Cookies
-/home/*/.config/google-chrome/Default/Extensions/*
-/home/*/.config/google-chrome/Default/File?System/*
+/home/*/.config/google-chrome/*/Bookmarks.bak
+/home/*/.config/google-chrome/*/Cookies
+/home/*/.config/google-chrome/*/Extensions/*
+/home/*/.config/google-chrome/*/File?System/*
 # GCM has been deprecated, replaced with FCM
-/home/*/.config/google-chrome/Default/[FG]CM?Store/*
+/home/*/.config/google-chrome/*/[FG]CM?Store/*
 # this can be GB, and changes constantly as you browse
-/home/*/.config/google-chrome/Default/GPUCache/*
-/home/*/.config/google-chrome/Default/History
-/home/*/.config/google-chrome/Default/IndexedDB/*
-/home/*/.config/google-chrome/Default/Local?Storage/*
-/home/*/.config/google-chrome/Default/Network?Action?Predictor
-/home/*/.config/google-chrome/Default/Pepper?Data/Shockwave?Flash/WritableRoot
-/home/*/.config/google-chrome/Default/Service?Worker/Database/*
-/home/*/.config/google-chrome/Default/Session?Storage/*
-/home/*/.config/google-chrome/Default/Storage/*
+/home/*/.config/google-chrome/*Cache/*
+/home/*/.config/google-chrome/*/*Cache*/*
+/home/*/.config/google-chrome/*/History
+/home/*/.config/google-chrome/*/IndexedDB/*
+/home/*/.config/google-chrome/*/Local?Storage/*
+/home/*/.config/google-chrome/*/Network?Action?Predictor
+/home/*/.config/google-chrome/*/Pepper?Data/Shockwave?Flash/WritableRoot
+/home/*/.config/google-chrome/*/Service?Worker/Database/*
+/home/*/.config/google-chrome/*/Service?Worker/*Cache*/*
+/home/*/.config/google-chrome/*/Session?Storage/*
+/home/*/.config/google-chrome/*/Storage/*
 # large, holds passwords and credit card data
-/home/*/.config/google-chrome/Default/Sync?Data/*
-/home/*/.config/google-chrome/Default/Top?Sites
+/home/*/.config/google-chrome/*/Sync?Data/*
+/home/*/.config/google-chrome/*/Top?Sites
 # transient and large
-/home/*/.config/google-chrome/Default/Web?Data
+/home/*/.config/google-chrome/*/Web?Data
 /home/*/.config/google-chrome/EVWhitelist/?/_platform_specific/*/ev_hashes_*
 /home/*/.config/google-chrome/PepperFlash/*
 /home/*/.config/google-chrome/Pepper?Data/Shockwave?Flash/WritableRoot
 /home/*/.config/google-chrome/pnacl/*
 /home/*/.config/google-chrome/Safe?Browsing*
-/home/*/.config/google-chrome/*ShaderCache/*
 #
 # chromium files that can disappear, or are very large and change often
-/home/*/.config/chromium/Profile ?/Extensions/*
-/home/*/.config/chromium/Profile ?/Local Storage/*
-/home/*/.config/chromium/Profile ?/IndexedDB/*
-/home/*/.config/chromium/Profile ?/Session Storage/*
-/home/*/.config/chromium/Profile ?/Sync?Data/*
-/home/*/.config/chromium/Profile ?/Top?Sites/*
+/home/*/.config/chromium/*Cache*/*
+/home/*/.config/chromium/*/*Cache*/*
+/home/*/.config/chromium/*/Extensions/*
+/home/*/.config/chromium/*/Local?Storage/*
+/home/*/.config/chromium/*/IndexedDB/*
+/home/*/.config/chromium/*/Service?Worker/*Cache*/*
+/home/*/.config/chromium/*/Session?Storage/*
+/home/*/.config/chromium/*/Sync?Data/*
+/home/*/.config/chromium/*/Top?Sites/*
 
 # mostly browser/mailer stuff
 /home/*/.claws-mail/imapcache
 /home/*/.gvfs
 /home/*/.mozilla/seamonkey/*/ImapMail
+/home/*/.mozilla/**/cache/*
 # not sure if all these can be repopulated
-/home/*/.mozilla/seamonkey/*/*.sqlite*
 /home/*/.shotwell
 
 # big WINE files that can be repopulated
