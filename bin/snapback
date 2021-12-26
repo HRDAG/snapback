@@ -299,7 +299,7 @@ shopt -s lastpipe			# don't fork last cmd of pipeline
 shopt -s nullglob			# $# is 0 if pathname expansion "fails"
 shopt -s shift_verbose			# print error message if bad shift
 
-set -o pipefail				# catch surprising errors
+set -o pipefail				# catch surprising errors (but *grep)
 
 readonly umask=02			# log dirs are setgid sudo/etc
 umask $umask
@@ -5435,6 +5435,10 @@ _set-colorized_new() {
 	local backup_period=${drv_name2backup_period[$drive_name]}
 	# shellcheck disable=SC2125
 	local -i max_age=$((2*$backup_period))
+	# shellcheck disable=SC2086 # wamt word splitting
+	set -- ${drv_name2backup_days[$drive_name]}
+	[[ $# != 0 ]] && max_age+=$(( 24*(7+$#)/$# )) # round up (roughly)
+
 	local highlighted_string=
 	local age=${new%[a-zA-Z]}
 	if [[ ! $new ]]
