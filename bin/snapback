@@ -5131,7 +5131,7 @@ set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals() {
 		set-product "$minute_avg" "$stats_number"
 		# shellcheck disable=SC2086 # var containing multiple values
 		set-division $watch_division_opts "$product" "$minutes_per_day"
-		_writer_totals+="$drive_name=$division "
+		_writer_totals+="$drive_name=${division}d "
 	done
 
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -5162,7 +5162,7 @@ set-percent_usage() {
 	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts "$MB_100" "$size_MB"
 	[[ $division == -00.00 ]] && division=${division#-}
-	percent_usage=$division%
+	percent_usage=$division
 }
 readonly -f set-percent_usage
 
@@ -5192,6 +5192,7 @@ set-GB_avg-predicted_TB_sum-predicted_percent_usage() {
 			predicted_TB_sum=$division$units
 
 			set-percent_usage "$predicted_sum"
+			# percentage points not percentage, don't append '%'
 			predicted_percent_usage=$percent_usage
 		   else predicted_percent_usage= predicted_TB_sum=
 		fi
@@ -5211,7 +5212,8 @@ function set-jobs_per_day-writer_GBs_per_day-percent_usages_per_day() {
 	for drive_name in $all_drive_names
 	    do	local -i MB_per_day=0  unique_hours=0 \
 		       count last average maximum sum
-		if set-count-last-average-maximum-sum-files--from-stats-files MB
+		if set-count-last-average-maximum-sum-files--from-stats-files \
+		       MB
 		   then local snapshots=${files//.txt/}
 
 			local hours=${snapshots//$snapshot_day_glob,/}
