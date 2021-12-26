@@ -8426,6 +8426,7 @@ search-syslog-for-errors() {
 	local services=$*
 	(( $# > 1 )) && services="systemd service failures: {${services// /,}}"
 
+	set +o pipefail			# fgrep may not find anything
 	sed 's/.*[0-9]\][: ] *//' "$search_file" |
 	    fgrep -v "$big_swapout_string" |
 	    sed -r -e 's/ tag#[0-9]+/ tag#M/; s/-tag [0-9]+/-tag N/' \
@@ -8440,6 +8441,7 @@ search-syslog-for-errors() {
 	    sort | sed 's/scrzz* /sd /' | # undo hack to group UAS msgs
 	    uniq -c | echo-to-file - "$cnt_msg_file" ||
 		          { ls -ld . "$cnt_msg_file"*; print-call-stack; }
+	set -o pipefail
 }
 readonly -f search-syslog-for-errors
 
