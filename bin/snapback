@@ -6889,6 +6889,7 @@ predict-prune() {
 	    do	# shellcheck disable=SC2086 # *_opt may be null
 		$our_path -d prune-drives $prune_opt "$drive_name" > $tmp_1 ||
 		    exit $?
+		# don't abort on non-0 exit, grep can do that
 		grep -v '\.rm .*\.rm' "$tmp_1" | # ignore: mv S.rm S.partial.rm
 		    sed -n -r '/^mv .*\.rm$/s@.*[/ ]@@p' > "$tmp_2"
 		[[ ! $is_quiet ]] &&
