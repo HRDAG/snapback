@@ -5063,18 +5063,20 @@ readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
 # ---------------------------------
 
-set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
+set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 
 	local -i \
 	    count last average maximum sum
 	set-count-last-average-maximum-sum-files--from-stats-files minutes ||
-	    { hour_last= hour_avg= hour_max= ; return; }
+	    { hour_last= minute_avg= hour_avg= hour_max= ; return; }
 	units=h
 
 	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts "$last"  60
 	hour_last=$division$units
 
+	set-division -d1 "$sum" "$count"
+	minute_avg=$division
 	# shellcheck disable=SC2086 # variable containing multiple values
 	set-division $watch_division_opts $average 60
 	hour_avg=$division$units
@@ -5099,21 +5101,33 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 		hour_avg=$padded_colorized_string
 	fi
 }
-readonly -f set-hour_last-hour_avg-hour_max--from-files-of-minutes
+readonly -f set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files
 
 # --------------------------------------------
 
-set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs() {
+readonly minutes_per_day=$((60 * 24))
+
+set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals() {
 	local writer_type=$1
 
-	local drive_name hour_avgs= hour_maxs=
+	writer_totals=			# not set for type 'backup'
+	local drive_name hour_lasts= hour_avgs= hour_maxs= _writer_totals=
 	for drive_name in $all_drive_names
 	    do	local \
-		    hour_last hour_avg hour_max
-		set-hour_last-hour_avg-hour_max--from-files-of-minutes
+		    hour_last minute_avg hour_avg hour_max
+		set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files
 	       hour_lasts+="$drive_name=$hour_last "
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
+		[[ $writer_type == backup ]] && continue
+
+		local stats_number=${drive_name2stats_number[$drive_name]}
+		(( $stats_number == 0 )) &&
+		    _writer_totals+="$drive_name= " && continue
+		set-product "$minute_avg" "$stats_number"
+		# shellcheck disable=SC2086 # var containing multiple values
+		set-division $watch_division_opts "$product" "$minutes_per_day"
+		_writer_totals+="$drive_name=$division "
 	done
 
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -5122,11 +5136,14 @@ set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs() {
 	printf -v writer_hour_avgs  "$stats_format" $hour_avgs
 	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v writer_hour_maxs  "$stats_format" $hour_maxs
+	# shellcheck disable=SC2086 # variable contains multiple values
+	[[ $_writer_totals ]] &&
+	printf -v writer_totals     "$stats_format" $_writer_totals
 	fix-padded-colorized-string-vars writer_hour_avgs
 	strip-trailing-whitespace \
-	    writer_hour_lasts writer_hour_avgs writer_hour_maxs
+	    writer_hour_lasts writer_hour_avgs writer_hour_maxs writer_totals
 }
-readonly -f set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs
+readonly -f set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals
 
 # ----------------------------------------------------------------------------
 
@@ -5268,7 +5285,6 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 		[[ $writer_type != backup ]] || continue
 
 		predicted_TBs+="$drive_name=$predicted_TB_sum "
-
 		predicted_percents+="$drive_name=$predicted_percent_usage "
 	done
 
@@ -5279,7 +5295,7 @@ set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages() {
 	# shellcheck disable=SC2086 # variable contains multiple values
 	printf -v predicted_percent_usages "$stats_format" $predicted_percents
 	strip-trailing-whitespace \
-	    writer_GB_avgs     predicted_TB_sums predicted_percent_usages
+	    writer_GB_avgs predicted_TB_sums predicted_percent_usages
 	[[ $writer_GB_avgs == *=[-0-9]* ]]
 }
 readonly -f set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages
@@ -6184,7 +6200,8 @@ show-stats-section-1() {
 
 	# NOTE: see min_rows= in set-min_rows-min_rows_with_df-rows_left
 
-	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs backup
+	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals \
+	    backup
 	echo " Recent hours to create backup snapshot:  $writer_hour_lasts"
 	echo "Average hours to create backup snapshot:  $writer_hour_avgs"
 	echo "Maximum hours to create backup snapshot:  $writer_hour_maxs"
@@ -6207,6 +6224,8 @@ readonly -f show-stats-section-1
 
 set-drive_name2stats_number() {
 
+	# shellcheck disable=SC2048,SC2086 # I want to word-split these nums
+	set -- $*
 	local  stats_numbers=" $*"
 	local  init=${stats_numbers// / [}
 	init=${init//=/]=}
@@ -6281,17 +6300,19 @@ show-stats-section-2-prune() {
 	setup-snapshot-stats .rm || return
 
 	ech_ " Number pruned .rm snaps awaiting rm -r:  $stats_numbers"
+	declare -i -A drive_name2stats_number
+	set-drive_name2stats_number "$stats_numbers"
 
-	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs prune
+	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals \
+	    prune
 	echo "  Average hours to delete *.rm snapshot:  $writer_hour_avgs"
 
-	declare -A drive_name2stats_number
 	# shellcheck disable=SC2086 # variable contains multiple values
-	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages prune
 	echo "Average GB freed when prune rm snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be freed:  $predicted_TB_sums"
 	echo "           ... predicted %-point change:  $predicted_percent_usages"
+	echo "           ... predicted days to finish:  $writer_totals"
 	(( rows_left-=$rows_used ))
 }
 readonly -f show-stats-section-2-prune
@@ -6309,17 +6330,19 @@ show-stats-section-2-copy() {
 	report-rows_left-if-parallelized
 
 	ech_ " Number empty .partial dirs, for update:  $stats_numbers"
+	declare -i -A drive_name2stats_number
+	set-drive_name2stats_number "$stats_numbers"
 
-	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs copy
+	set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals \
+	    copy
 	echo "  Average hours to copy/update snapshot:  $writer_hour_avgs"
 
-	declare -A drive_name2stats_number
 	# shellcheck disable=SC2086 # variable contains multiple values
-	set-drive_name2stats_number $stats_numbers
 	set-writer_GB_avgs-predicted_TB_sums-predicted_percent_usages copy
 	echo "   Average GB used when copy a snapshot:  $writer_GB_avgs"
 	echo "     ... predicted total TB to be added:  $predicted_TB_sums"
 	echo "           ... predicted %-point change:  $predicted_percent_usages"
+	echo "           ... predicted days to finish:  $writer_totals"
 }
 readonly -f show-stats-section-2-copy
 
