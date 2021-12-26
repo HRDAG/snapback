@@ -6294,7 +6294,7 @@ readonly -f show-stats-section-2-backup
 
 show-stats-section-2-prune() {
 
-	local -i rows_used=5
+	local -i rows_used=6
 	_do-have-stats prune || return
 
 	setup-snapshot-stats .rm || return
@@ -6321,7 +6321,7 @@ readonly -f show-stats-section-2-prune
 
 show-stats-section-2-copy() {
 
-	local -i rows_used=5
+	local -i rows_used=6
 	_do-have-stats -R || return	# don't pass 'copy', need next one ...
 
 	setup-snapshot-stats -e .partial ||
