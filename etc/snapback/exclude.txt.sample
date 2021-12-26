@@ -94,6 +94,9 @@
 # home-directory user stuff				#
 # -------------------------------------------------------
 
+# the files in here have 111 hard links, which causes link-failures with ext4
+/home/*/libexec/git-core
+
 # mostly application caches
 # the first one may obviate the following chrome/firefox patterns
 /home/*/.**[Cc]ache*
