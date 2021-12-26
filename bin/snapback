@@ -6887,8 +6887,7 @@ predict-prune() {
 		$our_path -d prune-drives $prune_opt "$drive_name" > $tmp_1 ||
 		    exit $?
 		grep -v '\.rm .*\.rm' "$tmp_1" | # ignore: mv S.rm S.partial.rm
-		    sed -n -r '/^mv .*\.rm$/s@.*[/ ]@@p' > "$tmp_2" ||
-			abort-function sed
+		    sed -n -r '/^mv .*\.rm$/s@.*[/ ]@@p' > "$tmp_2"
 		[[ ! $is_quiet ]] &&
 		sort "$tmp_2" && echo
 		# 
@@ -7035,18 +7034,22 @@ dir-sizes() {
 	[[ $UID == 0 ]] || abort "need to use sudo"
 
 	# shellcheck disable=SC2086 # variable contains multiple values
+	set -- $dirs_to_backup
+	[[ $# == 1 ]] ||
+	    abort-function "rsync weird unless dirs_to_backup= has single dir"
+	# shellcheck disable=SC2086 # variable contains multiple values
 	rsync --dry-run --verbose --recursive --relative \
-		  $excludes		      \
-		--include='*/' --exclude='*'  \
-		      $dirs_to_backup  /tmp/  |
+		  $excludes		     \
+		--include='*/' --exclude='*' \
+		      $dirs_to_backup  /tmp/ | # spurious 2nd dir else 'ls -ld'
 	   grep '^/' |
 	   # head -n 100 |		# uncomment to speedup debugging
 	   tr '\n' '\0' | xargs -0 ls --block-size=K -sd |
 	   sed -r 's/^ *([0-9]+K) +/\1|/' | # pipe-separate fields
-	   sort -t '|' -k1n,1 -k2	  | # for histogram & compression
+	   sort -t '|' -k1n,1 -k2 -u	  | # for histogram & compression
 	   awk  -F '|' '{ printf "%6s\t%s\n", $1, $2 }' | # more readable
 	   xz -9 > "$file.partial.xz" &&
-	   mv "$file.partial.xz" "$file.xz" ||
+	   mv	   "$file.partial.xz" "$file.xz" ||
 	      abort "something bad happened"
 	}
 
