@@ -283,8 +283,8 @@ exit_() { exit-normally "$@"; }		# short form, for 'test' action
 
 # $tmp_1 and $tmp_2 are used then deleted in the same function. so don't
 # need to check the whole script to see if someone else is using them.
-readonly tmp_1=$tmp_dir/$our_name-1-$BASHPID; tmp=$tmp_1 # only inside function
-readonly tmp_2=$tmp_dir/$our_name-2-$BASHPID		 # only inside function
+readonly tmp_1=$tmp_dir/$our_name-1-$BASHPID # never used across functions ...
+readonly tmp_2=$tmp_dir/$our_name-2-$BASHPID # ... i.e. only inside one func
 readonly tmp_3=$tmp_dir/$our_name-3-$BASHPID
 readonly tmp_4=$tmp_dir/$our_name-4-$BASHPID
 readonly tmp_5=$tmp_dir/$our_name-5-$BASHPID
@@ -7180,15 +7180,16 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 			swidth=
 			;;
 		    ( xfs  )
-			RunCmd xfs_info "$drive_dir" > "$tmp" # $tmp_1
-		     sector=$(sed -nr '/at/s/.* sectsz=([^ ]+) .*/\1/p' "$tmp")
-		      inode=$(sed -nr '/^m/ s/.* isize=([^ ]+) .*/\1/p' "$tmp")
-		      block=$(sed -nr '/^d/ s/.* bsize=([^ ]+) .*/\1/p' "$tmp")
-		  dir_block=$(sed -nr '/^n/ s/.* bsize=([^ ]+) .*/\1/p' "$tmp")
-		  log_block=$(sed -nr '/^l/ s/.* bsize=([^ ]+) .*/\1/p' "$tmp")
-		  log_count=$(sed -nr '/^l/s/.* blocks=([^ ]+),.*/\1/p' "$tmp")
-		      sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' "$tmp")
-		     swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' "$tmp")
+			local i=$tmp_1
+			RunCmd xfs_info "$drive_dir" > "$i"
+		      sector=$(sed -nr '/at/s/.* sectsz=([^ ]+) .*/\1/p' "$i")
+		       inode=$(sed -nr '/^m/ s/.* isize=([^ ]+) .*/\1/p' "$i")
+		       block=$(sed -nr '/^d/ s/.* bsize=([^ ]+) .*/\1/p' "$i")
+		   dir_block=$(sed -nr '/^n/ s/.* bsize=([^ ]+) .*/\1/p' "$i")
+		   log_block=$(sed -nr '/^l/ s/.* bsize=([^ ]+) .*/\1/p' "$i")
+		   log_count=$(sed -nr '/^l/s/.* blocks=([^ ]+),.*/\1/p' "$i")
+		       sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' "$i")
+		      swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' "$i")
 		     log_bytes=$(( $log_block * $log_count ))
 		     set-division -d2 "$log_bytes" $(( 1024 * 1024 * 1024 ))
 		        log=${division}g
