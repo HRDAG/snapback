@@ -1415,10 +1415,25 @@ function set-drive_name-() {
 	    [[ $is_quiet ]] && { $xtrace; return 1; }
 	    abort "'$name' is not a valid drive-name";		    }
 
+	[[ $name =~ $drive_class_regex ]]
+	local class=${BASH_REMATCH[0]-}
+	if   [[ $drive_class_regex == ^* ]]
+	   then name=${name#"$class"}
+	elif [[ $drive_class_regex == *$ ]]
+	   then name=${name%"$class"}
+	   else class=
+	fi
 	if   [[ $is_drive_name_upper_cased ]]
 	   then name=${name^^}
 	elif [[ $is_drive_name_capitalized ]]
 	   then name=${name^}
+	fi
+	if [[ $class ]]
+	   then	if   [[ $drive_class_regex == ^* ]]
+		   then name=$class$name
+		elif [[ $drive_class_regex == *$ ]]
+		   then name=$name$class
+		fi
 	fi
 	drive_name=$name
 
