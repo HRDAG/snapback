@@ -1879,22 +1879,20 @@ mon-launch-globs() {
 			continue	# don't need *.partial code
 		fi
 
-		local  PID=${ls_drive_name2PID[$drive_name]-}
-		[[ $PID ]] && kill -0 "$PID" 2> $dev_null &&continue # running?
+		local PID=${ls_drive_name2PID[$drive_name]-}
+		[[ $PID ]] && kill -0 "$PID" 2> $dev_null && continue #running?
 		#
 		local partial_file=$non_empty_partial_dir/$drive_name
-		(
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob.partial
-		if [[ $# == 0 ]]
-		   then true > "$partial_file"
-		   else	local partial_file_new=$partial_file.$BASHPID
-			# snapshot non-empty if has subdirectories: link count
-			# shellcheck disable=SC2012
-			ls -ld "$@" |
-			awk '$2 > 2 { print $(NF) }' > "$partial_file_new" &&
-				mv "$partial_file_new" "$partial_file"
-		fi
+		[[ $# == 0 ]] && true > "$partial_file" && continue
+		(
+		local partial_file_new=$partial_file.$BASHPID
+		# snapshot is non-empty if has subdirectories: get link count
+		# shellcheck disable=SC2012 # we know what's there
+		ls -ld "$@" |
+		awk '$2 > 2 { print $(NF) }' > "$partial_file_new" &&
+			mv "$partial_file_new" "$partial_file"
 		) &			# this can take a while
 		ls_drive_name2PID[$drive_name]=$!
 	done
