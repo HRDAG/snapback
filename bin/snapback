@@ -1498,8 +1498,12 @@ function set-drive_dir-() {
 	   then drive_dir=$mon_overhead_drive_dir
 	   else drive_dir=$drive_dir_prefix$name
 	fi
-	[[ -d $drive_dir || ! $do_warn ]] ||
-	    warn "no mount directory for '$name'"
+	[[ -d  $drive_dir ]] && return 0
+	set -- $drive_dir_prefix"$name"[^a-zA-Z0-9]* \
+	       $drive_dir_prefix*[^a-zA-Z0-9]"$name"
+	[[ $# == 1 ]] && drive_dir=$1 && return
+
+	[[ ! $do_warn ]] || warn "no mount directory for '$name'"
 }
 readonly -f set-drive_dir-
 
@@ -1679,7 +1683,7 @@ readonly -f fully-populate-custom-config-maps
 
 false && {
 fully-populate-custom-config-maps
-for var in is_multi_writer_drive max_FS_usage_percent backup_days
+for var in is_multi_writer_drive backup_days exclude_file_suffix
     do	declare -p drv_name2$var
 done
 abort "test fully-populate-custom-config-maps"
@@ -3706,9 +3710,9 @@ function _is-time-to-backup-drive {
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(date '+%k %M %a')
-	local -i current_hour=$1 current_minute=${2#0}
-	local DoW=$3
+	set -- $(date '+%k %_M %_d %a')
+	local -i current_hour=$1 current_minute=$2 current_DoM=$3
+	local    current_DoW=$4
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
 	   update-snapshots-ls &&
@@ -3726,8 +3730,8 @@ function _is-time-to-backup-drive {
 
 	(( $backup_period == 0 )) && return 1 # not backing up this drive?
 	(( $current_hour % $backup_period == 0 )) || return 1
-	[[ ! $backup_days ]] || is-arg1-in-arg2 "$DoW" "$backup_days" ||
-	    return 1
+	[[ ! $backup_days ]] || (( $current_DoM == 1 )) || # 1st pruned slowest
+	    is-arg1-in-arg2 "$current_DoW" "$backup_days" || return 1
 
 	# FIXME: need to send email if this happens
 	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) && return 1
