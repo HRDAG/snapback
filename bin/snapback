@@ -1167,8 +1167,8 @@ readonly -f ps-locks
 # miscellaneous
 ##############################################################################
 
-[[ -v    df_exclude_type_options ]] ||	# can set custom value in $config_file
-readonly df_exclude_type_options="-x devtmpfs -x tmpfs -x squashfs"
+[[ -v df_exclude_type_options ]] ||	# can set custom value in $config_file
+      df_exclude_type_options="-x devtmpfs -x tmpfs -x squashfs"
 
 list-drive-dirs() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
