@@ -482,8 +482,8 @@ readonly -f set-lock_path
 
 # ---------------------------------
 
-# Turn comma-separated lists or sequence-expressions without surrounding (),
-# or ranges without surrounding [], into a single syntactically-correct glob.
+# Turn comma-separated lists or sequence-expressions without surrounding ()
+# into a single syntactically-correct glob.
 # Return 0 if the final glob has metadata characters (i.e. not simple string).
 function set-glob() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
@@ -494,7 +494,6 @@ function set-glob() {
 	    do	set -f
 		[[ $arg == *,*  && $arg != *'{'* ]] && arg="{$arg}"
 		[[ $arg == *..* && $arg != *'{'* ]] && arg="{$arg}"
-		[[ $arg == *-*  && $arg != *'['* ]] && arg="[$arg]"
 		set +f
 		glob+="$arg,"		# append ','. we'll wrap in {}
 	done
@@ -4822,7 +4821,7 @@ readonly -f do-chores
 # ----------------------------------------------------------------------------
 
 function set-drive_dirs--from-user-args() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+#	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 	assert-not-option "${1-}"
 

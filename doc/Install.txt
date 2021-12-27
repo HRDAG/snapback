@@ -153,6 +153,9 @@ Encrypt the drive, then create a decrypted mapping:
 	sudo snapcrypt init $drive_name $raw_device
 
     # If it fails with "Device size is not aligned to requested sector size.",
+    # then delete the partition and recreate with Last sector of default-1..
+
+    # If it fails with "Device size is not aligned to requested sector size.",
     # and syslog says  "Device size is not multiple of sector_size", then you
     # have some options (some of which WILL *DESTROY* all the drive's data):
 
