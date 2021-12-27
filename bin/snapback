@@ -5076,7 +5076,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	popd_ -q
 	TraceV 2 count last average maximum sum
 	$xtrace
-	(( $count != 0 ))
+	(( $count != 0 ))		# did we find any files w/data?
 }
 readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
