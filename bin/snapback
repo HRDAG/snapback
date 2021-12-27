@@ -4821,7 +4821,7 @@ readonly -f do-chores
 # ----------------------------------------------------------------------------
 
 function set-drive_dirs--from-user-args() {
-#	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 	assert-not-option "${1-}"
 
