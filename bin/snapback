@@ -1180,7 +1180,11 @@ list-drive-dirs() {
 	   then local regex=$admin_drive_name_regex
 	   else local regex=$drive_name_regex # for cron & nohup
 	fi
-	[[ ${1-} == -A ]] && regex=/ || regex="^$drive_dir_prefix$regex$"
+	if [[ ${1-} == -A ]]
+	   then regex=/
+	   else regex="^$drive_dir_prefix$regex$"
+		local df_exclude_type_options= # tst FS could be tmpfs
+	fi
 	# shellcheck disable=SC2086 # *_opt* may be null or multiple
 	df --output=target $df_exclude_type_options --no-sync |
 	   egrep "$regex" | sort -u
