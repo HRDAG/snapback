@@ -2420,15 +2420,13 @@ save-stats-file() {
 		fi
 	fi
 
-	if [[ $data_type == MB ]]	 # MB file needed for jobs_per_day stat
-	   then if [[ $data != [-0-9]* ]] # text, i.e. unknown MB?
+	if [[ $data != [-0-9]* ]]	# text, i.e. unknown MB or minutes?
+	   then if [[ $data_type == MB ]]
 		   then data="this was a restart, MB change unknown"
-		elif [[ ( $data == -1 || $data == 1 ) && $debug_opt ]]
-		   then data=0		# for regression test
+		   else data="this was a restart, rsync-minutes unknown"
 		fi
-	elif [[ $data != [-0-9]* ]]	# unknown minutes? (bug if negative)
-	     then popd_ -q		# minutes file not needed by dashboard
-		  return
+	elif [[ ( $data == -1 || $data == 1 ) && $debug_opt ]]
+	     then data=0		# for regression test
 	fi
 
 	echo-to-file "$data" "$data_file"
@@ -5078,7 +5076,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	popd_ -q
 	TraceV 2 count last average maximum sum
 	$xtrace
-	[[ $files ]]
+	(( $sum != 0 ))
 }
 readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
