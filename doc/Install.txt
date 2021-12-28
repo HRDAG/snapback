@@ -144,7 +144,7 @@ Create an encryption keypair (if don't already have one you want to use):
     # create key $(basename $keypair)
 
 Encrypt the drive, then create a decrypted mapping:
-    # If you're going to use ext4 with snapback's default block size (-b 1024),
+    # If you're going to use snapback's default ext4 block size (-b 1024),
     # then you'll need to encrypt the drive with the matching sector size:
 	sudo snapcrypt init -s 1024 $drive_name $raw_device
 
@@ -153,16 +153,11 @@ Encrypt the drive, then create a decrypted mapping:
 	sudo snapcrypt init $drive_name $raw_device
 
     # If it fails with "Device size is not aligned to requested sector size.",
-    # then delete the partition and recreate with Last sector of default-1..
-
-    # If it fails with "Device size is not aligned to requested sector size.",
-    # and syslog says  "Device size is not multiple of sector_size", then you
-    # have some options (some of which WILL *DESTROY* all the drive's data):
-
-    # -1. DESTROY data: raw_device=${raw_device%?} # don't have disk label.
-    # If this doesn't work, you can restore the disk label by running:
-    #	"fdisk $raw_device" then 'g' (to create a new GPT label) then 'n'
-    # and then switch back to a partition e.g. raw_device=${raw_device}1
+    # then delete the partition and recreate with Last sector of default-1
+    # (keep subtracting a bigger number until the error disappears); or
+    # perhaps _add_ to the first sector.  This can be dangerous (you could
+    # *LOSE* data on other partitions if you make a mistake), so there are
+    # various alternatives:
 
     # 0. easiest, but least efficient: re-run 'init' with the smallest
     # sector-size that will work, i.e. copy-and-paste the following 3 lines:
@@ -175,23 +170,23 @@ Encrypt the drive, then create a decrypted mapping:
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition 1,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
-    # then run 'w' to write the results and DESTROY what's on the drive.
-    # If it won't accept +119.5G ...
+    # or a sector number, then run 'w' to write the results and DESTROY
+    # what's on the drive.
 
     # 2. safely retain data: to use the *last* partition on the drive, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete the *last* partition,
     # then run 'n' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' to re-create partition,
     # and for the "Last sector, ... or +size{...}" use +size, e.g. +119.5G
-    # then run 'w' to write the results
+    # or a sector number, then run 'w' to write the results
 
-    # 3. gently redo early partition: to use an earlier partition, run
+    # 3. GENTLY redo earlier partition: to use an earlier partition, run
     # ' fdisk ${raw_device%%[0-9]*} ', then delete your partition, then
     # run 'n' & '#' to create a new partition, and select all the defaults,
     # and remember the reported size; run 'd' & 'n' & # to re-create partition,
     # and for the "Last sector, ... or +size{...}" use +size, *BUT* specify
     # a size that's slightly smaller than the remembered size, e.g. +119.4G
-    # then run 'w' to write the results
+    # or a sector number, then run 'w' to write the results
 
     # snapcrypt will have created a udev rule for the device, test it with:
 
@@ -218,6 +213,14 @@ To determine your actual average directory size, e.g. to optimize ext4:
 
 If your filesystem stores small dirs in the inode (as with XFS), you might
 mess with isize.
+
+Modern hard disk (mechanical) drives typically uses 4KB sectors internally, so
+you'll get the best best speed if you encrypt with 4KB sectors (which requires
+LUKS2 on linux).  XFS supports 4KB sectors even when its blocks are smaller.
+ext4 requires that its block size matches the devices sector size, and it gets
+better space efficiency on laptops with 1KB blocks (because most inodes are
+directories, and most directories are small); note that you don't pay a speed
+penalty if you use 1KB sectors on SSD/flash drives.
 
 NOTE: the rest of this document is heavily oriented towards a GNU/Linux system
 like Ubuntu, with partitions holding e.g. ext4 filesystems.  [The 'mkfs' and
