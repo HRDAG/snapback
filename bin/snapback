@@ -1641,17 +1641,20 @@ fully-populate-custom-config-maps() {
 	did-set-max_drive_names || ! is-set custom_config_var2default_value ||
 	    return
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local extra_drive_name=${1-}	# mkfs-backup-drive passes new name
 
 	remember-tracing		# since suspend-tracing maybe not run
 
 	local -A drive_name2class
 	local drive_name
-	for drive_name in $max_drive_names
+	for drive_name in $max_drive_names $extra_drive_name
 	    do	[[ $drive_name =~ $drive_class_regex ]] || continue
 		drive_name2class[$drive_name]=${BASH_REMATCH[0]}
 		suspend-tracing -l
 	done
+
 	restore-tracing
+
 	local var_name
 	# do backup_period first, for call to fix-days-value
 	for var_name in backup_period ${custom_config_vars/ backup_period / }
@@ -1663,10 +1666,11 @@ fully-populate-custom-config-maps() {
 		custom_config_var2default_value[$var_name]=$default_value
 		is-readonly-var "$var_name" &&
 		    abort "$var_name in $config_file must be writable"
-		for drive_name in $max_drive_names
+		for drive_name in $max_drive_names $extra_drive_name
 		    do	# shellcheck disable=SC1087 # confused by -v
 			if [[ -v map[$drive_name] ]]
 			   then [[ $var_name == backup_days ]] || continue
+				[[ ${map[$drive_name]-}     ]] || continue
 				local -n days=map[$drive_name]
 				fix-days-value days \
 				    ${drv_name2backup_period[$drive_name]}
@@ -1698,8 +1702,9 @@ abort "test fully-populate-custom-config-maps"
 customize-config-variables() {
 	local drive_name=${1-}
 
+	# shellcheck disable=SC2086 # drive_name could be null
 	[[ $max_drive_names ]] ||
-	fully-populate-custom-config-maps
+	fully-populate-custom-config-maps $drive_name
 
 	[[ $drive_name ]] || return
 	[[ $drive_name == [zZ] ]] && is_regression_test=$true
@@ -4917,9 +4922,9 @@ create-jobs() {
 		# shellcheck disable=SC2046 # we want word splitting
 		set -- $(list-drive-dirs |
 			     egrep -v "\b$excluded_drive_dirs_regex$")
-		if [[ $is_cron && $type == backup ]]
+		if [[ $is_cron && $type == backup && $# != 0 ]] # see below
 		   then $IfRun do-chores & # echo appears whenever, unless ...
-			[[ $is_regression_test ]] && sleep-exe 0.05 # ... wait
+			[[ $is_regression_test ]] && sleep-exe 0.01 # ... wait
 		fi
 	   else # shellcheck disable=SC2048,SC1075
 		if set-drive_names--from-user-args "$@"
@@ -4931,7 +4936,7 @@ create-jobs() {
 	fi
 	if [[ $# == 0 ]]
 	   then if [[ $is_cron ]]
-		   then [[ $type == backup ]] && do-chores
+		   then [[ $type == backup ]] && do-chores # see above
 			exit-normally 0
 		fi
 		abort-function "$type: pass a (non-excluded) drive name"
@@ -7664,9 +7669,8 @@ _create-and-mount-filesystem() {
 	header "$cmd"
 	[[ $mkfs_debug_opt ]] && IfRun='echo'
 	$IfRun mkdir -p "$drive_dir"
-	fully-populate-custom-config-maps
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
-	RunCmd  $cmd
+	RunCmd $cmd
 	set-drive_log_dir-file_for_logging-is_regression_test "$drive_name"
 	archive-writer-stats-data
 	RunCmd mount -v -t "$FS_type" -o "$mount_opts" "$device" "$drive_dir"
@@ -7729,6 +7733,7 @@ function mkfs-backup-drive() {
 
 	_set-device-drive_name-drive_dir-is_new_dev -W "$device" "$name"
 	set-FS_label--from-mount_dir "$drive_dir"
+	customize-config-variables "$drive_name"
 
 	set -f
 	# shellcheck disable=SC2086 # variable contains multiple values
