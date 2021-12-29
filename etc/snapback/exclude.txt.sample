@@ -108,6 +108,7 @@
 /home/*/[Tt]rash/*
 /home/**/Favicons
 
+# https://superuser.com/questions/1587202/login-data-file-in-chrome-retrieve-logins-passwords-urls
 # NOTE: uncomment this line if you don't want to backup login passwords
 # /home/*/.config/google-chrome/*/Login Data
 
