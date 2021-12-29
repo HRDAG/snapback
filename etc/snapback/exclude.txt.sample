@@ -108,6 +108,9 @@
 /home/*/[Tt]rash/*
 /home/**/Favicons
 
+# NOTE: uncomment this line if you don't want to backup login passwords
+# /home/*/.config/google-chrome/*/Login Data
+
 # Google Chrome files that can disappear, or are very large and change often
 /home/*/.config/google-chrome/*/Bookmarks.bak
 /home/*/.config/google-chrome/*/Cookies

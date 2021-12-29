@@ -1,0 +1,69 @@
+
+#############################################################################
+#############################################################################
+# This file of shell patterns is used in "rsync --exclude-from=", and
+#    also used to delete (excluded files) when pruning old backup snapshots.
+#############################################################################
+#############################################################################
+
+# -----------------------------------------------------------------------
+# GNU/Linux system directories: virtual filesystems and transient data. #
+# -----------------------------------------------------------------------
+
+/cdrom/*
+/dev/*
+/media/*
+/mnt/*
+/proc/*
+/run/*
+/snap/*
+/sys/*
+
+/tmp/*
+
+# contains 1 MB of .ttf files that change daily
+/usr/share/fonts/truetype/ttf-dejavu/*
+
+/var/cache/*/*
+/var/lib/apt/lists/*
+/var/lib/mlocate/*
+/var/lib/snapd/*
+
+# from default /etc/updatedb.conf
+/var/lib/schroot/*
+
+/var/snap/*
+/var/staging/*
+/var/swap/*
+/var/tmp/*cache*
+
+# -------------------------------------------------------
+# home-directory user stuff				#
+# -------------------------------------------------------
+
+# the files in here have 111 hard links, which causes link-failures with ext4
+/home/*/libexec/git-core
+
+# mostly application caches
+/home/*/.**[Cc]ache*
+/home/*/snap/**[Cc]ache*
+
+# NOTE: uncomment this line if you don't want to backup login passwords
+# /home/*/.config/google-chrome/*/Login?Data
+
+/home/*/.config/google-chrome/*/Bookmarks.bak
+/home/*/.config/google-chrome/*/Favicons
+/home/*/.config/google-chrome/*/History*
+/home/*/.config/google-chrome/*/Network*
+/home/*/
+
+/home/*/.gvfs
+
+# miscellaneous config
+/home/*/.dbus/session-bus/*
+# 19 MB, changes daily
+/home/*/.local/share/zeitgeist/*
+
+############################################
+# Extra records could be added after this. #
+############################################
