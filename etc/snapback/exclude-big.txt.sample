@@ -56,7 +56,6 @@
 /home/*/.config/google-chrome/*/Favicons
 /home/*/.config/google-chrome/*/History*
 /home/*/.config/google-chrome/*/Network*
-/home/*/
 
 /home/*/.gvfs
 
