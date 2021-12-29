@@ -344,8 +344,8 @@ readonly is_drive_name_capitalized=$true # ... so best to not change this.
 readonly is_drive_name_upper_cased=$false
 
 # ----------------------------------------
-# NOTE: you can test the above variables with e.g.:
-#	snapback run set-drive_names--from-user-args all
+# NOTE: you can test all the variables in this section with e.g.:
+#	snapback run set-drive_names--from-user-args -c all
 # ----------------------------------------
 
 # ----------------------------------------------------------------------------

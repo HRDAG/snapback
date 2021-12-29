@@ -1636,6 +1636,7 @@ readonly -f did-set-max_drive_names
 
 # ---------------------------------
 
+declare -A drive_name2class
 declare -A custom_config_var2default_value
 
 fully-populate-custom-config-maps() {
@@ -1646,7 +1647,6 @@ fully-populate-custom-config-maps() {
 
 	remember-tracing		# since suspend-tracing maybe not run
 
-	local -A drive_name2class
 	local drive_name
 	for drive_name in $max_drive_names $extra_drive_name
 	    do	[[ $drive_name =~ $drive_class_regex ]] || continue
@@ -4868,14 +4868,20 @@ readonly -f set-drive_dirs--from-user-args
 # ---------------------------------
 
 function set-drive_names--from-user-args() {
-	 set-drive_dirs--from-user-args "$@" || return $?
+	[[ $1 == -c ]] && { local show_class=$true;shift; } ||local show_class=
+	set-drive_dirs--from-user-args "$@" || return $?
 
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+
+	fully-populate-custom-config-maps # load drive_name2class
 	drive_names=
-	local drive_dir drive_name
+	local drive_dir drive_name class
 	for drive_dir in $drive_dirs
 	    do	set-drive_name- "$drive_dir"
 		  drive_names+="$drive_name "
+		  [[ $show_class ]] || continue
+		  class=${drive_name2class[$drive_name]-}
+		  [[ $class ]] && echo "drive '$drive_name' has class '$class'"
 	done
 	drive_names=${drive_names% }
 	$xtrace
