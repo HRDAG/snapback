@@ -2450,7 +2450,14 @@ save-stats-file() {
 		   else data="this was a restart, rsync-minutes unknown"
 		fi
 	elif [[ ( $data == -1 || $data == 1 ) && $debug_opt ]]
-	     then data=0		# for regression test
+	   then data=0		# for regression test
+	   else # shellcheck disable=SC2086 # variable contains a glob
+		set -- $drive_dir_prefix/$snapshot_glob
+		if [[ $# == 2 ]]	# is this the second snapshot?
+		   then $IfRun mkdir -p    .first  # 1st one very large/slow
+			# shellcheck disable=SC2035
+			$IfRun mv -v *.txt .first/ # avoid confusing stats
+		fi
 	fi
 
 	echo-to-file "$data" "$data_file"
