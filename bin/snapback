@@ -1419,7 +1419,7 @@ function set-drive_name-() {
 	    [[ $is_quiet ]] && { $xtrace; return 1; }
 	    abort "'$name' is not a valid drive-name";		    }
 
-	[[ $name =~ $drive_class_regex ]]
+	[[ $name =~ ${drive_class_regex-%} ]]
 	local class=${BASH_REMATCH[0]-}
 	if   [[ $drive_class_regex == ^* ]]
 	   then name=${name#"$class"}
@@ -1649,8 +1649,9 @@ fully-populate-custom-config-maps() {
 
 	local drive_name
 	for drive_name in $max_drive_names $extra_drive_name
-	    do	[[ $drive_name =~ $drive_class_regex ]] || continue
+	    do	[[ $drive_name =~ ${drive_class_regex-%} ]] || continue
 		local class=${BASH_REMATCH[0]}
+		[[ $class ]] || continue
 		if   [[ $drive_class_regex == ^* ]]
 		   then class=${class%[^a-zA-Z0-9]}
 		elif [[ $drive_class_regex == *$ ]]
