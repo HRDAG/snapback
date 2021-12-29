@@ -1650,7 +1650,13 @@ fully-populate-custom-config-maps() {
 	local drive_name
 	for drive_name in $max_drive_names $extra_drive_name
 	    do	[[ $drive_name =~ $drive_class_regex ]] || continue
-		drive_name2class[$drive_name]=${BASH_REMATCH[0]}
+		local class=${BASH_REMATCH[0]}
+		if   [[ $drive_class_regex == ^* ]]
+		   then class=${class%[^a-zA-Z0-9]}
+		elif [[ $drive_class_regex == *$ ]]
+		   then class=${class#[^a-zA-Z0-9]}
+		fi
+		drive_name2class[$drive_name]=$class
 		suspend-tracing -l
 	done
 
