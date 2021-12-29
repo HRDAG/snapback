@@ -2414,8 +2414,8 @@ save-stats-file() {
 	local stats_subdir=$1 snapshot=$(basename "$2") data=$3
 	snapshot=${snapshot%%.*}
 
-	pushd_ -q "$drive_log_dir"
-	local data_file=$stats_subdir/$snapshot.txt
+	pushd_ "$drive_log_dir/$stats_subdir"
+	local data_file=$snapshot.txt
 
 	# OK if multiple writers -> larger minutes, that's "current reality"
 	if [[ $data_type == MB ]]
@@ -2443,7 +2443,7 @@ save-stats-file() {
 
 	echo-to-file "$data" "$data_file"
 
-	popd_ -q
+	popd_
 }
 readonly -f save-stats-file
 
