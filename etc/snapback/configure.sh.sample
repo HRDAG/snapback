@@ -339,6 +339,7 @@ drive_class_regex="^[a-z]+-"		      # the '-' will be removed
 drive_class_regex="-[a-z]+$"		      # the '-' will be removed
 readonly drive_class_regex
 
+# case-control doesn't apply to any class that's found.
 # the first one 't' lets sysadmin access *all* drives w/lower-case letters ...
 readonly is_drive_name_capitalized=$true # ... so best to not change this.
 readonly is_drive_name_upper_cased=$false
