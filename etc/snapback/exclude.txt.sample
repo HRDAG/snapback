@@ -112,6 +112,10 @@
 # NOTE: uncomment this line if you don't want to backup login passwords
 # /home/*/.config/google-chrome/*/Login Data
 
+# you might want to comment-out these, websites store data on your workstation
+/home/*/.config/google-chrome/*/IndexedDB/*
+/home/*/.config/google-chrome/*/Local?Storage/*
+
 # Google Chrome files that can disappear, or are very large and change often
 /home/*/.config/google-chrome/*/Bookmarks.bak
 /home/*/.config/google-chrome/*/Cookies
@@ -123,8 +127,6 @@
 /home/*/.config/google-chrome/*Cache/*
 /home/*/.config/google-chrome/*/*Cache*/*
 /home/*/.config/google-chrome/*/History
-/home/*/.config/google-chrome/*/IndexedDB/*
-/home/*/.config/google-chrome/*/Local?Storage/*
 /home/*/.config/google-chrome/*/Network?Action?Predictor
 /home/*/.config/google-chrome/*/Pepper?Data/Shockwave?Flash/WritableRoot
 /home/*/.config/google-chrome/*/Service?Worker/Database/*
