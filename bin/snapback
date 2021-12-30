@@ -2856,13 +2856,15 @@ _prune-exclude-globs-from-all-snapshots() {
 
 	remember-tracing
 
+	shopt -s globstar		# handle ** globbing also
+
 	# prune exclude-globs from _all_ snapshots, very slow
 	pushd_ -q "$drive_dir"
 	local snapshot exclude_glob file
 	# shellcheck disable=SC2231
 	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot == *.rm ]] && continue
-		grep '^ */' "$exclude_file" | fgrep -v '**' |
+		grep '^ */' "$exclude_file" |
 		while read -r exclude_glob
 		    do	# shellcheck disable=SC2086 # variable contains a glob
 			set -- $snapshot$exclude_glob
@@ -2877,6 +2879,7 @@ _prune-exclude-globs-from-all-snapshots() {
 	[[ $drive_name == Z ]] ||
 	$IfRun log "pruned exclude-globs from _all_ snapshots"
 
+	shopt -u globstar
 	restore-tracing
 }
 readonly -f _prune-exclude-globs-from-all-snapshots

@@ -57,13 +57,14 @@
 # ... but save snapback, auth, and syslog files, for forensics/debugging.
 # first, exclude the types of logs we don't want
 /var/log/[^as]*
+/var/log/journal/*
 /var/log/s[^ny]*
 #
-# snapback has many types of logs to exclude
-/var/log/sn**/cron.log*
-/var/log/sn**/messages.log*
-/var/log/sn**/.cache.sh*
-/var/log/sn*/monitor/big-swapouts/today.txt
+# snapback logs to exclude; these match in bash when globstar is set
+/var/log/snap*/**/cron.log*
+/var/log/snap*/**/messages.log*
+/var/log/snap*/**/.cache.sh*
+/var/log/snap*/monitor/big-swapouts/today.txt*
 # only backup non-snapback logs that are dated & compressed: small,don't change
 # have *-???????? files if dateext' & 'delaycompress' in /etc/logrotate.conf
 /var/log/a[^u]*
@@ -75,11 +76,10 @@
 # you should add 'dateext' and 'compress' and etc to /etc/logrotate.conf
 # (see etc/logrotate.conf.sample for a way to keep months of old logs),
 # then leave the following five records so the old rolled-logs get deleted.
-/var/log/**.[0-9]
-/var/log/**.[0-9].*[zZ]*
-/var/log/**.[1-9][0-9].*[zZ]*
-/var/log/**.[1-9][0-9][0-9].*[zZ]*
-/var/log/journal/*
+/var/log/**/*.[0-9]
+/var/log/**/*.[0-9].*[zZ]*
+/var/log/**/*.[1-9][0-9].*[zZ]*
+/var/log/**/*.[1-9][0-9][0-9].*[zZ]*
 
 # only uncomment the next two if /var/lock and/or /var/run are *not* symlinks
 # /var/lock/*
@@ -97,10 +97,16 @@
 # the files in here have 111 hard links, which causes link-failures with ext4
 /home/*/libexec/git-core
 
-# mostly application caches
+# the following were built after scanning the output of:
+#    cd ~ && find .??* -type f -print0 2>/dev/null |
+#       xargs -0 -L 1 -I file cmp "file" /backup/XXX/latest$PWD/"file" |&
+#       fgrep -v ': No such file or directory' |& less
+
+# mostly application caches: these match in bash when globstar is set
 # the first one may obviate the following chrome/firefox patterns
-/home/*/.**[Cc]ache*
-/home/*/snap/**[Cc]ache*
+/home/*/.[^.]*/**/*[Cc]ache*
+/home/*/snap/**/*[Cc]ache*/*
+/home/*/snap/**/*.cache
 /home/*/.conda/*
 /home/*/.torch/*
 /home/*/.*/bundle/*
@@ -109,51 +115,51 @@
 /home/**/Favicons
 
 # https://superuser.com/questions/1587202/login-data-file-in-chrome-retrieve-logins-passwords-urls
-# NOTE: uncomment this line if you don't want to backup login passwords
-# /home/*/.config/google-chrome/*/Login Data
+# https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data
+# NOTE: uncomment these lines if you don't want to backup login passwords
+# /home/*/.config/*chrom*/*/Login?Data
+# /home/*/.mozilla/firefox/*.default-release/logins.json
+# /home/*/.mozilla/firefox/*.default-release/key4.db
 
 # you might want to comment-out these, websites store data on your workstation
-/home/*/.config/google-chrome/*/IndexedDB/*
-/home/*/.config/google-chrome/*/Local?Storage/*
+/home/*/.config/*chrom*/*/IndexedDB/*
+/home/*/.config/*chrom*/*/Local?Storage/*
+/home/*/.mozilla/firefox/*.default-release/webappsstore.sqlite*
 
-# Google Chrome files that can disappear, or are very large and change often
-/home/*/.config/google-chrome/*/Bookmarks.bak
-/home/*/.config/google-chrome/*/Cookies
-/home/*/.config/google-chrome/*/Extensions/*
-/home/*/.config/google-chrome/*/File?System/*
+# chromium and Google Chrome files that can disappear, or are large or change
+/home/*/.config/*chrom*/*/Bookmarks.bak
+/home/*/.config/*chrom*/*/Cookies
+/home/*/.config/*chrom*/*/Extensions/*
+/home/*/.config/*chrom*/*/File?System/*
 # GCM has been deprecated, replaced with FCM
-/home/*/.config/google-chrome/*/[FG]CM?Store/*
+/home/*/.config/*chrom*/*/[FG]CM?Store/*
 # this can be GB, and changes constantly as you browse
-/home/*/.config/google-chrome/*Cache/*
-/home/*/.config/google-chrome/*/*Cache*/*
-/home/*/.config/google-chrome/*/History
-/home/*/.config/google-chrome/*/Network?Action?Predictor
-/home/*/.config/google-chrome/*/Pepper?Data/Shockwave?Flash/WritableRoot
-/home/*/.config/google-chrome/*/Service?Worker/Database/*
-/home/*/.config/google-chrome/*/Service?Worker/*Cache*/*
-/home/*/.config/google-chrome/*/Session?Storage/*
-/home/*/.config/google-chrome/*/Storage/*
+/home/*/.config/*chrom*/*Cache/*
+/home/*/.config/*chrom*/*/*Cache*/*
+/home/*/.config/*chrom*/*/History*
+/home/*/.config/*chrom*/*/Network*
+/home/*/.config/*chrom*/*/Pepper?Data/Shockwave?Flash/WritableRoot
+/home/*/.config/*chrom*/*/Service?Worker/Database/*
+/home/*/.config/*chrom*/*/Service?Worker/*Cache*/*
+/home/*/.config/*chrom*/*/Session?Storage/*
+/home/*/.config/*chrom*/*/Storage/*
 # large, holds passwords and credit card data
-/home/*/.config/google-chrome/*/Sync?Data/*
-/home/*/.config/google-chrome/*/Top?Sites
+/home/*/.config/*chrom*/*/Sync?Data/*
+/home/*/.config/*chrom*/*/Top?Sites
 # transient and large
-/home/*/.config/google-chrome/*/Web?Data
-/home/*/.config/google-chrome/EVWhitelist/?/_platform_specific/*/ev_hashes_*
-/home/*/.config/google-chrome/PepperFlash/*
-/home/*/.config/google-chrome/Pepper?Data/Shockwave?Flash/WritableRoot
-/home/*/.config/google-chrome/pnacl/*
-/home/*/.config/google-chrome/Safe?Browsing*
-#
-# chromium files that can disappear, or are very large and change often
-/home/*/.config/chromium/*Cache*/*
-/home/*/.config/chromium/*/*Cache*/*
-/home/*/.config/chromium/*/Extensions/*
-/home/*/.config/chromium/*/Local?Storage/*
-/home/*/.config/chromium/*/IndexedDB/*
-/home/*/.config/chromium/*/Service?Worker/*Cache*/*
-/home/*/.config/chromium/*/Session?Storage/*
-/home/*/.config/chromium/*/Sync?Data/*
-/home/*/.config/chromium/*/Top?Sites/*
+/home/*/.config/*chrom*/*/Web?Data
+/home/*/.config/*chrom*/BrowserMetrics/*
+/home/*/.config/*chrom*/CrashpadMetrics-*.pma
+/home/*/.config/*chrom*/EVWhitelist/?/_platform_specific/*/ev_hashes_*
+/home/*/.config/*chrom*/PepperFlash/*
+/home/*/.config/*chrom*/Pepper?Data/Shockwave?Flash/WritableRoot
+/home/*/.config/*chrom*/pnacl/*
+/home/*/.config/*chrom*/Safe?Browsing*
+
+/home/*/.config/dconf/user
+
+# can be very large
+/home/*/.config/copyq/copyq_tab_*==.dat
 
 # mostly browser/mailer stuff
 /home/*/.claws-mail/imapcache
@@ -193,9 +199,9 @@
 # --------------------------------------------------------------------
 
 # data-project workspaces (named by country-code names), skip 'snapshot' dirs
-/home/**/[A-Z][A-Z]**/input/*
-/home/**/[A-Z][A-Z]**/output/*
-/home/**/[A-Z][A-Z]**/frozen/*
+/home/**/[A-Z][A-Z]*/**/input/*
+/home/**/[A-Z][A-Z]*/**/output/*
+/home/**/[A-Z][A-Z]*/**/frozen/*
 
 ############################################
 # Extra records could be added after this. #

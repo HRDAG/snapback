@@ -6,7 +6,9 @@
 #############################################################################
 #############################################################################
 
-# this is for a big backup drive, don't mind storing workstation config data
+#############################
+# file for a big backup drive (e.g. don't mind storing workstation config data)
+#############################
 
 # -----------------------------------------------------------------------
 # GNU/Linux system directories: virtual filesystems and transient data. #
@@ -46,18 +48,27 @@
 # the files in here have 111 hard links, which causes link-failures with ext4
 /home/*/libexec/git-core
 
-# mostly application caches
-/home/*/.**[Cc]ache*
-/home/*/snap/**[Cc]ache*
+# the following were built after scanning the output of:
+#    cd ~ && find .??* -type f -print0 2>/dev/null |
+#       xargs -0 -L 1 -I file cmp "file" /backup/XXX/latest$PWD/"file" |&
+#       fgrep -v ': No such file or directory' |& less
+
+# mostly application caches: these match in bash when globstar is set
+/home/*/.[^.]*/**/*[Cc]ache*
+/home/*/snap/**/*[Cc]ache*/*
 
 # https://superuser.com/questions/1587202/login-data-file-in-chrome-retrieve-logins-passwords-urls
-# NOTE: uncomment this line if you don't want to backup login passwords
-# /home/*/.config/google-chrome/*/Login?Data
+# https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data
+# NOTE: uncomment these lines if you don't want to backup login passwords
+# /home/*/.config/*chrom*/*/Login?Data
+# /home/*/.mozilla/firefox/*.default-release/logins.json
+# /home/*/.mozilla/firefox/*.default-release/key4.db
 
-/home/*/.config/google-chrome/*/Bookmarks.bak
-/home/*/.config/google-chrome/*/Favicons
-/home/*/.config/google-chrome/*/History*
-/home/*/.config/google-chrome/*/Network*
+# chromium and Google Chrome files that can disappear, or are large or change
+/home/*/.config/*chrom*/*/Bookmarks.bak
+/home/*/.config/*chrom*/*/Favicons
+/home/*/.config/*chrom*/*/History*
+/home/*/.config/*chrom*/*/Network*
 
 /home/*/.gvfs
 
