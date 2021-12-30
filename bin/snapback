@@ -4242,10 +4242,11 @@ set-backup_type() {
 
 	backup_type=
 	local var_name value
+	# the var_name order is assumed in matches-dst_backup_type
 	for var_name in dirs_to_backup extra_excludes exclude_file_suffix
 	    do	# shellcheck disable=SC2178 # shellcheck is confused
 		local -n map=drv_name2$var_name
-		backup_type+="${map[$drive_name]}|"
+		backup_type+="${map[$drive_name]:-.}|" # . for matches-*
 	done
 	backup_type=${backup_type%|}
 	drive_name2backup_type[$drive_name]=$backup_type # cache it
@@ -4256,12 +4257,29 @@ readonly -f set-backup_type
 
 function matches-dst_backup_type() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ $1 == -g ]] && { shift; local is_GE=$true; } || local is_GE=$false
 	local drive_dir=$1 drive_name
 
 	set-drive_name- "$drive_dir"
 	set-backup_type "$drive_name"
 	$xtrace
-	[[ $backup_type == "$dst_backup_type" || $debug_opt ]]
+
+	[[ $backup_type == "$dst_backup_type" || $debug_opt ]] && return 0
+	[[ $is_GE ]] || return 1
+
+	local -a src_types=(${backup_type//|/ })
+	local -a dst_types=(${dst_backup_type//|/ })
+	local -i i
+	for i in  ${!src_types[*]}
+	    do	[[ ${src_types[i]} == ${dst_types[i]} ]] && continue
+		case $i in
+		   ( 0 ) [[ ${src_types[i]} == /   ]] && continue ;;
+		   ( 1 ) [[ ${src_types[i]} == ''  ]] && continue ;;
+		   ( 2 ) [[ ${src_types[i]} == big ]] && continue ;;
+		esac
+		return 1
+	done
+	return 0
 }
 readonly -f matches-dst_backup_type
 
