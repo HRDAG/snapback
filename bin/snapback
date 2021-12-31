@@ -4267,11 +4267,13 @@ function matches-dst_backup_type() {
 	[[ $backup_type == "$dst_backup_type" || $debug_opt ]] && return 0
 	[[ $is_GE ]] || return 1
 
+	# shellcheck disable=SC2206 # we want word splitting
 	local -a src_types=(${backup_type//|/ })
+	# shellcheck disable=SC2206 # we want word splitting
 	local -a dst_types=(${dst_backup_type//|/ })
 	local -i i
 	for i in  ${!src_types[*]}
-	    do	[[ ${src_types[i]} == ${dst_types[i]} ]] && continue
+	    do	[[ ${src_types[i]} == "${dst_types[i]}" ]] && continue
 		case $i in
 		   ( 0 ) [[ ${src_types[i]} == /   ]] && continue ;;
 		   ( 1 ) [[ ${src_types[i]} == ''  ]] && continue ;;
@@ -6185,6 +6187,7 @@ readonly -f set-min_rows-min_rows_with_df-rows_left
 
 # -------------------------------------------------------
 
+readonly      fast_tmp_dir=$status_dir/tmp
 readonly syslog_errors_dir=$status_dir/syslog-errors
 readonly syslog_errors_count_msg_file=$syslog_errors_dir/count-msg.txt
 
@@ -6197,15 +6200,11 @@ create-status_dir() {
 
 	[[ -d $status_dir ]] || {
 
-	sudo mkdir "$status_dir" &&
+	sudo mkdir -p "$fast_tmp_dir" "$syslog_errors_dir" &&
 	set-admin_group &&
-	sudo chgrp "$admin_group" "$status_dir" &&
-	sudo chmod g+w,g+s "$status_dir" ||
-	    { local s=$?; rmdir "$status_dir"; abort-function " -> $s"; }
-
-	sudo mkdir     "$syslog_errors_dir"
-	sudo chmod g+w "$syslog_errors_dir"
-
+	sudo chgrp -R "$admin_group" "$status_dir" &&
+	sudo chmod -R  g+w,g+s   "$status_dir" ||
+	    { local s=$?; rm -rf "$status_dir"; abort-function " -> $s"; }
 	}
 
 	lockpid --release "$status_dir_lock_path"
@@ -6735,7 +6734,7 @@ readonly -f _set-functions
 
 # --------------------------------------------
 
-readonly generate_output_files_dir=$tmp_dir/generate.$BASHPID
+readonly generate_output_files_dir=$fast_tmp_dir/generate.$BASHPID
 [[ ! -d $generate_output_files_dir ]] || rm -r "$generate_output_files_dir"
 readonly rows_left_file=$generate_output_files_dir/rows_left
 
