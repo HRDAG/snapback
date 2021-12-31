@@ -176,7 +176,7 @@ Usage: $our_name [options] action [options] [args]
     backup-drives names: backup names ('all' for every mounted backup drive)
      prune-drives [-s time|-f span] names: prune names ('all' same as above)
     update-drives [-s src-names-glob] dst-names: copy missing snapshots
-    copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
+    copy-snapshots [-q] snapshot(s) name: copy snapshots to 'name' backup drive
 
       rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
     unrm snapshots: remove .rm suffixes, leaving good snapshot else .partial
@@ -1253,6 +1253,17 @@ set-oldest_snapshot() {
 }
 readonly -f set-oldest_snapshot
 
+# ----------------------------------------------------------------------------
+
+set-snapshot_count() {
+	local drive_name=${1:-$drive_name}
+
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- $drive_dir_prefix$drive_name/$snapshot_glob
+	snapshot_count=$#
+}
+readonly -f set-snapshot_count
+
 ##############################################################################
 # Setup variables for working with a specific backup drive.
 ##############################################################################
@@ -1779,6 +1790,8 @@ validate-config-variables() {
 	# shellcheck disable=SC2102
 	[[ $drive_dir_prefix == *[!$allowed_drive_dir_chars/]* ]] &&
 	   abort "drive_dir_prefix has disallowed chars (ask $coder to allow)"
+	[[ $drive_dir_prefix == */ ]] ||
+	   abort "drive_dir_prefix must end in '/'"
 
 	[[ $drive_response_averaging_window_secs > $mon_check_period_secs ]] ||
 	    abort "drive_response_averaging_window_secs too small"
@@ -2452,9 +2465,8 @@ save-stats-file() {
 	   else [[ ( $data == -1 || $data == 1 ) && $debug_opt ]] &&
 		    data=0		# for regression test
 		if [[ $writer_type != prune ]]
-		   then # shellcheck disable=SC2086 # variable contains a glob
-			set -- $drive_dir_prefix/$drive_name/$snapshot_glob
-			if [[ $# == 2 ]] # is this the second snapshot?
+		   then set-snapshot_count
+			if [[ $snapshot_count == 2 ]] # is this 2nd snapshot?
 			   then $IfRun mkdir -p    .first  # 1st one large/slow
 				# shellcheck disable=SC2035
 				$IfRun mv -v *.txt .first/ # no confusing stats
@@ -4393,7 +4405,6 @@ function copy-snapshots() {
 		src_snapshots+="${src_snapshot%/.keep} "
 		shift
 	done
-	[[ $1 == -B ]] && { local  lock_bkp=$true ; shift; } || local lock_bkp=
 	[[ $1 == -q ]] && { local quiet_opt=$1 ; shift; } || local quiet_opt=
 	assert-not-option -o "${1-}"
 	[[ $src_snapshots && $# == 1 ]] ||
@@ -4404,12 +4415,26 @@ function copy-snapshots() {
 
 	lock -w copy || exit-normally 1
 
-	[[ $lock_bkp ]] && lock -w backup
+	local lock_bkp=$false
+	local -i snapshot_count
+	set-snapshot_count
+	# make sure backup-drive doesn't use partially-created snapshots
+	# in rsync's --link-dest options.
+	set-num_full_link_dests
+	if (( $snapshot_count <= $num_full_link_dests )) # technically, '<'
+	   then lock -w backup || abort-function "problem with backup lock"
+		lock_bkp=$true
+	fi
 	local status=0
 	for src_snapshot in $src_snapshots
 	    do	# shellcheck disable=SC2086 # *_opt may be null
 		copy-snapshot $quiet_opt "$src_snapshot" "$drive_name" ||
 		    status=$?
+		[[ $lock_bkp ]] || continue
+		set-snapshot_count
+		(( $snapshot_count <= $num_full_link_dests )) && continue
+		unlock backup
+		lock_bkp=$false
 	done
 	[[ $lock_bkp ]] && unlock backup
 
@@ -4457,22 +4482,6 @@ readonly -f copy-snapshot-rsync
 # ----------------------------------------------------------------------------
 # functions needed for update-drive (wrapper around copy-snapshot)
 # ----------------------------------------------------------------------------
-# ----------------------------------------------------------------------------
-
-wait-for-full-snapshots() {
-	local min_full_snapshots=$1
-
-	while true
-	   do	suspend-tracing
-		# shellcheck disable=SC2086 # variable contains a glob
-		set -- "$drive_dir"/$snapshot_glob
-		restore-tracing
-		(( $# > $min_full_snapshots )) && return # an extra one: safety
-		sleep-exe 1h
-	done
-}
-readonly -f wait-for-full-snapshots
-
 # ----------------------------------------------------------------------------
 
 function set-srcs_dst_file() {
@@ -4630,9 +4639,9 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	fi
 
 	set-basename2dirs-basename2is_keep
-	# sort basenames for regression-test
+	# sort basenames for regression-test, newest first (to aid backup)
 	# shellcheck disable=SC2046,SC2086
-	set -- $(echo ${!basename2dirs[*]} | tr ' ' '\n' | sort)
+	set -- $(echo ${!basename2dirs[*]} | tr ' ' '\n' | sort -r)
 
 	local snapshot basename
 	for snapshot
@@ -4835,13 +4844,6 @@ function update-drive() {
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir ./*.partial &> $dev_null	# in case crashed
-
-	# make sure that we're not using partially-created snapshots
-	# in rsync's --link-dest options
-	set-num_full_link_dests
-	# shellcheck disable=SC2086 # variable containing multiple values
-	[[ $do_force ]] || ! is-in-cron-job "$drive_name" ||
-	    $IfRun wait-for-full-snapshots $num_full_link_dests
 
 	set-srcs_dst_file
 	set-src_names_glob-src_names_regex # used by following plus later
@@ -7816,8 +7818,8 @@ function mkfs-backup-drive() {
 	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
 	local _our_path=$1
 	echo -e "\nTo populate newly-created drive, run:\n
-	nohup $_our_path backup-drive $drive_name	# creates new job
-	nohup $_our_path update-drive $drive_name	# creates new job"
+	nohup $_our_path update-drive $drive_name	# creates new job
+	nohup $_our_path backup-drive $drive_name	# creates new job"
 
        warn "REMEMBER: add \`$drive_name' to drive_name_regex= in $config_file"
        return 0
@@ -9042,7 +9044,7 @@ case $action in
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
-   # copy-snapshots [-B] [-q] snapshots name: copy to 'name' mounted drive
+   # copy-snapshots [-q] snapshots name: copy to 'name' mounted drive
    ( c*p*s*s* | cs | cps* ) undo-action-abbrev copy-snapshots # cpss
 	[[ $# != 0 ]] || abort-with-action-Usage
 	is-arg1-in-arg2 -r "$@" && { create-jobs copy "$@"; exit-normally $?; }

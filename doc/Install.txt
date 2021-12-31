@@ -377,7 +377,7 @@ If you already have an existing snapback drive, you should instead copy its
 latest backup to the new drive:
 
    sudo \
-   nohup snapback copy-snapshot -B /backup/{old-drive-name}/latest {drive-name}
+   nohup snapback copy-snapshot /backup/{old-drive-name}/latest {drive-name}
 
 Once you've created and mounted all the partitions you plan to use, you can
 backup all of them simultaneously with:
