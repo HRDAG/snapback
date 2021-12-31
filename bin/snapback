@@ -2451,7 +2451,7 @@ save-stats-file() {
 		fi
 	   else [[ ( $data == -1 || $data == 1 ) && $debug_opt ]] &&
 		    data=0		# for regression test
-		if [[ $writer_type == backup ]]
+		if [[ $writer_type != prune ]]
 		   then # shellcheck disable=SC2086 # variable contains a glob
 			set -- $drive_dir_prefix/$drive_name/$snapshot_glob
 			if [[ $# == 2 ]] # is this the second snapshot?
