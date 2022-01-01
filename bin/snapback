@@ -4643,9 +4643,12 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	# shellcheck disable=SC2046,SC2086
 	set -- $(echo ${!basename2dirs[*]} | tr ' ' '\n' | sort -r)
 
+	local glob=${backup_period2minimal_snapshot_glob[$backup_period]}
 	local snapshot basename
 	for snapshot
-	    do	local src_snapshots=${basename2dirs[$snapshot]}
+	    do	# shellcheck disable=SC2053 # we want glob matching
+		[[ $do_hourlies ]] || [[ $snapshot == $glob ]] || continue
+		local src_snapshots=${basename2dirs[$snapshot]}
 		# shellcheck disable=SC2086 # variable contains multiple values
 		copy-snapshot -u $src_snapshots "$drive_name" # loads a var
 		# shellcheck disable=SC2086 # variable contains multiple values
@@ -4824,12 +4827,13 @@ declare is_update=$false
 
 function update-drive() {
 	local update_drive_args=$*	# for recursion
-	local ignore_slow_sources=$false are_recursing=$false
+	local ignore_slow_sources=$false are_recursing=$false do_hourlies=
 	[[ $1 == -r  ]] && { 	    are_recursing=$true; shift; }
 	[[ $1 == -S  ]] && {  ignore_slow_sources=$true; shift; }
 	[[ $1 == -s* ]] && { local          src_names_glob=${1#-?}; shift; }
 	[[ $1 == -e* ]] && { local excluded_src_names_glob=${1#-?}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
+	[[ $1 == -h  ]] && { do_hourlies=$true; shift; }
 	assert-not-option "$1"
 
 	is_update=$true
@@ -9032,13 +9036,15 @@ case $action in
    # update-drives [-s src-names-glob] dst-names: copy missing snapshots
    ( upd*dr*v* | ud ) undo-action-abbrev update-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 == -S ]] && {     ignore_slow_sources_opt=$1    ; shift  ; }
-	[[ $1 == -s ]] && {          src_names_glob_opt="$1$2"; shift 2; }
-	[[ $1 == -e ]] && { excluded_src_names_glob_opt="$1$2"; shift 2; }
+	[[ $1 == -S ]] && {     ignore_slow_sources_opt=$1     ; shift  ; }
+	[[ $1 == -s ]] && {          src_names_glob_opt="$1$2" ; shift 2; }
+	[[ $1 == -e ]] && { excluded_src_names_glob_opt="$1$2" ; shift 2; }
+	[[ $1 == -h ]] && { do_hourlies_even_if_not_backed_up=t; shift  ; }
 	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
 	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}
-				 ${excluded_src_names_glob_opt-}"
+				 ${excluded_src_names_glob_opt-}
+			   ${do_hourlies_even_if_not_backed_up-}"
 	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
