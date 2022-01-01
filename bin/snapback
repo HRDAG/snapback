@@ -4421,7 +4421,7 @@ function copy-snapshots() {
 	# make sure backup-drive doesn't use partially-created snapshots
 	# in rsync's --link-dest options.
 	set-num_full_link_dests
-	if (( $snapshot_count <= $num_full_link_dests )) # technically, '<'
+	if (( $snapshot_count < $num_full_link_dests ))
 	   then lock -w backup || abort-function "problem with backup lock"
 		lock_bkp=$true
 	fi
@@ -4432,7 +4432,7 @@ function copy-snapshots() {
 		    status=$?
 		[[ $lock_bkp ]] || continue
 		set-snapshot_count
-		(( $snapshot_count <= $num_full_link_dests )) && continue
+		(( $snapshot_count < $num_full_link_dests )) && continue
 		unlock backup
 		lock_bkp=$false
 	done
@@ -7818,8 +7818,7 @@ function mkfs-backup-drive() {
 	[[ $# -gt 1 && $1 == $HOME/* ]] && shift # toss git workspace one
 	local _our_path=$1
 	echo -e "\nTo populate newly-created drive, run:\n
-	nohup $_our_path update-drive $drive_name	# creates new job
-	nohup $_our_path backup-drive $drive_name	# creates new job"
+	nohup $_our_path update-drive $drive_name	# creates new job"
 
        warn "REMEMBER: add \`$drive_name' to drive_name_regex= in $config_file"
        return 0
