@@ -3243,10 +3243,12 @@ readonly -f set-type2date_span
 
 # optional $backup_period_for_update could be smaller than $backup_period
 _set-backup_period--for-prune() {
+	local backup_period_for_update=${1:-$backup_period_for_update}
 
 	(( $backup_period>$backup_period_for_update &&
 			  $backup_period_for_update > 0 )) &&
 	    backup_period=$backup_period_for_update # don't prune copy'ed dirs
+	[[ $action == update* ]] && return
 
 	# sometimes backup_period or (update version) set higher for speed
 	(( $backup_period>$max_backup_period_for_pruning &&
@@ -4342,7 +4344,7 @@ function is-dst_snapshot-needed() {
 	[[ ${1##*/} != *.* && ${dst_snapshot##*/} == *.* ]] && {
 	[[ ! $is_quiet ]] && log "${dst_snapshot##*/} not needed"; return 1; }
 	[[ $1 != "$dst_snapshot" ]] && return 0
-	[[ $is_quiet || $action == update* ]] ||
+	[[ $is_quiet || $action == update* || $action == test ]] ||
 	    log "$dst_snapshot already exists"; return 1
 }
 readonly -f is-dst_snapshot-needed
@@ -4581,7 +4583,6 @@ src_dirs-for-update() {
 	local min_snapshot_glob=${backup_period2minimal_snapshot_glob[$period]}
 	[[ $min_snapshot_glob ]] ||
 	    abort "backup_period2minimal_snapshot_glob is broken"
-	[[ $do_hourlies ]] && min_snapshot_glob=$snapshot_glob
 
 	TraceV 1 drive_dirs min_snapshot_glob sort_key_args
 
@@ -4825,19 +4826,20 @@ declare is_update=$false
 
 function update-drive() {
 	local update_drive_args=$*	# for recursion
-	local ignore_slow_sources=$false are_recursing=$false do_hourlies=
+	local ignore_slow_sources=$false are_recursing=$false
 	[[ $1 == -r  ]] && { 	    are_recursing=$true; shift; }
 	[[ $1 == -S  ]] && {  ignore_slow_sources=$true; shift; }
 	[[ $1 == -s* ]] && { local          src_names_glob=${1#-?}; shift; }
 	[[ $1 == -e* ]] && { local excluded_src_names_glob=${1#-?}; shift; }
+	[[ $1 == -p* ]] && { local    update_backup_period=${1#-?}; shift; }
 	[[ $1 == -f  ]] && { local do_force=$true; shift; } || local do_force=
-	[[ $1 == -h  ]] && { do_hourlies=$true; shift; }
 	assert-not-option "$1"
 
 	is_update=$true
 	set-drive_name "$1"
 	set-drive_dir "$drive_name"
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
+	_set-backup_period--for-prune ${update_backup_period-}
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
 	[[ $is_cron ]] && local lock_opt= || local lock_opt=-w
@@ -9034,15 +9036,16 @@ case $action in
    # update-drives [-s src-names-glob] dst-names: copy missing snapshots
    ( upd*dr*v* | ud ) undo-action-abbrev update-drives
 	[[ $# != 0  ]] || abort-with-action-Usage
-	[[ $1 == -S ]] && {     ignore_slow_sources_opt=$1	; shift  ; }
-	[[ $1 == -s ]] && {          src_names_glob_opt="$1$2"	; shift 2; }
-	[[ $1 == -e ]] && { excluded_src_names_glob_opt="$1$2"	; shift 2; }
-	[[ $1 == -h ]] && { do_hourlies_even_if_not_backed_up=-h; shift  ; }
+	[[ $1 == -S ]] && {	 ignore_slow_sources_opt=$1	; shift  ; }
+	[[ $1 == -s ]] && {	      src_names_glob_opt="$1$2"	; shift 2; }
+	[[ $1 == -e ]] && {  excluded_src_names_glob_opt="$1$2"	; shift 2; }
+	[[ $1 == -p ]] && { backup_period_for_update_opt="$1$2"	; shift 2; }
 	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
+
 	opts="${ignore_slow_sources_opt-} ${src_names_glob_opt-}
 				 ${excluded_src_names_glob_opt-}
-			   ${do_hourlies_even_if_not_backed_up-}"
+				${backup_period_for_update_opt-}"
 	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
