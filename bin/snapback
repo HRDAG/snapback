@@ -3564,6 +3564,18 @@ readonly -f set-num_full_link_dests
 
 # ----------------------
 
+# ensure backup-drive won't use partially-created snapshots in --link-dest
+function have-enough-snapshots-for-backup() {
+	local drive_name=${1:-$drive_name}
+
+	local -i snapshot_count num_full_link_dests
+	set-snapshot_count; set-num_full_link_dests
+	(( $snapshot_count  >= $num_full_link_dests ))
+}
+readonly -f have-enough-snapshots-for-backup
+
+# ----------------------
+
 set-link_dest_dirs() {
 	local new_snapshot=$1; shift
 	# $* is now snapshots for --link-dest, ones closet to $new_snapshot 1st
@@ -4418,15 +4430,10 @@ function copy-snapshots() {
 
 	lock -w copy || exit-normally 1
 
-	local lock_bkp=$false
-	local -i snapshot_count
-	set-snapshot_count
-	# make sure backup-drive doesn't use partially-created snapshots
-	# in rsync's --link-dest options.
-	set-num_full_link_dests
-	if (( $snapshot_count < $num_full_link_dests ))
-	   then lock -w backup || abort-function "problem with backup lock"
-		lock_bkp=$true
+	if have-enough-snapshots-for-backup
+	   then local lock_bkp=$false
+	   else local lock_bkp=$true
+		lock -w backup || abort-function "problem with backup lock"
 	fi
 	local status=0
 	for src_snapshot in $src_snapshots
@@ -4434,8 +4441,7 @@ function copy-snapshots() {
 		copy-snapshot $quiet_opt "$src_snapshot" "$drive_name" ||
 		    status=$?
 		[[ $lock_bkp ]] || continue
-		set-snapshot_count
-		(( $snapshot_count < $num_full_link_dests )) && continue
+		have-enough-snapshots-for-backup || continue
 		unlock backup
 		lock_bkp=$false
 	done
