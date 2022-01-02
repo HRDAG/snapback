@@ -3630,7 +3630,33 @@ readonly -f set-link_dest_opts
 
 # ------------------------------------------------------------------
 
-set-sorted_snapshots() {
+function set-slash_count() {
+	local path=$1
+
+	[[ $path ]] || abort-function "passed empty path"
+
+	# shellcheck disable=SC2086 # we want word splitting
+	set -- X${path//\// }
+	slash_count=$(( $#-1 ))
+	(( $slash_count != 0 ))
+}
+readonly -f set-slash_count
+
+# ----------------------
+
+set-sorted_snapshots---from-args() {
+	[[ $1 == -* ]] && { local sort_opt=$1; shift; } || local sort_opt=
+
+	set-slash_count "$1" && sort_opt+=" -t / -k $(($slash_count+1))"
+	# shellcheck disable=SC2046,SC2086 # we want word splitting
+	set -- $(echo "$@" | tr ' ' '\n' | sort $sort_opt)
+	sorted_snapshots=$*
+}
+readonly -f set-sorted_snapshots---from-args
+
+# ----------------------
+
+set-useful_snapshots() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local sort_opt=${1-}
 
@@ -3643,7 +3669,7 @@ set-sorted_snapshots() {
 	useful_snapshots=$*
 	$xtrace
 }
-readonly -f set-sorted_snapshots
+readonly -f set-useful_snapshots
 
 # --------------------------------------------
 
@@ -3651,7 +3677,7 @@ set-link_dest_opts--for-backup-drive() {
 	local new_snapshot=${1##*/}   useful_snapshots
 
 	set-num_full_link_dests
-	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
+	set-useful_snapshots -r		# reverse-sorted, i.e. newest first
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_dirs "$new_snapshot" $useful_snapshots
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -3666,7 +3692,7 @@ set-older_link_dest_dirs-newer_link_dest_dirs() {
 	local new_snapshot=$1; shift; local excluded_dirs=$*   useful_snapshots
 	TraceV 5 new_snapshot excluded_dirs
 
-	set-sorted_snapshots -r		# reverse-sorted, i.e. newest first
+	set-useful_snapshots -r		# reverse-sorted, i.e. newest first
 	suspend-tracing
 	local older_snapshots=
 	for snapshot in $useful_snapshots
@@ -3680,7 +3706,7 @@ set-older_link_dest_dirs-newer_link_dest_dirs() {
 	older_link_dest_dirs=$link_dest_dirs
 	TraceV 5 older_link_dest_dirs
 
-	set-sorted_snapshots
+	set-useful_snapshots
 	suspend-tracing
 	local newer_snapshots=
 	for snapshot in $useful_snapshots
@@ -7983,7 +8009,7 @@ copy-backup-drive() {
 	nohup'ing commands to copy partition '$src_name' to '$dst_name';
 	this takes about a day per TB of disk drive space.  Now running
 	'exec tail -f $output_file'; you can hit CTRL-C when you get bored;
-	you can see how fast 'dd' is copying with: sudo killall -USR1 dd
+	to check the status of 'dd', run: sudo killall -USR1 dd
 	"
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	nohup $cmd > "$output_file" &
@@ -9072,7 +9098,13 @@ case $action in
 	(( $# >= 2 )) || abort-with-action-Usage
 	set-drive_name    "${!#}"
 	src_snapshots=${*#"${!#}"}
-	src_snapshots=${src_snapshots% }
+	if ! have-enough-snapshots-for-backup
+	   then warn "reverse-sorting snapshots for 'backup-drives' safety"
+		# shellcheck disable=SC2086 # has multiple values
+		set-sorted_snapshots---from-args -r $src_snapshots
+		src_snapshots=$sorted_snapshots
+	   else src_snapshots=${src_snapshots% }
+	fi
 	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs copy -s${src_snapshots// / -s} $opts "$drive_name"
 	;;
