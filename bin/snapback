@@ -7981,8 +7981,9 @@ copy-backup-drive() {
 	local output_file=$dst_FS_label.out
 	echo -e "
 	nohup'ing commands to copy partition '$src_name' to '$dst_name';
-	this takes about a day per TB of drive space.  Now running
-	'exec tail -f $output_file'; you can hit CTRL-C when you get bored.
+	this takes about a day per TB of disk drive space.  Now running
+	'exec tail -f $output_file'; you can hit CTRL-C when you get bored;
+	you can see how fast 'dd' is copying with: sudo killall -USR1 dd
 	"
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	nohup $cmd > "$output_file" &
