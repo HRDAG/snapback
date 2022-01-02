@@ -8151,11 +8151,11 @@ _copy-extN-backup-drive() {
 	$IfRun set -x
 	time $IfRun dd if="$src_device" of="$dst_device" oflag=direct bs=1M ||
 	    abort "dd exited with $?"
-	[[ $Trace ]] || set +x
 
-	$IfRun e2fsck -f -D -t -t "$dst_device" && # tune2fs ask for this
-	$IfRun tune2fs -U time	  "$dst_device" ||
+	$IfRun time e2fsck -f -p -D -t -t "$dst_device" && # tune2fs needs it
+	$IfRun time tune2fs -U time	  "$dst_device" ||
 	    abort "fsck or UUID-setting failed"
+	[[ $Trace ]] || set +x
 
 	label-drive "$dst_device" "$dst_drive_dir"
 
