@@ -8122,7 +8122,8 @@ _copy-extN-backup-drive() {
 	# -------------------------------------------------------
 
 	$IfRun set -x
-	time RunCmd dd if="$src_device" of="$dst_device" bs=1M
+	time $IfRun dd if="$src_device" of="$dst_device" bs=1M ||
+	    abort "dd exited with $?"
 	[[ $Trace ]] || set +x
 
 	$IfRun tune2fs -U "$(uuidgen)" "$dst_device"
