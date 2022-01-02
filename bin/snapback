@@ -4839,6 +4839,7 @@ function update-drive() {
 	set-drive_name "$1"
 	set-drive_dir "$drive_name"
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
+	# shellcheck disable=SC2086 # optional arg
 	_set-backup_period--for-prune ${update_backup_period-}
 
 	# need to grab the copy lock in debug mode, pruning runs mv & rmdir
