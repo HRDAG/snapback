@@ -7961,7 +7961,7 @@ copy-backup-drive() {
 	abort "[-f] [-D] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
 	local src=$1 dst_name=$2 dst_device=${3-}
 
-	warn "this could created a filesystem that's corrupted"
+	warn "this used to create a filesystem that was corrupted"
 
 	[[ -t 1 ]] || $IfRun abort "don't use 'nohup', we'll run 'nohup'"
 
@@ -9198,6 +9198,7 @@ case $action in
 	$Trace
 	# shellcheck disable=SC2086 # variable may be null
 	kill-job-on-drives ${signal-} "$@"
+	[[ $* == m* ]] && ps-locks monitor
 	;;
    # continue	   job-type-glob  name-glob: as above, but -CONT signal
    ( con* | c ) undo-action-abbrev continue
