@@ -7961,6 +7961,8 @@ copy-backup-drive() {
 	abort "[-f] [-D] [-M] [-F] {src_name | src_dev} {dst_name dst_dev | '' dst_dev | dst_name}"
 	local src=$1 dst_name=$2 dst_device=${3-}
 
+	warn "this could created a filesystem that's corrupted"
+
 	[[ -t 1 ]] || $IfRun abort "don't use 'nohup', we'll run 'nohup'"
 
 	$Trace
@@ -8153,8 +8155,10 @@ _copy-extN-backup-drive() {
 	    abort "dd exited with $?"
 
 	$IfRun sync "$dst_device"
-	$IfRun time e2fsck -f -p -D -t -t "$dst_device" && # tune2fs needs it
-	$IfRun time tune2fs -U time	  "$dst_device" ||
+	$IfRun time e2fsck -f -p -D -t -t   "$dst_device" && # tune2fs needs it
+	$IfRun time e2fsck -f -p    -t -t   "$dst_device" && # this could fail
+	$IfRun time tune2fs -U "$(uuidgen)" "$dst_device" &&
+	$IfRun time e2fsck -f -p    -t -t   "$dst_device" || # this could fail
 	    abort "fsck or UUID-setting failed"
 	[[ $Trace ]] || set +x
 
