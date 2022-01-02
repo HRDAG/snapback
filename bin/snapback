@@ -8152,6 +8152,7 @@ _copy-extN-backup-drive() {
 	time $IfRun dd if="$src_device" of="$dst_device" oflag=direct bs=1M ||
 	    abort "dd exited with $?"
 
+	$IfRun sync "$dst_device"
 	$IfRun time e2fsck -f -p -D -t -t "$dst_device" && # tune2fs needs it
 	$IfRun time tune2fs -U time	  "$dst_device" ||
 	    abort "fsck or UUID-setting failed"
