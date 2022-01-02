@@ -1051,7 +1051,7 @@ function kill-job-on-drives() {
 	[[ ${1-} == -* ]] && { signal=${1^^}; shift; }
 	assert-not-option "${1-}"
 	local type=${1:-$writer_type} drives=${2-}
-	[[ $type == [abcpu]* ]] || abort-function "'$type' is invalid type"
+	[[ $type == [abcmpu]* ]] || abort-function "'$type' is invalid type"
 
 	set-lock_paths "$@" || return 1
 
@@ -3565,6 +3565,7 @@ readonly -f set-num_full_link_dests
 # ----------------------
 
 # ensure backup-drive won't use partially-created snapshots in --link-dest
+# shellcheck disable=SC2120 # drive_name args are optional
 function have-enough-snapshots-for-backup() {
 	local drive_name=${1:-$drive_name}
 
@@ -7952,6 +7953,7 @@ copy-backup-drive() {
 	local dst_FS_type=$FS_type
 	set-FS_type--from-path "$src_device"
 	local src_FS_type=$FS_type
+	is-arg1-in-arg2 -f "$action_opts"    ||
 	[[ $src_FS_type == "$dst_FS_type" ]] ||
 	    abort "different filesystem types, must use update-drive instead"
 	if [[ $FS_type == xfs ]] || is-arg1-in-arg2 -D "$action_opts" # not dd?
