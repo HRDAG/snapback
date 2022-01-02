@@ -550,7 +550,7 @@ function set-lock_paths() {
 
 	eval "set -- $lock_dir/$type_glob*-$name_glob.pid" # eval for {}
 	lock_paths=$*
-	[[ -e $drive_monitor_lock_path && $type_glob == *m* &&
+	[[ -e $drive_monitor_lock_path && $type_glob == *[*m]* &&
 	   $name_glob == '*' ]] &&
 	lock_paths+=" $drive_monitor_lock_path"
 	$xtrace
