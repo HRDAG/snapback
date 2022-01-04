@@ -1780,7 +1780,7 @@ validate-config-variables() {
 	#
 	[[ ! $extra_excludes ]] ||
 	   abort "extra_excludes is not implemented, email $coder"
-	#
+	# have-enough-snapshots-for-backup assumes separator isn't '.'
 	local bad_punctuation="[-.:0-9]" # you could ask $coder to change this
 	[[ $snapshot_date_time_separator != *$bad_punctuation* ]] ||
 	   abort "snapshot_date_time_separator can't contain $bad_punctuation"
@@ -3564,14 +3564,32 @@ readonly -f set-num_full_link_dests
 
 # ----------------------
 
-# ensure backup-drive won't use partially-created snapshots in --link-dest
-# shellcheck disable=SC2120 # drive_name args are optional
+# there must be two full snapshots that are newer than the passed snapshot,
+# else copy/update could be creating the same newish file as backup-drives
+# but in a different .partial dir.
 function have-enough-snapshots-for-backup() {
-	local drive_name=${1:-$drive_name}
+	local snapshot_path=$1
 
-	local -i snapshot_count num_full_link_dests
-	set-snapshot_count; set-num_full_link_dests
-	(( $snapshot_count  >= $num_full_link_dests ))
+	[[ $snapshot_path == /* ]] ||
+	    abort-function "snapshot must be absolute path"
+	local  snapshot=${snapshot_path##*/}
+	local drive_dir=${snapshot_path%/"$snapshot"}
+	snapshot=${snapshot%.*}
+
+	pushd_ -q "$drive_dir"
+	# shellcheck disable=SC2206 # we want globbing
+	local -a snapshots_array=($snapshot_glob)
+	popd_ -q
+
+	local -i num_full_link_dests
+	set-num_full_link_dests
+	local -i newer_count=0
+	for (( i = ${#snapshots_array[*]} - 1; i >= 0; i-- ))
+	    do	[[  ${snapshots_array[i]} > $snapshot ]] || break
+		newer_count+=1
+		(( $newer_count >= $num_full_link_dests )) && return 0
+	done
+	return 1
 }
 readonly -f have-enough-snapshots-for-backup
 
@@ -4457,22 +4475,12 @@ function copy-snapshots() {
 
 	lock -w copy || exit-normally 1
 
-	if have-enough-snapshots-for-backup
-	   then local lock_bkp=$false
-	   else local lock_bkp=$true
-		lock -w backup || abort-function "problem with backup lock"
-	fi
 	local status=0
 	for src_snapshot in $src_snapshots
 	    do	# shellcheck disable=SC2086 # *_opt may be null
 		copy-snapshot $quiet_opt "$src_snapshot" "$drive_name" ||
 		    status=$?
-		[[ $lock_bkp ]] || continue
-		have-enough-snapshots-for-backup || continue
-		unlock backup
-		lock_bkp=$false
 	done
-	[[ $lock_bkp ]] && unlock backup
 
 	unlock copy
 	return $status
@@ -4488,8 +4496,14 @@ readonly -f copy-snapshots
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
+	if have-enough-snapshots-for-backup "$dst_snapshot"
+	   then local lock_bkp=$false
+	   else local lock_bkp=$true
+		lock -w backup || abort-function "problem with backup lock"
+	fi
+
 	if [[ ! $is_multi_writer_drive ]]
-	   then if [[ ! ${lock_bkp-} ]]
+	   then if [[ ! $lock_bkp ]]
 		   then lock -w backup || return 1 # wait for backup ...
 			unlock  backup		   # ... but don't hold lock
 		fi
@@ -4509,6 +4523,8 @@ function copy-snapshot-rsync() {
 	continue-jobs prune
 
 	allow-pruning "$src_snapshot"
+
+	[[ $lock_bkp ]] && unlock backup
 
 	return $status
 }
@@ -9105,13 +9121,10 @@ case $action in
 	(( $# >= 2 )) || abort-with-action-Usage
 	set-drive_name    "${!#}"
 	src_snapshots=${*#"${!#}"}
-	if ! have-enough-snapshots-for-backup
-	   then warn "reverse-sorting snapshots for 'backup-drives' safety"
-		# shellcheck disable=SC2086 # has multiple values
-		set-sorted_snapshots---from-args -r $src_snapshots
-		src_snapshots=$sorted_snapshots
-	   else src_snapshots=${src_snapshots% }
-	fi
+	warn "reverse-sorting snapshots for 'backup-drives' safety"
+	# shellcheck disable=SC2086 # has multiple values
+	set-sorted_snapshots---from-args -r $src_snapshots
+	src_snapshots=$sorted_snapshots
 	# shellcheck disable=SC2086 # $opts may be null or multi
 	create-jobs copy -s${src_snapshots// / -s} $opts "$drive_name"
 	;;
@@ -9411,6 +9424,7 @@ case $action in
 	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo -e "\nstatus=$?"
+	set +x
 	;;
    ( true )				# used to test for needed options
 	true ;;
