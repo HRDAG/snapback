@@ -2389,11 +2389,14 @@ readonly -f set-stats_subdir
 
 # --------------------------------------------
 
+readonly duration_file_basename=average.txt
+
 set-duration_file() {
 	local writer_type=$1
 
+	local stats_subdir basename=$duration_file_basename
 	set-stats_subdir minutes
-	duration_file=$drives_log_dir/$drive_name/$stats_subdir/.average.txt
+	duration_file=$drives_log_dir/$drive_name/$stats_subdir/$basename
 }
 readonly -f set-duration_file
 
@@ -5210,6 +5213,10 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	local data="count=$count last=$last average=$average maximum=$maximum sum=$sum" &&
 	echo-to-file "$data" "$cache_file"
 
+	(( $count > 0 )) && {
+	set-division -d1 "$sum" "$count"
+	echo-to-file "$division" "$duration_file_basename"; }
+
 	popd_ -q
 	TraceV 2 count last average maximum sum
 	$xtrace
@@ -5219,7 +5226,7 @@ readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
 # ---------------------------------
 
-set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
+set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 
 	minute_avg=			# not set for type 'backup'
 	local -i \
@@ -5240,13 +5247,6 @@ set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 	set-division $watch_division_opts $maximum 60
 	hour_max=$division$units
 
-	set-division -d1 "$sum" "$count"
-	minute_avg=$division
-	if [[ $writer_type == backup ]]
-	   then set-duration_file backup
-		echo-to-file "$minute_avg" "$duration_file"
-	fi
-
 	local -i backup_period=${drv_name2backup_period[$drive_name]}
 	local -i backup_period_mins=$(( $backup_period*60 ))
 	if (( average >= backup_period_mins && backup_period_mins > 0 ))
@@ -5260,7 +5260,7 @@ set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 		hour_avg=$padded_colorized_string
 	fi
 }
-readonly -f set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files
+readonly -f set-hour_last-hour_avg-hour_max--from-files-of-minutes
 
 # --------------------------------------------
 
@@ -5273,16 +5273,19 @@ set-writer_hour_lasts-writer_hour_avgs-writer_hour_maxs-writer_totals() {
 	local drive_name hour_lasts= hour_avgs= hour_maxs= _writer_totals=
 	for drive_name in $all_drive_names
 	    do	local \
-		    hour_last minute_avg hour_avg hour_max
-		set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files
+		    hour_last hour_avg hour_max
+		set-hour_last-hour_avg-hour_max--from-files-of-minutes
 
 	       hour_lasts+="$drive_name=$hour_last "
 		hour_avgs+="$drive_name=$hour_avg "
 		hour_maxs+="$drive_name=$hour_max "
 		[[ $writer_type == backup ]] && continue
 
+		set-duration_file "$writer_type"
+		read-all -A minute_avg "$duration_file"
+
 		local stats_number=${drive_name2stats_number[$drive_name]}
-		(( $stats_number == 0 )) || [[ ! $minute_avg ]] &&
+		(( $stats_number == 0 )) || [[ ! ${minute_avg-} ]] &&
 		    _writer_totals+="$drive_name= " && continue
 		set-product "$minute_avg" "$stats_number"
 		# shellcheck disable=SC2086 # var containing multiple values
