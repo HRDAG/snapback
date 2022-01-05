@@ -195,7 +195,7 @@ Usage: $our_name [options] action [options] [args]
     # a glob can be a comma-separated list, a shell glob pattern, or 'all'.
     kill [-signal] job-type-glob  name-glob: job-types are backup, copy, prune
     continue	   job-type-glob  name-glob: as above, but -CONT signal
-    suspend	   job-type-glob  name-glob: as above, but -STOP signal
+    suspend [-l]   job-type-glob  name-glob: as above, but -STOP signal
     stop	   job-type-glob  name-glob: as above, but -STOP signal
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
@@ -1045,6 +1045,7 @@ readonly -f suspend-jobs continue-jobs
 # -------------------------------------------------
 
 function kill-job-on-drives() {
+	[[ $1 == -l ]] && { shift; local do_loop=$true; } || local do_loop=
 	local signal=-KILL
 	[[ $1 == -s    ]] && { signal=-STOP ; shift; }
 	[[ $1 == -c    ]] && { signal=-CONT ; shift; }
@@ -1088,10 +1089,10 @@ function kill-job-on-drives() {
 
 			# shellcheck disable=SC2155 # 'basename' never fails
 			local lock=$(basename "$path")
-			local coder_msg="can ask $coder to add -s to 'copy'."
+			local fix_msg="add -l (Loop) to continually suspend"
 			local cron_msg="cron (runs every 5 minutes by default)"
-			[[ $our_rsync_opts != *--quiet* ]] &&
-			warn "$cron_msg could un-suspend\n   $lock; $coder_msg"
+			[[ $do_loop || $our_rsync_opts == *--quiet* ]] ||
+			warn "$cron_msg could un-suspend\n   $lock; $fix_msg"
 
 		fi
 	done
@@ -2386,19 +2387,6 @@ function set-stats_subdir() {
 	[[ -d $stats_subdir ]]	     # only relevant if $PWD == $drive_log_dir
 }
 readonly -f set-stats_subdir
-
-# --------------------------------------------
-
-readonly duration_file_basename=average.txt
-
-set-duration_file() {
-	local writer_type=$1
-
-	local stats_subdir basename=$duration_file_basename
-	set-stats_subdir minutes
-	duration_file=$drives_log_dir/$drive_name/$stats_subdir/$basename
-}
-readonly -f set-duration_file
 
 # ----------------------------------------------------------------------------
 
@@ -5156,6 +5144,8 @@ readonly -f set-stats_format
 
 # ----------------------------------------------------------------------------
 
+readonly duration_file_basename=average.txt
+
 function set-count-last-average-maximum-sum-files--from-stats-files() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local data_type=$1
@@ -5213,9 +5203,12 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	local data="count=$count last=$last average=$average maximum=$maximum sum=$sum" &&
 	echo-to-file "$data" "$cache_file"
 
-	(( $count > 0 )) && {
-	set-division -d1 "$sum" "$count"
-	echo-to-file "$division" "$duration_file_basename"; }
+	if (( $count > 0 ))
+	   then	set-division -d1 "$sum" "$count"
+		echo-to-file "$division" "$duration_file_basename"
+	elif   [[ -s "$duration_file_basename" ]]
+	     then rm "$duration_file_basename"
+	fi
 
 	popd_ -q
 	TraceV 2 count last average maximum sum
@@ -5223,6 +5216,17 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	(( $count != 0 ))		# did we find any files w/data?
 }
 readonly -f set-count-last-average-maximum-sum-files--from-stats-files
+
+# ---------------------------------
+
+set-duration_file() {
+	local writer_type=$1
+
+	local stats_subdir basename=$duration_file_basename
+	set-stats_subdir minutes
+	duration_file=$drives_log_dir/$drive_name/$stats_subdir/$basename
+}
+readonly -f set-duration_file
 
 # ---------------------------------
 
@@ -9248,12 +9252,13 @@ case $action in
    # suspend	   job-type-glob  name-glob: as above, but -STOP signal
    # stop	   job-type-glob  name-glob: as above, but -STOP signal
    ( sus* | st*p | s ) undo-action-abbrev suspend
-	[[ ${1-} == -l ]] && { shift; local do_loop=$true; } || local do_loop=
+	[[ ${1-} == -l ]] && { local loop_opt=$1; shift; } || local loop_opt=
 	[[ $#    ==  2 ]] || abort-with-action-Usage
-	if [[ $do_loop ]]
-	   then $Trace
+	if [[ $loop_opt ]]
+	   then warn "looping to continually suspend, hit CTRL-C when done"
+		$Trace
 		while true
-		    do	kill-job-on-drives -s "$@"
+		    do	kill-job-on-drives $loop_opt -s "$@"
 			set +x
 			sleep-exe 1.1
 		done
