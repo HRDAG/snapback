@@ -2371,19 +2371,31 @@ readonly -f rm-dangling-stats-symlinks
 function set-stats_subdir() {
 	local  data_type=${1:-$data_type}
 
-	if [[ $data_type == MB ]]
+	if   [[ $data_type == MB ]]
 	   then basename=$MB_used_basename
-	   else # shellcheck disable=SC1075
+	elif [[ $data_type == minutes ]]
+	   then # shellcheck disable=SC1075
 		if [[ $writer_type == prune ]]
 		   then local basename=$rm_time_basename
 		   else local basename=$rsync_time_basename
 		fi
+	   else abort-function "{ ${stats_data_types// / | }"
 	fi
 
 	stats_subdir=stats/$writer_type/$basename
 	[[ -d $stats_subdir ]]	     # only relevant if $PWD == $drive_log_dir
 }
 readonly -f set-stats_subdir
+
+# --------------------------------------------
+
+set-duration_file() {
+	local writer_type=$1
+
+	set-stats_subdir minutes
+	duration_file=$drives_log_dir/$drive_name/$stats_subdir/.average.txt
+}
+readonly -f set-duration_file
 
 # ----------------------------------------------------------------------------
 
@@ -4735,7 +4747,7 @@ function _set-speed_record() {
 
 	set-drive_dir- || { print-call-stack; return 1; }
 
-	if is-multi-writer-drive "$snapshot"
+	if is-multi-writer-drive "$drive_name"
 	   then local not_multi_writer=0
 	   else local not_multi_writer=1
 	fi
@@ -4749,8 +4761,12 @@ function _set-speed_record() {
 	count-rsyncs-using-resource " $drive_dir/"
 	local rsync_count=$?
 
+	local duration_file duration
+	set-duration_file backup
+	read-all -A duration "$duration_file" || duration=0
+
 	# matches _set-not_multi_writer-writer_count-rsync_count()
-	speed_record="$not_multi_writer|$writer_count|$rsync_count"
+	speed_record="$not_multi_writer|$writer_count|$rsync_count|$duration"
 	drive_name2speed_record[$drive_name]=$speed_record
 }
 readonly -f _set-speed_record
@@ -4768,6 +4784,8 @@ readonly -f _set-not_multi_writer-writer_count-rsync_count
 
 # ---------------------------------
 
+declare ignore_slow_sources=$false	# global so can test fastest-snapshots
+
 # the "fastest" snapshot is on drive that's: 1. multi-writer; else 2. not
 # running a backup or copy; else 3. not being pruned (or can kill prune);
 # else 4. hosting the smallest number of rsync commands.
@@ -4775,7 +4793,7 @@ readonly -f _set-not_multi_writer-writer_count-rsync_count
 # means we might not return anything (so caller has to do multiple passes, to
 # wait for a source drive to become "available")
 fastest-snapshots() {
-	if [[ $1 == -f ]]
+	if [[ ${1-} == -f ]]
 	   then local do_force=$true; shift
 	elif [[ $is_regression_test ]]
 	   then local do_force=$true
@@ -4787,6 +4805,7 @@ fastest-snapshots() {
 	for snapshot
 	    do	_set-speed_record "$snapshot" || continue
 		_set-not_multi_writer-writer_count-rsync_count "$speed_record"
+		TraceV 2 snapshot speed_record >&2
 
 		[[ ! $do_force ]] &&
 		[[ $writer_count -gt 0 && $not_multi_writer == 1 ]] &&
@@ -4799,7 +4818,7 @@ fastest-snapshots() {
 	done       > "$snapshots_file"	# so _set-speed_record caching works
 	sort -t\| -n "$snapshots_file"|	# numeric sort
 	# cat; return			# uncomment to debug with action 'test'
-	cut -d\| -f4
+	cut -d\| -f5			# last field is snapshot path
 }
 readonly -f fastest-snapshots
 
@@ -4875,8 +4894,7 @@ readonly -f fill-in-unpruned-empty-snapshots
 declare is_update=$false
 
 function update-drive() {
-	local update_drive_args=$*	# for recursion
-	local ignore_slow_sources=$false are_recursing=$false
+	local update_drive_args=$* are_recursing=$false	# for recursion
 	[[ $1 == -r  ]] && { 	    are_recursing=$true; shift; }
 	[[ $1 == -S  ]] && {  ignore_slow_sources=$true; shift; }
 	[[ $1 == -s* ]] && { local          src_names_glob=${1#-?}; shift; }
@@ -5222,10 +5240,11 @@ set-hour_last-minute_avg-hour_avg-hour_max--from-minute-files() {
 	set-division $watch_division_opts $maximum 60
 	hour_max=$division$units
 
-	if [[ $writer_type != backup ]]
-	   then set-division -d1 "$sum" "$count"
-		minute_avg=$division
-		return
+	set-division -d1 "$sum" "$count"
+	minute_avg=$division
+	if [[ $writer_type == backup ]]
+	   then set-duration_file backup
+		echo-to-file "$minute_avg" "$duration_file"
 	fi
 
 	local -i backup_period=${drv_name2backup_period[$drive_name]}
