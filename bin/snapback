@@ -8929,8 +8929,8 @@ _run-debug-cmds() {
 	local test=$1; shift
 	local args=$*
 
-	local tmp_o=$tmp_dir/o$test	# holds output from "old" cmd
-	local tmp_t=$tmp_dir/t$test	# holds output from "tst" cmd
+	tmp_o=$tmp_dir/o$test		# holds output from "old" cmd
+	tmp_t=$tmp_dir/t$test		# holds output from "tst" cmd
 
 	local opts="-C -d ${Trace_level_opt-}"
 	local old_cmd_="$old_cmd $opts  $trace_opt               $args"
@@ -9054,6 +9054,8 @@ function regression-test() {
 
 	# shellcheck disable=SC2086 # variable contains multiple values
 	_run-debug-cmds u update-drive $args
+	fgrep -q -w rsync "$tmp_o" ||
+	    warn "didn't need to update drive $update_test_args"
 
 	reset-priority			# will continue only one job
 	continue-jobs backup
@@ -9233,7 +9235,9 @@ case $action in
 	$Trace
 	# shellcheck disable=SC2086 # variable may be null
 	kill-job-on-drives ${signal-} "$@"
+	status=$?
 	[[ $* == m* ]] && ps-locks monitor
+	[[ $status == 0 ]]
 	;;
    # continue	   job-type-glob  name-glob: as above, but -CONT signal
    ( con* | c ) undo-action-abbrev continue
@@ -9251,7 +9255,7 @@ case $action in
 		while true
 		    do	kill-job-on-drives -s "$@"
 			set +x
-			sleep-exe 1
+			sleep-exe 1.1
 		done
 	   else $Trace
 		kill-job-on-drives -s "$@"
