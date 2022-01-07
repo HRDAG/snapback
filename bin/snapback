@@ -5199,15 +5199,16 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	break
 	done
 
-	[[ $do_compute ]] &&
-	local data="count=$count last=$last average=$average maximum=$maximum sum=$sum" &&
-	echo-to-file "$data" "$cache_file"
+	if [[ $do_compute ]]
+	   then if (( $count > 0 ))
+		   then	set-division -d1 "$sum" "$count"
+			echo-to-file "$division" "$duration_file_basename"
+		elif   [[ -s "$duration_file_basename" ]]
+		     then rm "$duration_file_basename"
+		fi
 
-	if (( $count > 0 ))
-	   then	set-division -d1 "$sum" "$count"
-		echo-to-file "$division" "$duration_file_basename"
-	elif   [[ -s "$duration_file_basename" ]]
-	     then rm "$duration_file_basename"
+		local data="count=$count last=$last average=$average maximum=$maximum sum=$sum"
+		echo-to-file "$data" "$cache_file"
 	fi
 
 	popd_ -q
@@ -9258,7 +9259,8 @@ case $action in
 	   then warn "looping to continually suspend, hit CTRL-C when done"
 		$Trace
 		while true
-		    do	kill-job-on-drives $loop_opt -s "$@"
+		    do	# shellcheck disable=SC2086 # option is optional
+			kill-job-on-drives $loop_opt -s "$@"
 			set +x
 			sleep-exe 1.1
 		done
