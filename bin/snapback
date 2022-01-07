@@ -2665,7 +2665,9 @@ function count-rsyncs-using-resource() {
 	local regex=$*
 
 	[[ $drive_name == [zZ] || $IfRun ]] && return 0
-	return "$(COLUMNS=9999 ps -U root | egrep -c "\brsync .*$regex")"
+	# could exclude stop'ped rsyncs with ' [^T]N ', but rsync was probably
+	# stopped for prune, so this effectively counts "running rsync or rm"
+	return "$(COLUMNS=9999 ps www -U root | egrep -c "\brsync .*$regex")"
 }
 readonly -f count-rsyncs-using-resource
 
@@ -2965,7 +2967,6 @@ rm-pruned-snapshots() {
 	    do	[[ $snapshot != *.rm && ! -e $snapshot/.keep ]] &&
 		[[ -e $snapshot ]] || continue
 		[[ ! ( $debug_opt || $drive_name == Z ) ]] &&
-		# could instead use: count-rsyncs-using-resource $snapshot
 		fuser -s "$snapshot/." && continue # don't rename if in-use
 		# shellcheck disable=SC2086 # *_opt may be null
 		if [[ $is_update ]]
@@ -4743,12 +4744,15 @@ function _set-speed_record() {
 	   else local not_multi_writer=1
 	fi
 
+	# copy/update jobs that hold the backup lock get double-counted,
+	# but that's a good thing: we don't want to slow down the backups
 	local -i writer_count=0
 	have-job backup &&			      writer_count+=1
 	have-job copy	&& ! is-waiting copy && ! is-suspended copy &&
 						      writer_count+=1
 	have-job prune	&& is-drive-usage-too-high && writer_count+=1
 
+	# this effectively counts "running rsync or rm", see function
 	count-rsyncs-using-resource " $drive_dir/"
 	local rsync_count=$?
 
