@@ -9461,10 +9461,10 @@ case $action in
 	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
 	echo -e "\nstatus=$?"
-	set +x
 	;;
    ( true )				# used to test for needed options
-	true ;;
+	true
+	;;
    ( test | t ) undo-action-abbrev test; $Trace
 	# shellcheck disable=SC1090 # don't need to check test code
 	source "$our_name_-test.sh" || exit-normally $?
@@ -9476,6 +9476,7 @@ case $action in
 	;;
 esac
 local status=$?
+set +x
 
 [[ -t 1 ]] && check-lost+found
 
