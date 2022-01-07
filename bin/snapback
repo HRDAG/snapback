@@ -5167,10 +5167,10 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	local  cache_file=$cache_dir/${cache_type//\//_}.sh
 	# shellcheck disable=SC1090
 	[[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file" &&
-	    local do_regenerate=$false || local do_regenerate=$true
-	#[[ $do_regenerate ]] || echo -n "C: " # enable to ensure caching works
+	    local do_recalculate=$false || local do_recalculate=$true
+	#[[ $do_recalculate ]] ||echo -n "C: " # enable to ensure caching works
 
-	while [[ $do_regenerate ]]; do	# so we can use 'break' to do cleanup
+	while [[ $do_recalculate ]]; do	# so we can use 'break' to do cleanup
 
 	[[ $# != 0 ]] || { count=0 last=0 average=0 maximum=0 sum=0; break; }
 
@@ -5203,7 +5203,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	break
 	done
 
-	if [[ $do_regenerate ]]
+	if [[ $do_recalculate ]]
 	   then if (( $count > 0 ))
 		   then	set-division -d1 "$sum" "$count"
 			echo-to-file "$division" "$duration_file_basename"
