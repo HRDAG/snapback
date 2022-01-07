@@ -8,6 +8,7 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
    Any config variable can have (per-drive or per-drive-class) custom values;
       can use smaller drives (e.g. flash memory) to backup subset of system.
       "Stylistic" constants/functions in the code can be overridden in config.
+   Simultaneously backup different parts of large system to different drives,
    Code calls hooks if they're set to functions (all defined in config file).
    When an offsite drive is returned and online, missing snapshots can be
      copied from all other drives (with minimal impact on regular backups).
@@ -47,4 +48,4 @@ Why write such a serious program in bash:
    Start with a simple script, evolve it into a reliable, featureful one
       (with regression-testing after each change).
    [But if someone rewrites parts of it in Python, such as the monitor-drives
-      and watch actions, I'll adopt them!)
+      or watch actions, I'll adopt them!)
