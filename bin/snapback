@@ -1256,8 +1256,9 @@ readonly -f is-drive-mounted
 
 set-oldest_snapshot() {
 
-	local oldest= FS
-	for FS in $(list-drive-dirs)
+	local oldest= FS drive_dirs
+	set-drive_dirs
+	for FS in $drive_dirs
 	    do	suspend-tracing
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $FS/$snapshot_glob
@@ -4625,8 +4626,9 @@ _set-drive_dirs--for-update-srcs() {
 	dst_backup_type=$backup_type
 
 	drive_dirs=
-	local src_drive_dir
-	for src_drive_dir in $(list-drive-dirs -a)
+	local src_drive_dir drive_dirs
+	set-drive_dirs -a
+	for src_drive_dir in $drive_dirs
 	    do	[[ $src_drive_dir != "$drive_dir" ]] || continue
 
 		local exclude_regex=$drive_dir_prefix$excluded_drive_dirs_regex
@@ -7486,8 +7488,8 @@ readonly -f max-drive
 function unmount-drives() {
 	[[ $1 == -q  ]] && { local quiet_opt=$1; shift; } || local quiet_opt=
 	assert-not-option "${1-}"
-	# shellcheck disable=SC2048,SC2046
-	[[ ${*,,} == all ]] && set -- $(list-drive-dirs)
+	# shellcheck disable=SC2086 # we want word splitting
+	[[ ${*,,} == all ]] && { set-drive_names; set -- $drive_names; }
 
 	$Trace
 	# do this early, since takes a while for processes to die
@@ -7623,7 +7625,8 @@ check-lost+found() {
 	# shellcheck disable=SC2024 # $dev_null always writable
 	sudo -n ls &> $dev_null || return
 
-	for dir in $(list-drive-dirs)
+	set-drive_dirs -a
+	for dir in $drive_dirs
 	    do	lost_found=$dir/lost+found
 		[[ -d $lost_found ]] || continue
 		# shellcheck disable=SC2046,SC2086
@@ -8745,11 +8748,12 @@ chroot-backup() {
 	local date_time=$1; shift; local command=${*-}
 
 	local drive_dir snapshots=
-	[[ $date_time == /* ]] && snapshots=$date_time ||
-	for drive_dir in $(list-drive-dirs -a)
+	[[ $date_time == /* ]] && snapshots=$date_time || {
+	set-drive_dirs -a
+	for drive_dir in $drive_dirs
 	    do	local  snapshot=$drive_dir/$date_time
 		[[ -d $snapshot ]] && snapshots+="$snapshot "
-	done
+	done; }
 	[[ $snapshots ]] || abort "can't find snapshot matching $date_time"
 
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -9325,13 +9329,10 @@ case $action in
 	if [[ ${1-} == -r ]]
 	   then shift
 		$IfRun "$action" "$@"
-	   else	# shellcheck disable=SC2046 # we want word splitting
-		set -- $(list-drive-dirs -a)
-		if [[ $# == 0 ]]
-		   then [[ -t 1 ]] &&
+	   else	set-drive_dirs || {
+			[[ -t 1 ]] &&
 			echo "No mounted backup drives, won't start $action"
-			exit-normally 1
-		fi
+			exit-normally 1; }
 		[[ $UID == 0 ]] || abort "run with sudo"
 		trap '' HUP
 		# shellcheck disable=SC2086 # *_opt may be null
