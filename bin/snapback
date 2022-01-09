@@ -9090,8 +9090,11 @@ function regression-test() {
 
 	# shellcheck disable=SC2086 # variable contains multiple values
 	_run-debug-cmds u update-drive $args
+
 	fgrep -q -w rsync "$tmp_o" ||
 	    warn "didn't need to update drive $update_test_args"
+
+	# --------------------------------------------
 
 	reset-priority			# will continue only one job
 	continue-jobs backup
