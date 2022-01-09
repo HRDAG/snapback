@@ -1169,52 +1169,69 @@ readonly -f ps-locks
 # miscellaneous
 ##############################################################################
 
-[[ -v df_exclude_type_options ]] ||	# can set custom value in $config_file
-      df_exclude_type_options="-x devtmpfs -x tmpfs -x squashfs"
+set-mounts() {
 
-list-drive-dirs() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	[[ ${1-} == -a ]] &&
-	   local list_all_drives=$true && shift ||
-	   local list_all_drives=$false
-
-	if [[ -t 0 || -t 1 || -t 2 || $list_all_drives ]]
-	   then local regex=$admin_drive_name_regex
-	   else local regex=$drive_name_regex # for cron & nohup
+	local mounts_path=/proc/mounts
+	if [[ -f $mounts_path ]]
+	   then read-all mounts "$mounts_path"
+	   else mounts=$(mount)
 	fi
-	if [[ ${1-} == -A ]]
-	   then regex=/
-	   else regex="^$drive_dir_prefix$regex$"
-		local df_exclude_type_options= # tst FS could be tmpfs
-	fi
-	# shellcheck disable=SC2086 # *_opt* may be null or multiple
-	df --output=target $df_exclude_type_options --no-sync |
-	   egrep "$regex" | sort -u
-	fully-populate-custom-config-maps # ensure we support new drives
-	$xtrace
 }
-readonly -f list-drive-dirs
+readonly -f set-mounts
 
 # ----------------------
 
 function set-drive_dirs() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	[[ ${1-} != -* && ( -t 0 || -t 1 || -t 2 ) ]] && set -- -a "$@"
+	case $* in
+	    ( '' ) local regex=$drive_name_regex ;; # default: ones we backup
+	    ( -a ) local regex=$admin_drive_name_regex ;; # all, for sysadmin
+	    ( -A ) local regex= ;;	# all filesystems 'df' shows
+	    (  * ) abort-function "[-a | -A]" ;;
+	esac
 
+	local mounts
+	set-mounts
+	if [[ $regex ]]
+	   then regex=$drive_dir_prefix$regex
+	   else regex="/[^ ]*"
+	fi
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(list-drive-dirs "$@")
+	set -- $(sed -r -n -e '\@^/dev/(fuse|loop)@d' \
+			   -e "s@^/[^ ]* ($regex) .*@\1@p" <<<"$mounts" | sort)
 	drive_dirs=$*
+	fully-populate-custom-config-maps # ensure we support any new drives
+	$xtrace
 	[[ $drive_dirs ]]
 }
 readonly -f set-drive_dirs
 
 # ----------------------
 
+list-drive-dirs() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+
+	local drive_dirs
+	set-drive_dirs "$@"
+	echo -e "${drive_dirs// /\\n}"
+	$xtrace
+}
+readonly -f list-drive-dirs
+
+# ----------------------
+
 readonly escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
 
 function set-drive_names() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local drive_dirs
+	set-drive_dirs "$@"
 
-	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(list-drive-dirs "$@")
+	# shellcheck disable=SC2086 # we want word splitting
+	set -- $drive_dirs
 	drive_names=${*//$escaped_drive_dir_prefix/}
+	$xtrace
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names
@@ -5821,6 +5838,8 @@ readonly -f set-max_drive_name_len
 # -------------------------------------------------------
 
 declare -i min_full_columns=94		# watch will re-write this
+[[ -v df_exclude_type_options ]] ||	# can set custom value in $config_file
+      df_exclude_type_options="-x devtmpfs -x tmpfs -x squashfs"
 
 function run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
@@ -7278,8 +7297,7 @@ _set-FS_type-FS_device-dev--from-drive_dir() {
 	# shellcheck disable=SC2001 # 'sed' too hairy for ${var//x/y}
 	if [[ $FS_device == /dev/mapper/* ]]
 	   then dev=
-	   else dev=$(sed 's@.*/@@; /^[^-]*$/s/[0-9]*$//' <<<"$FS_device") ||
-		   abort device=
+	   else dev=${FS_device##*/}
 	fi
 }
 readonly -f _set-FS_type-FS_device-dev--from-drive_dir
@@ -7305,7 +7323,7 @@ printf "$f" ""   ""	""	""	""	"dir "	""    "$strp"  "$strp"
 printf "$f" Mount type	sector	inode	block	block	" log" "unit  "	"$wdth"
 printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 	format=${format/\%25s/%-15s  %8s}
-	local drive_dir
+	local drive_dir path
 	for drive_dir in $drive_dirs
 	    do	_set-FS_type-FS_device-dev--from-drive_dir
 		case $FS_type in
@@ -7317,8 +7335,9 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 				echo -e "$drive_dir\t\t[$msg this data]"
 				return
 			fi
-			[[ ! $dev ]] && sector= ||
-			sector=$(< "/sys/block/$dev/queue/physical_block_size")
+			path=/sys/block/${dev%p[1-9]}/queue/physical_block_size
+			[[ ! $dev || ! -f $path ]] && sector= ||
+			read-all sector  "$path"
 			inode=$(sed -n 's/^Inode size:.* //p' "$tmp_1")
 			block=$(sed -n 's/^Block size:.* //p' "$tmp_1")
 			dir_block=$block
@@ -7342,6 +7361,10 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 		        log=${division}g
 		      sunit="$sunit blks"
 		     swidth="$swidth blks"
+			;;
+		    ( vfat )		# filesystem types we don't care about
+			printf "%-15s   %s\n" "$drive_dir" "$FS_type"
+			continue
 			;;
 		    (  *   )
 			printf "%-15s   %s is unknown FS type, email $coder\n"\
