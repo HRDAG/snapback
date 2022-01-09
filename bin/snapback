@@ -4625,10 +4625,11 @@ _set-drive_dirs--for-update-srcs() {
 	set-backup_type "$drive_name"
 	dst_backup_type=$backup_type
 
-	drive_dirs=
-	local src_drive_dir drive_dirs
+	local src_drive_dir
 	set-drive_dirs -a
-	for src_drive_dir in $drive_dirs
+	local all_drive_dirs=$drive_dirs
+	drive_dirs=
+	for src_drive_dir in $all_drive_dirs
 	    do	[[ $src_drive_dir != "$drive_dir" ]] || continue
 
 		local exclude_regex=$drive_dir_prefix$excluded_drive_dirs_regex
