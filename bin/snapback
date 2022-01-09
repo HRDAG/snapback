@@ -1256,12 +1256,12 @@ readonly -f is-drive-mounted
 
 set-oldest_snapshot() {
 
-	local oldest= FS drive_dirs
+	local oldest= drive_dir drive_dirs
 	set-drive_dirs
-	for FS in $drive_dirs
+	for drive_dir in $drive_dirs
 	    do	suspend-tracing
 		# shellcheck disable=SC2086 # variable contains a glob
-		set -- $FS/$snapshot_glob
+		set -- $drive_dir/$snapshot_glob
 		[[ $# != 0 ]] || continue
 		restore-tracing
 		[[ $oldest && ${oldest##*/} < ${1##*/} ]] &&
@@ -7626,15 +7626,15 @@ check-lost+found() {
 	sudo -n ls &> $dev_null || return
 
 	set-drive_dirs -a
-	for dir in $drive_dirs
-	    do	lost_found=$dir/lost+found
+	for drive_dir in $drive_dirs
+	    do	lost_found=$drive_dir/lost+found
 		[[ -d $lost_found ]] || continue
 		# shellcheck disable=SC2046,SC2086
 		set -- $(sudo ls $lost_found)
 		[[ $# == 0 ]] && continue
 		warn "$lost_found/ contains $# entries: mv to correct place,
-	else delete them and run: $our_name_ redo $dir/*,??
-	then rebuild snapshots with: $our_name_ update-drive ${dir##*/}"
+	else delete them and run: $our_name_ redo $drive_dir/*,??
+	then rebuild snapshots with: $our_name_ update-drive ${drive_dir##*/}"
 	done
 }
 readonly -f check-lost+found
