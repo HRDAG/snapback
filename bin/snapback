@@ -141,7 +141,8 @@ readonly highlight_level2tput_args
 # We used these functions from libsnap.sh .
 # FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
 # set-FS_label--from-mount_dir, $config_file can replace them.
-readonly -f is-set have-cmd need-cmds set-FS_type--from-path
+readonly -f is-set have-cmd need-cmds
+readonly -f set-mounts setup-ps-options set-FS_type--from-path
 readonly -f set-inode_size-data_block_size-dir_block_size--from-path
 readonly -f set-FS_label--from-FS-device label-drive
 readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
@@ -155,8 +156,9 @@ readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
 readonly -f cd_ pushd_ popd_ have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word-is_last_word--from-list
-readonly -f set-division set-highlighted_string
-readonly -f confirm run-function set-backup_suffix
+readonly -f set-product set-division set-highlighted_string
+readonly -f confirm run-function echo-to-file set-cat_cmd
+readonly -f run-until-timeout set-backup_suffix
 
 [[ -v coder ]] ||			# can set custom value in $config_file
       coder=sweikart@gmail.com
@@ -1169,18 +1171,6 @@ readonly -f ps-locks
 # miscellaneous
 ##############################################################################
 
-set-mounts() {
-
-	local mounts_path=/proc/mounts
-	if [[ -f $mounts_path ]]
-	   then read-all mounts "$mounts_path"
-	   else mounts=$(mount)
-	fi
-}
-readonly -f set-mounts
-
-# ----------------------
-
 function set-drive_dirs() {
 	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	[[ ${1-} != -* && ( -t 0 || -t 1 || -t 2 ) ]] && set -- -a "$@"
@@ -1198,8 +1188,8 @@ function set-drive_dirs() {
 	   else regex="/[^ ]*"
 	fi
 	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(sed -r -n -e '\@^/dev/(fuse|loop)@d' \
-			   -e "s@^/[^ ]* ($regex) .*@\1@p" <<<"$mounts" | sort)
+	set -- $(sed -r -n -e '\~^/dev/(fuse|loop)~d' \
+			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" | sort)
 	drive_dirs=$*
 	fully-populate-custom-config-maps # ensure we support any new drives
 	$xtrace
@@ -5846,6 +5836,7 @@ declare -i min_full_columns=94		# watch will re-write this
 
 function run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
+	[[ $drive_dirs ]] || return 0
 
 	set-rows-columns-COLUMNS
 
@@ -5862,7 +5853,7 @@ function run-df() {
 	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	df $df_opts $drive_dirs | filter-df
 
-	[[ ${show_all-} ]] || return
+	[[ ${show_all-} ]] || return 0
 
 	echo
 	df_fields=${df_fields/,iused,ipcent,/,}
@@ -5870,6 +5861,7 @@ function run-df() {
 		       $df_exclude_type_options --no-sync"
 	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	df $df_opts $drive_dirs | filter-df
+	[[ ${PIPESTATUS[0]} == 0 ]]
 }
 readonly -f run-df
 
@@ -6640,6 +6632,26 @@ readonly -f show-FS-repair-cmds
 
 # --------------------------------------------
 
+function run-with-timeout() {
+
+	local decimal_seconds
+	if [[ $is_cron ]]
+	   then decimal_seconds=1000
+	elif [[ ${watch_opt-} ]]
+	   then decimal_seconds=0.1
+	   else case ${action-} in
+		    ( w ) decimal_seconds=1   ;;
+		    ( * ) decimal_seconds=100 ;;
+		esac
+	fi
+
+	run-until-timeout -s "$decimal_seconds" "$@" ||
+	    warn "killed $1: hung or slow drive"
+}
+readonly -f run-with-timeout
+
+# --------------------------------------------
+
 show-filesystem-info-that-fits() {
 	local drive_dirs=$*
 
@@ -6666,16 +6678,16 @@ show-filesystem-info-that-fits() {
 			fi
 		fi
 		# shellcheck disable=SC2086 # variable contains multiple values
-		filesystem-geometry $drive_dirs
+		run-with-timeout filesystem-geometry $drive_dirs
 		# shellcheck disable=SC2086 # variable contains multiple values
-		filesystem-details  $drive_dirs
+		run-with-timeout filesystem-details  $drive_dirs
 	   else	[[ ${do_run_df-} ]] &&
-		run-df "$drive_dirs"
+		run-with-timeout run-df "$drive_dirs"
 
 		# --------------------------------------------
 
 		[[ ${do_run_lsblk-} ]] &&
-		run-lsblk "$drive_dirs"
+		run-with-timeout run-lsblk "$drive_dirs"
 	fi
 
 	print-big-swapouts-file		# these are also run at end of ...
