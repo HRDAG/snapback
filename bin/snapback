@@ -6658,7 +6658,7 @@ function run-with-timeout() {
 	fi
 
 	run-until-timeout -s "$decimal_seconds" "$@" ||
-	    warn "killed $1: hung or slow drive"
+	    warn "hung or slow drive, so killed: $*"
 }
 readonly -f run-with-timeout
 
