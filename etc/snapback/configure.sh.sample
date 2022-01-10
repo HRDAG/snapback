@@ -1,16 +1,17 @@
 # version=24
 
-##################################################################
-##################################################################
-### This file and exclude.txt specify backup & prune policy.   ###
-### Email requests for more variables to sweikart@gmail.com    ###
-##################################################################
-##################################################################
-### Note: some default functions and variables in snapback can ###
-### be over-ridden by defining them in here; to see which ones ###
-### you can over-ride: egrep -A1 '^(have-cmd|is-set)' snapback ###
-##################################################################
-##################################################################
+################################################################
+################################################################
+### This file and exclude.txt specify backup & prune policy. ###
+### Email requests for more variables to sweikart@gmail.com  ###
+################################################################
+
+######################################################################
+### Note: some default functions and variables in snapback can be  ###
+### over-ridden by defining them in here; to see which ones you    ###
+### can over-ride: egrep -A1 '^(have-cmd|is-set|\[\[ -v)' snapback ###
+######################################################################
+######################################################################
 
 # NOTE: to illustrate how to customize a variable, the pseudo-drive_name 'X' is
 # often used, so don't use 'X' yourself (unless you change it in this file :-).

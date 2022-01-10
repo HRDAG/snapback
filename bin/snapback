@@ -6632,16 +6632,28 @@ readonly -f show-FS-repair-cmds
 
 # --------------------------------------------
 
+[[ -v	    cron_timeout ]] ||		# can set custom value in $config_file
+readonly    cron_timeout=1000
+
+[[ -v	   watch_timeout ]] ||		# can set custom value in $config_file
+readonly   watch_timeout=0.4		# long enough for regression test
+
+[[ -v	       w_timeout ]] ||		# can set custom value in $config_file
+readonly       w_timeout=1
+
+[[ -v	 default_timeout ]] ||		# can set custom value in $config_file
+readonly default_timeout=100
+
 function run-with-timeout() {
 
 	local decimal_seconds
 	if [[ $is_cron ]]
-	   then decimal_seconds=1000
+	   then decimal_seconds=$cron_timeout
 	elif [[ ${watch_opt-} ]]
-	   then decimal_seconds=0.1
+	   then decimal_seconds=$watch_timeout
 	   else case ${action-} in
-		    ( w ) decimal_seconds=1   ;;
-		    ( * ) decimal_seconds=100 ;;
+		    ( w ) decimal_seconds=$w_timeout ;;
+		    ( * ) decimal_seconds=$default_timeout ;;
 		esac
 	fi
 
