@@ -6641,6 +6641,9 @@ readonly   watch_timeout=0.4		# long enough for regression test
 [[ -v	       w_timeout ]] ||		# can set custom value in $config_file
 readonly       w_timeout=1
 
+[[ -v	    user_timeout ]] ||		# can set custom value in $config_file
+readonly    user_timeout=1
+
 [[ -v	 default_timeout ]] ||		# can set custom value in $config_file
 readonly default_timeout=100
 
@@ -6651,6 +6654,8 @@ function run-with-timeout() {
 	   then decimal_seconds=$cron_timeout
 	elif [[ ${watch_opt-} ]]
 	   then decimal_seconds=$watch_timeout
+	elif [[ -t 0 ]]
+	   then decimal_seconds=$user_timeout
 	   else case ${action-} in
 		    ( w ) decimal_seconds=$w_timeout ;;
 		    ( * ) decimal_seconds=$default_timeout ;;
@@ -9098,6 +9103,8 @@ function regression-test() {
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $args
 	local dst=${!#}
+	is-an-FS-device-mounted "$dst" ||
+	    abort "$dst in update_test_args= is not mounted"
 	_show-test-header \
 	    update "$dst (using update_test_args= in $config_file)"
 
@@ -9281,9 +9288,10 @@ case $action in
    # df [-A]: show filesystem details; -A adds non-backup drives
    ( l*s*dr*v* | ld | ll | ls | lw | df )
 	case $action in
-	    ( lw | df )	[[ ${1-} == -[aA] ]] || set -- -a "$@"
-			filesystem-geometry "$@" ;;
-	    ( * )	list-drive-dirs     "$@" ;;
+	    ( lw | df )
+		  [[ ${1-} == -[aA] ]] || set -- -a "$@"
+		  run-with-timeout filesystem-geometry "$@" ;;
+	    ( * ) list-drive-dirs "$@" ;;
 	esac
 	;;
 
@@ -9401,7 +9409,7 @@ case $action in
 
    # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
    ( f*g* | f*s* | *geo* ) undo-action-abbrev filesystem-geometry
-	$action "$@"
+	run-with-timeout "$action" "$@"
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
