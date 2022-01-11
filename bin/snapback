@@ -6632,33 +6632,33 @@ readonly -f show-FS-repair-cmds
 
 # --------------------------------------------
 
-[[ -v	    cron_timeout ]] ||		# can set custom value in $config_file
-readonly    cron_timeout=1000
+[[ -v	    cron_timeout_secs ]] ||	# can set custom value in $config_file
+readonly    cron_timeout_secs=1000
 
-[[ -v	   watch_timeout ]] ||		# can set custom value in $config_file
-readonly   watch_timeout=0.4		# long enough for regression test
+[[ -v	   watch_timeout_secs ]] ||	# can set custom value in $config_file
+readonly   watch_timeout_secs=0.4	# long enough for regression test
 
-[[ -v	       w_timeout ]] ||		# can set custom value in $config_file
-readonly       w_timeout=1
+[[ -v	       w_timeout_secs ]] ||	# can set custom value in $config_file
+readonly       w_timeout_secs=1
 
-[[ -v	    user_timeout ]] ||		# can set custom value in $config_file
-readonly    user_timeout=1
+[[ -v	    user_timeout_secs ]] ||	# can set custom value in $config_file
+readonly    user_timeout_secs=1
 
-[[ -v	 default_timeout ]] ||		# can set custom value in $config_file
-readonly default_timeout=100
+[[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
+readonly default_timeout_secs=100
 
 function run-with-timeout() {
 
 	local decimal_seconds
 	if [[ $is_cron ]]
-	   then decimal_seconds=$cron_timeout
+	   then decimal_seconds=$cron_timeout_secs
 	elif [[ ${watch_opt-} ]]
-	   then decimal_seconds=$watch_timeout
+	   then decimal_seconds=$watch_timeout_secs
 	elif [[ -t 0 ]]
-	   then decimal_seconds=$user_timeout
+	   then decimal_seconds=$user_timeout_secs
 	   else case ${action-} in
-		    ( w ) decimal_seconds=$w_timeout ;;
-		    ( * ) decimal_seconds=$default_timeout ;;
+		    ( w ) decimal_seconds=$w_timeout_secs ;;
+		    ( * ) decimal_seconds=$default_timeout_secs ;;
 		esac
 	fi
 
