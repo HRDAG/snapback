@@ -6700,7 +6700,7 @@ show-filesystem-info-that-fits() {
 		# shellcheck disable=SC2086 # variable contains multiple values
 		filesystem-geometry $drive_dirs
 		# shellcheck disable=SC2086 # variable contains multiple values
-		run-with-timeout filesystem-details  $drive_dirs
+		filesystem-details  $drive_dirs
 	   else	[[ ${do_run_df-} ]] &&
 		run-with-timeout run-df "$drive_dirs"
 
@@ -7452,7 +7452,8 @@ filesystem-details() {
 			fi
 			;;
 		    ( xfs  )
-			xfs_info "$drive_dir"
+			run-with-timeout -q xfs_info "$drive_dir" ||
+			    echo "$drive_dir is too slow to study"
 			;;
 		    (  *   )
 			printf "%-15s   %s is unknown FS type, email $coder\n"\
