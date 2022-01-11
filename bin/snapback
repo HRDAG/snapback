@@ -9143,13 +9143,13 @@ function regression-test() {
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set -- $args
 	local dst=${!#}
-	is-an-FS-device-mounted "$dst" ||
+	set-drive_name- "$dst"
+	set-drive_dir-
+	is-an-FS-device-mounted "$drive_dir" ||
 	    abort "$dst in update_test_args= is not mounted"
 	_show-test-header \
 	    update "$dst (using update_test_args= in $config_file)"
 
-	set-drive_name- "$dst"
-	set-drive_dir-
 	suspend-jobs backup prune
 	have-job copy &&
 	$our_path kill copy "$dst" &> $dev_null && killed_dst=$dst && {
