@@ -5848,7 +5848,7 @@ readonly   watch_timeout_secs=0.4	# long enough for regression test
 readonly       w_timeout_secs=1
 
 [[ -v	    user_timeout_secs ]] ||	# can set custom value in $config_file
-readonly    user_timeout_secs=1		# ~ .0006 to test
+readonly    user_timeout_secs=2		# ~ .0006 to test
 
 [[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
 readonly default_timeout_secs=100
