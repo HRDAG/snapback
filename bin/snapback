@@ -5813,22 +5813,70 @@ readonly -f setup-snapshot-stats
 
 # ----------------------------------------------------------------------------
 
-declare -i max_drive_name_len
+declare -i rows columns rows_left
 
-set-max_drive_name_len() {
-	local drive_names=${*:-$drive_names}
+[[ -v    max_rows ]] ||			# can set custom value in $config_file
+readonly max_rows=999999
+[[ -v    max_columns ]] ||		# can set custom value in $config_file
+readonly max_columns=9999
 
-	max_drive_name_len=0
+set-rows-columns-COLUMNS() {
 
-	local drive_name
-	for drive_name in $drive_names
-	    do	(( max_drive_name_len<${#drive_name} )) &&
-		   max_drive_name_len=${#drive_name}
-	done
+	[[ ${rows-} ]] && return
+
+	if [[ ${watch_opt-} || -t 0 ]]
+	   then set -f
+		# shellcheck disable=SC2046 # we want word splitting
+		set -- $(stty -a); set +f
+		rows=${5%;} columns=${7%;}
+	   else rows=$max_rows columns=$max_columns
+	fi
+	rows_left=$rows
+	export COLUMNS=$max_columns	     # for 'ps' (we shorten the COMMAND value)
 }
-readonly -f set-max_drive_name_len
+readonly -f set-rows-columns-COLUMNS
 
-# -------------------------------------------------------
+# --------------------------------------------
+
+[[ -v	    cron_timeout_secs ]] ||	# can set custom value in $config_file
+readonly    cron_timeout_secs=1000
+
+[[ -v	   watch_timeout_secs ]] ||	# can set custom value in $config_file
+readonly   watch_timeout_secs=0.4	# long enough for regression test
+
+[[ -v	       w_timeout_secs ]] ||	# can set custom value in $config_file
+readonly       w_timeout_secs=1
+
+[[ -v	    user_timeout_secs ]] ||	# can set custom value in $config_file
+readonly    user_timeout_secs=1		# ~ .0006 to test
+
+[[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
+readonly default_timeout_secs=100
+
+function run-with-timeout() {
+	[[ $1 == -q ]] && { shift; local is_quiet=$true; } || local is_quiet=
+
+	local decimal_seconds
+	if [[ $is_cron ]]
+	   then decimal_seconds=$cron_timeout_secs
+	elif [[ ${watch_opt-} ]]
+	   then decimal_seconds=$watch_timeout_secs
+	elif [[ -t 0 ]]
+	   then decimal_seconds=$user_timeout_secs
+	   else case ${action-} in
+		    ( w ) decimal_seconds=$w_timeout_secs ;;
+		    ( * ) decimal_seconds=$default_timeout_secs ;;
+		esac
+	fi
+
+	run-until-timeout -s "$decimal_seconds" "$@" && return 0
+
+	[[ $is_quiet ]] || warn "hung or slow drive, so killed: $*"
+	return 1
+}
+readonly -f run-with-timeout
+
+# --------------------------------------------
 
 declare -i min_full_columns=94		# watch will re-write this
 [[ -v df_exclude_type_options ]] ||	# can set custom value in $config_file
@@ -6026,28 +6074,20 @@ readonly -f set-drive_names-names_msg-names_glob-drive_dirs
 
 # --------------------------------------------
 
-declare -i rows columns rows_left
+declare -i max_drive_name_len
 
-[[ -v    max_rows ]] ||			# can set custom value in $config_file
-readonly max_rows=999999
-[[ -v    max_columns ]] ||		# can set custom value in $config_file
-readonly max_columns=9999
+set-max_drive_name_len() {
+	local drive_names=${*:-$drive_names}
 
-set-rows-columns-COLUMNS() {
+	max_drive_name_len=0
 
-	[[ ${rows-} ]] && return
-
-	if [[ ${watch_opt-} || -t 0 ]]
-	   then set -f
-		# shellcheck disable=SC2046 # we want word splitting
-		set -- $(stty -a); set +f
-		rows=${5%;} columns=${7%;}
-	   else rows=$max_rows columns=$max_columns
-	fi
-	rows_left=$rows
-	export COLUMNS=$max_columns	     # for 'ps' (we shorten the COMMAND value)
+	local drive_name
+	for drive_name in $drive_names
+	    do	(( max_drive_name_len<${#drive_name} )) &&
+		   max_drive_name_len=${#drive_name}
+	done
 }
-readonly -f set-rows-columns-COLUMNS
+readonly -f set-max_drive_name_len
 
 # --------------------------------------------
 
@@ -6648,46 +6688,6 @@ show-FS-repair-cmds() {
 	rm "$FS_repair_cmds_file"
 }
 readonly -f show-FS-repair-cmds
-
-# --------------------------------------------
-
-[[ -v	    cron_timeout_secs ]] ||	# can set custom value in $config_file
-readonly    cron_timeout_secs=1000
-
-[[ -v	   watch_timeout_secs ]] ||	# can set custom value in $config_file
-readonly   watch_timeout_secs=0.4	# long enough for regression test
-
-[[ -v	       w_timeout_secs ]] ||	# can set custom value in $config_file
-readonly       w_timeout_secs=1
-
-[[ -v	    user_timeout_secs ]] ||	# can set custom value in $config_file
-readonly    user_timeout_secs=1		# ~ .0006 to test
-
-[[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
-readonly default_timeout_secs=100
-
-function run-with-timeout() {
-	[[ $1 == -q ]] && { shift; local is_quiet=$true; } || local is_quiet=
-
-	local decimal_seconds
-	if [[ $is_cron ]]
-	   then decimal_seconds=$cron_timeout_secs
-	elif [[ ${watch_opt-} ]]
-	   then decimal_seconds=$watch_timeout_secs
-	elif [[ -t 0 ]]
-	   then decimal_seconds=$user_timeout_secs
-	   else case ${action-} in
-		    ( w ) decimal_seconds=$w_timeout_secs ;;
-		    ( * ) decimal_seconds=$default_timeout_secs ;;
-		esac
-	fi
-
-	run-until-timeout -s "$decimal_seconds" "$@" && return 0
-
-	[[ $is_quiet ]] || warn "hung or slow drive, so killed: $*"
-	return 1
-}
-readonly -f run-with-timeout
 
 # --------------------------------------------
 
