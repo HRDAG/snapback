@@ -6648,6 +6648,7 @@ readonly    user_timeout_secs=1
 readonly default_timeout_secs=100
 
 function run-with-timeout() {
+	[[ $1 == -q ]] && { shift; local is_quiet=$true; } || local is_quiet=
 
 	local decimal_seconds
 	if [[ $is_cron ]]
@@ -6662,8 +6663,10 @@ function run-with-timeout() {
 		esac
 	fi
 
-	run-until-timeout -s "$decimal_seconds" "$@" ||
-	    warn "hung or slow drive, so killed: $*"
+	run-until-timeout -s "$decimal_seconds" "$@" && return 0
+
+	[[ $is_quiet ]] || warn "hung or slow drive, so killed: $*"
+	return 1
 }
 readonly -f run-with-timeout
 
@@ -6695,7 +6698,7 @@ show-filesystem-info-that-fits() {
 			fi
 		fi
 		# shellcheck disable=SC2086 # variable contains multiple values
-		run-with-timeout filesystem-geometry $drive_dirs
+		filesystem-geometry $drive_dirs
 		# shellcheck disable=SC2086 # variable contains multiple values
 		run-with-timeout filesystem-details  $drive_dirs
 	   else	[[ ${do_run_df-} ]] &&
@@ -7336,14 +7339,30 @@ readonly -f _set-FS_type-FS_device-dev--from-drive_dir
 
 # --------------------------------------------
 
+# if -n is first option, pass it to sudo; pass other options to tune2fs
+sudo-tune2fs_() {				# killable function
+	[[ $1 == -n ]] && { local sudo_opt=$1; shift; } || local sudo_opt=
+
+	# shellcheck disable=SC2086 # options are optional
+	sudo $sudo_opt tune2fs "$@"
+}
+readonly -f sudo-tune2fs_
+
+# ------------------
+
+sudo-tune2fs () { run-with-timeout sudo-tune2fs_ "$@"; }
+readonly -f sudo-tune2fs
+
+# ------------------
+
 filesystem-geometry() {
 	local drive_dirs
 	set-drive_dirs--from-user-args "$@" ||
 	    warn "No mounted backup drives found." ||
 	    { quit-if-requested; return; }
 
-	run-df    "$drive_dirs"
-	run-lsblk "$drive_dirs"
+	run-with-timeout run-df    "$drive_dirs"
+	run-with-timeout run-lsblk "$drive_dirs"
 	echo
 
 	[[ $drive_dirs ]] || return
@@ -7362,7 +7381,7 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
 			# shellcheck disable=SC2024 # $tmp_1 always writable
-			if ! sudo -n tune2fs -l "$FS_device" &> "$tmp_1"
+			if ! sudo-tune2fs -n -l "$FS_device" &> "$tmp_1"
 			   then local msg="need 'tune2fs' sudo perms for"
 				echo -e "$drive_dir\t\t[$msg this data]"
 				return
@@ -7379,7 +7398,8 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 			;;
 		    ( xfs  )
 			local i=$tmp_1
-			RunCmd xfs_info "$drive_dir" > "$i"
+			run-with-timeout -q xfs_info "$drive_dir" > "$i" ||
+			  { echo "$drive_dir is too slow to study"; continue; }
 		      sector=$(sed -nr '/at/s/.* sectsz=([^ ]+) .*/\1/p' "$i")
 		       inode=$(sed -nr '/^m/ s/.* isize=([^ ]+) .*/\1/p' "$i")
 		       block=$(sed -nr '/^d/ s/.* bsize=([^ ]+) .*/\1/p' "$i")
@@ -7425,7 +7445,7 @@ filesystem-details() {
 		    ( ext? )
 			# output _sometimes_ contains SPACEs (e.g. for inode=)
 			# shellcheck disable=SC2024 # $tmp_1 always writable
-			if ! sudo -n tune2fs -l "$FS_device" 2> $dev_null
+			if ! sudo-tune2fs -n -l "$FS_device" 2> $dev_null
 			   then echo -e \
 				   "[need 'tune2fs' sudo perms for full data]"
 				return
@@ -7616,7 +7636,7 @@ function add-extN-journal() {
 	   set-mount_dir--from-FS-device "$FS_device"
 	TraceV 1 force_opt FS_label FS_device VG_name mount_dir
 
-	sudo tune2fs -l "$FS_device" | grep -q '^Journal ' &&	  {
+	tune2fs -l "$FS_device" | grep -q '^Journal ' &&	  {
 	warn "removing internal journal can take many minutes"
 	# shellcheck disable=SC2086 # *_opt may be null
 	$IfRun tune2fs $force_opt -O ^has_journal "$FS_device"	; }
@@ -8267,7 +8287,7 @@ _copy-extN-backup-drive() {
 
 	label-drive "$dst_device" "$dst_drive_dir"
 
-	if sudo tune2fs -l "$src_device" | grep -q "^Journal dev" || #external?
+	if tune2fs -l "$src_device" | grep -q "^Journal dev" || # external log?
 	   [[ $do_want_external_log ]]
 	   then add-extN-journal -M "$dst_name" "$dst_device" ||
 		   abort "need to fix journal on $src_device: $our_name_ aej"
@@ -9288,10 +9308,9 @@ case $action in
    # df [-A]: show filesystem details; -A adds non-backup drives
    ( l*s*dr*v* | ld | ll | ls | lw | df )
 	case $action in
-	    ( lw | df )
-		  [[ ${1-} == -[aA] ]] || set -- -a "$@"
-		  run-with-timeout filesystem-geometry "$@" ;;
-	    ( * ) list-drive-dirs "$@" ;;
+	    ( lw | df ) [[ ${1-} == -[aA] ]] || set -- -a "$@"
+			filesystem-geometry "$@" ;;
+	    ( * )	    list-drive-dirs "$@" ;;
 	esac
 	;;
 
@@ -9409,7 +9428,7 @@ case $action in
 
    # filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
    ( f*g* | f*s* | *geo* ) undo-action-abbrev filesystem-geometry
-	run-with-timeout "$action" "$@"
+	$action "$@"
 	;;
 
   # snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
