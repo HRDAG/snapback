@@ -5850,8 +5850,27 @@ function run-df() {
 	fi
 	local df_opts="--block-size=G --output=$df_fields
 		       $df_exclude_type_options --no-sync"
+
 	# shellcheck disable=SC2086 # *_opts may be null or multiple
-	df $df_opts $drive_dirs | filter-df
+	run-with-timeout -q df_ $df_opts $drive_dirs | filter-df > $tmp_1
+	[[ -s $tmp_1 ]] && cat "$tmp_1" || {
+	# exclude the hung drive(s)
+	local drive_dir fast_drive_dirs=
+	for drive_dir in $drive_dirs
+	    do	# shellcheck disable=SC2086 # *_opts may be null or multiple
+		run-with-timeout -q df_ $df_opts $drive_dir &> $dev_null &&
+		    fast_drive_dirs+="$drive_dir " && continue
+		set-highlighted_string warning "'df $drive_dir' timed out"
+		echo "$highlighted_string"
+	done
+
+	# shellcheck disable=SC2086 # *_opts may be null or multiple
+	[[ $fast_drive_dirs ]] && {
+	echo
+	run-with-timeout -q df_ $df_opts $fast_drive_dirs | filter-df > $tmp_1
+	[[ -s $tmp_1 ]] && cat "$tmp_1" || warn "timed out running 'df'"; }
+	}
+	rm "$tmp_1"
 
 	[[ ${show_all-} ]] || return 0
 
@@ -5860,7 +5879,7 @@ function run-df() {
 	df_opts="-m --output=$df_fields
 		       $df_exclude_type_options --no-sync"
 	# shellcheck disable=SC2086 # *_opts may be null or multiple
-	df $df_opts $drive_dirs | filter-df
+	run-with-timeout -q df_ $df_opts $drive_dirs | filter-df
 	[[ ${PIPESTATUS[0]} == 0 ]]
 }
 readonly -f run-df
@@ -6642,7 +6661,7 @@ readonly   watch_timeout_secs=0.4	# long enough for regression test
 readonly       w_timeout_secs=1
 
 [[ -v	    user_timeout_secs ]] ||	# can set custom value in $config_file
-readonly    user_timeout_secs=1
+readonly    user_timeout_secs=1		# ~ .0006 to test
 
 [[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
 readonly default_timeout_secs=100
@@ -6702,7 +6721,7 @@ show-filesystem-info-that-fits() {
 		# shellcheck disable=SC2086 # variable contains multiple values
 		filesystem-details  $drive_dirs
 	   else	[[ ${do_run_df-} ]] &&
-		run-with-timeout run-df "$drive_dirs"
+		run-df "$drive_dirs"
 
 		# --------------------------------------------
 
@@ -7361,7 +7380,7 @@ filesystem-geometry() {
 	    warn "No mounted backup drives found." ||
 	    { quit-if-requested; return; }
 
-	run-with-timeout run-df    "$drive_dirs"
+	run-df "$drive_dirs"
 	run-with-timeout run-lsblk "$drive_dirs"
 	echo
 
