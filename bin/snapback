@@ -5853,6 +5853,7 @@ readonly    user_timeout_secs=2		# ~ .0006 to test
 [[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
 readonly default_timeout_secs=100
 
+# WARNING, race condition: this function could return 1 when "$@" exits with 0
 function run-with-timeout() {
 	[[ $1 == -q ]] && { shift; local is_quiet=$true; } || local is_quiet=
 
@@ -5879,16 +5880,16 @@ readonly -f run-with-timeout
 # --------------------------------------------
 
 declare -i min_full_columns=94		# watch will re-write this
-[[ -v df_exclude_type_options ]] ||	# can set custom value in $config_file
-      df_exclude_type_options="-x devtmpfs -x tmpfs -x squashfs"
+[[ -v df_exclude_options ]] ||		# can set custom value in $config_file
+      df_exclude_options="-x devtmpfs -x tmpfs -x squashfs"
 
-function run-df() {
+# the return status of run-with-timeout is unreliable, thus for run-df also
+run-df() {
 	local drive_dirs=${*:-$(list-drive-dirs -a)}
-	[[ $drive_dirs ]] || return 0
+	[[ $drive_dirs ]] || return
 
 	set-rows-columns-COLUMNS
 
-	echo
 	local df_fields=source,fstype,size,avail,used,pcent,iused,ipcent,target
 	if (( ${columns:-99} >= $min_full_columns ))
 	   then filter-df() { cat; }
@@ -5896,39 +5897,38 @@ function run-df() {
 				  -e "s@$drive_dir_prefix@ @" ; }
 		df_fields=${df_fields/,size/}
 	fi
-	local df_opts="--block-size=G --output=$df_fields
-		       $df_exclude_type_options --no-sync"
+	local df_opts="--block-size=G"
+	df_cmd() { run-with-timeout -q \
+		   df_ $df_opts $df_exclude_options --output=$df_fields "$@"; }
 
+	echo
 	# shellcheck disable=SC2086 # *_opts may be null or multiple
-	run-with-timeout -q df_ $df_opts $drive_dirs | filter-df > $tmp_1
-	[[ -s $tmp_1 ]] && cat "$tmp_1" || {
+	local output=$(df_cmd $drive_dirs | filter-df) # can't trust status
+	[[ $output ]] && echo "$output" || {
 	# exclude the hung drive(s)
 	local drive_dir fast_drive_dirs=
 	for drive_dir in $drive_dirs
 	    do	# shellcheck disable=SC2086 # *_opts may be null or multiple
-		run-with-timeout -q df_ $df_opts $drive_dir &> $dev_null &&
+		df_cmd $drive_dir &> $dev_null &&
 		    fast_drive_dirs+="$drive_dir " && continue
 		set-highlighted_string warning "'df $drive_dir' timed out"
 		echo "$highlighted_string"
 	done
 
-	# shellcheck disable=SC2086 # *_opts may be null or multiple
 	[[ $fast_drive_dirs ]] && {
 	echo
-	run-with-timeout -q df_ $df_opts $fast_drive_dirs | filter-df > $tmp_1
-	[[ -s $tmp_1 ]] && cat "$tmp_1" || warn "timed out running 'df'"; }
+	# shellcheck disable=SC2086 # *_opts may be null or multiple
+	output=$(df_cmd $fast_drive_dirs | filter-df)
+	[[ $output ]] && echo "$output" || warn "timed out running 'df'"; }
 	}
-	rm "$tmp_1"
 
-	[[ ${show_all-} ]] || return 0
+	[[ ${show_all-} ]] || return
 
 	echo
 	df_fields=${df_fields/,iused,ipcent,/,}
-	df_opts="-m --output=$df_fields
-		       $df_exclude_type_options --no-sync"
+	df_opts="-m"
 	# shellcheck disable=SC2086 # *_opts may be null or multiple
-	run-with-timeout -q df_ $df_opts $drive_dirs | filter-df
-	[[ ${PIPESTATUS[0]} == 0 ]]
+	df_cmd $drive_dirs | filter-df
 }
 readonly -f run-df
 
