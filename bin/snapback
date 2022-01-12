@@ -5898,11 +5898,12 @@ run-df() {
 		df_fields=${df_fields/,size/}
 	fi
 	local df_opts="--block-size=G"
-	df_cmd() { run-with-timeout -q \
+	df_cmd() { # shellcheck disable=SC2086
+		   run-with-timeout -q \
 		   df_ $df_opts $df_exclude_options --output=$df_fields "$@"; }
 
 	echo
-	# shellcheck disable=SC2086 # *_opts may be null or multiple
+	# shellcheck disable=SC2086,SC2155 # multiple drives; status unreliable
 	local output=$(df_cmd $drive_dirs | filter-df) # can't trust status
 	[[ $output ]] && echo "$output" || {
 	# exclude the hung drive(s)
@@ -9068,10 +9069,14 @@ _run-debug-cmds() {
 	set +x
 	set-highlighted_string error DIFFERENT results
 	echo "-- $highlighted_string, compare with: diff -u $tmp_o $tmp_t|less"
-	[[ $test != u ]] || cmp -s "$tmp_o.args" "$tmp_t.args" ||
-	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
-
 	failed_tests+="$test "
+	[[ $test != u ]] && return
+
+	cmp -s "$tmp_o.args" "$tmp_t.args" && return
+	echo "... also check copy args: diff -u $tmp_o.args $tmp_t.args | less"
+	local msg="Since 'u' test failed, try immediately repeating the test."
+	set-highlighted_string warning "$msg"
+	echo "$highlighted_string"	# warn about the race condition
 }
 readonly -f _run-debug-cmds
 
