@@ -5832,7 +5832,7 @@ set-rows-columns-COLUMNS() {
 	   else rows=$max_rows columns=$max_columns
 	fi
 	rows_left=$rows
-	export COLUMNS=$max_columns	     # for 'ps' (we shorten the COMMAND value)
+	export COLUMNS=$max_columns  # for 'ps' (we shorten the COMMAND value)
 }
 readonly -f set-rows-columns-COLUMNS
 
@@ -5845,10 +5845,10 @@ readonly    cron_timeout_secs=1000
 readonly   watch_timeout_secs=0.4	# long enough for regression test
 
 [[ -v	       w_timeout_secs ]] ||	# can set custom value in $config_file
-readonly       w_timeout_secs=1
+readonly       w_timeout_secs=2
 
 [[ -v	    user_timeout_secs ]] ||	# can set custom value in $config_file
-readonly    user_timeout_secs=2		# ~ .0006 to test
+readonly    user_timeout_secs=3		# ~ .0006 to test run-with-timeout code
 
 [[ -v	 default_timeout_secs ]] ||	# can set custom value in $config_file
 readonly default_timeout_secs=100
