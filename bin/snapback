@@ -5176,13 +5176,9 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	[[ -d $cache_dir ]] || RunCmd mkdir -p "$cache_dir"
 	local  cache_file=$cache_dir/${cache_type//\//_}.sh
 	# shellcheck disable=SC1090
-	[[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file" &&
-	    local do_recalculate=$false || local do_recalculate=$true
-	#[[ $do_recalculate ]] ||echo -n "C: " # enable to ensure caching works
+	[[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file" || {
 
-	while [[ $do_recalculate ]]; do	# so we can use 'break' to do cleanup
-
-	[[ $# != 0 ]] || { count=0 last=0 average=0 maximum=0 sum=0; break; }
+	[[ $# == 0 ]] && count=0 last=0 average=0 maximum=0 sum=0 || {
 
 	if [[ ${writer_type-} == prune && ${data_type-} == MB ]]
 	   then local is_negative=$true
@@ -5210,20 +5206,19 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	(( $count > 0 )) || { average=0  maximum=0; break; }
 	average=$(( ( $sum + ($count/2) ) / $count ))
 
-	break
-	done
+	}				# done looping over all files
 
-	if [[ $do_recalculate ]]
-	   then if (( $count > 0 ))
-		   then	set-division -d1 "$sum" "$count"
-			echo-to-file "$division" "$duration_file_basename"
-		elif   [[ -s "$duration_file_basename" ]]
-		     then rm "$duration_file_basename"
-		fi
-
-		local data="count=$count last=$last average=$average maximum=$maximum sum=$sum"
-		echo-to-file "$data" "$cache_file"
+	if (( $count > 0 ))
+	   then	set-division -d1 "$sum" "$count"
+		echo-to-file "$division" "$duration_file_basename"
+	elif   [[ -s "$duration_file_basename" ]]
+	     then rm "$duration_file_basename"
 	fi
+
+	local data="count=$count last=$last average=$average maximum=$maximum sum=$sum"
+	echo-to-file "$data" "$cache_file"
+
+	}				# done recalculating stats
 
 	popd_ -q
 	TraceV 2 count last average maximum sum
