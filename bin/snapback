@@ -5158,27 +5158,7 @@ readonly -f set-stats_format
 
 # ----------------------------------------------------------------------------
 
-readonly duration_file_basename=average.txt
-
-function set-count-last-average-maximum-sum-files--from-stats-files() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
-	local data_type=$1
-
-	pushd_ -q "$drives_log_dir/$drive_name"
-	local stats_subdir
-	# shellcheck disable=SC2086 # variable contains a glob
-	set-stats_subdir "$data_type" && cd_ "$stats_subdir" &&
-	    set -- $snapshot_glob.txt || set --
-	files=$*
-
-	local  cache_type=${stats_subdir#stats/}
-	local  cache_dir=$watch_cache_dir/stats-dir/$drive_name
-	[[ -d $cache_dir ]] || RunCmd mkdir -p "$cache_dir"
-	local  cache_file=$cache_dir/${cache_type//\//_}.sh
-	# shellcheck disable=SC1090
-	[[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file" || {
-
-	[[ $# == 0 ]] && count=0 last=0 average=0 maximum=0 sum=0 || {
+_set-count-last-average-maximum-sum-files--from-stats-files() {
 
 	if [[ ${writer_type-} == prune && ${data_type-} == MB ]]
 	   then local is_negative=$true
@@ -5208,19 +5188,45 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	   else average=0  maximum=0
 	fi
 
-	}				# done looping over all files
+}
 
-	if (( $count > 0 ))
-	   then	set-division -d1 "$sum" "$count"
-		echo-to-file "$division" "$duration_file_basename"
-	elif   [[ -s "$duration_file_basename" ]]
-	     then rm "$duration_file_basename"
+# --------------------------------------------
+
+readonly duration_file_basename=average.txt
+
+function set-count-last-average-maximum-sum-files--from-stats-files() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	local data_type=$1
+
+	pushd_ -q "$drives_log_dir/$drive_name"
+	local stats_subdir
+	# shellcheck disable=SC2086 # variable contains a glob
+	set-stats_subdir "$data_type" && cd_ "$stats_subdir" &&
+	    set -- $snapshot_glob.txt || set --
+	files=$*
+
+	local  cache_type=${stats_subdir#stats/}
+	local  cache_dir=$watch_cache_dir/stats-dir/$drive_name
+	[[ -d $cache_dir ]] || RunCmd mkdir -p "$cache_dir"
+	local  cache_file=$cache_dir/${cache_type//\//_}.sh
+	# shellcheck disable=SC1090
+	if ! [[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file"
+	   then	if [[ $# == 0 ]]
+		   then count=0 sum=0 maximum=0 last=0 average=0
+		   else count=0 sum=0 maximum=-1123456789
+		    _set-count-last-average-maximum-sum-files--from-stats-files
+		fi
+
+		if (( $count > 0 ))
+		   then	set-division -d1 "$sum" "$count"
+			echo-to-file "$division" "$duration_file_basename"
+		elif   [[ -s "$duration_file_basename" ]]
+		     then rm "$duration_file_basename"
+		fi
+
+		local data="count=$count last=$last average=$average maximum=$maximum sum=$sum"
+		echo-to-file "$data" "$cache_file"
 	fi
-
-	local data="count=$count last=$last average=$average maximum=$maximum sum=$sum"
-	echo-to-file "$data" "$cache_file"
-
-	}				# done recalculating stats
 
 	popd_ -q
 	TraceV 2 count last average maximum sum
