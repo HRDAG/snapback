@@ -5203,8 +5203,10 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	done
 	last=${number-0}
 
-	(( $count > 0 )) || { average=0  maximum=0; break; }
-	average=$(( ( $sum + ($count/2) ) / $count ))
+	if (( $count > 0 ))
+	   then average=$(( ( $sum + ($count/2) ) / $count ))
+	   else average=0  maximum=0
+	fi
 
 	}				# done looping over all files
 
