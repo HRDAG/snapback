@@ -5164,7 +5164,6 @@ _set-count-last-average-maximum-sum-files--from-stats-files() {
 	   then local is_negative=$true
 	   else local is_negative=$false
 	fi
-	count=0  maximum=-1123456789  sum=0 # caller declares these -i
 	local file file_contents number
 	for file
 	    do	read-all file_contents "$file"
@@ -5187,7 +5186,6 @@ _set-count-last-average-maximum-sum-files--from-stats-files() {
 	   then average=$(( ( $sum + ($count/2) ) / $count ))
 	   else average=0  maximum=0
 	fi
-
 }
 
 # --------------------------------------------
@@ -5210,8 +5208,8 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	[[ -d $cache_dir ]] || RunCmd mkdir -p "$cache_dir"
 	local  cache_file=$cache_dir/${cache_type//\//_}.sh
 	# shellcheck disable=SC1090
-	if ! [[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file"
-	   then	if [[ $# == 0 ]]
+	[[ -s $cache_file && $cache_file -nt . ]] && source "$cache_file" || {
+		if [[ $# == 0 ]]
 		   then count=0 sum=0 maximum=0 last=0 average=0
 		   else count=0 sum=0 maximum=-1123456789
 		    _set-count-last-average-maximum-sum-files--from-stats-files
@@ -5226,7 +5224,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 
 		local data="count=$count last=$last average=$average maximum=$maximum sum=$sum"
 		echo-to-file "$data" "$cache_file"
-	fi
+	}
 
 	popd_ -q
 	TraceV 2 count last average maximum sum
