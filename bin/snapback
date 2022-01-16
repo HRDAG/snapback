@@ -149,12 +149,12 @@ readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
 readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
 readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
 readonly -f assert-not-option read-all set-var_value--for-debugger echoE echoEV
-readonly -f Trace TraceV remember-tracing suspend-tracing restore-tracing
+readonly -f _Trace remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
 readonly -f set-padded_colorized_string--for-printf
 readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
-readonly -f cd_ pushd_ popd_ have-proc is-process-alive set-reversed_words
+readonly -f _chdir have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word-is_last_word--from-list
 readonly -f set-product set-division set-highlighted_string
 readonly -f confirm run-function echo-to-file set-cat_cmd
@@ -2457,7 +2457,7 @@ save-stats-file() {
 	# OK if multiple writers -> larger minutes, that's "current reality"
 	if [[ $data_type == MB ]]
 	   then local lock_file=${data_file%.txt}.pid
-		$IfRun lockpid -r "$lock_file"
+		$IfRun lockpid -r "$lock_file" || print-call-stack
 		# a prune or copy could have been suspended by another writer
 		if [[ -s $data_file ]]
 		   then local stats_content
