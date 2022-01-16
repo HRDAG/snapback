@@ -5214,7 +5214,9 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 		if [[ $# == 0 ]]
 		   then count=0 sum=0 maximum=0 last=0 average=0
 		   else count=0 sum=0 maximum=-1123456789
-		    _set-count-last-average-maximum-sum-files--from-stats-files
+		   # shellcheck disable=SC2086 # want word splitting
+		   _set-count-last-average-maximum-sum-files--from-stats-files\
+		       $files
 		fi
 
 		if (( $count > 0 ))
@@ -5739,19 +5741,17 @@ function _is-stats-cache-fresh {
 	[[ -s $cache_file ]] || return 1
 
 	local cached_drive_names
-	read-all cached_drive_names "$cached_drive_names_file"
-	if [[ $drive_names != "$cached_drive_names" ]]
-	   then rm -f "$cached_drive_names_file" "$watch_cache_dir"/*/*,*.txt
+	if read-all -A cached_drive_names "$cached_drive_names_file" &&
+	   [[ $drive_names == "$cached_drive_names" ]]
+	   then local drive_name
+		for drive_name in $all_drive_names
+		    do	local replica_dir=$snapshots_replica_dir/$drive_name
+			[[ $cache_file -nt $replica_dir/. ]] || return 1
+		done
+		return 0
+	   else rm -f "$cached_drive_names_file" "$watch_cache_dir"/*/*,*.txt
 		return 1
 	fi
-
-	local drive_name
-	for drive_name in $all_drive_names
-	    do	local replica_dir=$snapshots_replica_dir/$drive_name
-		[[ $cache_file -nt $replica_dir/. ]] || return 1
-	done
-
-	return 0
 }
 readonly -f _is-stats-cache-fresh
 
