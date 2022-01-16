@@ -5822,6 +5822,7 @@ readonly max_rows=999999
 readonly max_columns=9999
 
 set-rows-columns-COLUMNS() {
+	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	[[ ${rows-} ]] && return
 
@@ -5834,6 +5835,7 @@ set-rows-columns-COLUMNS() {
 	fi
 	rows_left=$rows
 	export COLUMNS=$max_columns  # for 'ps' (we shorten the COMMAND value)
+	$xtrace
 }
 readonly -f set-rows-columns-COLUMNS
 
@@ -9333,6 +9335,7 @@ case $action in
    # list-drives [-a]: list mounted backup drives; -a adds drives cron ignores
    # df [-A]: show filesystem details; -A adds non-backup drives
    ( l*s*dr*v* | ld | ll | ls | lw | df )
+	$Trace
 	case $action in
 	    ( lw | df ) [[ ${1-} == -[aA] ]] || set -- -a "$@"
 			filesystem-geometry "$@" ;;
