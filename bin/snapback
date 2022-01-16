@@ -149,11 +149,13 @@ readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
 readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
 readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
 readonly -f assert-not-option read-all set-var_value--for-debugger echoE echoEV
+# aliases Trace and TraceV use _Trace to do the work
 readonly -f _Trace remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
 readonly -f set-padded_colorized_string--for-printf
 readonly -f fix-padded-colorized-string-vars
 readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
+# aliases cd_, pushd_, and popd_ also use _chdir to do the work
 readonly -f _chdir have-proc is-process-alive set-reversed_words
 readonly -f set-popped_word-is_last_word--from-list
 readonly -f set-product set-division set-highlighted_string
