@@ -161,6 +161,7 @@ readonly -f set-popped_word-is_last_word--from-list
 readonly -f set-product set-division set-highlighted_string
 readonly -f confirm run-function echo-to-file set-cat_cmd
 readonly -f run-until-timeout set-backup_suffix
+# do-not-trace-function, continue-tracing-function and x-return are aliases
 
 [[ -v coder ]] ||			# can set custom value in $config_file
       coder=sweikart@gmail.com
@@ -445,7 +446,8 @@ function sudo-lockpid() {
 	   else local sudo_lockpid=lockpid # only reclaim writable locks
 	fi
 	[[ ${!#} == */* ]] && local opt= || local opt="--dir=$lock_dir"
-	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $sudo_lockpid" >&2
+	[[ $Trace && ${x_function-} && ! $IfRun ]] &&
+	    echo "$PS4 $sudo_lockpid" >&2
 	# shellcheck disable=SC2086 # *opt may be null
 	$IfRun $sudo_lockpid $opt ${is_optional:+-q} "$@" |
 	    sed "s/--pid=[0-9]*/--pid=PID/" # for regression-test, when $IfRun
@@ -472,7 +474,7 @@ readonly -f rm-stale-locks
 readonly writer_types="backup prune copy"
 
 set-lock_path() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local type=${1:-$writer_type} name=${2:-$drive_name}
 
 	is-arg1-in-arg2 "$type" "$writer_types" ||
@@ -480,7 +482,7 @@ set-lock_path() {
 	[[ $name ]] || abort-function "missing \$2, and \$drive_name null"
 	[[ -d $lock_dir ]] || create-lock_dir-log_dirs
 	lock_path=$lock_dir/$type-$name.pid
-	$xtrace
+	x-return
 }
 readonly -f set-lock_path
 
@@ -490,7 +492,7 @@ readonly -f set-lock_path
 # into a single syntactically-correct glob.
 # Return 0 if the final glob has metadata characters (i.e. not simple string).
 function set-glob() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 
 	glob=
 	local arg
@@ -503,7 +505,7 @@ function set-glob() {
 	done
 	glob=${glob%,}
 	(( $# > 1 )) && glob="{$glob}"
-	$xtrace
+	continue-tracing-function
 	[[ $glob == *['[{*?,+@!']* ]]
 }
 readonly -f set-glob
@@ -531,10 +533,10 @@ readonly -f set-name_glob
 # ---------------------------------
 
 function set-lock_paths() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ $# == [0-2] ]] ||
 	    abort-function "$*: must be 0-2 args (can use globs)"
-	[[ ${1-} == *.pid ]] && { lock_paths=$1; $xtrace; return 0; }
+	[[ ${1-} == *.pid ]] && { lock_paths=$1; x-return 0; }
 	local type_glob=${1:-${writer_type:-*}}
 	local name_glob=${2:-${drive_name:-*}}
 	[[ $name_glob == */* ]] &&
@@ -557,7 +559,7 @@ function set-lock_paths() {
 	[[ -e $drive_monitor_lock_path && $type_glob == *[*m]* &&
 	   $name_glob == '*' ]] &&
 	lock_paths+=" $drive_monitor_lock_path"
-	$xtrace
+	continue-tracing-function
 	[[ $lock_paths ]]
 }
 readonly -f set-lock_paths
@@ -575,7 +577,7 @@ readonly -f do-log-common-events
 # ---------------------------------
 
 function lock-PID() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
@@ -594,7 +596,7 @@ function lock-PID() {
 	sudo=	     # fixme: why was sudo needed? it makes test-prune harder
 	lock_opts="--pid=$BASHPID --dir=$lock_dir $lock_opts"
 	local lock_cmd="$sudo lockpid $lock_opts $lock_file"
-	[[ $Trace && ${xtrace-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
+	[[ $Trace && ${x_function-} && ! $IfRun ]] && echo "$PS4 $lock_cmd" >&2
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	lockpid_output=$($IfRun $lock_cmd 2>&1)
 	local  status=$?
@@ -613,8 +615,7 @@ function lock-PID() {
 				   sed "s/--pid=[0-9]*/--pid=PID/"
 			fi
 		fi
-		$xtrace
-		return 0
+		x-return 0
 	fi
 
 	[[ $lockpid_output =~ [Pp]rocess.([0-9]+).holds ]]
@@ -629,23 +630,22 @@ function lock-PID() {
 		   else ls -ld "$lock_dir/$lock_file"
 		fi
 		print-call-stack "${drive_name-}"
-	   else $xtrace; return $status
+	   else x-return $status
 	fi >&2				# echo problems to stderr
-	$xtrace
-	return $status
+	x-return $status
 }
 readonly -f lock-PID
 
 # ------------------------------------------------------------------
 
 _set-type-name() {
-	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	type=$1 resource=${2:-$drive_name}
 
 	 set-_drive_name- "$resource"
 	name=$_drive_name
 
-	$xtrace
+	x-return
 }
 readonly -f _set-type-name
 
@@ -730,7 +730,7 @@ declare -A _lock_type_name2lock_file
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
-#	[[ -o xtrace  ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ ${1-} == -w ]] && { local  do_wait=$true;shift; } || local  do_wait=
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	local lock_opts=
@@ -755,7 +755,7 @@ function lock() {
 	# be sure to grab primary lock first, so job appears on dashboard
 	# shellcheck disable=SC2086 # *_opt may be null
 	lock-PID $wait_opt "$type" "$lock_msg" ||
-	    { local status=$?; $xtrace; return $status; }
+	    { local status=$?; x-return $status; }
 	local primary_lock_file=$lock_file # lock-PID set lock_file
 
 	! [[ $action == update* && $debug_opt ]] && # not regression-test?
@@ -766,20 +766,19 @@ function lock() {
 		lock-PID $wait_opt $lock_opts backup "$extra_lock_msg" &&
 		lock-PID --release $lock_opts backup "$extra_lock_msg" ||
 		   { local status=$?; sudo-lockpid -r "$primary_lock_file"
-		     $xtrace; return $status; }
+		     x-return $status; }
 	fi
 
 	_lock_type_name2lock_file[$type,$name]=$primary_lock_file
 
-	 $xtrace
-	return 0
+	x-return 0
 }
 readonly -f lock
 
 # ---------------------------------
 
 unlock() {
-#	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
 	[[ $# == 1 ]] || abort-function "[-P] [lockpid-opt] type"
@@ -788,7 +787,7 @@ unlock() {
 
 	local lock_file=${_lock_type_name2lock_file[$type,$name]-}
 	if [[ ! $lock_file ]]
-	   then [[ $no_prune ]] && { $xtrace; return; }
+	   then [[ $no_prune ]] && { x-return; }
 		abort "don't hold lock: type=$type, name=$name"
 	fi
 
@@ -798,7 +797,7 @@ unlock() {
 	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
 
-	$xtrace
+	x-return
 }
 readonly -f unlock
 
@@ -857,29 +856,28 @@ readonly -f set-command--from-PGIDs
 # ----------------------------------------------------------------------------
 
 function set-lock_PGID() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local lock=$1
 
 	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
 	lock_PGID=
 	# shellcheck disable=SC2046 # we want word splitting
 	[[ -s $lock ]] && read -r lock_PGID foo < "$lock" &&
-	   [[ $lock_PGID =~ ^[0-9]+$ ]] || { $xtrace; return 1; }
-	$xtrace
-	return 0
+	   [[ $lock_PGID =~ ^[0-9]+$ ]] || { x-return 1; }
+	x-return 0
 }
 readonly -f set-lock_PGID
 
 # ----------------------
 
 function set-job_PGID() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local job_type=$1 lock_path lock_PGID
 
 	set-lock_path "$job_type"
-	set-lock_PGID "$lock_path" || { job_PGID= ; $xtrace; return 1; }
+	set-lock_PGID "$lock_path" || { job_PGID= ; x-return 1; }
 	job_PGID=$lock_PGID
-	$xtrace
+	x-return
 }
 readonly -f set-job_PGID
 
@@ -960,20 +958,21 @@ readonly -f is-our-lock
 # ---------------------------------------
 
 function sudo-kill() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local PID=${!#}
 
 	$IfRun kill "$@" 2> $dev_null && return 0 # kill is built-in, so cheap
-	is-process-alive "${PID#-}" || { $xtrace; return 1; }
+	is-process-alive "${PID#-}" || { x-return 1; }
+
 	# shellcheck disable=SC2155 # don't need 'kill' status. we use stderr
 	local    kill_msg=$(kill "$@" 2>&1)
 	if   [[ $kill_msg == *"Operation not permitted"* ]]
-	   then sudo kill "$@"		# this sets return value
-	elif [[ $kill_msg == *"No such process"* ]]
-	   then $xtrace; return 1
-	   else echo "$kill_msg" >&2
-		$xtrace; return 1
+	   then sudo kill "$@"
+		local status=$?
+	   else local status=1
+		[[ $kill_msg == *"No such process"* ]] || echo "$kill_msg" >&2
 	fi
+	x-return $status
 }
 readonly -f sudo-kill
 
@@ -1133,7 +1132,7 @@ readonly -f set-lock_PGIDs
 # ----------------------------------------------------------------------------
 
 function ps-locks() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 
 	local ps_opts=
@@ -1164,8 +1163,7 @@ function ps-locks() {
 		ps $ps_opt_h $ps_opts  $lock_PGID
 		status=$?
 	done
-	$xtrace
-	return $status
+	x-return $status
 }
 readonly -f ps-locks
 
@@ -1174,7 +1172,7 @@ readonly -f ps-locks
 ##############################################################################
 
 function set-drive_dirs() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ ${1-} != -* && ( -t 0 || -t 1 || -t 2 ) ]] && set -- -a "$@"
 	case $* in
 	    ( '' ) local regex=$drive_name_regex ;; # default: ones we backup
@@ -1194,7 +1192,7 @@ function set-drive_dirs() {
 			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" | sort)
 	drive_dirs=$*
 	fully-populate-custom-config-maps # ensure we support any new drives
-	$xtrace
+	continue-tracing-function
 	[[ $drive_dirs ]]
 }
 readonly -f set-drive_dirs
@@ -1202,12 +1200,12 @@ readonly -f set-drive_dirs
 # ----------------------
 
 list-drive-dirs() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 
 	local drive_dirs
 	set-drive_dirs "$@"
 	echo -e "${drive_dirs// /\\n}"
-	$xtrace
+	x-return
 }
 readonly -f list-drive-dirs
 
@@ -1216,14 +1214,14 @@ readonly -f list-drive-dirs
 readonly escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
 
 function set-drive_names() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local drive_dirs
 	set-drive_dirs "$@"
 
 	# shellcheck disable=SC2086 # we want word splitting
 	set -- $drive_dirs
 	drive_names=${*//$escaped_drive_dir_prefix/}
-	$xtrace
+	continue-tracing-function
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names
@@ -1446,13 +1444,13 @@ readonly allowed_drive_dir_chars='-_a-zA-Z0-9' # '-' must be first
 # already-existing-and-initialized backup directories and their names.
 # This checks name-validity, and fixex the case of valid names.
 function set-drive_name-() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
 	assert-not-option -o "$1"
 	local name=$1
 
-	[[ $name ]] || { $xtrace; return 1; }
+	[[ $name ]] || { x-return 1; }
 	[[ $name == $snapshot_glob* ]] && name=$PWD/$name
 	name=${name#"$drive_dir_prefix"}
 	# shellcheck disable=SC2295 # need to glob
@@ -1460,23 +1458,23 @@ function set-drive_name-() {
 	name=${name%/latest*}
 
 	# might need a quick exit for first phase of set-drive_name .
-	[[ $clean ]] && drive_name=$name && { $xtrace; return 0; }
+	[[ $clean ]] && drive_name=$name && { x-return 0; }
 
 	# shellcheck disable=SC2102
 	[[ $name == *[!$allowed_drive_dir_chars]* ]] && {
-	   [[ $is_quiet ]] && { $xtrace; return 1; }
+	   [[ $is_quiet ]] && { x-return 1; }
 	   abort "drive_name='$1' has bad chars (can ask $coder to allow)"
 	}
 
 	[[ $name =~ ^$admin_drive_name_regex$ && ${name,,} != all ]] || {
-	    [[ $is_quiet ]] && { $xtrace; return 1; }
+	    [[ $is_quiet ]] && { x-return 1; }
 	    abort "'$name' is not a valid drive-name";		    }
 
 	set-cased_drive_name "$name"
 	drive_name=$cased_drive_name
 
 	_last_fully_initialized_drive_name= # prevent weird bugs
-	$xtrace
+	x-return
 }
 readonly -f set-drive_name-
 
@@ -1650,7 +1648,7 @@ fix-days-value() {
 max_drive_names=
 
 function did-set-max_drive_names() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 
 	pushd_ -q $drive_dir_prefix
 
@@ -1663,7 +1661,7 @@ function did-set-max_drive_names() {
 	max_drive_names=${max_drive_names% }
 
 	popd_ -q
-	$xtrace
+	continue-tracing-function
 	[[ $old_max_drive_names != "$max_drive_names" ]]
 }
 readonly -f did-set-max_drive_names
@@ -1674,9 +1672,9 @@ declare -A drive_name2class
 declare -A custom_config_var2default_value
 
 fully-populate-custom-config-maps() {
+	do-not-trace-function # use x-return to leave function; can comment-out
 	did-set-max_drive_names || ! is-set custom_config_var2default_value ||
 	    return
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 	local extra_drive_name=${1-}	# mkfs-backup-drive passes new name
 
 	remember-tracing		# since suspend-tracing maybe not run
@@ -1727,7 +1725,7 @@ fully-populate-custom-config-maps() {
 	done
 
 	restore-tracing
-	$xtrace
+	x-return
 }
 readonly -f fully-populate-custom-config-maps
 
@@ -3302,13 +3300,13 @@ readonly -f set-date_span--scaled
 # --------------------------------------------
 
 reverse-sorted-snapshot-basenames() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 
 	# shellcheck disable=SC2086 # variable contains a glob
 	echo $snapshot_glob*  |		# prune everything
 	   tr ' ' '\n' | sort -u -r |
 	   grep -v '\.rm$'		# rm-pruned-snapshots handles *.rm
-	$xtrace
+	x-return
 }
 readonly -f reverse-sorted-snapshot-basenames
 
@@ -3689,7 +3687,7 @@ readonly -f set-sorted_snapshots---from-args
 # ----------------------
 
 set-useful_snapshots() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local sort_opt=${1-}
 
 	# want the .links snapshots too, so quickly recover from
@@ -3699,7 +3697,7 @@ set-useful_snapshots() {
 	set -- $(echo $snapshot_glob{,.links,.partial} |
 		   tr ' ' '\n' | sort $sort_opt)
 	useful_snapshots=$*
-	$xtrace
+	x-return
 }
 readonly -f set-useful_snapshots
 
@@ -4342,13 +4340,13 @@ readonly -f set-backup_type
 # ---------------------------------
 
 function matches-dst_backup_type() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ $1 == -g ]] && { shift; local is_GE=$true; } || local is_GE=$false
 	local drive_dir=$1 drive_name
 
 	set-drive_name- "$drive_dir"
 	set-backup_type "$drive_name"
-	$xtrace
+	continue-tracing-function
 
 	[[ $backup_type == "$dst_backup_type" || $debug_opt ]] && return 0
 	[[ $is_GE ]] || return 1
@@ -4963,7 +4961,7 @@ readonly -f do-chores
 # ----------------------------------------------------------------------------
 
 function set-drive_dirs--from-user-args() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 	assert-not-option "${1-}"
 
@@ -4971,8 +4969,7 @@ function set-drive_dirs--from-user-args() {
 	   then # shellcheck disable=SC2086 # *_opt may be null
 		set-drive_dirs $all_opt
 		local status=$?
-		$xtrace
-		return $status
+		x-return $status
 	fi
 
 	[[ $1 != /* ]] && set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
@@ -4986,7 +4983,7 @@ function set-drive_dirs--from-user-args() {
 		      drive_dirs+="$drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
-	$xtrace
+	continue-tracing-function
 	[[ $drive_dirs ]]
 }
 readonly -f set-drive_dirs--from-user-args
@@ -4994,10 +4991,9 @@ readonly -f set-drive_dirs--from-user-args
 # ---------------------------------
 
 function set-drive_names--from-user-args() {
+	do-not-trace-function # use x-return to leave function; can comment-out
 	[[ $1 == -c ]] && { local show_class=$true;shift; } ||local show_class=
 	set-drive_dirs--from-user-args "$@" || return $?
-
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
 
 	fully-populate-custom-config-maps # load drive_name2class
 	drive_names=
@@ -5010,7 +5006,7 @@ function set-drive_names--from-user-args() {
 		  [[ $class ]] && echo "drive '$drive_name' has class '$class'"
 	done
 	drive_names=${drive_names% }
-	$xtrace
+	continue-tracing-function
 	[[ $drive_names ]]
 }
 readonly -f set-drive_names--from-user-args
@@ -5139,10 +5135,10 @@ readonly watch_division_opts="-w$(($watch_field_width-1)) -z -d2"
 readonly default_padded_colorized_string_field_width=$watch_field_width
 
 set-stats_format() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local drive_names=$*
 
-	[[ ${stats_format-} ]] && { $xtrace; return; }
+	[[ ${stats_format-} ]] && { x-return; }
 
 	local -i format_width
 	local -i field_width=$watch_field_width
@@ -5154,7 +5150,7 @@ set-stats_format() {
 	done
 	stats_format=${format%  }
 	TraceV 1 stats_format
-	$xtrace
+	x-return
 }
 readonly -f set-stats_format
 
@@ -5195,7 +5191,7 @@ _set-count-last-average-maximum-sum-files--from-stats-files() {
 readonly duration_file_basename=average.txt
 
 function set-count-last-average-maximum-sum-files--from-stats-files() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local data_type=$1
 
 	pushd_ -q "$drives_log_dir/$drive_name"
@@ -5232,7 +5228,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 
 	popd_ -q
 	TraceV 2 count last average maximum sum
-	$xtrace
+	continue-tracing-function
 	(( $count != 0 ))		# did we find any files w/data?
 }
 readonly -f set-count-last-average-maximum-sum-files--from-stats-files
@@ -5824,7 +5820,7 @@ readonly max_rows=999999
 readonly max_columns=9999
 
 set-rows-columns-COLUMNS() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 
 	[[ ${rows-} ]] && return
 
@@ -5837,7 +5833,7 @@ set-rows-columns-COLUMNS() {
 	fi
 	rows_left=$rows
 	export COLUMNS=$max_columns  # for 'ps' (we shorten the COMMAND value)
-	$xtrace
+	x-return
 }
 readonly -f set-rows-columns-COLUMNS
 
@@ -6906,25 +6902,26 @@ readonly generate_output_files_dir=$fast_tmp_dir/generate.$BASHPID
 readonly rows_left_file=$generate_output_files_dir/rows_left
 
 function generate() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local function=$*
 
 	[[ ! $functions ]] ||
-	is-arg1-in-arg2 "${function%% *}" "$functions" || { $xtrace;return 1; }
+	is-arg1-in-arg2 "${function%% *}" "$functions" || { x-return 1; }
 
-	[[ $do_parallel ]] || { $xtrace; $function; return $?; }
+	[[ $do_parallel ]] ||
+	    { continue-tracing-function; $function; return $?; }
 
 	[[ -d $generate_output_files_dir ]] ||
 	RunCmd mkdir "$generate_output_files_dir"
 	watch_PID=$BASHPID		# the only process allowed to rmdir
 
 	true > "$rows_left_file"
-	$xtrace
+	continue-tracing-function
 	local output_file=$generate_output_files_dir/out-$job_num
 	output_file+=.${function%% *}	# makes debugging easier
 	$function > "$output_file" &
 	job_num2PID[job_num++]=$!
-	[[ $xtrace ]] && set +x
+	set +x				# don't trace the following wait loop
 	TraceV 1 output_file
 
 	# wouldn't need polling if used a fifo, but they're buggy in bash-4.4
@@ -6934,7 +6931,7 @@ function generate() {
 	until [[ -s $rows_left_file ]] ; do sleep 0.0001; done
 	read -r rows_left < "$rows_left_file" # let child modify our global
 
-	$xtrace
+	x-return
 }
 
 readonly -f generate
@@ -9013,24 +9010,24 @@ readonly -f test-prune
 # ----------------------------------------------------------------------------
 
 _show-test-header() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 
 	local msg="(first number is md5sum of sorted data, second is unsorted)"
 	[[ $* == *'('* ]] && msg=
 	header "$* $msg"
-	$xtrace
+	x-return
 }
 readonly -f _show-test-header
 
 # ---------------------------------
 
 _show-test-results() {
-	[[ -o xtrace ]] && { set +x; local xtrace="set -x"; } || local xtrace=
+	do-not-trace-function # use x-return to leave function; can comment-out
 	local output_file=$1
 
 	[[ -s $output_file ]] &&
 	echo "$(sort "$output_file" | md5sum) $(md5sum "$output_file")"
-	$xtrace
+	x-return
 }
 readonly -f _show-test-results
 
