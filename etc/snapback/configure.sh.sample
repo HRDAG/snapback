@@ -278,7 +278,7 @@ declare -i decades_per_span_for_year_prune=5	# 'prune-drive -f month' skips
 
 # You can use this variable to change all 4 of the previous variables at once,
 # or to scale all 4 of the previous variables for a drive of a different size.
-	 pruning_span_scale_factor=1.0	  # scales previous 4 variables
+	 pruning_span_scale_factor=1.0	  # scales previous 4 *_prune variables
 drv_name2pruning_span_scale_factor[X]=1.5 # X is 50% bigger than other drives
 drv_name2pruning_span_scale_factor[Z]=1	  # Z: for pruning regression test
 
@@ -290,7 +290,7 @@ drv_name2pruning_span_scale_factor[Z]=1	  # Z: for pruning regression test
 flakey_drive_names_regex=
 
 # The commands compared by the regression-test action.
-readonly old_cmd=/usr/local/bin/$our_name # installed version
+readonly old_cmd=/usr/local/bin/$our_name     # installed version
 readonly tst_cmd=~/git/snapback/bin/$our_name # coder's version
 
 # The regression-test action won't test update-drives unless this is defined.
