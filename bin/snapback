@@ -9563,10 +9563,7 @@ case $action in
    # run [-v var-names] func-name [args]: run func-name, echo var-names values;
    ( run | r ) undo-action-abbrev run
 	[[ $# != 0 ]] || abort-with-action-Usage -A1
-	local cmd=$1
-	$Trace
 	run-function -p "$@" # can pass: -v "var-name(s)" # vars to be echo'ed
-	echo -e "\nstatus=$?"
 	;;
    ( true )				# used to test for needed options
 	true
