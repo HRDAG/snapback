@@ -141,7 +141,9 @@ readonly highlight_level2tput_args
 # We used these functions from libsnap.sh .
 # FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
 # set-FS_label--from-mount_dir, $config_file can replace them.
-readonly -f is-set have-cmd need-cmds
+readonly -f is-set have-cmd need-cmds prepend-to-PATH-var
+# can-profile-not-trace, continue-tracing-function and x-return are aliases
+readonly -f profile-on profile-off
 readonly -f set-mounts setup-ps-options set-FS_type--from-path
 readonly -f set-inode_size-data_block_size-dir_block_size--from-path
 readonly -f set-FS_label--from-FS-device label-drive
@@ -161,7 +163,6 @@ readonly -f set-popped_word-is_last_word--from-list
 readonly -f set-product set-division set-highlighted_string
 readonly -f confirm run-function echo-to-file set-cat_cmd
 readonly -f run-until-timeout set-backup_suffix
-# do-not-trace-function, continue-tracing-function and x-return are aliases
 
 [[ -v coder ]] ||			# can set custom value in $config_file
       coder=sweikart@gmail.com
@@ -474,7 +475,7 @@ readonly -f rm-stale-locks
 readonly writer_types="backup prune copy"
 
 set-lock_path() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local type=${1:-$writer_type} name=${2:-$drive_name}
 
 	is-arg1-in-arg2 "$type" "$writer_types" ||
@@ -492,7 +493,7 @@ readonly -f set-lock_path
 # into a single syntactically-correct glob.
 # Return 0 if the final glob has metadata characters (i.e. not simple string).
 function set-glob() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 
 	glob=
 	local arg
@@ -533,7 +534,7 @@ readonly -f set-name_glob
 # ---------------------------------
 
 function set-lock_paths() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $# == [0-2] ]] ||
 	    abort-function "$*: must be 0-2 args (can use globs)"
 	[[ ${1-} == *.pid ]] && { lock_paths=$1; x-return 0; }
@@ -577,7 +578,7 @@ readonly -f do-log-common-events
 # ---------------------------------
 
 function lock-PID() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $1 == -n ]] && { local name=$2; shift 2; } || local name=$drive_name
 	local lock_opts=
 	while [[ $1 == -* ]] ; do lock_opts+="$1 "; shift; done
@@ -639,7 +640,7 @@ readonly -f lock-PID
 # ------------------------------------------------------------------
 
 _set-type-name() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	type=$1 resource=${2:-$drive_name}
 
 	 set-_drive_name- "$resource"
@@ -730,7 +731,7 @@ declare -A _lock_type_name2lock_file
 #    After grab non-backup lock, waits for no-backup if ! is_multi_writer_drive
 function lock() {
 #	[[ ${action-} != test ]] && # [[ ${action-} != prune* ]] &&
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} == -w ]] && { local  do_wait=$true;shift; } || local  do_wait=
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	local lock_opts=
@@ -778,7 +779,7 @@ readonly -f lock
 # ---------------------------------
 
 unlock() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
 	[[ $# == 1 ]] || abort-function "[-P] [lockpid-opt] type"
@@ -856,7 +857,7 @@ readonly -f set-command--from-PGIDs
 # ----------------------------------------------------------------------------
 
 function set-lock_PGID() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local lock=$1
 
 	[[ $lock == /* ]] || lock=$lock_dir/${lock##*/}
@@ -871,7 +872,7 @@ readonly -f set-lock_PGID
 # ----------------------
 
 function set-job_PGID() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local job_type=$1 lock_path lock_PGID
 
 	set-lock_path "$job_type"
@@ -958,7 +959,7 @@ readonly -f is-our-lock
 # ---------------------------------------
 
 function sudo-kill() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local PID=${!#}
 
 	$IfRun kill "$@" 2> $dev_null && return 0 # kill is built-in, so cheap
@@ -1132,7 +1133,7 @@ readonly -f set-lock_PGIDs
 # ----------------------------------------------------------------------------
 
 function ps-locks() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} == -R ]] && { local do_rm= ; shift; } || local do_rm=$true
 
 	local ps_opts=
@@ -1172,7 +1173,7 @@ readonly -f ps-locks
 ##############################################################################
 
 function set-drive_dirs() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} != -* && ( -t 0 || -t 1 || -t 2 ) ]] && set -- -a "$@"
 	case $* in
 	    ( '' ) local regex=$drive_name_regex ;; # default: ones we backup
@@ -1200,7 +1201,7 @@ readonly -f set-drive_dirs
 # ----------------------
 
 list-drive-dirs() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 
 	local drive_dirs
 	set-drive_dirs "$@"
@@ -1214,7 +1215,7 @@ readonly -f list-drive-dirs
 readonly escaped_drive_dir_prefix=${drive_dir_prefix//\//\\/}
 
 function set-drive_names() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local drive_dirs
 	set-drive_dirs "$@"
 
@@ -1444,7 +1445,7 @@ readonly allowed_drive_dir_chars='-_a-zA-Z0-9' # '-' must be first
 # already-existing-and-initialized backup directories and their names.
 # This checks name-validity, and fixex the case of valid names.
 function set-drive_name-() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	[[ $1 == -c ]] && { local clean=$true; shift; } || local clean=$false
 	assert-not-option -o "$1"
@@ -1648,7 +1649,7 @@ fix-days-value() {
 max_drive_names=
 
 function did-set-max_drive_names() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 
 	pushd_ -q $drive_dir_prefix
 
@@ -1672,7 +1673,7 @@ declare -A drive_name2class
 declare -A custom_config_var2default_value
 
 fully-populate-custom-config-maps() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	did-set-max_drive_names || ! is-set custom_config_var2default_value ||
 	    return
 	local extra_drive_name=${1-}	# mkfs-backup-drive passes new name
@@ -3300,7 +3301,7 @@ readonly -f set-date_span--scaled
 # --------------------------------------------
 
 reverse-sorted-snapshot-basenames() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 
 	# shellcheck disable=SC2086 # variable contains a glob
 	echo $snapshot_glob*  |		# prune everything
@@ -3687,7 +3688,7 @@ readonly -f set-sorted_snapshots---from-args
 # ----------------------
 
 set-useful_snapshots() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local sort_opt=${1-}
 
 	# want the .links snapshots too, so quickly recover from
@@ -4340,7 +4341,7 @@ readonly -f set-backup_type
 # ---------------------------------
 
 function matches-dst_backup_type() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $1 == -g ]] && { shift; local is_GE=$true; } || local is_GE=$false
 	local drive_dir=$1 drive_name
 
@@ -4961,7 +4962,7 @@ readonly -f do-chores
 # ----------------------------------------------------------------------------
 
 function set-drive_dirs--from-user-args() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} == -[aA] ]] && { local all_opt=$1; shift; } || local all_opt=
 	assert-not-option "${1-}"
 
@@ -4991,7 +4992,7 @@ readonly -f set-drive_dirs--from-user-args
 # ---------------------------------
 
 function set-drive_names--from-user-args() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $1 == -c ]] && { local show_class=$true;shift; } ||local show_class=
 	set-drive_dirs--from-user-args "$@" || return $?
 
@@ -5135,7 +5136,7 @@ readonly watch_division_opts="-w$(($watch_field_width-1)) -z -d2"
 readonly default_padded_colorized_string_field_width=$watch_field_width
 
 set-stats_format() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local drive_names=$*
 
 	[[ ${stats_format-} ]] && { x-return; }
@@ -5191,7 +5192,7 @@ _set-count-last-average-maximum-sum-files--from-stats-files() {
 readonly duration_file_basename=average.txt
 
 function set-count-last-average-maximum-sum-files--from-stats-files() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local data_type=$1
 
 	pushd_ -q "$drives_log_dir/$drive_name"
@@ -5820,7 +5821,7 @@ readonly max_rows=999999
 readonly max_columns=9999
 
 set-rows-columns-COLUMNS() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 
 	[[ ${rows-} ]] && return
 
@@ -6902,7 +6903,7 @@ readonly generate_output_files_dir=$fast_tmp_dir/generate.$BASHPID
 readonly rows_left_file=$generate_output_files_dir/rows_left
 
 function generate() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local function=$*
 
 	[[ ! $functions ]] ||
@@ -9010,7 +9011,7 @@ readonly -f test-prune
 # ----------------------------------------------------------------------------
 
 _show-test-header() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 
 	local msg="(first number is md5sum of sorted data, second is unsorted)"
 	[[ $* == *'('* ]] && msg=
@@ -9022,7 +9023,7 @@ readonly -f _show-test-header
 # ---------------------------------
 
 _show-test-results() {
-	do-not-trace-function # use x-return to leave function; can comment-out
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	local output_file=$1
 
 	[[ -s $output_file ]] &&
