@@ -1913,15 +1913,27 @@ readonly -f lock-replica-of-snapshots
 
 # ----------------------------------------------------------------------------
 
+readonly drive_monitor_lock_path=$lock_dir/monitor.pid
+
 declare -i msecs epoch_msecs
 
 readonly mon_overhead_drive_name=_RAM_
 readonly mon_overhead_drive_dir=$snapshots_replica_dir
 
+declare  mon_were_jobs_running=$true   # ensure mon-launch-globs runs 1st time
+
 mon-launch-globs() {
+	local drive_names=$*
+
+	set -- "$lock_dir"/*.pid
+	if [[ $* == "$drive_monitor_lock_path" ]] # no jobs running?
+	   then [[ $mon_were_jobs_running ]] || return
+		    mon_were_jobs_running=$false
+	   else     mon_were_jobs_running=$true
+	fi
 
 	local drive_name drive_dir
-	for drive_name
+	for drive_name in $drive_names
 	    do	 set-drive_dir- "$drive_name" ||
 		    continue		# I/O error, watch will show it
 		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
@@ -2125,8 +2137,6 @@ update-monitor-config() {
 readonly -f update-monitor-config
 
 # ----------------------------------------------------------------------------
-
-readonly drive_monitor_lock_path=$lock_dir/monitor.pid
 
 # shellcheck disable=SC2032
 monitor-drives() {
