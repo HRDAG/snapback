@@ -2065,7 +2065,7 @@ mon-look-for-finished-globs() {
 			set-epoch_msecs
 			local -i used_msecs=$epoch_msecs-$start_msecs
 			local -i left_msecs=$mon_check_period_msecs-$used_msecs
-			set-division -d3 "$left_msecs" 1000
+			set-division -d 3 "$left_msecs" 1000
 			[[ $division != *-* ]] && # avoid negative values
 			sleep-exe "$division"     # want it to appear in ps
 			return
@@ -2638,13 +2638,13 @@ set-writer_stats_msg--as-save-writer-stats() {
 		# we use varnames writer_{data_type}; see stats_data_types=
 		set-minutes--from-secs $SECONDS
 		local -i writer_minutes=$minutes
-		set-division -d2 "$writer_minutes" 60
+		set-division -d 2 "$writer_minutes" 60
 		local writer_hours=$division
 
 		local used_MB size_MB
 		set-used_MB-size_MB
 		local -i writer_MB=$used_MB-$starting_MB
-		set-division -d2 "$writer_MB" 1024
+		set-division -d 2 "$writer_MB" 1024
 		local writer_GB=$division
 		[[ $writer_GB == -0.00 ]] && writer_GB=${writer_GB#-}
 
@@ -5141,7 +5141,7 @@ readonly -f create-jobs
 # If change this value, adjust the width of the -xxx suffix on
 # max_drive_usage_percent's value in is-drive-usage-too-high() .
 readonly watch_field_width=5+1		# +1 for 'unit' suffix
-readonly watch_division_opts="-w$(($watch_field_width-1)) -z -d2"
+readonly watch_division_opts="-w $(($watch_field_width-1)) -z -d 2"
 
 # this is used by set-padded_colorized_string--for-printf in libsnap.sh
 readonly default_padded_colorized_string_field_width=$watch_field_width
@@ -5228,7 +5228,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 		fi
 
 		if (( $count > 0 ))
-		   then	set-division -d1 "$sum" "$count"
+		   then	set-division -d 1 "$sum" "$count"
 			echo-to-file "$division" "$duration_file_basename"
 		elif   [[ -s "$duration_file_basename" ]]
 		     then rm "$duration_file_basename"
@@ -7443,7 +7443,7 @@ printf "$f" $dsh =$dash	=$dash	$dash	$dash	$dash	$dash ==$dash	==$dash
 		       sunit=$(sed -nr '/swi/s/.* sunit=([^ ]+) .*/\1/p' "$i")
 		      swidth=$(sed -nr '/^ /s/.* swidth=([^ ]+) .*/\1/p' "$i")
 		     log_bytes=$(( $log_block * $log_count ))
-		     set-division -d2 "$log_bytes" $(( 1024 * 1024 * 1024 ))
+		     set-division -d 2 "$log_bytes" $(( 1024 * 1024 * 1024 ))
 		        log=${division}g
 		      sunit="$sunit blks"
 		     swidth="$swidth blks"
