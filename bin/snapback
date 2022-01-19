@@ -141,28 +141,39 @@ readonly highlight_level2tput_args
 # We used these functions from libsnap.sh .
 # FS-label naming conventions are embodied by set-mount_dir--from-FS-label and
 # set-FS_label--from-mount_dir, $config_file can replace them.
-readonly -f is-set have-cmd need-cmds prepend-to-PATH-var
-# can-profile-not-trace, continue-tracing-function and x-return are aliases
-readonly -f profile-on profile-off
+readonly -f is-set is-var append-to-PATH-var prepend-to-PATH-var
 readonly -f set-mounts setup-ps-options set-FS_type--from-path
-readonly -f set-inode_size-data_block_size-dir_block_size--from-path
-readonly -f set-FS_label--from-FS-device label-drive
-readonly -f set-FS_device--from-FS-label set-device_KB--from-block-device
-readonly -f set-FS_device--from-path set-mount_dir--from-FS-device
-readonly -f is-arg1-in-arg2 print-call-stack warn abort abort-function
-readonly -f assert-not-option read-all set-var_value--for-debugger echoE echoEV
+readonly -f set-highlighted_string strip-trailing-whitespace log header
+readonly -f print-call-stack warn abort abort-function
+readonly -f assert-not-option echoE echoEV
 # aliases Trace and TraceV use _Trace to do the work
 readonly -f _Trace remember-tracing suspend-tracing restore-tracing
-readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage log header
+readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage RunCmd
+# can-profile-not-trace, continue-tracing-function and x-return are aliases
+readonly -f profile-on profile-off print-profile-data
+readonly -f have-cmd need-cmds
+readonly -f set-FS_type--from-path
+readonly -f set-inode_size-data_block_size-dir_block_size--from-path
+readonly -f set-device_KB--from-block-device
+readonly -f set-FS_label--from-FS-device
+readonly -f set-FS_device--from-FS-label label-drive
+readonly -f set-FS_device--from-path
+readonly -f set-mount_dir--from-FS-device
+readonly -f set-mount_dir--from-FS-label
+readonly -f set-FS_label--from-mount_dir
 readonly -f set-padded_colorized_string--for-printf
 readonly -f fix-padded-colorized-string-vars
-readonly -f is-an-FS-device-mounted set-absolute_path setup-df-data-from-fields
+readonly -f is-arg1-in-arg2
+readonly -f is-an-FS-device-mounted is-older is-newer
 # aliases cd_, pushd_, and popd_ also use _chdir to do the work
-readonly -f _chdir have-proc is-process-alive set-reversed_words
+readonly -f set-absolute_dir set-absolute_path _chdir
+readonly -f df_ setup-df-data-from-fields set-file_KB copy-file-perms
+readonly -f echo-to-file set-backup_suffix set-cat_cmd read-all
 readonly -f set-popped_word-is_last_word--from-list
-readonly -f set-product set-division set-highlighted_string
-readonly -f confirm run-function echo-to-file set-cat_cmd
-readonly -f run-until-timeout set-backup_suffix
+readonly -f have-proc is-process-alive set-uniques set-reversed_words
+readonly -f set-average set-product set-division
+readonly -f msleep sleep-exe confirm run-function
+readonly -f run-until-timeout set-python_script
 
 [[ -v coder ]] ||			# can set custom value in $config_file
       coder=sweikart@gmail.com
