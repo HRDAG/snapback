@@ -1932,11 +1932,13 @@ mon-launch-globs() {
 	    do	# This covers non-multi_writer source, since we lock the src.
 		# shellcheck disable=SC2086 # we want globbing
 		set -- +(${writer_types// /|})-"$drive_names".pid
+		set +u			# for auto-increment
 		if [[ $# != 0 ]]	# are there active writer jobs?
 		   then    drive_name2idle_count[$drive_name]=0
 		   else (( drive_name2idle_count[$drive_name]++ >= 3 )) &&
-			    continue	# we gave drive time to settle down
+			    { set -u; continue; } # we let drive settle down
 		fi
+		set -u
 
 		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
 
