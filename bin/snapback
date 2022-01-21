@@ -1538,7 +1538,8 @@ readonly -f set-drive_name
 
 # ---------------------------------
 
-# only call this with a known-valid drive_name, for speed
+# This is faster than set-drive_dir, but *must* call with known-valid name.
+# This can be called with a name that leaves off the leading or trailing class.
 function set-drive_dir-() {
 	[[ ${1-} == -W ]] && { local do_warn= ; shift; } || local do_warn=$true
 	local name=${1:-$drive_name}
@@ -1548,6 +1549,7 @@ function set-drive_dir-() {
 	   else drive_dir=$drive_dir_prefix$name
 	fi
 	[[ -d  $drive_dir ]] && return 0
+	# sysadmin may be using drive name without the class
 	set -- $drive_dir_prefix"$name"[^a-zA-Z0-9]* \
 	       $drive_dir_prefix*[^a-zA-Z0-9]"$name"
 	[[ $# == 1 ]] && drive_dir=$1 && [[ -d $drive_dir ]] && return 0
@@ -1920,24 +1922,25 @@ declare -i msecs epoch_msecs
 readonly mon_overhead_drive_name=_RAM_
 readonly mon_overhead_drive_dir=$snapshots_replica_dir
 
-declare  mon_were_jobs_running=$true   # ensure mon-launch-globs runs 1st time
+declare -i -A drive_name2idle_count
 
 mon-launch-globs() {
 	local drive_names=$*
 
-	set -- "$lock_dir"/*.pid
-	if [[ $* == "$drive_monitor_lock_path" ]] # no jobs running?
-	   then [[ $mon_were_jobs_running ]] || return
-		    mon_were_jobs_running=$false
-	   else     mon_were_jobs_running=$true
-	fi
-
 	local drive_name drive_dir
 	for drive_name in $drive_names
-	    do	 set-drive_dir- "$drive_name" ||
-		    continue		# I/O error, watch will show it
+	    do	# This covers non-multi_writer source, since we lock the src.
+		# shellcheck disable=SC2086 # we want globbing
+		set -- +(${writer_types// /|})-"$drive_names".pid
+		if [[ $# != 0 ]]	# are there active writer jobs?
+		   then    drive_name2idle_count[$drive_name]=0
+		   else (( drive_name2idle_count[$drive_name]++ >= 3 )) &&
+			    continue	# we gave drive time to settle down
+		fi
+
 		[[ ${drive_name2PID[$drive_name]-} ]] && continue # hung drive?
 
+		set-drive_dir- "$drive_name" || continue
 		cd "$drive_dir" || continue
 
 		local glob_file=$_mon_globs_dir/$drive_name
