@@ -1931,7 +1931,7 @@ mon-launch-globs() {
 	for drive_name in $drive_names
 	    do	# This covers non-multi_writer source, since we lock the src.
 		# shellcheck disable=SC2086 # we want globbing
-		set -- +(${writer_types// /|})-"$drive_names".pid
+		set -- $lock_dir/+(${writer_types// /|})-"$drive_name".pid
 		set +u			# for auto-increment
 		if [[ $# != 0 ]]	# are there active writer jobs?
 		   then    drive_name2idle_count[$drive_name]=0
