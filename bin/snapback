@@ -152,8 +152,8 @@ readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage RunCmd
 # can-profile-not-trace, continue-tracing-function and x-return are aliases
 readonly -f profile-on profile-off print-profile-data
 readonly -f have-cmd need-cmds
-readonly -f set-FS_type--from-mount-dir
-readonly -f set-inode_size-data_block_size-dir_block_size--from-mount-dir
+readonly -f set-FS_type--from-path	# path can be mount-dir or device
+readonly -f set-inode_size-data_block_size-dir_block_size--from-path # ditto
 readonly -f set-device_KB--from-block-device
 readonly -f set-FS_label--from-FS-device
 readonly -f set-FS_device--from-FS-label label-drive
@@ -7292,8 +7292,8 @@ dir-sizes() {
 	fi
 
 	dir=${dirs_to_backup%% *}
-	set-FS_type--from-mount-dir "$dir"
-	set-inode_size-data_block_size-dir_block_size--from-mount-dir "$dir"
+	set-FS_type--from-path "$dir"
+	set-inode_size-data_block_size-dir_block_size--from-path "$dir"
 	type=$FS_type dirblock=$dir_block_size inode=$inode_size
 	file=$type-dirblock=$dirblock-inode=$inode-$drive_name$where.$suffix
 	TraceV 1 dirs_to_backup file
@@ -7369,7 +7369,7 @@ readonly -f dir-sizes
 
 _set-FS_type-FS_device-dev--from-drive_dir() {
 
-	set-FS_type--from-mount-dir   "$drive_dir"
+	set-FS_type--from-path        "$drive_dir"
 	set-FS_device--from-mount-dir "$drive_dir"
 	[[ -L $FS_device ]] &&
 	    set-absolute_path "$FS_device" && FS_device=$absolute_path
@@ -8039,7 +8039,7 @@ _assert-dst-big-enough() {
 	local dst_device=${2:-$dst_device}
 
 	local FS_type msg
-	set-FS_type--from-mount-dir "$src_device"
+	set-FS_type--from-path "$src_device"
 	if set-device_KB--from-block-device "$src_device"
 	   then declare -i src_KB=$device_KB
 		set-device_KB--from-block-device "$dst_device"
@@ -8145,9 +8145,9 @@ copy-backup-drive() {
 	local dst_drive_dir=$drive_dir
 	local dst_FS_label=$FS_label
 
-	set-FS_type--from-mount-dir "$dst_device"
+	set-FS_type--from-path "$dst_device"
 	local dst_FS_type=$FS_type
-	set-FS_type--from-mount-dir "$src_device"
+	set-FS_type--from-path "$src_device"
 	local src_FS_type=$FS_type
 	is-arg1-in-arg2 -f "$action_opts"    ||
 	[[ $src_FS_type == "$dst_FS_type" ]] ||
@@ -8197,9 +8197,9 @@ _prepare-for-dump-restore() {
 	fi
 
 	local FS_type src_FS_type
-	set-FS_type--from-mount-dir "$src_device"
+	set-FS_type--from-path "$src_device"
 	src_FS_type=$FS_type
-	set-FS_type--from-mount-dir "$dst_device"
+	set-FS_type--from-path "$dst_device"
 	[[ $src_FS_type == "$FS_type" ]] ||
 	   $IfRun abort "FS_type of $dst_device must be '$src_FS_type'"
 
@@ -8378,7 +8378,7 @@ function finish-copy-backup-drive() {
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
 	
-	set-FS_type--from-mount-dir "$src_device"
+	set-FS_type--from-path "$src_device"
 	case $FS_type in
 	   ( ext?) if is-arg1-in-arg2 -D "$action_opts"
 		      then _dump-restore-extN-backup-drives
@@ -8648,6 +8648,7 @@ readonly -f setup-limited-list
 readonly OS_ignorable_error_strings="\
 :ERROR:mcs_client.cc
 Could not resolve keysym Invalid
+.translations.get called with reason:
 JS ERROR: TypeError:
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
