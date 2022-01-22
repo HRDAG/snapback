@@ -1941,7 +1941,7 @@ mon-launch-globs() {
 		set +u			# for auto-increment
 		if [[ $# != 0 ]]	# are there active writer jobs?
 		   then    drive_name2idle_count[$drive_name]=0
-		   else (( drive_name2idle_count[$drive_name]++ >= 3 )) &&
+		   else (( drive_name2idle_count[$drive_name]++ % 10 != 9 )) &&
 			    { set -u; continue; } # we let drive settle down
 		fi
 		set -u
