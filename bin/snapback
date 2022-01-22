@@ -519,6 +519,7 @@ function set-glob() {
 	(( $# > 1 )) && glob="{$glob}"
 	continue-tracing-function
 	[[ $glob == *['[{*?,+@!']* ]]
+	profile-off
 }
 readonly -f set-glob
 
@@ -573,6 +574,7 @@ function set-lock_paths() {
 	lock_paths+=" $drive_monitor_lock_path"
 	continue-tracing-function
 	[[ $lock_paths ]]
+	profile-off
 }
 readonly -f set-lock_paths
 
@@ -889,7 +891,7 @@ function set-job_PGID() {
 	set-lock_path "$job_type"
 	set-lock_PGID "$lock_path" || { job_PGID= ; x-return 1; }
 	job_PGID=$lock_PGID
-	x-return
+	x-return 0
 }
 readonly -f set-job_PGID
 
@@ -973,7 +975,8 @@ function sudo-kill() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	local PID=${!#}
 
-	$IfRun kill "$@" 2> $dev_null && return 0 # kill is built-in, so cheap
+	$IfRun kill "$@" 2> $dev_null &&
+	    { x-return 0; }		# kill is built-in, so cheap
 	is-process-alive "${PID#-}" || { x-return 1; }
 
 	# shellcheck disable=SC2155 # don't need 'kill' status. we use stderr
@@ -1206,6 +1209,7 @@ function set-drive_dirs() {
 	fully-populate-custom-config-maps # ensure we support any new drives
 	continue-tracing-function
 	[[ $drive_dirs ]]
+	profile-off
 }
 readonly -f set-drive_dirs
 
@@ -1235,6 +1239,7 @@ function set-drive_names() {
 	drive_names=${*//$escaped_drive_dir_prefix/}
 	continue-tracing-function
 	[[ $drive_names ]]
+	profile-off
 }
 readonly -f set-drive_names
 
@@ -1677,6 +1682,7 @@ function did-set-max_drive_names() {
 	popd_ -q
 	continue-tracing-function
 	[[ $old_max_drive_names != "$max_drive_names" ]]
+	profile-off
 }
 readonly -f did-set-max_drive_names
 
@@ -1688,7 +1694,7 @@ declare -A custom_config_var2default_value
 fully-populate-custom-config-maps() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	did-set-max_drive_names || ! is-set custom_config_var2default_value ||
-	    return
+	    { x-return; }
 	local extra_drive_name=${1-}	# mkfs-backup-drive passes new name
 
 	remember-tracing		# since suspend-tracing maybe not run
@@ -4375,8 +4381,9 @@ function matches-dst_backup_type() {
 	set-backup_type "$drive_name"
 	continue-tracing-function
 
-	[[ $backup_type == "$dst_backup_type" || $debug_opt ]] && return 0
-	[[ $is_GE ]] || return 1
+	[[ $backup_type == "$dst_backup_type" || $debug_opt ]] &&
+	    { x-return 0; }
+	[[ $is_GE ]] || { x-return 1; }
 
 	# shellcheck disable=SC2206 # we want word splitting
 	local -a src_types=(${backup_type//|/ })
@@ -4390,9 +4397,9 @@ function matches-dst_backup_type() {
 		   ( 1 ) [[ ${src_types[i]} == ''  ]] && continue ;;
 		   ( 2 ) [[ ${src_types[i]} == big ]] && continue ;;
 		esac
-		return 1
+		x-return 1
 	done
-	return 0
+	x-return 0
 }
 readonly -f matches-dst_backup_type
 
@@ -4995,8 +5002,7 @@ function set-drive_dirs--from-user-args() {
 	if [[ $# == 0 || ${1,,} == all || $1 == '*' ]]
 	   then # shellcheck disable=SC2086 # *_opt may be null
 		set-drive_dirs $all_opt
-		local status=$?
-		x-return $status
+		x-return
 	fi
 
 	[[ $1 != /* ]] && set-glob "$@" && eval "set -- $drive_dir_prefix$glob"
@@ -5012,6 +5018,7 @@ function set-drive_dirs--from-user-args() {
 	drive_dirs=${drive_dirs% }
 	continue-tracing-function
 	[[ $drive_dirs ]]
+	profile-off
 }
 readonly -f set-drive_dirs--from-user-args
 
@@ -5020,7 +5027,7 @@ readonly -f set-drive_dirs--from-user-args
 function set-drive_names--from-user-args() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $1 == -c ]] && { local show_class=$true;shift; } ||local show_class=
-	set-drive_dirs--from-user-args "$@" || return $?
+	set-drive_dirs--from-user-args "$@" || { x-return 1; }
 
 	fully-populate-custom-config-maps # load drive_name2class
 	drive_names=
@@ -5035,6 +5042,7 @@ function set-drive_names--from-user-args() {
 	drive_names=${drive_names% }
 	continue-tracing-function
 	[[ $drive_names ]]
+	profile-off
 }
 readonly -f set-drive_names--from-user-args
 
@@ -5257,6 +5265,7 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 	TraceV 2 count last average maximum sum
 	continue-tracing-function
 	(( $count != 0 ))		# did we find any files w/data?
+	profile-off
 }
 readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
@@ -5849,7 +5858,7 @@ readonly max_columns=9999
 set-rows-columns-COLUMNS() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 
-	[[ ${rows-} ]] && return
+	[[ ${rows-} ]] && { x-return; }
 
 	if [[ ${watch_opt-} || -t 0 ]]
 	   then set -f
@@ -6936,7 +6945,7 @@ function generate() {
 	is-arg1-in-arg2 "${function%% *}" "$functions" || { x-return 1; }
 
 	[[ $do_parallel ]] ||
-	    { continue-tracing-function; $function; return $?; }
+	    { continue-tracing-function; $function; x-return; }
 
 	[[ -d $generate_output_files_dir ]] ||
 	RunCmd mkdir "$generate_output_files_dir"
