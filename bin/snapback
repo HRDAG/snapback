@@ -1928,11 +1928,15 @@ declare -i msecs epoch_msecs
 readonly mon_overhead_drive_name=_RAM_
 readonly mon_overhead_drive_dir=$snapshots_replica_dir
 
+declare -i -A drive_name2sample_count
 declare -i -A drive_name2idle_count
+[[ -v	 idle_drive_check_period ]] ||	# can set custom value in $config_file
+readonly idle_drive_check_period=1000
 
 mon-launch-globs() {
 	local drive_names=$*
 
+	local -i idle_count sample_count
 	local drive_name drive_dir
 	for drive_name in $drive_names
 	    do	# This covers non-multi_writer source, since we lock the src.
@@ -1940,9 +1944,15 @@ mon-launch-globs() {
 		set -- $lock_dir/+(${writer_types// /|})-"$drive_name".pid
 		set +u			# for auto-increment
 		if [[ $# != 0 ]]	# are there active writer jobs?
-		   then    drive_name2idle_count[$drive_name]=0
-		   else (( drive_name2idle_count[$drive_name]++ % 10 != 9 )) &&
-			    { set -u; continue; } # we let drive settle down
+		   then # shellcheck disable=SC2034 # shellcheck is confused
+				   drive_name2idle_count[$drive_name]=0
+		   else idle_count=drive_name2idle_count[$drive_name]++
+			set -u
+			sample_count=${drive_name2sample_count[$drive_name]-9}
+			(( $idle_count > "$sample_count"+5 &&
+			   $idle_count % $idle_drive_check_period )) &&
+			    set +x && continue	# no need to frequently test
+			    set +x
 		fi
 		set -u
 
@@ -1999,6 +2009,7 @@ mon-process-finished-glob() {
 	read-all window_msecs "$window_msecs_dir/$drive_name"
 	local -i sample_count=$window_msecs/$mon_check_period_msecs
 	(( $sample_count <= 0 )) && sample_count=1
+	drive_name2sample_count[$drive_name]=$sample_count
 
 	if (( $response_msecs <= $mon_check_period_msecs ))
 	   then local samples=$response_msecs
