@@ -1931,7 +1931,7 @@ readonly mon_overhead_drive_dir=$snapshots_replica_dir
 declare -i -A drive_name2sample_count
 declare -i -A drive_name2idle_count
 [[ -v	 idle_drive_check_period ]] ||	# can set custom value in $config_file
-readonly idle_drive_check_period=1000
+readonly idle_drive_check_period=10
 
 mon-launch-globs() {
 	local drive_names=$*
