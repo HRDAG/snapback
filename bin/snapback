@@ -2159,6 +2159,8 @@ readonly -f update-monitor-config
 
 # ----------------------------------------------------------------------------
 
+readonly monitor_log=$_monitor_dir/monitor.log
+
 # shellcheck disable=SC2032
 monitor-drives() {
 
@@ -2171,7 +2173,7 @@ monitor-drives() {
 	fully-populate-custom-config-maps # for update-monitor-config
 	update-monitor-config
 
-	exec &> "$_monitor_dir/monitor.log" # to catch problems
+	exec &> "$monitor_log"		# 'watch' checks it to see problems
 
 	local -A -i drive_name2msecs	# drive response time in millliseconds
 	local -A    drive_name2PID	# don't use -i: set to '' when PID dies
@@ -6425,6 +6427,12 @@ readonly -f create-status_dir
 # shellcheck disable=SC2120 # drive_name args are optional
 show-errors-in-syslog() {
 	local errors_count_msg_file=${1:-$syslog_errors_count_msg_file}
+
+	if [[ -s $monitor_log ]]
+	   then set-highlighted_string error \
+				       "check file for errors: $monitor_log"
+		echo -e "$highlighted_string\n"
+	fi
 
 	[[ ! ${no_errors-} && -s $errors_count_msg_file ]] && {
 
