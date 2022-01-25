@@ -149,7 +149,8 @@ readonly -f assert-not-option echoE echoEV
 # aliases Trace and TraceV use _Trace to do the work
 readonly -f _Trace remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage RunCmd
-# can-profile-not-trace, continue-tracing-function and x-return are aliases
+# can-profile-not-trace, continue-tracing-function, can-trace-final-test and
+# x-return are all aliases that use the next two functions
 readonly -f profile-on profile-off print-profile-data
 readonly -f have-cmd need-cmds
 readonly -f set-FS_type--from-path	# path can be mount-dir or device
@@ -517,9 +518,8 @@ function set-glob() {
 	done
 	glob=${glob%,}
 	(( $# > 1 )) && glob="{$glob}"
-	continue-tracing-function
+	can-trace-final-test
 	[[ $glob == *['[{*?,+@!']* ]]
-	profile-off
 }
 readonly -f set-glob
 
@@ -572,9 +572,8 @@ function set-lock_paths() {
 	[[ -e $drive_monitor_lock_path && $type_glob == *[*m]* &&
 	   $name_glob == '*' ]] &&
 	lock_paths+=" $drive_monitor_lock_path"
-	continue-tracing-function
+	can-trace-final-test
 	[[ $lock_paths ]]
-	profile-off
 }
 readonly -f set-lock_paths
 
@@ -1207,9 +1206,8 @@ function set-drive_dirs() {
 			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" | sort)
 	drive_dirs=$*
 	fully-populate-custom-config-maps # ensure we support any new drives
-	continue-tracing-function
+	can-trace-final-test
 	[[ $drive_dirs ]]
-	profile-off
 }
 readonly -f set-drive_dirs
 
@@ -1237,9 +1235,8 @@ function set-drive_names() {
 	# shellcheck disable=SC2086 # we want word splitting
 	set -- $drive_dirs
 	drive_names=${*//$escaped_drive_dir_prefix/}
-	continue-tracing-function
+	can-trace-final-test
 	[[ $drive_names ]]
-	profile-off
 }
 readonly -f set-drive_names
 
@@ -1680,9 +1677,8 @@ function did-set-max_drive_names() {
 	max_drive_names=${max_drive_names% }
 
 	popd_ -q
-	continue-tracing-function
+	can-trace-final-test
 	[[ $old_max_drive_names != "$max_drive_names" ]]
-	profile-off
 }
 readonly -f did-set-max_drive_names
 
@@ -5028,9 +5024,8 @@ function set-drive_dirs--from-user-args() {
 		      drive_dirs+="$drive_dir "
 	done
 	drive_dirs=${drive_dirs% }
-	continue-tracing-function
+	can-trace-final-test
 	[[ $drive_dirs ]]
-	profile-off
 }
 readonly -f set-drive_dirs--from-user-args
 
@@ -5052,9 +5047,8 @@ function set-drive_names--from-user-args() {
 		  [[ $class ]] && echo "drive '$drive_name' has class '$class'"
 	done
 	drive_names=${drive_names% }
-	continue-tracing-function
+	can-trace-final-test
 	[[ $drive_names ]]
-	profile-off
 }
 readonly -f set-drive_names--from-user-args
 
@@ -5275,9 +5269,8 @@ function set-count-last-average-maximum-sum-files--from-stats-files() {
 
 	popd_ -q
 	TraceV 2 count last average maximum sum
-	continue-tracing-function
+	can-trace-final-test
 	(( $count != 0 ))		# did we find any files w/data?
-	profile-off
 }
 readonly -f set-count-last-average-maximum-sum-files--from-stats-files
 
