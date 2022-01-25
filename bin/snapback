@@ -1927,7 +1927,7 @@ readonly mon_overhead_drive_dir=$snapshots_replica_dir
 declare -i -A drive_name2sample_count
 declare -i -A drive_name2idle_count
 [[ -v	 idle_drive_check_period ]] ||	# can set custom value in $config_file
-readonly idle_drive_check_period=10
+readonly idle_drive_check_period=20
 
 mon-launch-globs() {
 	local drive_names=$*
@@ -1981,7 +1981,7 @@ mon-launch-globs() {
 		local partial_file_new=$partial_file.$BASHPID
 		# snapshot is non-empty if has subdirectories: get link count
 		# shellcheck disable=SC2012 # we know what's there
-		ls -ld "$@" |
+		ls -ld "$@" 2>/dev/null | # prune/update could delete it
 		awk '$2 > 2 { print $(NF) }' > "$partial_file_new" &&
 			mv "$partial_file_new" "$partial_file"
 		) &			# this can take a while
