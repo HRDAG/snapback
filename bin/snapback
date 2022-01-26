@@ -149,8 +149,9 @@ readonly -f assert-not-option echoE echoEV
 # aliases Trace and TraceV use _Trace to do the work
 readonly -f _Trace remember-tracing suspend-tracing restore-tracing
 readonly -f print-or-egrep-Usage-then-exit abort-with-action-Usage RunCmd
+# pegrep is an alias for 'grep --perl-regexp'
 # can-profile-not-trace, continue-tracing-function, can-trace-final-test and
-# x-return are all aliases that use the next two functions
+# x-return are all aliases that use the next two functions:
 readonly -f profile-on profile-off print-profile-data
 readonly -f have-cmd need-cmds
 readonly -f set-FS_type--from-path	# path can be mount-dir or device
