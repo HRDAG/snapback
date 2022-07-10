@@ -29,6 +29,7 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
       drive response times; dashboard doesn't hang if any of the drives hang.
    Can safely/easily kill/suspend/continue backup, copy, update, prune job(s).
    Maintains history of snapshots on each ejected drive (for offsite requests).
+   Time machine: chroot-backup action lets you chroot into any backup snapshot.
    Built-in regression tests to ensure reliable development.
    Actively maintained; written in bash ...
 
