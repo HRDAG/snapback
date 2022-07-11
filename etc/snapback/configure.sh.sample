@@ -218,6 +218,11 @@ declare -i backup_period=24		# don't wear out cheap disk drives
   drv_name2backup_period[X]=0		# prune, but don't do backups
   drv_name2backup_period[Z]=2		# twice the period of the mk-Z output
 
+# Use these with (pair of) drives that are too small for daily backups even
+# when months_per_span_for_day_prune= and years_per_span_for_month_prune= are 1
+drives_not_backed_up_on_even_days=
+drives_not_backed_up_on_odd_days=
+
 	 backup_days=
 drv_name2backup_days[X]="Mon   Thu"	# make archival disk live longer
 drv_name2backup_days[Y]="   Tue   Sat"	# stagger backups to archival disks

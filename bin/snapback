@@ -2990,6 +2990,17 @@ readonly -f delete-pruned-snapshot
 
 # ---------------------------------
 
+rm-snapshots() {
+	[[ ${1-} == -? ]] && { local mv_opt=$1; shift; } || local mv_opt=
+	for snapshot
+	    do	[[ $snapshot != *.rm ]] || continue
+		$IfRun $sudo mv $mv_opt "$snapshot" "$snapshot.rm"
+	done
+}
+readonly -f rm-snapshots
+
+# ---------------------------------
+
 rm-pruned-snapshots() {
 	local snapshots_file=$1
 
@@ -3000,15 +3011,23 @@ rm-pruned-snapshots() {
 	remember-tracing		# in case comment-out next line ...
 	suspend-tracing
 
-	# sort snapshots, for regression-test
-	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(tr ' ' '\n' < "$snapshots_file" | sort -u)
-	rm "$snapshots_file"
-
 	if [[ $is_update && $debug_opt ]]
 	   then local sudo=sudo-unless-dir-writable
 	   else local sudo=
 	fi
+
+	  if is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_even_days
+	   then set -- *[02468],??*
+	elif is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_odd_days
+	   then set -- *[13579],??*
+	   else set --
+	fi
+	rm-snapshots "$@"
+
+	# sort snapshots, for regression-test
+	# shellcheck disable=SC2046 # we want word splitting
+	set -- $(tr ' ' '\n' < "$snapshots_file" | sort -u)
+	rm "$snapshots_file"
 
 	# first, rename snapshots to be pruned, so can see the pruning backlog
 	local -i rm_count=0
@@ -3867,7 +3886,26 @@ readonly -f set-excluded_hours
 
 # ---------------------------------
 
+function do-skip-drive() {
+	local day=$1 drive_name=${2:-$drive_name}
+
+	[[ $day == *[02468] ]] &&
+	is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_even_days &&
+	   return 0
+
+	[[ $day == *[13579] ]] &&
+	is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_odd_days &&
+	   return 0
+
+	return 1
+}
+readonly -f do-skip-drive
+
+# ---------------------------------
+
 function _is-time-to-backup-drive {
+
+	do-skip-drive $(date +%d) && return 1
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
@@ -9322,10 +9360,8 @@ case $action in
    # rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
    ( rm | del* ) undo-action-abbrev rm
 	[[ $# != 0 ]] || abort-with-action-Usage
-	for snapshot
-	    do	[[ $snapshot != *.rm ]] || continue
-		$IfRun sudo mv -v "$snapshot" "$snapshot.rm"
-	done
+	sudo=sudo
+	rm-snapshots -v "$@"
 	;;
    # unrm snapshots: remove .rm suffixes, leaving good snapshot else .partial
    ( unrm | undel* ) undo-action-abbrev unrm
