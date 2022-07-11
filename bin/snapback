@@ -9121,6 +9121,16 @@ readonly -f _show-test-results
 
 # --------------------------------------------
 
+function report-same-results {
+
+	local highlighted_string
+	set-highlighted_string ok "-- same results!"
+	echo "$highlighted_string"
+}
+readonly -f report-same-results
+
+# --------------------------------------------
+
 _run-debug-cmds() {
 	local test=$1; shift
 	local args=$*
@@ -9144,7 +9154,7 @@ _run-debug-cmds() {
 	RunCmd $tst_cmd_ &> "$tmp_t" ; _show-test-results "$tmp_t"
 	[[ $test == u ]] &&
 	    set-srcs_dst_file && cp "$srcs_dst_file" "$tmp_t.args"
-	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
+	cmp -s "$tmp_o" "$tmp_t" && { set +x; report-same-results; return; }
 
 	echo "
 	Since different results, regenerate data cached from installed cmd ..."
@@ -9154,7 +9164,7 @@ _run-debug-cmds() {
 				       _show-test-results "$tmp_t"
 	[[ $test == u ]] &&
 	    set-srcs_dst_file && cp "$srcs_dst_file" "$tmp_o.args"
-	cmp -s "$tmp_o" "$tmp_t" && { set +x; echo "-- same results!";return; }
+	cmp -s "$tmp_o" "$tmp_t" && { set +x; report-same-results; return; }
 
 	set +x
 	set-highlighted_string error DIFFERENT results
