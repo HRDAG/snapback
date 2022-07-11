@@ -2994,6 +2994,7 @@ rm-snapshots() {
 	[[ ${1-} == -? ]] && { local mv_opt=$1; shift; } || local mv_opt=
 	for snapshot
 	    do	[[ $snapshot != *.rm ]] || continue
+		# shellcheck disable=SC2086 # *_opt may be null
 		$IfRun $sudo mv $mv_opt "$snapshot" "$snapshot.rm"
 	done
 }
@@ -3016,9 +3017,9 @@ rm-pruned-snapshots() {
 	   else local sudo=
 	fi
 
-	  if is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_even_days
+	  if is-arg1-in-arg2 "$drive_name" "$drives_not_backed_up_on_even_days"
 	   then set -- *[02468],??*
-	elif is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_odd_days
+	elif is-arg1-in-arg2 "$drive_name" "$drives_not_backed_up_on_odd_days"
 	   then set -- *[13579],??*
 	   else set --
 	fi
@@ -3890,11 +3891,11 @@ function do-skip-drive() {
 	local day=$1 drive_name=${2:-$drive_name}
 
 	[[ $day == *[02468] ]] &&
-	is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_even_days &&
+	is-arg1-in-arg2 "$drive_name" "$drives_not_backed_up_on_even_days" &&
 	   return 0
 
 	[[ $day == *[13579] ]] &&
-	is-arg1-in-arg2 $drive_name $drives_not_backed_up_on_odd_days &&
+	is-arg1-in-arg2 "$drive_name" "$drives_not_backed_up_on_odd_days" &&
 	   return 0
 
 	return 1
@@ -3905,7 +3906,7 @@ readonly -f do-skip-drive
 
 function _is-time-to-backup-drive {
 
-	do-skip-drive $(date +%d) && return 1
+	do-skip-drive "$(date +%d)" && return 1
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
