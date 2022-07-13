@@ -9384,6 +9384,7 @@ case $action in
 	[[ $# != 0 ]] || abort-with-action-Usage
 	for snapshot
 	    do	[[ $snapshot == *.rm ]] || warn "$snapshot not *.rm" ||continue
+		[[ -e $snapshot ]] || continue
 		set-drive_name- "$snapshot"
 		kill-job-on-drives prune "$drive_name"
 		$IfRun sudo mv -v "$snapshot" "${snapshot%.rm}"
