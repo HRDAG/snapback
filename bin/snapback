@@ -5360,9 +5360,11 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 	   then backup_period_mins=$(( 2*24*60 )) # backing up every other day
 	   else # shellcheck disable=SC2086	  # need to word-split
 		set -- ${drv_name2backup_days[$drive_name]-}
-		set-division -d 3 7 $#
-		set-product "$division" $(( 24*60 ))
-		backup_period_mins=${product%.*}
+		if [[ $# != 0 ]]
+		   then set-division -d 3 7 $#
+			set-product "$division" $(( 24*60 ))
+			backup_period_mins=${product%.*}
+		fi
 	fi
 	if (( average >= backup_period_mins && backup_period_mins > 0 )) &&
 	   [[ $writer_type != copy ]]	# copy suspended during backups
