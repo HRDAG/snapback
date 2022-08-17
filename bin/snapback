@@ -1488,6 +1488,12 @@ function set-drive_name-() {
 	set-cased_drive_name "$name"
 	drive_name=$cased_drive_name
 
+	is-arg1-in-arg2 "$drive_name" "$drives_not_backed_up_on_even_days" \
+				      "$drives_not_backed_up_on_odd_days" &&
+	   [[ ${drv_name2backup_days[$drive_name]-} ]] &&
+	   local vars="drv_name2backup_days & drives_not_backed_up_on_*_days"&&
+	   abort "$drive_name can't be in both $vars"
+
 	_last_fully_initialized_drive_name= # prevent weird bugs
 	x-return
 }
@@ -5595,7 +5601,7 @@ set-drive_usages() {
 		local  percent=${max_drive_usage_percent%-*}
 		((  ${#percent} ==   1 )) && percent=0$percent
 		if [[ $percent  == 100 && $watch_opt ]]
-		   then set-highlighted_string error FULL!
+		   then set-highlighted_string error FULL!!
 			percent=$highlighted_string
 		elif [[ $warn && $watch_opt ]]
 		   then [[ $percent == 99 ]] && _type=error || _type=warning
