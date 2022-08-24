@@ -108,6 +108,7 @@
 /home/*/snap/**/*[Cc]ache*/*
 /home/*/snap/**/*.cache
 /home/*/.conda/*
+/home/*/.julia/*
 /home/*/.torch/*
 /home/*/.*/bundle/*
 /home/*/tmp/*

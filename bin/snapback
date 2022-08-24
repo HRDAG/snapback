@@ -3550,6 +3550,7 @@ function prune-drive() {
 	set-prune_types "${final_prune_type-}"
 
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
+	$IfRun touch "$pruned_timestamp.partial"
 
 	[[ ${prune_sleep_time-} ]] && sleep-exe "$prune_sleep_time"
 
@@ -3580,7 +3581,8 @@ function prune-drive() {
 		rm -f "$snapshots_to_prune_file"
 	fi
 
-	$IfRun touch "$drive_dir/$pruned_timestamp" # touch even if did nothing
+	cd_ "$drive_dir"
+	$IfRun mv "$pruned_timestamp.partial" "$pruned_timestamp"
 
 	unlock prune
 }
