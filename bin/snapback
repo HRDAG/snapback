@@ -7224,7 +7224,7 @@ readonly -f watch
 
 set-GB--from-blocks() {
 	local division
-	set-division -d 2 $1 2048
+	set-division -d 3 "$1" $((1024*1024*2))
 	GB=$division
 }
 readonly -f set-GB--from-blocks
@@ -7233,16 +7233,17 @@ readonly -f set-GB--from-blocks
 du-snapshot() {
 	dir=$1
 
-	[[ -d $dir ]] && cd_ $dir || abort-function "'$dir' must be directory"
+	[[ -d $dir ]] && cd_ "$dir" ||abort-function "'$dir' must be directory"
 	set -- .??*
-	file_blocks=$(find $* * -type f -links 1 -printf "%b\n" |
+	file_blocks=$(find "$@" ./* -type f -links 1 -printf "%b\n" |
 			  awk '{total += $1} END { print total }')
-	 dir_blocks=$(find $* * -type d -printf "%b\n" |
+	 dir_blocks=$(find "$@" ./* -type d -printf "%b\n" |
 			  awk '{total += $1} END { print total }')
 	local -i total_blocks=$file_blocks+$dir_blocks
-	set-GB--from-blocks   $file_blocks; printf "files:%10.3f GB\n" $GB
-	set-GB--from-blocks    $dir_blocks; printf " dirs:%10.3f GB\n" $GB
-	set-GB--from-blocks  $total_blocks; printf "TOTAL:%10.3f GB\n" $GB
+	set-GB--from-blocks  "$file_blocks"; printf "files:%10.3f GB\n" "$GB"
+	set-GB--from-blocks   "$dir_blocks"; printf " dirs:%10.3f GB\n" "$GB"
+					     echo   "-----  ------------"
+	set-GB--from-blocks "$total_blocks"; printf "TOTAL:%10.3f GB\n" "$GB"
 }
 readonly -f du-snapshot
 
@@ -9575,7 +9576,7 @@ case $action in
 
    ( du )
 	[[ $# == 1 ]] || abort-with-action-Usage
-	du-snapshot $1
+	du-snapshot "$@"
 	;;
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
