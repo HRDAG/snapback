@@ -219,7 +219,7 @@ Usage: $our_name [options] action [options] [args]
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
-    du snapshot(s): size of files and dirs that only exist in snapshot(s)
+    du [-v] snapshot(s): size of files and dirs that only exist in snapshot(s)
     predict-prune [-q] [-f span] names: run: grep 'prun\w*=' $config_file
     dump-state [tar-file-name]: store $our_name's full state in tarball
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -7230,8 +7230,9 @@ set-GB--from-b() {
 }
 readonly -f set-GB--from-b
 
-# du snapshot(s): size of files and dirs that only exist in snapshot(s)
+# du [-v] snapshot(s): size of files and dirs that only exist in snapshot(s)
 du-snapshot() {
+	[[ $1 == -v ]] && { shift;local is_verbose=$true; } ||local is_verbose=
 	(( $# > 1 )) && local show_header=$true || local show_header=$false
 	local dir cwd=$PWD
 	for dir
@@ -7244,10 +7245,12 @@ du-snapshot() {
 		 dir_blocks=$(find .??* ./* -type d -printf "%b\n" |
 				  awk '{total += $1} END { print total }')
 		local -i total_blocks=${file_blocks:-0}+${dir_blocks:-0}
-		set-GB--from-b  "$file_blocks";printf "files:%10.3f GB\n" "$GB"
-		set-GB--from-b   "$dir_blocks";printf " dirs:%10.3f GB\n" "$GB"
-					       echo   "-----  ------------"
-		set-GB--from-b "$total_blocks";printf "TOTAL:%10.3f GB\n" "$GB"
+		[[ $is_verbose ]] && local f1="$dir: " || local f1=
+		local f2="%10.3f GB\n"
+		set-GB--from-b  "$file_blocks";printf "${f1}files:$f2" "$GB"
+		set-GB--from-b   "$dir_blocks";printf "${f1} dirs:$f2" "$GB"
+					       echo    "$f1-----  ------------"
+		set-GB--from-b "$total_blocks";printf "${f1}TOTAL:$f2" "$GB"
 	done
 }
 readonly -f du-snapshot
