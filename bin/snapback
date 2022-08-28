@@ -7243,7 +7243,7 @@ du-snapshot() {
 				  awk '{total += $1} END { print total }')
 		 dir_blocks=$(find .??* ./* -type d -printf "%b\n" |
 				  awk '{total += $1} END { print total }')
-		local -i total_blocks=$file_blocks+$dir_blocks
+		local -i total_blocks=${file_blocks:-0}+${dir_blocks:-0}
 		set-GB--from-b  "$file_blocks";printf "files:%10.3f GB\n" "$GB"
 		set-GB--from-b   "$dir_blocks";printf " dirs:%10.3f GB\n" "$GB"
 					       echo   "-----  ------------"
