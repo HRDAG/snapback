@@ -7223,6 +7223,7 @@ readonly -f watch
 ##############################################################################
 
 set-GB--from-b() {
+	[[ $# == 1 ]] || { GB=0; return; }
 	local division
 	set-division -d 3 "$1" $((1024*1024*2))
 	GB=$division
@@ -7238,10 +7239,9 @@ du-snapshot() {
 		[[ -d $dir ]] && cd_ "$dir" ||warn "'$dir' must be directory"||
 			continue
 		[[ $show_header ]] && header "$dir"
-		set -- .??*
-		file_blocks=$(find "$@" ./* -type f -links 1 -printf "%b\n" |
+		file_blocks=$(find .??* ./* -type f -links 1 -printf "%b\n" |
 				  awk '{total += $1} END { print total }')
-		 dir_blocks=$(find "$@" ./* -type d -printf "%b\n" |
+		 dir_blocks=$(find .??* ./* -type d -printf "%b\n" |
 				  awk '{total += $1} END { print total }')
 		local -i total_blocks=$file_blocks+$dir_blocks
 		set-GB--from-b  "$file_blocks";printf "files:%10.3f GB\n" "$GB"
