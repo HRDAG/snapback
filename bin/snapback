@@ -220,6 +220,7 @@ Usage: $our_name [options] action [options] [args]
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
     du [-v] snapshot(s): size of files and dirs that only exist in snapshot(s)
+    du-all  drivenamwe: size of files and dirs in all snapshots
     predict-prune [-q] [-f span] names: run: grep 'prun\w*=' $config_file
     dump-state [tar-file-name]: store $our_name's full state in tarball
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -7239,6 +7240,8 @@ du-snapshot() {
 	    do	cd_ "$cwd"
 		[[ -d $dir ]] && cd_ "$dir" ||warn "'$dir' must be directory"||
 			continue
+		set -- *
+		[[ $dir != *.partial || $1 ]] || continue # skip to-be-updated
 		[[ $show_header ]] && header "$dir"
 		file_blocks=$(find .??* ./* -type f -links 1 -printf "%b\n" |
 				  awk '{total += $1} END { print total }')

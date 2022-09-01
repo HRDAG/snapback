@@ -106,7 +106,7 @@
 # the first one may obviate the following chrome/firefox patterns
 /home/*/.[^.]*/**/*[Cc]ache*
 /home/*/snap/**/*[Cc]ache*/*
-/home/*/snap/**/*.cache
+/home/*/snap/**/.*[Cc]ache*
 /home/*/.conda/*
 /home/*/.julia/*
 /home/*/.torch/*
@@ -167,6 +167,8 @@
 /home/*/.gvfs
 /home/*/.mozilla/seamonkey/*/ImapMail
 /home/*/.mozilla/**/cache/*
+# not sure if all these can be repopulated
+/home/*/.mozilla/seamonkey/*/*.sqlite*
 # not sure if all these can be repopulated
 /home/*/.shotwell
 
