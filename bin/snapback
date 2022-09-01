@@ -9598,7 +9598,7 @@ case $action in
 	cd_ "$drive_dir" || abort "'$1' is not a drive_name"
 	# shellcheck disable=SC2046 # we want word splitting
 	# shellcheck disable=SC2086 # variable contains a glob
-	$IfRun "$our_name_" du $(ls -d -r $snapshot_glob)
+	$IfRun "$our_name_" du $(ls -d -r $snapshot_glob*)
 	;;
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
