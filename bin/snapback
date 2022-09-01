@@ -9590,6 +9590,15 @@ case $action in
 	du-snapshot "$@"
 	;;
 
+   # du-all  drivenamwe: size of files and dirs in all snapshots
+   ( du*a* ) undo-action-abbrev du-all
+	[[ $# == 1 ]] || abort-with-action-Usage
+	set-drive_name "$1"
+	set-drive_dir "$drive_name"
+	cd $drive_dir &&
+	$IfRun $our_name_ du $(ls -d -r $snapshot_glob)
+	;;
+
    ( predict*prune | pp ) undo-action-abbrev predict-prune
 	[[ $# != 0 ]] || abort-with-action-Usage
 	$action "$@"
