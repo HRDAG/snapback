@@ -9591,12 +9591,14 @@ case $action in
 	;;
 
    # du-all  drivenamwe: size of files and dirs in all snapshots
-   ( du*a* ) undo-action-abbrev du-all
+   ( du*al* | dua ) undo-action-abbrev du-all
 	[[ $# == 1 ]] || abort-with-action-Usage
-	set-drive_name "$1"
-	set-drive_dir "$drive_name"
-	cd $drive_dir &&
-	$IfRun $our_name_ du $(ls -d -r $snapshot_glob)
+	set-drive_name "$1" &&
+	set-drive_dir "$drive_name" &&
+	cd_ "$drive_dir" || abort "'$1' is not a drive_name"
+	# shellcheck disable=SC2046 # we want word splitting
+	# shellcheck disable=SC2086 # variable contains a glob
+	$IfRun "$our_name_" du $(ls -d -r $snapshot_glob)
 	;;
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
