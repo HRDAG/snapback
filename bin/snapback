@@ -219,8 +219,8 @@ Usage: $our_name [options] action [options] [args]
     ps [ps-opts]  [job-type-glob [name-glob]]: show holder(s) of lock(s)
     reset-priority [names]: reset job priorities on drives (defaults to all)
 
-    du [-v] snapshot(s): size of files and dirs that only exist in snapshot(s)
-    du-all  drivenamwe: size of files and dirs in all snapshots
+    du     [-v] snapshot(s): size of dirs, & files that only exist in snapshot
+    du-all [-v] drivenamwe: size of files and dirs in all snapshots
     predict-prune [-q] [-f span] names: run: grep 'prun\w*=' $config_file
     dump-state [tar-file-name]: store $our_name's full state in tarball
     dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
@@ -7231,9 +7231,10 @@ set-GB--from-b() {
 }
 readonly -f set-GB--from-b
 
-# du [-v] snapshot(s): size of files and dirs that only exist in snapshot(s)
+# du     [-v] snapshot(s): size of dirs, & files that only exist in snapshot
 du-snapshot() {
-	[[ $1 == -v ]] && { shift;local is_verbose=$true; } ||local is_verbose=
+	[[ ${1-} == -v ]] && { shift;local is_verbose=t; } || local is_verbose=
+	assert-not-option "${1-}"
 	(( $# > 1 )) && local show_header=$true || local show_header=$false
 	local dir cwd=$PWD
 	for dir
@@ -7241,7 +7242,7 @@ du-snapshot() {
 		[[ -d $dir ]] && cd_ "$dir" ||warn "'$dir' must be directory"||
 			continue
 		set -- *
-		[[ $dir != *.partial || $1 ]] || continue # skip to-be-updated
+		[[ $dir != *.partial || ${1-} ]] || continue # to-be-updated?
 		[[ $show_header ]] && header "$dir"
 		file_blocks=$(find .??* ./* -type f -links 1 -printf "%b\n" |
 				  awk '{total += $1} END { print total }')
@@ -9590,15 +9591,16 @@ case $action in
 	du-snapshot "$@"
 	;;
 
-   # du-all  drivenamwe: size of files and dirs in all snapshots
+   # du-all [-v] drivenamwe: size of files and dirs in all snapshots
    ( du*al* | dua ) undo-action-abbrev du-all
+	[[ ${1-} == -? ]] && { local du_opt=$1; shift; } || local du_opt=
 	[[ $# == 1 ]] || abort-with-action-Usage
 	set-drive_name "$1" &&
 	set-drive_dir "$drive_name" &&
 	cd_ "$drive_dir" || abort "'$1' is not a drive_name"
 	# shellcheck disable=SC2046 # we want word splitting
 	# shellcheck disable=SC2086 # variable contains a glob
-	$IfRun "$our_name_" du $(ls -d -r $snapshot_glob*)
+	$IfRun "$our_name_" du $du_opt $(ls -d -r $snapshot_glob*)
 	;;
 
    ( predict*prune | pp ) undo-action-abbrev predict-prune
