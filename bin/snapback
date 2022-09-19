@@ -8981,6 +8981,7 @@ function rm-untagged-snaps() {
 		job_PID=$!
 		kill-jobs prune
 		echo "$job_PID" > "$lock_path"
+		disown "$job_PID"
 	done
 	disown -a
 }
