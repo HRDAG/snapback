@@ -8951,14 +8951,14 @@ readonly -f set-sudo--if-not-root
 # ----------------------------------------------------------------------------
 
 function rm-untagged-snaps() {
-	local names=$*
-	[[ $names ]] || { set-drive_names -a; names=$drive_names; }
+	local drive_names=$*
+	[[ $drive_names ]] || set-drive_names -a
 
 	set-sudo--if-not-root
 
 	repo_dirs=${extra_excludes%/*}
-	for name in $names
-	    do	set-drive_name "$name"
+	for drive_name in $drive_names
+	    do	set-drive_name "$drive_name"
 		set-drive_dir  "$drive_name"
 		# shellcheck disable=SC2231 # variable contains a glob
 		cd "$drive_dir" &&
