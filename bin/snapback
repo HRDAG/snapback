@@ -230,7 +230,7 @@ Usage: $our_name [options] action [options] [args]
     filesystem-geometry [-a|-A|drive-dirs]: show sector, inode, block, etc
     snapshot-size dir: size of non-hard-linked files (ie in no other snapshots)
 
-    rm-untagged-snapshots [name]: for extra_includes_file=tagged-snapshots.txt
+    rm-untagged-snaps [names]: for extra_includes_file=tagged-snapshots.txt
     check-snapshot-hard-links names: find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
     test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
@@ -8944,7 +8944,7 @@ readonly -f set-sudo--if-not-root
 
 # ----------------------------------------------------------------------------
 
-function rm-untagged-snapshots() {
+function rm-untagged-snaps() {
 	local names=$*
 	[[ $names ]] || { set-drive_names -a; names=$drive_names; }
 
@@ -8983,7 +8983,7 @@ function rm-untagged-snapshots() {
 		echo "$job_PID" > "$lock_path"
 	done
 }
-readonly -f rm-untagged-snapshots
+readonly -f rm-untagged-snaps
 
 # ----------------------------------------------------------------------------
 
@@ -9509,8 +9509,8 @@ case $action in
 	create-jobs copy -s${src_snapshots// / -s} $opts "$drive_name"
 	;;
 
-   # rm-untagged-snapshots [name]: for extra_includes_file=tagged-snapshots.txt
-   ( rm*tag* ) undo-action-abbrev rm-untagged-snapshots
+   # rm-untagged-snaps [names]: for extra_includes_file=tagged-snapshots.txt
+   ( rm*tag* ) undo-action-abbrev rm-untagged-snaps
 	$action "$@"
 	;;
 
