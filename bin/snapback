@@ -1005,7 +1005,7 @@ function signal-job() {
 	   else local job_type=$1 drive_name=${2:-$drive_name}
 		suspend-tracing
 		set-drive_name- "$drive_name"
-		set-lock_path "$job_type"
+		set-lock_path "$job_type" # global variable, caller can use it
 		restore-tracing
 	fi
 
@@ -8977,9 +8977,13 @@ function rm-untagged-snapshots() {
 					$IfRun $sudo rm -r "$PWD/$snap"
 				done
 			done
-		done
+		done &
+		job_PID=$!
+		kill-jobs prune
+		echo "$job_PID" > "$lock_path"
 	done
 }
+readonly -f rm-untagged-snapshots
 
 # ----------------------------------------------------------------------------
 
