@@ -8988,6 +8988,21 @@ function rm-untagged-snaps() {
 }
 readonly -f rm-untagged-snaps
 
+# --------------------------------------------
+
+# user might have tagged a very-old snap (that's not on recent snapshots),
+# so have to pre-link every known snap into current directory
+function pre-link-snaps() {
+
+	# write set-tagged_snaps, use in previous func
+	# might need set-snap2tag or tag2snap, in case a tag is repurposed
+	# cp -al for every snap, s1-HEAD, glob for each one,
+	#    make sure oldest and newest snapshot versions are linked
+	# rsync needs to delete files/dirs not in source
+	abort "finish me"
+}
+readonly -f pre-link-snaps
+
 # ----------------------------------------------------------------------------
 
 function check-snapshot-hard-links() {
