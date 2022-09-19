@@ -6176,7 +6176,8 @@ exec-watch-snapback-w() {
 		w_opts+=" -N ${drive_names// /,}"
 	fi
 	# n >= 0.5 is best for watching wchan (when -C , plus 'sudo ps' access)
-	local watch_opt_n=$mon_check_period_secs
+	[[ ${watch_opt_n-} ]] ||
+	     watch_opt_n=$mon_check_period_secs
 	# shellcheck disable=SC2086,SC2093 # *_opts may be null or multiple
 	exec watch $watch_exe_options -n $watch_opt_n $opts \
 	     $our_path $our_opts w -w $w_opts "$@"
@@ -7133,7 +7134,7 @@ watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
 	local OPTIND opt
-	while getopts "wEsCPduN: hk" opt
+	while getopts "wEsCPduN: n: hk" opt
 	   do	case $opt in
 		   ( w ) watch_opt=-$opt ;; # internal option
 		   ( E ) no_errors=-$opt ;;
@@ -7143,6 +7144,9 @@ watch() {
 		   ( u ) user_show=-$opt ;;
 		   ( P )    bg_opt=-$opt ;;
 		   ( N ) names+=$OPTARG, ;;
+
+		   # options passed to watch
+		   ( n ) watch_opt_n=$OPTARG ;;
 
 		   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
 		   ( * ) abort "$Usage" ;;
