@@ -8982,6 +8982,7 @@ function rm-untagged-snaps() {
 		kill-jobs prune
 		echo "$job_PID" > "$lock_path"
 	done
+	disown -a
 }
 readonly -f rm-untagged-snaps
 
