@@ -5403,7 +5403,7 @@ set-hour_last-hour_avg-hour_max--from-files-of-minutes() {
 		fi
 	fi
 	if (( average >= backup_period_mins && backup_period_mins > 0 )) &&
-	   [[ $writer_type != copy ]]	# copy suspended during backups
+	   [[ $writer_type == backup ]]	# copy & rm suspended during backups
 	   then if (( average == backup_period_mins ))
 		   then local type=warning
 		   else local type=error
@@ -7264,7 +7264,8 @@ du-snapshot() {
 	(( $# > 1 )) && local show_header=$true || local show_header=$false
 	local dir cwd=$PWD
 	for dir
-	    do	cd_ "$cwd"
+	    do	dir=${dir%/}
+		cd_ "$cwd"
 		[[ -d $dir ]] && cd_ "$dir" ||warn "'$dir' must be directory"||
 			continue
 		set -- *
