@@ -1810,10 +1810,7 @@ validate-config-variables() {
 
 	local var=snapshot_date_time_separator
 	[[ ${!var} == ',' ]] ||
-	   abort "$var is not implemented, email $coder"
-	#
-	[[ ! $extra_excludes ]] ||
-	   abort "extra_excludes is not implemented, email $coder"
+	   abort "'$var' is not implemented, email $coder"
 	# have-enough-snapshots-for-backup assumes separator isn't '.'
 	local bad_punctuation="[-.:0-9]" # you could ask $coder to change this
 	[[ $snapshot_date_time_separator != *$bad_punctuation* ]] ||
@@ -3931,8 +3928,7 @@ function _is-time-to-backup-drive {
 	local    current_DoW=$4
 
 	(( $current_hour == 0 && $current_minute == 5 )) &&
-	   update-snapshots-ls &&
-	   ( cd "$log_dir" && $our_path w | echo-to-file - cron-w.txt ) &
+	    update-snapshots-ls
 
 	(( $current_hour == 6 && $current_minute == 5 )) &&
 	   write-drive-usage-vs-speed &
@@ -3955,6 +3951,23 @@ function _is-time-to-backup-drive {
 	return 0
 }
 readonly -f _is-time-to-backup-drive
+
+# ------------------------------------------------------------------
+
+function do-midnight-tasks() {
+
+	# shellcheck disable=SC2046 # we want word splitting
+	set -- $(date '+%k %_M %_d %a')
+	local -i current_hour=$1 current_minute=$2 current_DoM=$3
+
+	(( $current_hour == 0 && $current_minute <= 1 )) || return
+
+	have-cmd snapserv && [[ $extra_includes_file == *tag*snap* ]] &&
+	    snapserv show-all-tagged-snapshots |
+		echo-to-file -  $extra_includes_file
+
+	( cd "$log_dir" && $our_path w | echo-to-file - cron-w.txt ) &
+}
 
 # -----------------------------------------------------
 # the following functions support _handle-rsync-results
@@ -4100,12 +4113,23 @@ function _run-rsync-cmd() {
 
 	shopt -u nullglob   # nullglob disappears --exclude=$drive_dir_prefix*
 
+	local exclusion extra_excludes_= extra_includes_=
+	set -f				# $extra_excludes has wild cards
+	for exclusion in ${extra_excludes-}
+	    do	extra_excludes_+="--exclude=$exclusion "
+	done
+	set +f
+	[[ ${extra_includes_file-} ]] &&
+	     extra_includes_="--include-from=$extra_includes_file"
+
 	$Trace
 	# shellcheck disable=SC2086 # *_opt may be null
 	$IfRun rsync $rsync_backup_opts	\
 		     $our_rsync_opts	\
 		     $relative_opt	\
 		     $link_dest_opts	\
+		     $extra_includes_	\
+		     $extra_excludes_	\
 		     $excludes		\
 			$src_dirs $partial_dst/ |& xz -9 > $log
 	local status=${PIPESTATUS[0]}	# https://stackoverflow.com/a/20738063
@@ -9378,6 +9402,7 @@ case $action in
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
+	do-midnight-tasks
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then wait			# want to stay in 'ps'
