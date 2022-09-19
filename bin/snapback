@@ -1126,7 +1126,24 @@ readonly -f kill-job-on-drives
 
 # ----------------------------------------------------------------------------
 
+function set-lock_PID() {
+	local lock_file=$1
+
+	if [[ -s "$lock_file" ]]
+	   then lock_PID=$(< "$lock_file")
+	   else lock_PID=
+	fi
+	[[ $lock_PID ]]
+}
+readonly -f set-lock_PID
+
+# ---------------------------------
+
 function set-lock_PGIDs() {
+	if [[ ${1-} == -p ]]
+	   then local set_function=set-lock_PID	; shift
+	   else local set_function=set-lock_PGID
+	fi
 	local type=${1:-$writer_type} names_glob=${names_glob:-*}
 
 	lock_PGIDs=
@@ -1137,17 +1154,31 @@ function set-lock_PGIDs() {
 	local lock locks=
 	for lock; do [[ -s $lock ]] && locks+="$lock "; done
 
-	[[ $type == prune && ! ( $debug_opt || $show_all ) ]] &&
+	[[ $type == prune && ! ( $debug_opt || ${show_all-} ) ]] &&
 	    locks=${locks/$type-Z.pid/}
 
 	for lock in $locks
-	    do	set-lock_PGID "$lock" || continue
+	    do	"$set_function" "$lock" || continue
+		[[ ${lock_PGID-} ]] || lock_PGID=$lock_PID
 		lock_PGIDs+=$lock_PGID,
 	done 2> $dev_null	    # a lock might disappear, i.e. 'read' fails
 	lock_PGIDs=${lock_PGIDs%,}
 	[[ $lock_PGIDs ]]
 }
 readonly -f set-lock_PGIDs
+
+# ---------------------------------
+
+function set-lock_PIDs() {
+	local args=$*
+
+	local lock_PGIDs
+	# shellcheck disable=SC2086 # $args should be split into words
+	set-lock_PGIDs -p $args
+	lock_PIDs=$lock_PGIDs
+	[[ $lock_PIDs ]]
+}
+readonly -f set-lock_PIDs
 
 # ----------------------------------------------------------------------------
 
@@ -6176,7 +6207,8 @@ exec-watch-snapback-w() {
 		w_opts+=" -N ${drive_names// /,}"
 	fi
 	# n >= 0.5 is best for watching wchan (when -C , plus 'sudo ps' access)
-	local watch_opt_n=$mon_check_period_secs
+	[[ ${watch_opt_n-} ]] ||
+	     watch_opt_n=$mon_check_period_secs
 	# shellcheck disable=SC2086,SC2093 # *_opts may be null or multiple
 	exec watch $watch_exe_options -n $watch_opt_n $opts \
 	     $our_path $our_opts w -w $w_opts "$@"
@@ -6307,10 +6339,12 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 
 	num_drives=$#
 
+	set-lock_PIDs prune
 	# shellcheck disable=SC2086 # variable contains multiple values
 	! set-lock_PGIDs prune && prune_cmds= ||
-	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null  |
-     egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm|sync) ')
+	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null ||
+		 for PID in ${lock_PIDs//,/ }; do ps_ $PID; done 2>$dev_null |
+		     egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm.*tag.*|sync)($| )')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
@@ -7133,7 +7167,7 @@ watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
 	local OPTIND opt
-	while getopts "wEsCPduN: hk" opt
+	while getopts "wEsCPduN: n: hk" opt
 	   do	case $opt in
 		   ( w ) watch_opt=-$opt ;; # internal option
 		   ( E ) no_errors=-$opt ;;
@@ -7143,6 +7177,9 @@ watch() {
 		   ( u ) user_show=-$opt ;;
 		   ( P )    bg_opt=-$opt ;;
 		   ( N ) names+=$OPTARG, ;;
+
+		   # watch options
+		   ( n ) watch_opt_n=$OPTARG ;;
 
 		   (h|k) print-or-egrep-Usage-then-exit "$@" ;;
 		   ( * ) abort "$Usage" ;;
@@ -8981,7 +9018,7 @@ function rm-untagged-snaps() {
 			done
 		done &
 		job_PID=$!
-		kill-jobs prune
+		kill-jobs prune || set-lock_path prune
 		echo "$job_PID" > "$lock_path"
 		disown "$job_PID"
 	done
