@@ -949,9 +949,9 @@ readonly -f set-signal_is_stop
 function is-active-lock() {
 	set-lock_paths "$@"
 
-	local lock lock_PGID
-	for lock in $lock_paths
-	    do	set-lock_PGID "$lock" && is-process-alive "$lock_PGID" && 
+	local lock_PGID
+	for lock_path in $lock_paths	# lock_path is a global
+	    do	set-lock_PGID "$lock_path" && is-process-alive "$lock_PGID" &&
 		    return 0
 	done
 	return 1
@@ -1059,7 +1059,7 @@ function  suspend-jobs() {
 	print-call-stack "$drive_name" | tee -a "$file_for_logging"
 	_signal-jobs -STOP "$@"
 }
-function     kill-jobs() { _signal-jobs -kill "$@"; }
+function     kill-jobs() { _signal-jobs -KILL "$@"; }
 function  suspend-jobs() { _signal-jobs -STOP "$@"; }
 function continue-jobs() { _signal-jobs -CONT "$@"; }
 readonly -f suspend-jobs continue-jobs
@@ -1178,7 +1178,7 @@ function ps-locks() {
 		    { [[ -e $lock ]] && echo "empty lock file"; continue; }
 		set-lock_PGID "$lock" || continue
 		# shellcheck disable=SC2086 # *_opts may be null or multiple
-		ps $ps_opts  $ps_opt_g $lock_PGID || 
+		ps $ps_opts  $ps_opt_g $lock_PGID ||
 		ps $ps_opt_h $ps_opts  $lock_PGID
 		status=$?
 	done
@@ -3289,7 +3289,7 @@ validate-prune_globs() {
 		    do	[[ -s $tst ]] && continue
 			local skipped_value=${type2skipped_value[$type]}
 			local skipped_snapshot=$prefix$skipped_value$suffix
-			[[ $skipped_snapshot == "$tst" ]] && 
+			[[ $skipped_snapshot == "$tst" ]] &&
 			    { set +x; continue; }
 			ls -s
 			abort "$tst not pruned by type2prune_type_globs[$type]"
@@ -4528,7 +4528,7 @@ function is-dst_snapshot-needed() {
 
 	local ext=${1##*.} junk_dir=${dst_snapshot%/*}/.junk
 	[[ ! -d $1 ]] &&
-	   $IfRun mv "$1" "$junk_dir/" && 
+	   $IfRun mv "$1" "$junk_dir/" &&
 	   { warn "junk in $junk_dir/"; return 0; }
 	! [[ ${1##*/} != *.* || $ext == links || $ext == partial ]] &&
 	   $IfRun mv "$1" "$junk_dir/" &&
@@ -5187,7 +5187,7 @@ create-jobs() {
 		if set-drive_names--from-user-args "$@"
 		   then # shellcheck disable=SC2086
 			set -- $drive_names
-		elif [[ $* != [zZ] ]]	
+		elif [[ $* != [zZ] ]]
 		   then abort "no valid drive names specified: $*"
 		fi
 	fi
@@ -7314,7 +7314,7 @@ predict-prune() {
 		    sed -n -r '/^mv .*\.rm$/s@.*[/ ]@@p' > "$tmp_2"
 		[[ ! $is_quiet ]] &&
 		sort "$tmp_2" && echo
-		# 
+		#
 		count=$(wc -l < "$tmp_2"); rm "$tmp_1" "$tmp_2"
 		printf "$format\n\n" "$drive_name" "$count"
 		[[ $count == 0 ]] || is-waiting prune ||
@@ -8532,7 +8532,7 @@ function finish-copy-backup-drive() {
 	customize-and-validate-configuration-variables "$dst_name"
 
 	[[ $UID == 0 ]] || $IfRun abort "run with sudo"
-	
+
 	set-FS_type--from-path "$src_device"
 	case $FS_type in
 	   ( ext?) if is-arg1-in-arg2 -D "$action_opts"
@@ -8708,7 +8708,7 @@ measure-swapout-MBps() {
 		cat "$tmp_1"
 	fi
 
-	$IfRun sudo swapoff "$swap_dev" || 
+	$IfRun sudo swapoff "$swap_dev" ||
 	    abort "need (temporary) swap; can use action 'mkswap'"
 	$IfRun sudo \
 	dd if=/dev/zero of="$swap_dev" bs=1M count="$size_MB_1" &> "$tmp_1"
@@ -8973,7 +8973,7 @@ function rm-untagged-snaps() {
 				for snap in *
 				    do	[[ $snap == s[0-9]* ]] || continue
 					# shellcheck disable=SC2086
-					is-arg1-in-arg2 $snap $tagged_snaps && 
+					is-arg1-in-arg2 $snap $tagged_snaps &&
 					    continue
 					$IfRun $sudo rm -r "$PWD/$snap"
 				done
