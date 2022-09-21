@@ -3923,7 +3923,8 @@ set-start_hour-start_minute-start_DoM-start_DoW() {
 
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(date '+%k %_M %_d %a')
-	declare -g -i start_hour=$1 start_minute=$2 start_DoM=$3 start_DoW=$4
+	declare -g -i start_hour=$1 start_minute=$2 start_DoM=$3
+	declare -g    start_DoW=$4
 }
 readonly -f set-start_hour-start_minute-start_DoM-start_DoW
 
