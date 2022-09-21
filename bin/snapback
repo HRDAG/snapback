@@ -3919,34 +3919,39 @@ readonly -f do-skip-drive
 
 # ---------------------------------
 
+set-start_hour-start_minute-start_DoM-start_DoW() {
+
+	# shellcheck disable=SC2046 # we want word splitting
+	set -- $(date '+%k %_M %_d %a')
+	declare -g -i start_hour=$1 start_minute=$2 start_DoM=$3 start_DoW=$4
+}
+readonly -f set-start_hour-start_minute-start_DoM-start_DoW
+
+# ---------------------------------
+
 function _is-time-to-backup-drive {
 
 	do-skip-drive "$(date +%d)" && return 1
 
 	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
 
-	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(date '+%k %_M %_d %a')
-	local -i current_hour=$1 current_minute=$2 current_DoM=$3
-	local    current_DoW=$4
-
-	(( $current_hour == 0 && $current_minute == 5 )) &&
+	(( $start_hour == 0 && $start_minute == 5 )) &&
 	    update-snapshots-ls
 
-	(( $current_hour == 6 && $current_minute == 5 )) &&
+	(( $start_hour == 6 && $start_minute == 5 )) &&
 	   write-drive-usage-vs-speed &
 
 	# we're called more than hourly (to reset priorities and check logs)
-	(( $current_minute == 0 )) || [[ $debug_opt ]] || return 1
+	(( $start_minute == 0 )) || [[ $debug_opt ]] || return 1
 
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set-excluded_hours $excluded_backup_hours
-	is-arg1-in-arg2 "$current_hour" "$excluded_hours" && return 1
+	is-arg1-in-arg2 "$start_hour" "$excluded_hours" && return 1
 
 	(( $backup_period == 0 )) && return 1 # not backing up this drive?
-	(( $current_hour % $backup_period == 0 )) || return 1
-	[[ ! $backup_days ]] || (( $current_DoM == 1 )) || # 1st pruned-slowest
-	    is-arg1-in-arg2 "$current_DoW" "$backup_days" || return 1
+	(( $start_hour % $backup_period == 0 )) || return 1
+	[[ ! $backup_days ]] || (( $start_DoM == 1 )) || # 1st pruned-slowest
+	    is-arg1-in-arg2 "$start_DoW" "$backup_days" || return 1
 
 	# FIXME: need to send email if this happens
 	is-drive-usage-too-high && (( $highest_drive_usage >= 99 )) && return 1
@@ -3957,20 +3962,20 @@ readonly -f _is-time-to-backup-drive
 
 # ------------------------------------------------------------------
 
-function do-midnight-tasks() {
+function do-pre-backup-tasks() {
 
-	# shellcheck disable=SC2046 # we want word splitting
-	set -- $(date '+%k %_M %_d %a')
-	local -i current_hour=$1 current_minute=$2 current_DoM=$3
+	(( $start_minute == 0 )) || return # only do tasks hourly
 
-	(( $current_hour == 0 && $current_minute <= 1 )) || return
-
+	# prepare for possibly-hourly backups
 	have-cmd snapserv && [[ $extra_includes_file == *tag*snap* ]] &&
 	    snapserv show-all-tagged-snaps |
 		echo-to-file - "$extra_includes_file"
 
+	(( $start_hour == 0 )) || return # some tasks only done daily
+
 	( cd "$log_dir" && $our_path w | echo-to-file - cron-w.txt ) &
 }
+readonly -f do-pre-backup-tasks
 
 # -----------------------------------------------------
 # the following functions support _handle-rsync-results
@@ -6143,6 +6148,7 @@ function trim-copy-update-ps {
 	# shellcheck disable=SC1087
 	trim-ps |
 	sed -r \
+	    -e "s/--.*--[^ ]* //" \
 	    -e '/update-drive/s@ -s@ -s @' \
 	    -e "/   [^ ]*$ud/d"   \
 	    -e   "/$cpss/s@ -s@ @g" \
@@ -9478,7 +9484,8 @@ case $action in
 	[[ $# != 0  ]] || abort-with-action-Usage
 	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
-	do-midnight-tasks
+	set-start_hour-start_minute-start_DoM-start_DoW
+	do-pre-backup-tasks
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then wait			# want to stay in 'ps'
