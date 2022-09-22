@@ -8947,7 +8947,65 @@ set-sudo--if-pwd-not-writable() {
 }
 readonly -f set-sudo--if-pwd-not-writable
 
-# ---------------------------------
+# ----------------------------------------------------------------------------
+
+function check-snapshot-hard-links() {
+	local name=$1
+
+	[[ ${very_old_immutable_files-} ]] ||
+	   abort "setup very_old_immutable_files= in $config_file"
+
+	set-drive_name "$name"
+	set-drive_dir  "$drive_name"
+	cd_ "$drive_dir"
+
+	set-inum() {
+		[[ -r $1 ]] || abort "run with sudo"
+		# shellcheck disable=SC2046 # we want word splitting
+		set -- $(ls -i -d "$1" 2> $dev_null)
+		inum=$1
+		[[ $inum ]]
+	}
+
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- $snapshot_glob*
+
+	local -A file2inum
+	for old_file in $very_old_immutable_files
+	    do	$IfRun sudo -n chattr +i "$old_file" &> $dev_null # optional
+		file=$1$old_file
+		set-inum "$file" ||
+		  abort "$drive_name: $file missing from oldest snapshot $1"
+		file2inum[$old_file]=$inum
+	done
+	$Trace
+	partials=
+	while [[ $# != 0 ]]
+	    do	found_good_link=$false
+		for old_file in $very_old_immutable_files
+		    do	old_inum=${file2inum[$old_file]}
+			set-inum "$1$old_file"
+			[[ $old_inum == "$inum" ]] || continue
+			found_good_link=$true
+			break
+		done
+		[[ $found_good_link ]] && partials= && shift && continue
+		[[ $1 == *.partial  ]] && partials+="$1 " &&
+						       shift && continue
+
+		$IfRun mkdir -p .rm
+		# shellcheck disable=SC2086 # variable contains multiple values
+		set -- $partials "$@"
+		warn "$drive_name: the following have broken hard-links: $*"
+		return 1
+	done
+	echo "$drive_name: no broken hard-links!"
+}
+readonly -f check-snapshot-hard-links
+
+# ----------------------------------------------------------------------------
+# functions associated with snapserv
+# ----------------------------------------------------------------------------
 
 function set-sudo--if-not-root {
 
@@ -9017,59 +9075,104 @@ readonly -f pre-link-snaps
 
 # ----------------------------------------------------------------------------
 
-function check-snapshot-hard-links() {
-	local name=$1
+set-src-repo-snap-snap_base() {
+	local src=$1 _src=$1
 
-	[[ ${very_old_immutable_files-} ]] ||
-	   abort "setup very_old_immutable_files= in $config_file"
+	[[ -d $src ]] || abort-function "no $src dir"
+	snap_base=~snap
+	[[ $src == */*   ]] || src=$PWD/$src
+	[[ $src == */*/* ]] || src=$snap_base/$src
+	repo=$(basename "$(dirname "$src")")
+	snap=$(basename "$src")
 
-	set-drive_name "$name"
-	set-drive_dir  "$drive_name"
-	cd_ "$drive_dir"
-
-	set-inum() {
-		[[ -r $1 ]] || abort "run with sudo"
-		# shellcheck disable=SC2046 # we want word splitting
-		set -- $(ls -i -d "$1" 2> $dev_null)
-		inum=$1
-		[[ $inum ]]
-	}
-
-	# shellcheck disable=SC2086 # variable contains a glob
-	set -- $snapshot_glob*
-
-	local -A file2inum
-	for old_file in $very_old_immutable_files
-	    do	$IfRun sudo -n chattr +i "$old_file" &> $dev_null # optional
-		file=$1$old_file
-		set-inum "$file" ||
-		  abort "$drive_name: $file missing from oldest snapshot $1"
-		file2inum[$old_file]=$inum
-	done
-	$Trace
-	partials=
-	while [[ $# != 0 ]]
-	    do	found_good_link=$false
-		for old_file in $very_old_immutable_files
-		    do	old_inum=${file2inum[$old_file]}
-			set-inum "$1$old_file"
-			[[ $old_inum == "$inum" ]] || continue
-			found_good_link=$true
-			break
-		done
-		[[ $found_good_link ]] && partials= && shift && continue
-		[[ $1 == *.partial  ]] && partials+="$1 " &&
-						       shift && continue
-
-		$IfRun mkdir -p .rm
-		# shellcheck disable=SC2086 # variable contains multiple values
-		set -- $partials "$@"
-		warn "$drive_name: the following have broken hard-links: $*"
-		return 1
-	done
-	echo "$drive_name: no broken hard-links!"
+	[[ $snap == s[1-9]* ]] || snap=$(readlink "$src") ||
+	    abort-function "$src not a snapshot"
+	[[ -d $src ]] || abort-function "$_src doesn't point to snap dir"
 }
-readonly -f check-snapshot-hard-links
+readonly -f set-src-repo-snap-snap_base
+
+# ---------------------------------
+
+function _set-old_src() {
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- $snapshot_glob$suffix/$snap_base/$repo/$1
+	(( $# == 0 )) && return 1
+	old_src=${!#}
+}
+readonly -f _set-old_src
+
+# ---------------------------------
+
+set-best_src() {
+	local src=$1$lower_src=$2 higher_src=$3
+	best_src=$higher_src
+}
+readonly -f set-best_src
+
+# ---------------------------------
+
+function set-old_src--from-best-snap() {
+	local src=$1
+
+	max_snap_num=$(readlink "$(dirname "$src")"/HEAD)
+	old_src= lower_src= higher_src=
+	local -i i snap_num=${snap#s}
+	for suffix in '' .rm .links
+	   do	[[ $lower_src ]] || {
+		for (( i=$snap_num-1; i > 0; i-- ))
+		    do	_set-old_src "s$i" && break
+		done; lower_src=$old_src; }
+
+		[[ $higher_src ]] || {
+		for (( i=$snap_num+1; i <= $max_snap_num; i++ ))
+		    do	_set-old_src "s$i" && break
+		done; higher_src=$old_src; }
+
+		[[ $lower_src && $higher_src ]] && break
+	done
+	if [[ $lower_src && $higher_src ]]
+	   then set-best_src "$src" "$lower_src" "$higher_src"
+		old_src=$best_src
+	elif [[ $lower_src ]]
+	   then old_src=$lower_src
+	elif [[ $higher_src ]]
+	   then old_src=$higher_src
+	fi
+}
+readonly -f set-old_src--from-best-snap
+
+# ---------------------------------
+
+link-snap() {
+	local src=${1%/}; shift; drive_names=$*
+
+	set-src-repo-snap-snap_base "$src"
+	[[ $drive_names ]] || set-drive_names
+
+	for drive_name in $drive_names
+	    do	set-drive_name "$drive_name"
+		set-drive_dir  "$drive_name"
+		cd_ "$drive_dir"
+		if [[ -d latest/$snap_base/$repo/$snap ]]
+		   then [[ $debug_opt ]] && echo "$drive_name has $src"
+			continue
+		fi
+
+		old_src=
+		for suffix in '' .rm .links
+		   do	_set-old_src "$snap" && break
+		done
+		[[ $old_src ]] || set-old_src--from-best-snap "$src"
+		[[ $old_src ]] || warn "no backed-up $repo snaps" || return 1
+
+		# shellcheck disable=SC2086 # variable contains a glob
+		set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
+		dst=${!#}/$snap_base/$repo/$(basename "$old_src")
+		$IfRun mkdir -p "$(dirname "$dst")" # rsync fixes perms
+		$IfRun cp -al "$old_src" "$dst"
+	done
+}
+readonly -f link-snap
 
 # ----------------------------------------------------------------------------
 # regression tests for "old" (installed) vs "tst" (workspace) snapback
