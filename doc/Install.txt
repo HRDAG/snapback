@@ -443,8 +443,8 @@ The snapback repo includes a file to change the default:
 
     etc/sysctl.d/60-snapback.conf
 
-Then you want to run the 'pmie' command, typically by installing the 'pcp'
-package.
+After you install that file, you'll want to run the 'pmie' command, which can
+be typically be installed from the 'pcp' package.
 
 If you make vm.vfs_cache_pressure too low, pmie will write a message to syslog
 that that looks like:
@@ -554,7 +554,7 @@ in 'man 1 sleep'.
 itself (with some tuning-priorities specified by you), ask sweikart@gmail.com
 to implement something like the ideas in doc/extra-prune.txt .]
 
-After you change a *prun* variables, measure the impact with:
+After you change *prun* variables, measure the impact with:
 
     snapback predict-pruning [-f span] all # can specify name(s) instead of all
 
@@ -571,7 +571,7 @@ pruning with:
 
 to kill all the prune jobs that are sleeping.
 
-Soon after cron kicks of new prune jobs, "snapback watch" will show that your
+Soon after cron kicks off new prune jobs, "snapback watch" will show that your
 drive now has non-0 "Number pruned .rm snaps awaiting rm -r"; you'll need to
 wait until this value goes to 0, then decide if your tuning-change freed up
 enough disk space.  See doc/watch.txt for more details on watching how the
