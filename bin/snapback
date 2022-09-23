@@ -3649,9 +3649,11 @@ set-num_full_link_dests() {
 	# which can flush more useful entries from the cache: not worth it
 	num_full_link_dests=2
 
-	# when this is small, there's a greater chance that the --link-dest
-	# directory's inodes fit in the inode cache, which makes backups
-	# of 12M files (on an SSD) in 5 minutes, i.e. rsync links 40K files/sec
+	# NEW: when this is small, there's a greater chance that the
+	# --link-dest directory's inodes fit in the inode cache, which makes
+	# backups of 12M files (on an SSD) in 5 minutes, i.e. rsync links 40K
+	# files/sec; also, when inodes fit in the inode cache, you don't
+	# beatup backup disks as much, so they should live longer.
 	num_full_link_dests=1
 }
 readonly -f set-num_full_link_dests
@@ -3704,21 +3706,22 @@ set-link_dest_dirs() {
 	remember-tracing
 	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
 	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
+	local -i num=$num_full_link_dests
 	local snapshot
 	for snapshot in "$@"
 	    do	[[ -d  $snapshot ]] || continue
 		# shellcheck disable=SC2086
 		set -- $snapshot/*
 		[[ $# != 0 ]] || continue # update's empty snapshot?
+
+		link_dest_dirs+=" $PWD/$snapshot"
 		# don't consider *.partial or *.links to be adequate;
 		# rsync allows 20 --link-dest options max (10 per direction)
 		case $snapshot in
-		   (*.links) (( ++links_snapshots > 3 )) && continue ;;
-		   (*.*    ) (( ++junky_snapshots > 2 )) && continue ;;
-		   ( *     ) (( ++goody_snapshots >= $num_full_link_dests )) &&
-				 link_dest_dirs+=" $PWD/$snapshot" && break ;;
+		   (*.links) (( ++links_snapshots >= $num )) && break ;;
+		   (*.*    ) (( ++junky_snapshots >     2 )) && continue ;;
+		   ( *     ) (( ++goody_snapshots >= $num )) && break ;;
 		esac
-		link_dest_dirs+=" $PWD/$snapshot"
 		suspend-tracing -l
 	done
 	restore-tracing link_dest_dirs
@@ -9111,7 +9114,8 @@ readonly -f _set-old_src
 
 function find-signatures {
 
-	true
+	# bytes,modify time in seconds,path
+	find * -type f -printf "%s,%T@,%p\n"
 }
 readonly -f find-signatures
 
