@@ -3634,7 +3634,7 @@ declare -i num_full_link_dests
 
 set-num_full_link_dests() {
 
-	# need at least 2 --link-dest args in case the sysadmnin borked one,
+	# OLD: need at least 2 --link-dest args in case sysadmnin borked one,
 	# and a few hours worth in case a file was deleted then recovered;
 	# don't make this too large, it slows recovery from "Too many links"
 	if (( $backup_period == 1 ))
@@ -3648,14 +3648,19 @@ set-num_full_link_dests() {
 	# require disk accesses on a cache miss) for no good reason,
 	# which can flush more useful entries from the cache: not worth it
 	num_full_link_dests=2
+
+	# when this is small, there's a greater chance that the --link-dest
+	# directory's inodes fit in the inode cache, which makes backups
+	# of 12M files (on an SSD) in 5 minutes, i.e. rsync links 40K files/sec
+	num_full_link_dests=1
 }
 readonly -f set-num_full_link_dests
 
 # ----------------------
 
-# there must be two full snapshots that are newer than the passed snapshot,
-# else copy/update could be creating the same newish file as backup-drives
-# but in a different .partial dir.
+# backup-drive needs $num_full_link_dests full snapshots that are newer than
+# the passed snapshot, else copy/update could be creating the same newish file
+# as backup-drives but in a different .partial dir.
 function have-enough-snapshots-for-backup() {
 	local snapshot_path=$1
 
@@ -9045,8 +9050,8 @@ function rm-untagged-snaps() {
 					# shellcheck disable=SC2086
 					is-arg1-in-arg2 $snap $tagged_snaps &&
 					    continue
-					$IfRun $sudo rm -r "$PWD/$snap"
-				done
+					echo "$PWD/$snap" # $PWD/ for 'ps' cmd
+				done | xargs $IfRun $sudo rm -f -r
 			done
 		done &
 		job_PID=$!
@@ -9058,7 +9063,7 @@ function rm-untagged-snaps() {
 }
 readonly -f rm-untagged-snaps
 
-# --------------------------------------------
+# -----------------------------------------------------------------------------
 
 # user might have tagged a very-old snap (that's not on recent snapshots),
 # so have to pre-link every known snap into current directory
@@ -9076,7 +9081,7 @@ readonly -f pre-link-snaps
 # ----------------------------------------------------------------------------
 
 set-src-repo-snap-snap_base() {
-	local src=$1 _src=$1
+	src=$1; local _src=$1		# src is a global
 
 	[[ -d $src ]] || abort-function "no $src dir"
 	snap_base=~snap
@@ -9094,6 +9099,7 @@ readonly -f set-src-repo-snap-snap_base
 # ---------------------------------
 
 function _set-old_src() {
+	[[ ${snap_base-} ]] || set-src-repo-snap-snap_base "$src" # for 'run'
 	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $snapshot_glob$suffix/$snap_base/$repo/$1
 	(( $# == 0 )) && return 1
@@ -9103,6 +9109,14 @@ readonly -f _set-old_src
 
 # ---------------------------------
 
+function find-signatures {
+
+	true
+}
+readonly -f find-signatures
+
+# ----------------------
+
 set-best_src() {
 	local src=$1$lower_src=$2 higher_src=$3
 	best_src=$higher_src
@@ -9111,7 +9125,7 @@ readonly -f set-best_src
 
 # ---------------------------------
 
-function set-old_src--from-best-snap() {
+set-old_src--from-best-snap() {
 	local src=$1
 
 	max_snap_num=$(readlink "$(dirname "$src")"/HEAD)
