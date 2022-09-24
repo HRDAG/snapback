@@ -9116,6 +9116,7 @@ readonly -f _set-old_src
 function find-signatures {
 
 	# bytes,modify time in seconds,path
+	# shellcheck disable=SC2035 # don't want ./path
 	find * -type f -printf "%s,%T@,%p\n"
 }
 readonly -f find-signatures
