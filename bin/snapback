@@ -3704,9 +3704,8 @@ set-link_dest_dirs() {
 	[[ -d ${1-} ]] || return
 
 	remember-tracing
-	local -i goody_snapshots=0 links_snapshots=0 junky_snapshots=0
-	_have-full-snapshot || junky_snapshots=-10 # big src, slow/flakey dst?
-	local -i num=$num_full_link_dests
+	local -i goody_snapshots=0 junky_snapshots=0
+	_have-full-snapshot || junky_snapshots=-8 # big src, slow/flakey dst?
 	local snapshot
 	for snapshot in "$@"
 	    do	[[ -d  $snapshot ]] || continue
@@ -3714,15 +3713,17 @@ set-link_dest_dirs() {
 		set -- $snapshot/*
 		[[ $# != 0 ]] || continue # update's empty snapshot?
 
-		link_dest_dirs+=" $PWD/$snapshot"
-		# don't consider *.partial or *.links to be adequate;
+		# don't consider *.partial to be adequate;
 		# rsync allows 20 --link-dest options max (10 per direction)
 		case $snapshot in
-		   (*.links) (( ++links_snapshots >= $num )) && break ;;
-		   (*.*    ) (( ++junky_snapshots >     2 )) && continue ;;
-		   ( *     ) (( ++goody_snapshots >= $num )) && break ;;
+		   (*.links) goody_snapshots+=1 ;;
+		   (*.*    ) (( ++junky_snapshots > 2 )) && snapshot= ;;
+		   ( *     ) goody_snapshots+=1 ;;
 		esac
+		[[ $snapshot ]] &&
+		link_dest_dirs+=" $PWD/$snapshot"
 		suspend-tracing -l
+		 (( $goody_snapshots >= $num_full_link_dests )) && break
 	done
 	restore-tracing link_dest_dirs
 }
