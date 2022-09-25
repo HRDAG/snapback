@@ -4809,6 +4809,7 @@ declare -A basename2dirs basename2is_keep
 set-basename2dirs-basename2is_keep() {
 	local dirs_generator=${1:-src_dirs-for-update}
 
+	set-src_names_glob-src_names_regex
 	local name_glob
 	set-name_glob "${excluded_src_names_glob-}"
 	local excluded_names_glob=$name_glob
@@ -4845,7 +4846,6 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	   else local sudo=sudo-unless-dir-writable
 	fi
 
-	set-src_names_glob-src_names_regex
 	set-basename2dirs-basename2is_keep
 	# sort basenames for regression-test, newest first (to aid backup)
 	# shellcheck disable=SC2046,SC2086
