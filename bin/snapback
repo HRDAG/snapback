@@ -4780,6 +4780,7 @@ readonly -f _set-drive_dirs--for-update-srcs
 
 src_dirs-for-update() {
 
+	set-src_names_glob-src_names_regex
 	_set-drive_dirs--for-update-srcs ||
 	   abort "couldn't find any drives to copy to $drive_name"
 
@@ -4844,6 +4845,7 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	   else local sudo=sudo-unless-dir-writable
 	fi
 
+	set-src_names_glob-src_names_regex
 	set-basename2dirs-basename2is_keep
 	# sort basenames for regression-test, newest first (to aid backup)
 	# shellcheck disable=SC2046,SC2086
@@ -5064,7 +5066,6 @@ function update-drive() {
 	rmdir ./*.partial &> $dev_null	# in case crashed
 
 	set-srcs_dst_file
-	set-src_names_glob-src_names_regex # used by following plus later
 	mkdir-missing-snapshots-then-print-copy-args > "$srcs_dst_file"
 
 	prune-drive "$drive_name"
