@@ -3723,7 +3723,7 @@ set-link_dest_dirs() {
 		[[ $snapshot ]] &&
 		link_dest_dirs+=" $PWD/$snapshot"
 		suspend-tracing -l
-		 (( $goody_snapshots >= $num_full_link_dests )) && break
+		(( $goody_snapshots >= $num_full_link_dests )) && break
 	done
 	restore-tracing link_dest_dirs
 }
@@ -3850,12 +3850,13 @@ set-link_dest_opts--for-copy-snapshot() {
 	# most-recently scanned, so it's in the VFS cache (directory and inode
 	# caches), even if it's not the "nearest neighbor" (and thus less
 	# likely to have what's needed): the most-recently-scanned snapshot is
-	# $previously_copied_snapshot, the one we just created.  Since this
-	# first snapshot is older than $new_snapshot, the next snapshot should
-	# be newer: the 'latest' snapshot should be in the VFS cache, because
-	# it's the most recent backup (if it's not in the cache, it needs to
-	# be in the cache, for the next backup). For subsequent snapshots, do:
-	# older, then newer, then even-older, then even-newer, ...
+	# $previously_copied_snapshot (if we'd previously copied a snapshot).
+	# Since this first snapshot is (probably) older than $new_snapshot,
+	# the next snapshot should be newer: the 'latest' snapshot should be
+	# in the VFS cache, because it's the most recent backup (if it's not
+	# in the cache, it needs to be in the cache, for the next backup). For
+	# subsequent snapshots, do: older, then newer, then even-older, then
+	# even-newer, ...
 
 	local link_dest_fast_dirs=${previously_copied_snapshot-}
 	set-latest_snapshot && link_dest_fast_dirs+=" $latest_snapshot"
