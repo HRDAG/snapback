@@ -3600,23 +3600,20 @@ readonly -f prune-drive
 # functions to setup --link-dest args to rsync
 # ----------------------------------------------------------------------------
 
-latest_snapshot=
+newest_snapshot=
 
 # shellcheck disable=SC2120 # drive_name args are optional
-function set-latest_snapshot() {
+function set-newest_snapshot() {
 	local drive_dir=${1:-$drive_dir}
 
-	[[ $latest_snapshot ]] && return 0
-
-	latest_snapshot=$drive_dir/latest
-	[[ -d $latest_snapshot ]] || { latest_snapshot= ; return 1; }
-
-	local absolute_dir
-	set-absolute_dir "$latest_snapshot"
-	latest_snapshot=$absolute_dir
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- $drive_dir/$snapshot_glob+(|.partial|.links)
+	(( $# != 0 )) || { newest_snapshot= ; return 1; }
+	newest_snapshot=${!#}
+	[[ -d $newest_snapshot ]] || abort-function "$newest_snapshot not dir"
 	return 0
 }
-readonly -f set-latest_snapshot
+readonly -f set-newest_snapshot
 
 # ----------------------------------------------------------------------------
 
@@ -3859,14 +3856,16 @@ set-link_dest_opts--for-copy-snapshot() {
 	# even-newer, ...
 
 	local link_dest_fast_dirs=${previously_copied_snapshot-}
-	set-latest_snapshot && link_dest_fast_dirs+=" $latest_snapshot"
+	set-newest_snapshot &&
+	    [[ $(basename ${newest_snapshot%.*}) != "$new_snapshot" ]] &&
+		link_dest_fast_dirs+=" $newest_snapshot"
 
-	# $link_dest_fast_dirs usually has 2 dirs && num_full_link_dests == 2,
-	# so we only need 1 (full) snapshot from $older_link_dest_dirs and from
-	# $newer_link_dest_dirs, so we won't bother to alternate between them.
+	# if $num_full_link_dests > 1, we only need 1-less (full) snapshot from
+	# $older_link_dest_dirs and from $newer_link_dest_dirs
 
 	set-num_full_link_dests
-	[[ ${previously_copied_snapshot-} && $latest_snapshot ]] &&
+	[[ $num_full_link_dests != 1 &&
+	   $link_dest_fast_dirs == *?' '* ]] && # already have 2 snapshots?
 	    (( num_full_link_dests-=1 ))
 	TraceV 5  link_dest_fast_dirs num_full_link_dests
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -3874,7 +3873,7 @@ set-link_dest_opts--for-copy-snapshot() {
 						      $link_dest_fast_dirs
 
 	# For a server that has continually-added and never-deleted files
-	# (like a git or snapshot server), $latest_snapshot is almost as
+	# (like a git or snapshot server), $newest_snapshot is almost as
 	# effective as $newer_link_dest_dirs; otherwise, you might want
 	# $newer_link_dest_dirs to precede $older_link_dest_dirs .
 	# shellcheck disable=SC2086 # variable contains multiple values
