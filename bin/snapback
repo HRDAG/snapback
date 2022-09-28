@@ -7698,6 +7698,16 @@ has-new-snapshots() {
 	$Trace
 	is-drive-mounted "$drive_dir" || exit-normally 0
 
+	local infrequently_backed_up_names="
+	$drives_not_backed_up_on_even_days
+	$drives_not_backed_up_on_odd_days
+	${!drv_name2backup_days[*]}"
+	if [[ ${infrequently_backed_up_names// /} ]]
+	   then set-drive_name  "$drive_dir"
+		is-arg1-in-arg2 "$drive_name" "$infrequently_backed_up_names"&&
+		    return
+	fi
+
 	suspend-tracing
 	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $drive_dir/$snapshot_glob # all the _successful_ snapshots
