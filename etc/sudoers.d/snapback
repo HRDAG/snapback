@@ -1,6 +1,6 @@
 # 'snapback watch -C' runs repeated 'sudo ps', which will fill up auth.log;
 #    it also runs a few rmdir commands at startup (not repeated).
-# Run many mkdir & mv cmds (and 1 rmdir) for each 'update' regression test.
+# Run many mkdir & mv cmds (and 1 rmdir) for each 'update' acceptance test.
 # ionice and renice are run for every 'backup' and 'prune'.
 # lockpid is run when kill-*.
 # 'mkfs'/etc run umount and tune2fs; 'dir-sizes' runs find.

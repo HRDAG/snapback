@@ -497,7 +497,7 @@ i.e. the first letter of each word in the acronym name.  Here's some examples:
 
     pp -> predict-prune
 
-    rt -> regression-test
+    at -> acceptance-test
 
 Also, I have a couple of shortcuts in my ~/.bashrc :
 
@@ -588,7 +588,7 @@ can recover with something like (you can replace '/*/' with '/{drive-name}/'):
 Remember, you don't need to change the global tuning variables, you can set a
 custom value for each drive (partition) that's running out of resources.  To
 see examples of this, search configure.sh for '[Z]', to see how very-small
-values are used for the pseudo-drive named 'Z' ('Z' is used for regression
+values are used for the pseudo-drive named 'Z' ('Z' is used for acceptance
 tests, and for studying how pruning works with the "-T 5" option to snapback);
 or search configure.sh for '[X]' (sample customizations).
 

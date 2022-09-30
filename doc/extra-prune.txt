@@ -63,7 +63,7 @@ automagically changing pruning/backup_period to manage high disk usage
    the snapshot they used, and the time-granularity that was adequate for the
    recovery), so they can develop a notion to manage all these variables.  I'd
    guess it would take a large fraction of a day to implement this policy, and
-   longer if I do a full regression test (I'm not sure that's needed).
+   longer if I do a full acceptance test (I'm not sure that's needed).
 
    If the disk usage falls back under $min_FS_usage_percent, I'd start working
    backwards through the actions in $free_disk_usage_actions=2, i.e. unwinding

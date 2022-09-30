@@ -30,7 +30,7 @@ Why snapback not rsnapshot or rsync-snapshot (or dirvish):
    Can safely/easily kill/suspend/continue backup, copy, update, prune job(s).
    Maintains history of snapshots on each ejected drive (for offsite requests).
    Time machine: chroot-backup action lets you chroot into any backup snapshot.
-   Built-in regression tests to ensure reliable development.
+   Built-in acceptance tests to ensure reliable development.
    Actively maintained; written in bash ...
 
 Why write such a serious program in bash:
@@ -38,7 +38,7 @@ Why write such a serious program in bash:
    Language efficiency is irrelevant, all the time is spent in 'rsync' & 'rm'.
    Bash has needed features: lists, regular arrays, associative arrays, regex.
    Supports tracing of all commands, for deep debugging (or learning new code).
-   Supports simulation, which allows trivial creation of fast regression tests.
+   Supports simulation, which allows trivial creation of fast acceptance tests.
    Supports flexible logging and debug-printing; prints a call stack on error.
    Can use shellcheck (lint for bash) to catch errors (e.g. mis-spelled vars).
    Simple support of background processes with control of session groups: jobs.
@@ -47,6 +47,6 @@ Why write such a serious program in bash:
       easy/reliable validation that all config variables were set;
       per-variable customization (associative array maps drive name to value).
    Start with a simple script, evolve it into a reliable, featureful one
-      (with regression-testing after each change).
+      (with acceptance-testing after each change).
    [But if someone rewrites parts of it in Python, such as the monitor-drives
       or watch actions, I'll adopt them!)

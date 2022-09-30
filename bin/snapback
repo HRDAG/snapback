@@ -42,11 +42,11 @@ if command $lib 2> /dev/null
 fi
 (( $libsnap_version >= 1 )) || abort "need latest version of $lib"
 #
-if   is-arg1-in-arg2 -E "${1-}" # regression-test wants alternative config_dir?
+if   is-arg1-in-arg2 -E "${1-}" # acceptance-test wants alternative config_dir?
    then _args=" $*"
 	config_dir=${_args/* -E /}
 	config_dir=${config_dir%% *}
-elif is-arg1-in-arg2 -e "${1-}" #regression-test wants config_file in snapshot?
+elif is-arg1-in-arg2 -e "${1-}" #acceptance-test wants config_file in snapshot?
    then _root=$our_path
 	if [[  $_root =~ .*/([0-9]{4}-[!/]+|latest)/ ]]
 	   then _root=${BASH_REMATCH[0]}
@@ -233,8 +233,8 @@ Usage: $our_name [options] action [options] [args]
     rm-untagged-snaps [names]: for extra_includes_file=tagged-snaps.txt
     check-snapshot-hard-links names: find snapshots with broken hard links
     mk-Z [date [period]]: create mostly-empty snapshot dirs in Z mount-point
-    test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
-    regression-test [-t] [tests]: check functionality, results in $tmp_dir/??
+    test-prune: use mk-Z to run pruning acceptance test in the Z pseudo-drive
+    acceptance-test [-t] [tests]: check functionality, results in $tmp_dir/??
     chroot-backup date,time [command]: chroot to snapshot on fastest drive
     shellcheck: run shellcheck utility on this script
     run [-v var-names] func-name [args]: run func-name, echo var-names values;
@@ -252,7 +252,7 @@ Usage: $our_name [options] action [options] [args]
 	-r rsync-opt: pass rsync-opt to rsync (can appear multiple times)
 
 	-E dir: use dir for config, instead of {~,/usr/local,}/etc/$our_name/
-	-e: use *etc/snapback in same snapshot used by: regression-test -d date
+	-e: use *etc/snapback in same snapshot used by: acceptance-test -d date
 	-d: Debug shell script (don't run commands, just show them): simulation
 	-t: Trace shell script (show commands as they execute)
 	-T level: control whether Trace & TraceV functions run echoE & echoEV
@@ -467,7 +467,7 @@ function sudo-lockpid() {
 	    echo "$PS4 $sudo_lockpid" >&2
 	# shellcheck disable=SC2086 # *opt may be null
 	$IfRun $sudo_lockpid $opt ${is_optional:+-q} "$@" |
-	    sed "s/--pid=[0-9]*/--pid=PID/" # for regression-test, when $IfRun
+	    sed "s/--pid=[0-9]*/--pid=PID/" # for acceptance-test, when $IfRun
 }
 readonly -f sudo-lockpid
 
@@ -626,7 +626,7 @@ function lock-PID() {
 	if [[ $status == 0 ]]
 	   then if [[ $lockpid_output ]]
 		   then # shellcheck disable=SC2001
-			if [[ ! $is_regression_test ]]
+			if [[ ! $is_acceptance_test ]]
 			   then echo "$lockpid_output"
 			   else echo "$lockpid_output" |
 				   sed "s/--pid=[0-9]*/--pid=PID/"
@@ -775,7 +775,7 @@ function lock() {
 	    { local status=$?; x-return $status; }
 	local primary_lock_file=$lock_file # lock-PID set lock_file
 
-	! [[ $action == update* && $debug_opt ]] && # not regression-test?
+	! [[ $action == update* && $debug_opt ]] && # not acceptance-test?
 	# this 'if' logic is similar to the logic in _signal-job()
 	if is-multi-writer-drive || [[ $type == backup || $no_prune ]]
 	   then true
@@ -1355,7 +1355,7 @@ fix-drive_dir-perms() {
 	set-admin_group &&
 	chgrp "$admin_group" "$drive_dir"/{.,.??*} &&
 	# this will _not_ make non-empty snapshots deletable by group
-	chmod g+w	     "$drive_dir"/{.,.??*} # for 'u' regression test
+	chmod g+w	     "$drive_dir"/{.,.??*} # for 'u' acceptance test
 }
 readonly -f fix-drive_dir-perms
 
@@ -1378,7 +1378,7 @@ create-lock_dir-log_dirs() {
 
 	if [[ ! -d $drive_log_dir ]]
 	   then sudo mkdir -p "$drive_log_dir"
-		[[ $is_regression_test ]] &&
+		[[ $is_acceptance_test ]] &&
 		sudo touch "$file_for_logging" &&
 		sudo chown "$LOGNAME" "$drive_log_dir" "$file_for_logging"
 	fi
@@ -1389,8 +1389,8 @@ readonly -f create-lock_dir-log_dirs
 # -----------------------------------
 
 if [[ $debug_opt && $is_cron ]]
-   then is_regression_test=$true
-   else is_regression_test=$false
+   then is_acceptance_test=$true
+   else is_acceptance_test=$false
 fi
 
 readonly none=NoNe
@@ -1398,11 +1398,11 @@ _last_fully_initialized_drive_name=
 
 # this is normally called by set-drive_name; but you can pass
 # a null drive_name to set default file_for_logging & drive_log_dir
-set-drive_log_dir-file_for_logging-is_regression_test() {
+set-drive_log_dir-file_for_logging-is_acceptance_test() {
 	local  drive_name=${1-}	     # called from set-drive_name, so $1 valid
 
 	[[ $drive_name == [zZ] || ( $debug_opt && $is_cron ) ]] &&
-	    is_regression_test=$true
+	    is_acceptance_test=$true
 
 	if [[ $drive_name ]]
 	   then drive_log_dir=$drives_log_dir/$drive_name
@@ -1419,7 +1419,7 @@ set-drive_log_dir-file_for_logging-is_regression_test() {
 
 	customize-and-validate-configuration-variables "$drive_name"
 }
-readonly -f set-drive_log_dir-file_for_logging-is_regression_test
+readonly -f set-drive_log_dir-file_for_logging-is_acceptance_test
 
 # ----------------------------------------------------------------------------
 # functions for naming and finding backup drives
@@ -1546,7 +1546,7 @@ set-drive_name() {
 
 	${set_drive_name_post_hook-} # can munge 'drive_name' variable
 
-	set-drive_log_dir-file_for_logging-is_regression_test "$drive_name"
+	set-drive_log_dir-file_for_logging-is_acceptance_test "$drive_name"
 }
 readonly -f set-drive_name
 
@@ -1600,7 +1600,7 @@ function set-drive_dir() {
 
 	set-drive_dir-
 
-	if [[ $is_regression_test && ! -d $drive_dir ]]
+	if [[ $is_acceptance_test && ! -d $drive_dir ]]
 	   then	set-admin_group
 		[[ $admin_group ]] && local group=:$admin_group || local group=
 		[[ $is_darwin ]] &&
@@ -1775,7 +1775,7 @@ customize-config-variables() {
 	fully-populate-custom-config-maps $drive_name
 
 	[[ $drive_name ]] || return
-	[[ $drive_name == [zZ] ]] && is_regression_test=$true
+	[[ $drive_name == [zZ] ]] && is_acceptance_test=$true
 
 	remember-tracing
 	local var_name
@@ -2339,7 +2339,7 @@ function set-priority() {
 	$IfRun $CPU_priority_cmd $PGID && { [[ ! $IO_priority_cmd ]] ||
 	$IfRun  $IO_priority_cmd $PGID					; }
 	} 2> $dev_null |
-	if [[ $is_regression_test ]]
+	if [[ $is_acceptance_test ]]
 	   then sed "s@\b$PGID\b@<a_PGID>@"
 	   else egrep -v ' new priority '
 	fi
@@ -2452,7 +2452,7 @@ create-stats_subdir-and-symlink-to-it() {
 	local stats_subdir=$1
 
 	local dir=$drive_log_dir/$stats_subdir
-	mkdir -p "$dir" # also for pseudo-drive Z, so regression tests readable
+	mkdir -p "$dir" # also for pseudo-drive Z, so acceptance tests readable
 	local link=$log_dir/$stats_subdir/$drive_name
 	$IfRun mkdir -p "${link%/*}"
 	[[ -e $link ]] ||
@@ -2525,7 +2525,7 @@ save-stats-file() {
 		   else data="this was a restart, rsync-minutes unknown"
 		fi
 	   else [[ ( $data == -1 || $data == 1 ) && $debug_opt ]] &&
-		    data=0		# for regression test
+		    data=0		# for acceptance test
 		if [[ $writer_type != prune ]]
 		   then set-snapshot_count
 			if [[ $snapshot_count == 2 ]] # is this 2nd snapshot?
@@ -2852,7 +2852,7 @@ readonly -f update-snapshots-ls
 function _is-time-to-prune-drive() {
 	local dir=${1:-$drive_dir}
 
-	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
+	[[ ! $is_cron || $is_acceptance_test ]] && return 0 # run by a person?
 
 	[[ $(date '+%H') == 00 ]] && return 0 # time for our daily prune?
 
@@ -2924,7 +2924,7 @@ readonly -f sudo-unless-dir-writable
 _prune-exclude-globs-from-all-snapshots() {
 
 	local pruned_TS=$drive_dir/$pruned_timestamp
-	[[ $drive_name == [zZ] ||	# regression test?
+	[[ $drive_name == [zZ] ||	# acceptance test?
 	   ( ! $debug_opt &&		# ... too slow for real drive
 	     # very slow: only run if exclude.txt changed since our last run
 	     ( ! -e $pruned_TS ||
@@ -3038,7 +3038,7 @@ rm-pruned-snapshots() {
 	fi
 	rm-snapshots "$@"
 
-	# sort snapshots, for regression-test
+	# sort snapshots, for acceptance-test
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(tr ' ' '\n' < "$snapshots_file" | sort -u)
 	rm "$snapshots_file"
@@ -3231,7 +3231,7 @@ validate-prune_globs() {
 
 	local parent_cmd
 	parent_cmd=$(COLUMNS=9999 ps -o command= $PPID) || abort parent_cmd=
-	[[  "$parent_cmd " =~ ' '(regression-test|rt)' ' ]] && local debug_opt=
+	[[  "$parent_cmd " =~ ' '(acceptance-test|rt)' ' ]] && local debug_opt=
 	[[  "$parent_cmd " == *' -C -d prune-drive'*	 ]] && local debug_opt=
 
 	customize-config-variables "$drive_name"
@@ -3412,7 +3412,7 @@ set-date_span_diff() {
 
 	local span_var=${type2date_span_var[$type]}
 	local default_date_span=${custom_config_var2default_value[$span_var]}
-	[[ $default_date_span && ! $is_regression_test ]] || return
+	[[ $default_date_span && ! $is_acceptance_test ]] || return
 
 	local -i custom_date_span=$date_span
 	local -i date_span
@@ -3943,7 +3943,7 @@ function _is-time-to-backup-drive {
 
 	do-skip-drive "$(date +%d)" && return 1
 
-	[[ ! $is_cron || $is_regression_test ]] && return 0 # run by a person?
+	[[ ! $is_cron || $is_acceptance_test ]] && return 0 # run by a person?
 
 	(( $start_hour == 0 && $start_minute == 5 )) &&
 	    update-snapshots-ls
@@ -4846,7 +4846,7 @@ mkdir-missing-snapshots-then-print-copy-args() {
 	fi
 
 	set-basename2dirs-basename2is_keep
-	# sort basenames for regression-test, newest first (to aid backup)
+	# sort basenames for acceptance-test, newest first (to aid backup)
 	# shellcheck disable=SC2046,SC2086
 	set -- $(echo ${!basename2dirs[*]} | tr ' ' '\n' | sort -r)
 
@@ -4941,7 +4941,7 @@ declare ignore_slow_sources=$false	# global so can test fastest-snapshots
 fastest-snapshots() {
 	if [[ ${1-} == -f ]]
 	   then local do_force=$true; shift
-	elif [[ $is_regression_test ]]
+	elif [[ $is_acceptance_test ]]
 	   then local do_force=$true
 	   else local do_force=$false
 	fi
@@ -5117,7 +5117,7 @@ function set-drive_dirs--from-user-args() {
 	for drive_dir
 	    do	set-drive_name- -q "$drive_dir"  &&
 		set-drive_dir-     "$drive_name" || continue
-		[[ $drive_name != [zZ] || $is_regression_test ]] || continue
+		[[ $drive_name != [zZ] || $is_acceptance_test ]] || continue
 		is-drive-mounted  "$drive_dir"  &&
 		      drive_dirs+="$drive_dir "
 	done
@@ -5198,7 +5198,7 @@ create-jobs() {
 			     egrep -v "\b$excluded_drive_dirs_regex$")
 		if [[ $is_cron && $type == backup && $# != 0 ]] # see below
 		   then $IfRun do-chores & # echo appears whenever, unless ...
-			[[ $is_regression_test ]] && sleep-exe 0.01 # ... wait
+			[[ $is_acceptance_test ]] && sleep-exe 0.01 # ... wait
 		fi
 	   else # shellcheck disable=SC2048,SC1075
 		if set-drive_names--from-user-args "$@"
@@ -5994,7 +5994,7 @@ readonly -f set-rows-columns-COLUMNS
 readonly    cron_timeout_secs=1000
 
 [[ -v	   watch_timeout_secs ]] ||	# can set custom value in $config_file
-readonly   watch_timeout_secs=0.4	# long enough for regression test
+readonly   watch_timeout_secs=0.4	# long enough for acceptance test
 
 [[ -v	       w_timeout_secs ]] ||	# can set custom value in $config_file
 readonly       w_timeout_secs=2
@@ -7407,7 +7407,7 @@ readonly -f set-total_dir_MB-avg_dir_KB
 
 # dir-sizes [-f | name]: generates stats for 'mkfs -b'; -f -> choose old file
 dir-sizes() {
-	set-drive_log_dir-file_for_logging-is_regression_test
+	set-drive_log_dir-file_for_logging-is_acceptance_test
 	readonly sizes_dir=$log_dir/dir-sizes
 	# shellcheck disable=SC2174 # doesn't create parent dir
 	mkdir -p -m g+w,o-w "$sizes_dir" || abort "need to use sudo"
@@ -8121,7 +8121,7 @@ _create-and-mount-filesystem() {
 	$IfRun mkdir -p "$drive_dir"
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	RunCmd $cmd
-	set-drive_log_dir-file_for_logging-is_regression_test "$drive_name"
+	set-drive_log_dir-file_for_logging-is_acceptance_test "$drive_name"
 	archive-writer-stats-data
 	RunCmd mount -v -t "$FS_type" -o "$mount_opts" "$device" "$drive_dir"
 	fix-drive_dir-perms "$drive_dir"
@@ -8614,7 +8614,7 @@ readonly big_swapouts_file=$syslog_errors_dir/big-swapouts.txt
 search-syslog-for-big-swapouts() {
 	local log=${1:-$syslog_search_results_file}
 
-	[[ ! $is_regression_test ]] || return
+	[[ ! $is_acceptance_test ]] || return
 
 	_set-big_swapouts_record--from-syslog-file "$log"
 
@@ -9206,7 +9206,7 @@ link-snap() {
 readonly -f link-snap
 
 # ----------------------------------------------------------------------------
-# regression tests for "old" (installed) vs "tst" (workspace) snapback
+# acceptance tests for "old" (installed) vs "tst" (workspace) snapback
 # ----------------------------------------------------------------------------
 
 chroot-backup() {
@@ -9391,11 +9391,11 @@ test-prune() {
 		diff -d -q "$@" && mv "$stash.new.ls" "$stash.pruned.ls" &&
 				   rm "$stash.old.ls" &&
 		   echo -e "\nSame results, see $stash*" && continue
-		warn "regression, see: diff -u $*"
+		warn "acceptance, see: diff -u $*"
 	done
 
 	clone-stashed-mk-Z hour
-	echo -e "\nLeft a lot of unpruned snapshots in Z, for regression-test."
+	echo -e "\nLeft a lot of unpruned snapshots in Z, for acceptance-test."
 }
 readonly -f test-prune
 
@@ -9486,13 +9486,13 @@ readonly -f _run-debug-cmds
 
 # ---------------------------------
 
-readonly regression_tests="b c z p u"
+readonly acceptance_tests="b c z p u"
 
-function regression-test() {
+function acceptance-test() {
 	[[ ${1-} == -t ]] && { _trace_opt=-t; shift; } || _trace_opt=
-	local tests=${*:-$regression_tests}
+	local tests=${*:-$acceptance_tests}
 	# can exclude one test (especially useful to exclude the slow 'u' test)
-	[[ $tests == [A-Z]* ]] && tests=${regression_tests//[${tests,,}]/}
+	[[ $tests == [A-Z]* ]] && tests=${acceptance_tests//[${tests,,}]/}
 
 	clone-stashed-mk-Z hour
 	[[ $tests == *[zpu]* ]] &&
@@ -9584,13 +9584,13 @@ function regression-test() {
 	} || tests=${tests/ u/}
 
 	if [[ $failed_tests ]]
-	   then warn "ERROR: regressions in these tests: ${failed_tests% }"
+	   then warn "ERROR: acceptances in these tests: ${failed_tests% }"
 	   else	set-highlighted_string ok \
 		   "all the (specified) tests passed: $tests"
 		echo -e "\n$highlighted_string\n"
 	fi
 }
-readonly -f regression-test
+readonly -f acceptance-test
 
 #############################################################################
 #############################################################################
@@ -9923,7 +9923,7 @@ case $action in
 	$action "$@"
 	;;
 
-   # test-prune: use mk-Z to run pruning regression test in the Z pseudo-drive
+   # test-prune: use mk-Z to run pruning acceptance test in the Z pseudo-drive
    ( test*prune | tp ) undo-action-abbrev test-prune
 	[[ $# == 0 ]] || abort-with-action-Usage
 
@@ -9932,8 +9932,8 @@ case $action in
 	$action "$@"
 	;;
 
-   # regression-test [tests]: check functionality, see $tmp_dir/?? for results
-   ( regression*test | rt ) undo-action-abbrev regression-test
+   # acceptance-test [tests]: check functionality, see $tmp_dir/?? for results
+   ( acceptance*test | at ) undo-action-abbrev acceptance-test
 	# $Trace
 	$action "$@"
 	;;
