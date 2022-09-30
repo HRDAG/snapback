@@ -9035,7 +9035,48 @@ readonly -f set-sudo--if-not-root
 
 # ----------------------------------------------------------------------------
 
-function rm-untagged-snaps() {
+readonly did_rm_untagged_snaps_file=.rm-snaps
+
+rm-untagged-snaps-on-one-drive() {
+	local drive_name=${1:-$drive_name}
+
+	set-drive_name "$drive_name"
+	set-drive_dir  "$drive_name"
+
+	[[ -f "$drive_dir/$did_rm_untagged_snaps_file" ]] && return
+
+	# shellcheck disable=SC2231 # variable contains a glob
+	cd "$drive_dir" &&
+	for snapshot in $snapshot_glob*
+	    do	cd "$drive_dir/$snapshot" &&
+		for repo_dir in ${repo_dirs#/}
+		    do	[[ $repo_dir == */nohup.out ]] &&
+			    rm -f "$repo_dir" && continue
+			cd "$drive_dir/$snapshot/$repo_dir" || continue
+
+			# like show_tagged_snapshots in snapserv
+			tagged_snaps=
+			for snap in *
+			    do	[[ $snap == s[0-9]* ]] && continue
+				tagged_snaps+="$(readlink "$snap") "
+			done
+
+			for snap in *
+			    do	[[ $snap == s[0-9]* ]] || continue
+				# shellcheck disable=SC2086
+				is-arg1-in-arg2 $snap $tagged_snaps && continue
+				echo "$PWD/$snap" # $PWD/ for 'ps' cmd
+			done | xargs $IfRun $sudo rm -f -r # -f in case none
+		done
+	done
+
+	touch "$drive_dir/$did_rm_untagged_snaps_file"
+}
+readonly -f rm-untagged-snaps-on-one-drive
+
+# ---------------------------------
+
+rm-untagged-snaps() {
 	local drive_names=$*
 	[[ $drive_names ]] || set-drive_names -a
 
@@ -9043,32 +9084,7 @@ function rm-untagged-snaps() {
 
 	repo_dirs=${extra_excludes%/*}
 	for drive_name in $drive_names
-	    do	set-drive_name "$drive_name"
-		set-drive_dir  "$drive_name"
-		# shellcheck disable=SC2231 # variable contains a glob
-		cd "$drive_dir" &&
-		for snapshot in $snapshot_glob*
-		    do	cd "$drive_dir/$snapshot" &&
-			for repo_dir in ${repo_dirs#/}
-			    do	[[ $repo_dir == */nohup.out ]] &&
-				    rm -f "$repo_dir" && continue
-				cd "$drive_dir/$snapshot/$repo_dir" ||
-				    continue
-				# like show_tagged_snapshots in snapserv
-				tagged_snaps=
-				for snap in *
-				    do	[[ $snap == s[0-9]* ]] && continue
-					tagged_snaps+="$(readlink "$snap") "
-				done
-				for snap in *
-				    do	[[ $snap == s[0-9]* ]] || continue
-					# shellcheck disable=SC2086
-					is-arg1-in-arg2 $snap $tagged_snaps &&
-					    continue
-					echo "$PWD/$snap" # $PWD/ for 'ps' cmd
-				done | xargs $IfRun $sudo rm -f -r
-			done
-		done &
+	    do	rm-untagged-snaps-on-one-drive "$drive_name" &
 		job_PID=$!
 		kill-jobs prune || set-lock_path prune
 		echo "$job_PID" > "$lock_path"
