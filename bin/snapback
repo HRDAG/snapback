@@ -3609,7 +3609,7 @@ function set-latest_snapshot() {
 	latest_snapshot=$drive_dir/latest
 	[[ -d $latest_snapshot ]] || { latest_snapshot= ; return 1; }
 
-	latest_snapshot=$(readlink "$latest_snapshot")
+	latest_snapshot=$drive_dir/$(readlink "$latest_snapshot")
 }
 readonly -f set-latest_snapshot
 
@@ -3856,14 +3856,16 @@ set-link_dest_opts--for-copy-snapshot() {
 	# older, then newer, then even-older, then even-newer, ...
 
 	local link_dest_fast_dirs=${previously_copied_snapshot-}
-	set-latest_snapshot && link_dest_fast_dirs+=" $PWD/$latest_snapshot"
+	set-latest_snapshot &&
+	    [[ $link_dest_fast_dirs != "$latest_snapshot" ]] &&
+	        link_dest_fast_dirs+="  $latest_snapshot"
 
 	# if $num_full_link_dests > 1, we only need 1-less (full) snapshot from
 	# $older_link_dest_dirs and from $newer_link_dest_dirs
 
 	set-num_full_link_dests
 	[[ $num_full_link_dests != 1 &&
-	   $link_dest_fast_dirs == *?' '* ]] && # already have 2 snapshots?
+	   $link_dest_fast_dirs == *???' '* ]] && # already have 2 snapshots?
 	    (( num_full_link_dests-=1 ))
 	TraceV 5  link_dest_fast_dirs num_full_link_dests
 	# shellcheck disable=SC2086 # variable contains multiple values
