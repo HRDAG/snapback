@@ -446,6 +446,11 @@ The snapback repo includes a file to change the default:
 After you install that file, you'll want to run the 'pmie' command, which can
 be typically be installed from the 'pcp' package.
 
+HRDAG uses vm.vfs_cache_pressure=5, with 256 GB of RAM and SSD for its XFS
+filesysystems.  When running a backup to a hard disk, snapback hard-links 4.6M
+files and creates 0.4M dirs in 5 minutes (unless a large application flushed
+the VFS cache): 15K files/sec, 1.5K dirs/sec.
+
 If you make vm.vfs_cache_pressure too low, pmie will write a message to syslog
 that that looks like:
 
