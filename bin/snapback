@@ -4215,10 +4215,6 @@ readonly -f run-rsync
 function backup-drive-rsync() {
 	local date_time=$1
 
-	set-priority backup
-
-	$IfRun rm-untagged-snaps-on-one-drive "$drive_name"
-
 	local new_snapshot=$drive_dir/$date_time
 
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
@@ -4391,6 +4387,10 @@ function backup-drive() {
 		# if suspended a copy, it's now OK to prune its source drive
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
+
+	set-priority backup
+
+	$IfRun rm-untagged-snaps-on-one-drive "$drive_name"
 
 	# could create LVM snapshot that's specified in $dirs_to_backup, and/or
 	# do a database-dump
