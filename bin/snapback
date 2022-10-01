@@ -9172,7 +9172,7 @@ readonly -f set-best_src
 set-old_src--from-best-snap() {
 	local src=$1
 
-	max_snap_num=$(readlink "$(dirname "$src")"/HEAD)
+	max_snap_num=$(readlink "${src%/*}/HEAD")
 	old_src= lower_src= higher_src=
 	local -i i snap_num=${snap#s}
 	for suffix in '' .rm .links
