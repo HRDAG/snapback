@@ -202,8 +202,12 @@ no_log_rsync_exit_statuses="20"		# can add 31
 # a full exclude-style prune run is needed, so new excludes delete files.
 #
 # Best not use these until Scott supports dissimilar drives in update-drives,
+extra_includes_file=			# include some of what's excluded below
 extra_excludes=				# per-drive custom excludes
-extra_includes_file=			# ... to include what's excluded above
+
+# if you (heavily) use snap aka snapshot, you'll want to do the following
+extra_includes_file=/etc/snapback/tagged-snaps.txt # (snapback tests basename)
+extra_excludes=~snap/"*/*"		# don't backup untagged snaps
 
 exclude_file_suffix=			# to create e.g. exclude-big.txt
 

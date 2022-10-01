@@ -3972,12 +3972,17 @@ readonly -f _is-time-to-backup-drive
 
 # ------------------------------------------------------------------
 
+if have-cmd snapserv && [[ $extra_includes_file == *tag*snap* ]]
+    then readonly exclude_untagged_snaps=$true
+    else readonly exclude_untagged_snaps=$false
+fi
+
 function do-pre-backup-tasks() {
 
 	(( $start_minute == 0 )) || return # only do tasks hourly
 
 	# prepare for possibly-hourly backups
-	have-cmd snapserv && [[ $extra_includes_file == *tag*snap* ]] &&
+	[[ $exclude_untagged_snaps ]] &&
 	    snapserv show-all-tagged-snaps |
 		echo-to-file - "$extra_includes_file"
 
@@ -4212,6 +4217,8 @@ function backup-drive-rsync() {
 
 	set-priority backup
 
+	$IfRun rm-untagged-snaps-on-one-drive "$drive_name"
+
 	local new_snapshot=$drive_dir/$date_time
 
 	cd_ "$drive_dir"    # can safely kill job with: fuser -k -M $drive_dir
@@ -4367,7 +4374,7 @@ function backup-drive() {
 	local date_time
 	set-date_time
 
-	if ! _is-time-to-backup-drive	# must call within 1 minute of startup
+	if ! _is-time-to-backup-drive
 	   then $IfRun create-jobs prune
 		return
 	fi
@@ -5063,6 +5070,8 @@ function update-drive() {
 	[[ $is_cron ]] || reset-priority # this might suspend us
 
 	rmdir ./*.partial &> $dev_null	# in case crashed
+
+	$IfRun rm-untagged-snaps-on-one-drive "$drive_name"
 
 	set-srcs_dst_file
 	mkdir-missing-snapshots-then-print-copy-args > "$srcs_dst_file"
@@ -9039,6 +9048,8 @@ readonly did_rm_untagged_snaps_file=.rm-snaps
 
 rm-untagged-snaps-on-one-drive() {
 	local drive_name=${1:-$drive_name}
+
+	[[ $exclude_untagged_snaps ]] || return
 
 	set-drive_name "$drive_name"
 	set-drive_dir  "$drive_name"
