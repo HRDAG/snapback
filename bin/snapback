@@ -9125,7 +9125,6 @@ readonly -f pre-link-snaps
 set-src-repo-snap-snap_base() {
 	src=$1; local _src=$1		# src is a global
 
-	[[ -d $src ]] || abort-function "no $src dir"
 	snap_base=~snap
 	[[ $src == */*   ]] || src=$PWD/$src
 	[[ $src == */*/* ]] || src=$snap_base/$src
@@ -9134,7 +9133,6 @@ set-src-repo-snap-snap_base() {
 
 	[[ $snap == s[1-9]* ]] || snap=$(readlink "$src") ||
 	    abort-function "$src not a snapshot"
-	[[ -d $src ]] || abort-function "$_src doesn't point to snap dir"
 }
 readonly -f set-src-repo-snap-snap_base
 
@@ -9155,15 +9153,43 @@ function find-signatures {
 
 	# bytes,modify time in seconds,path
 	# shellcheck disable=SC2035 # don't want ./path
-	find * -type f -printf "%s,%T@,%p\n"
+	pushd_ "$1"
+	find ./* -type f -printf "%s,%T@,%p\n" | sort
+	popd_
 }
 readonly -f find-signatures
 
 # ----------------------
 
+_byte_sum() {
+	awk -F, '{total += $1} END {print total};'
+}
+readonly -f _byte_sum
+
+# ---------------------------------
+
 set-best_src() {
-	local src=$1$lower_src=$2 higher_src=$3
-	best_src=$higher_src
+	local src=$1 lower_src=$2 higher_src=$3
+
+	pushd_ $snap_base
+
+	local src_file=$tmp_1 other_file=$tmp_2
+	find-signatures        "$src" >   "$src_file"
+	find-signatures  "$lower_src" > "$other_file"
+	lower_bytes=$(comm -23 "$src_file" "$other_file" | _byte_sum)
+        [[ $lower_bytes ]] || lower_bytes=0
+
+	find-signatures "$higher_src" > "$other_file"
+	higher_bytes=$(comm -23 "$src_file" "$other_file" | _byte_sum)
+        [[ $higher_bytes ]] || higher_bytes=0
+
+	TraceV 5 lower_bytes higher_bytes
+	if (( $lower_bytes < $higher_bytes ))
+	   then best_src=$lower_src
+	   else best_src=$higher_src
+	fi
+
+	popd_
 }
 readonly -f set-best_src
 
@@ -9172,22 +9198,31 @@ readonly -f set-best_src
 set-old_src--from-best-snap() {
 	local src=$1
 
-	max_snap_num=$(readlink "${src%/*}/HEAD")
+	[[ ${snap_base-} ]] || set-src-repo-snap-snap_base "$src"
+	local max_snap
+	max_snap=$(readlink "${src%/*}/HEAD") || 
+	    abort-function "no/bad $src/HEAD"
+	local -i max_snap_num=${max_snap#s}
 	old_src= lower_src= higher_src=
 	local -i i snap_num=${snap#s}
-	for suffix in '' .rm .links
-	   do	[[ $lower_src ]] || {
-		for (( i=$snap_num-1; i > 0; i-- ))
-		    do	_set-old_src "s$i" && break
-		done; lower_src=$old_src; }
 
-		[[ $higher_src ]] || {
-		for (( i=$snap_num+1; i <= $max_snap_num; i++ ))
-		    do	_set-old_src "s$i" && break
-		done; higher_src=$old_src; }
-
-		[[ $lower_src && $higher_src ]] && break
+	for (( i=$snap_num-1; i > 0; i-- ))
+	    do	# shellcheck disable=SC2086 # variable contains a glob
+		set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/s$i
+		[[ $# != 0 ]] || continue
+		set-old_src "s$i"
+		lower_src=$old_src
+		break
 	done
+
+	for (( i=$snap_num+1; i <= $max_snap_num; i++ ))
+	    do	# shellcheck disable=SC2086 # variable contains a glob
+		set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/s$i
+		[[ $# != 0 ]] || continue
+		higher_src=$old_src
+		break
+	done
+
 	if [[ $lower_src && $higher_src ]]
 	   then set-best_src "$src" "$lower_src" "$higher_src"
 		old_src=$best_src
@@ -9217,11 +9252,11 @@ link-snap() {
 		fi
 
 		old_src=
-		for suffix in '' .rm .links
-		   do	_set-old_src "$snap" && break
-		done
+		# shellcheck disable=SC2086 # variable contains a glob
+		set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/$snap
+		[[ $# != 0 ]] && _set-old_src "${!#}"
 		[[ $old_src ]] || set-old_src--from-best-snap "$src"
-		[[ $old_src ]] || warn "no backed-up $repo snaps" || return 1
+		[[ $old_src ]] || warn "no $repo snaps on $drive_name" ||continue
 
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
@@ -9611,7 +9646,7 @@ function acceptance-test() {
 	} || tests=${tests/ u/}
 
 	if [[ $failed_tests ]]
-	   then warn "ERROR: acceptances in these tests: ${failed_tests% }"
+	   then warn "ERROR: regressions in these tests: ${failed_tests% }"
 	   else	set-highlighted_string ok \
 		   "all the (specified) tests passed: $tests"
 		echo -e "\n$highlighted_string\n"
