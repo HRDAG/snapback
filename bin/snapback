@@ -3775,7 +3775,7 @@ set-useful_snapshots() {
 	#    'Too many links' by just copying the file
 	# want a .partial to get the latest stuff, but won't "count" it
 	# shellcheck disable=SC2046,SC2086
-	set -- $(echo $snapshot_glob{,.links,.partial} |
+	set -- $(echo $snapshot_glob+(|.links|.partial) |
 		   tr ' ' '\n' | sort $sort_opt)
 	useful_snapshots=$*
 	x-return
@@ -3785,12 +3785,12 @@ readonly -f set-useful_snapshots
 # --------------------------------------------
 
 set-link_dest_opts--for-backup-drive() {
-	local new_snapshot=${1##*/}   useful_snapshots
+	local new_snapshot_name=${1##*/}   useful_snapshots
 
 	set-num_full_link_dests
 	set-useful_snapshots -r		# reverse-sorted, i.e. newest first
 	# shellcheck disable=SC2086 # variable contains multiple values
-	set-link_dest_dirs "$new_snapshot" $useful_snapshots
+	set-link_dest_dirs "$new_snapshot_name" $useful_snapshots
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set-link_dest_opts $link_dest_dirs
 }
@@ -3798,22 +3798,23 @@ readonly -f set-link_dest_opts--for-backup-drive
 
 # --------------------------------------------------------
 
-# need to link to snapshots that are earlier and later than $new_snapshot
+# need to link to snapshots that are earlier and later than $new_snapshot_name
 set-older_link_dest_dirs-newer_link_dest_dirs() {
-	local new_snapshot=$1; shift; local excluded_dirs=$*   useful_snapshots
-	TraceV 5 new_snapshot excluded_dirs
+	local new_snapshot_name=$1; shift
+	local excluded_dirs=$* useful_snapshots
+	TraceV 5 new_snapshot_name excluded_dirs
 
 	set-useful_snapshots -r		# reverse-sorted, i.e. newest first
 	suspend-tracing
 	local older_snapshots=
 	for snapshot in $useful_snapshots
-	   do	[[ $snapshot < $new_snapshot ]] || continue
+	   do	[[ $snapshot < $new_snapshot_name ]] || continue
 		is-arg1-in-arg2 "$PWD/$snapshot" "$excluded_dirs" && continue
 		older_snapshots+=" $snapshot"
 	done
 	restore-tracing
 	# shellcheck disable=SC2086 # variable contains multiple values
-	set-link_dest_dirs "$new_snapshot" $older_snapshots # newest to older
+	set-link_dest_dirs "$new_snapshot_name" $older_snapshots #newest to older
 	older_link_dest_dirs=$link_dest_dirs
 	TraceV 5 older_link_dest_dirs
 
@@ -3821,13 +3822,13 @@ set-older_link_dest_dirs-newer_link_dest_dirs() {
 	suspend-tracing
 	local newer_snapshots=
 	for snapshot in $useful_snapshots
-	   do	[[ $snapshot > $new_snapshot ]] || continue
+	   do	[[ $snapshot > $new_snapshot_name ]] || continue
 		is-arg1-in-arg2 "$PWD/$snapshot" "$excluded_dirs" && continue
 		newer_snapshots+=" $snapshot"
 	done
 	restore-tracing
 	# shellcheck disable=SC2086 # variable contains multiple values
-	set-link_dest_dirs "$new_snapshot" $newer_snapshots # oldest to newer
+	set-link_dest_dirs "$new_snapshot_name" $newer_snapshots #oldest to newer
 	newer_link_dest_dirs=$link_dest_dirs
 	TraceV 5 newer_link_dest_dirs
 }
@@ -3838,7 +3839,7 @@ readonly -f set-older_link_dest_dirs-newer_link_dest_dirs
 # Need to link to snapshots that are earlier and later than $new_snapshot.  See
 # J. in doc/Install.txt for tuning the VFS cache (directory and inode caches).
 set-link_dest_opts--for-copy-snapshot() {
-	local new_snapshot=${1##*/}
+	local new_snapshot_name=${1##*/}
 
 	# Optimize the order in which snapshots are chosen for the
 	# --link-dest= options: The first snapshot should be the one that was
@@ -3847,7 +3848,7 @@ set-link_dest_opts--for-copy-snapshot() {
 	# likely to have what's needed): the most-recently-scanned snapshot is
 	# the $previously_copied_snapshot (if we'd previously copied a
 	# snapshot).  Since this first snapshot is (probably) older than
-	# $new_snapshot, the next snapshot should be newer: the 'latest'
+	# $new_snapshot_name, the next snapshot should be newer: the 'latest'
 	# snapshot should be in the VFS cache, because it's the most recent
 	# backup (if it's not in the cache, it needs to be in the cache, for
 	# the next backup); more importantly, it's the snapsht that's
@@ -3869,7 +3870,7 @@ set-link_dest_opts--for-copy-snapshot() {
 	    (( num_full_link_dests-=1 ))
 	TraceV 5  link_dest_fast_dirs num_full_link_dests
 	# shellcheck disable=SC2086 # variable contains multiple values
-	set-older_link_dest_dirs-newer_link_dest_dirs "$new_snapshot" \
+	set-older_link_dest_dirs-newer_link_dest_dirs "$new_snapshot_name" \
 						      $link_dest_fast_dirs
 
 	# For a server that has continually-added and never-deleted files
