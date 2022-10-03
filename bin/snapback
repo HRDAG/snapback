@@ -8966,19 +8966,6 @@ readonly -f check-logs
 ##############################################################################
 ##############################################################################
 
-set-sudo--if-pwd-not-writable() {
-
-	local test_file=.test-file.$BASHPID
-	if touch $test_file &> $dev_null
-	   then rm $test_file
-		sudo=
-	   else sudo=sudo
-	fi
-}
-readonly -f set-sudo--if-pwd-not-writable
-
-# ----------------------------------------------------------------------------
-
 function check-snapshot-hard-links() {
 	local name=$1
 
@@ -9034,7 +9021,7 @@ function check-snapshot-hard-links() {
 readonly -f check-snapshot-hard-links
 
 # ----------------------------------------------------------------------------
-# functions associated with snapserv
+# functions to prune untagged snap
 # ----------------------------------------------------------------------------
 
 function set-sudo--if-not-root {
@@ -9107,39 +9094,27 @@ rm-untagged-snaps() {
 readonly -f rm-untagged-snaps
 
 # -----------------------------------------------------------------------------
-
-# user might have tagged a very-old snap (that's not on recent snapshots),
-# so have to pre-link every known snap into current directory
-function pre-link-snaps() {
-
-	# write set-tagged_snaps, use in previous func
-	# might need set-snap2tag or tag2snap, in case a tag is repurposed
-	# cp -al for every snap, s1-HEAD, glob for each one,
-	#    make sure oldest and newest snapshot versions are linked
-	# rsync needs to delete files/dirs not in source
-	abort "finish me"
-}
-readonly -f pre-link-snaps
-
+# functions to recover newly-tagged snapshot
 # ----------------------------------------------------------------------------
 
-set-src-repo-snap-snap_base() {
-	src=$1; local _src=$1		# src is a global, becomes full path
+set-snap_base-repo-snap_name-snap() {
+	snap_name=$1			# snap_name is a global
 
 	snap_base=~snap
-	[[ $src == */*   ]] || src=$PWD/$src
-	[[ $src == */*/* ]] || src=$snap_base/$src
-	repo=$(basename "$(dirname "$src")")
-	snap=$(basename "$src")
+	[[ $snap_name == */*   ]] || snap=$PWD/$snap_name
+	[[ $snap_name == */*/* ]] || snap=$snap_base/$snap_name
+	repo=$(basename "$(dirname "$snap")")
+	snap_name=$(basename "$snap")
 
-	[[ $snap == s[1-9]* ]] || snap=$(readlink "$src") ||
-	    abort-function "$src not a snapshot"
+	[[ $snap_name == s[1-9]* ]] || snap_name=$(readlink "$snap") ||
+	    abort-function "$snap_name not a snapshot"
+	snap=$snap_base/$repo/$snap_name
 }
-readonly -f set-src-repo-snap-snap_base
+readonly -f set-snap_base-repo-snap_name-snap
 
 # ---------------------------------
 
-function find-signatures {
+find-signatures() {
 
 	# bytes,modify time in seconds,path
 	# shellcheck disable=SC2035 # don't want ./path
@@ -9159,116 +9134,114 @@ readonly -f _byte_sum
 # ----------------------
 
 set-missing_bytes() {
-	local src_file=$1 other_file=$2
+	local snap_sig_file=$1 other_sig_file=$2
 
-	missing_bytes=$(comm -23 "$src_file" "$other_file" | _byte_sum)
+	missing_bytes=$(comm -23 "$snap_sig_file" "$other_sig_file" | _byte_sum)
 	[[ $missing_bytes ]] || missing_bytes=0
 }
 readonly -f set-missing_bytes
 
 # ---------------------------------
 
-set-best_src() {
-	local src=$1 lower_src=$2 higher_src=$3
+set-best_snap() {
+	local snap=$1 lower_snap=$2 higher_snap=$3
 
-	pushd_ $snap_base
+	local snap_sig_file=$tmp_1 other_sig_file=$tmp_2
+	find-signatures "$snap" > "$snap_sig_file"
 
-	local src_sig_file=$tmp_1 other_sig_file=$tmp_2
-	find-signatures "$src" > "$src_sig_file"
-
-	find-signatures    "$lower_src" > "$other_sig_file"
-	set-missing_bytes "$src_sig_file" "$other_sig_file"
+	find-signatures    "$lower_snap" > "$other_sig_file"
+	set-missing_bytes "$snap_sig_file" "$other_sig_file"
 	lower_bytes=$missing_bytes
 
-	find-signatures   "$higher_src" > "$other_sig_file"
-	set-missing_bytes "$src_sig_file" "$other_sig_file"
+	find-signatures   "$higher_snap" > "$other_sig_file"
+	set-missing_bytes "$snap_sig_file" "$other_sig_file"
 	higher_bytes=$missing_bytes
 
 	TraceV 5 lower_bytes higher_bytes
 	if (( $lower_bytes < $higher_bytes ))
-	   then best_src=$lower_src
-	   else best_src=$higher_src
+	   then best_snap=$lower_snap
+	   else best_snap=$higher_snap
 	fi
-
-	popd_
 }
-readonly -f set-best_src
+readonly -f set-best_snap
 
 # ---------------------------------
 
-function set-old_src--from-glob() {
+function set-backup_snap--from-glob() {
 	local snap=$1
+	[[ $snap == */* ]] || snap=$snap_base/$repo/$snap
 
 	# shellcheck disable=SC2086 # variable contains a glob
-	set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/$snap
-	[[ $# != 0 ]] || { old_src= ; return 1; }
-	set-old_src ${!#}
-	return 0
+	set -- $snapshot_glob+(|.links|.rm)$snap
+	if [[ $# != 0 ]]
+	   then	backup_snap=${!#}
+	   else backup_snap=
+	fi
+	[[ $backup_snap ]]
 }
-readonly -f set-old_src--from-glob
+readonly -f set-backup_snap--from-glob
 
 # ---------------------------------
 
-function set-old_src--from-best-snap() {
+function set-backup_snap--from-best-snap() {
 	local snap=$1
 
-	local max_snap
-	max_snap=$(readlink "${src%/*}/HEAD") ||abort-function "no/bad $src/HEAD"
+	local max_snap HEAD=${snap%/*}/HEAD
+	max_snap=$(readlink "$HEAD") || abort-function "no/bad $HEAD"
 	local -i max_snap_num=${max_snap#s}
-	local lower_src= higher_src=
-	local -i i snap_num=${snap#s}
+	local lower_snap= higher_snap=
+	local -i i snap_num=${snap##*/s}
 	for (( i=$snap_num-1; i > 0; i-- ))
-	    do	set-old_src--from-glob "s$snap_num" || continue
-		lower_src=$old_src
+	    do	set-backup_snap--from-glob "s$snap_num" || continue
+		lower_snap=$backup_snap
 		break
 	done
 
 	for (( i=$snap_num+1; i <= $max_snap_num; i++ ))
-	    do	set-old_src--from-glob "s$snap_num" || continue
-		higher_src=$old_src
+	    do	set-backup_snap--from-glob "s$snap_num" || continue
+		higher_snap=$backup_snap
 		break
 	done
 
-	if [[ $lower_src && $higher_src ]]
-	   then set-best_src "$src" "$lower_src" "$higher_src"
-		old_src=$best_src
-	elif [[ $lower_src ]]
-	   then old_src=$lower_src
-	elif [[ $higher_src ]]
-	   then old_src=$higher_src
-	   else old_src=
+	if [[ $lower_snap && $higher_snap ]]
+	   then set-best_snap "$snap" "$lower_snap" "$higher_snap"
+		backup_snap=$best_snap
+	elif [[ $lower_snap ]]
+	   then backup_snap=$lower_snap
+	elif [[ $higher_snap ]]
+	   then backup_snap=$higher_snap
+	   else backup_snap=
 	fi
-	[[ $old_src ]]
+	[[ $backup_snap ]]
 }
-readonly -f set-old_src--from-best-snap
+readonly -f set-backup_snap--from-best-snap
 
 # ---------------------------------
 
 link-snap() {
-	local src=${1%/}; shift; drive_names=$*
+	local snap_name=${1%/}; shift; drive_names=$*
 
-	set-src-repo-snap-snap_base "$src"
+	set-snap_base-repo-snap_name-snap "$snap_name"
 	[[ $drive_names ]] || set-drive_names
 
 	for drive_name in $drive_names
 	    do	set-drive_name "$drive_name"
 		set-drive_dir  "$drive_name"
 		cd_ "$drive_dir"
-		if [[ -d latest/$snap_base/$repo/$snap ]]
-		   then [[ $debug_opt ]] && echo "$drive_name has $src"
+		if [[ -d latest/$snap ]]
+		   then [[ $debug_opt ]] && echo "$drive_name has $snap"
 			continue
 		fi
 
-		set-src-repo-snap-snap_base "$src" # makes src a full path
-		set-old_src--from-glob      "$snap" ||
-		set-old_src--from-best-snap "$snap" ||
+		set-backup_snap--from-glob      "$snap" ||
+		set-backup_snap--from-best-snap "$snap" ||
 		    warn "no $repo snaps on $drive_name" || continue
 
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
-		dst=${!#}/$snap_base/$repo/$(basename "$src")
+		dst=${!#}/$snap
 		$IfRun mkdir -p "$(dirname "$dst")" # rsync fixes perms
-		$IfRun cp -al "$old_src" "$dst"
+		$IfRun cp -al "$PWD/$backup_snap" "$PWD/$dst" #$PWD for debugging
 	done
 }
 readonly -f link-snap
