@@ -9124,7 +9124,7 @@ readonly -f pre-link-snaps
 # ----------------------------------------------------------------------------
 
 set-src-repo-snap-snap_base() {
-	src=$1; local _src=$1		# src is a global
+	src=$1; local _src=$1		# src is a global, becomes full path
 
 	snap_base=~snap
 	[[ $src == */*   ]] || src=$PWD/$src
@@ -9139,17 +9139,6 @@ readonly -f set-src-repo-snap-snap_base
 
 # ---------------------------------
 
-function _set-old_src() {
-	[[ ${snap_base-} ]] || set-src-repo-snap-snap_base "$src" # for 'run'
-	# shellcheck disable=SC2086 # variable contains a glob
-	set -- $snapshot_glob$suffix/$snap_base/$repo/$1
-	(( $# == 0 )) && return 1
-	old_src=${!#}
-}
-readonly -f _set-old_src
-
-# ---------------------------------
-
 function find-signatures {
 
 	# bytes,modify time in seconds,path
@@ -9160,12 +9149,22 @@ function find-signatures {
 }
 readonly -f find-signatures
 
-# ----------------------
+# ---------------------------------
 
 _byte_sum() {
 	awk -F, '{total += $1} END {print total};'
 }
 readonly -f _byte_sum
+
+# ----------------------
+
+set-missing_bytes() {
+	local src_file=$1 other_file=$2
+
+	missing_bytes=$(comm -23 "$src_file" "$other_file" | _byte_sum)
+	[[ $missing_bytes ]] || missing_bytes=0
+}
+readonly -f set-missing_bytes
 
 # ---------------------------------
 
@@ -9174,15 +9173,16 @@ set-best_src() {
 
 	pushd_ $snap_base
 
-	local src_file=$tmp_1 other_file=$tmp_2
-	find-signatures        "$src" >   "$src_file"
-	find-signatures  "$lower_src" > "$other_file"
-	lower_bytes=$(comm -23 "$src_file" "$other_file" | _byte_sum)
-        [[ $lower_bytes ]] || lower_bytes=0
+	local src_sig_file=$tmp_1 other_sig_file=$tmp_2
+	find-signatures "$src" > "$src_sig_file"
 
-	find-signatures "$higher_src" > "$other_file"
-	higher_bytes=$(comm -23 "$src_file" "$other_file" | _byte_sum)
-        [[ $higher_bytes ]] || higher_bytes=0
+	find-signatures    "$lower_src" > "$other_sig_file"
+	set-missing_bytes "$src_sig_file" "$other_sig_file"
+	lower_bytes=$missing_bytes
+
+	find-signatures   "$higher_src" > "$other_sig_file"
+	set-missing_bytes "$src_sig_file" "$other_sig_file"
+	higher_bytes=$missing_bytes
 
 	TraceV 5 lower_bytes higher_bytes
 	if (( $lower_bytes < $higher_bytes ))
@@ -9196,30 +9196,35 @@ readonly -f set-best_src
 
 # ---------------------------------
 
-set-old_src--from-best-snap() {
-	local src=$1
+function set-old_src--from-glob() {
+	local snap=$1
 
-	[[ ${snap_base-} ]] || set-src-repo-snap-snap_base "$src"
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/$snap
+	[[ $# != 0 ]] || { old_src= ; return 1; }
+	set-old_src ${!#}
+	return 0
+}
+readonly -f set-old_src--from-glob
+
+# ---------------------------------
+
+function set-old_src--from-best-snap() {
+	local snap=$1
+
 	local max_snap
-	max_snap=$(readlink "${src%/*}/HEAD") || 
-	    abort-function "no/bad $src/HEAD"
+	max_snap=$(readlink "${src%/*}/HEAD") ||abort-function "no/bad $src/HEAD"
 	local -i max_snap_num=${max_snap#s}
-	old_src= lower_src= higher_src=
+	local lower_src= higher_src=
 	local -i i snap_num=${snap#s}
-
 	for (( i=$snap_num-1; i > 0; i-- ))
-	    do	# shellcheck disable=SC2086 # variable contains a glob
-		set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/s$i
-		[[ $# != 0 ]] || continue
-		set-old_src "s$i"
+	    do	set-old_src--from-glob "s$snap_num" || continue
 		lower_src=$old_src
 		break
 	done
 
 	for (( i=$snap_num+1; i <= $max_snap_num; i++ ))
-	    do	# shellcheck disable=SC2086 # variable contains a glob
-		set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/s$i
-		[[ $# != 0 ]] || continue
+	    do	set-old_src--from-glob "s$snap_num" || continue
 		higher_src=$old_src
 		break
 	done
@@ -9231,7 +9236,9 @@ set-old_src--from-best-snap() {
 	   then old_src=$lower_src
 	elif [[ $higher_src ]]
 	   then old_src=$higher_src
+	   else old_src=
 	fi
+	[[ $old_src ]]
 }
 readonly -f set-old_src--from-best-snap
 
@@ -9252,16 +9259,14 @@ link-snap() {
 			continue
 		fi
 
-		old_src=
-		# shellcheck disable=SC2086 # variable contains a glob
-		set -- $snapshot_glob+(|.links|.rm)/$snap_base/$repo/$snap
-		[[ $# != 0 ]] && _set-old_src "${!#}"
-		[[ $old_src ]] || set-old_src--from-best-snap "$src"
-		[[ $old_src ]] || warn "no $repo snaps on $drive_name" ||continue
+		set-src-repo-snap-snap_base "$src" # makes src a full path
+		set-old_src--from-glob      "$snap" ||
+		set-old_src--from-best-snap "$snap" ||
+		    warn "no $repo snaps on $drive_name" || continue
 
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
-		dst=${!#}/$snap_base/$repo/$(basename "$old_src")
+		dst=${!#}/$snap_base/$repo/$(basename "$src")
 		$IfRun mkdir -p "$(dirname "$dst")" # rsync fixes perms
 		$IfRun cp -al "$old_src" "$dst"
 	done
