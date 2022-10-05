@@ -9103,19 +9103,18 @@ set-snap_base-repo-snap_name-snap() {
 	snap_base=~snap
 	[[ $snap_name == */*   ]] || snap=$PWD/$snap_name
 	[[ $snap_name == */*/* ]] || snap=$snap_base/$snap_name
-	repo=$(basename "$(dirname "$snap")")
-	snap_name=$(basename "$snap")
+	repo=$(basename "${snap%/*}")
+	snap_name=${snap##*/}
+	snap=$snap_base/$repo/$snap_name
 
 	[[ $snap_name == s[1-9]* ]] || snap_name=$(readlink "$snap") ||
-	    abort-function "$snap_name not a snapshot"
-	snap=$snap_base/$repo/$snap_name
+	    abort-function "'$snap' is not a snapshot or tag"
 }
 readonly -f set-snap_base-repo-snap_name-snap
 
 # ---------------------------------
 
 find-signatures() {
-
 	# bytes,modify time in seconds,path
 	# shellcheck disable=SC2035 # don't want ./path
 	pushd_ "$1"
@@ -9191,7 +9190,7 @@ function set-backup_snap--from-best-snap() {
 	local -i max_snap_num=${max_snap#s}
 	local lower_snap= higher_snap=
 	local -i i snap_num=${snap##*/s}
-	for (( i=$snap_num-1; i > 0; i-- ))
+	for (( i=$snap_num-1; i >= 1; i-- ))
 	    do	set-backup_snap--from-glob "s$snap_num" || continue
 		lower_snap=$backup_snap
 		break
@@ -9240,8 +9239,8 @@ link-snap() {
 		# shellcheck disable=SC2086 # variable contains a glob
 		set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
 		dst=${!#}/$snap
-		$IfRun mkdir -p "$(dirname "$dst")" # rsync fixes perms
-		$IfRun cp -al "$PWD/$backup_snap" "$PWD/$dst" #$PWD for debugging
+		$IfRun mkdir -p "${dst%/*}" # rsync fixes perms
+		$IfRun cp -al "$PWD/$backup_snap" "$dst" # $PWD for 'ps'
 	done
 }
 readonly -f link-snap
