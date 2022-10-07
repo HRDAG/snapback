@@ -9217,6 +9217,27 @@ readonly -f set-backup_snap--from-best-snap
 
 # ---------------------------------
 
+_link-snap() {
+
+	if [[ -d latest/$snap ]]
+	   then [[ $debug_opt ]] && echo "$drive_name has $snap"
+		return
+	fi
+
+	set-backup_snap--from-glob      "$snap" ||
+	set-backup_snap--from-best-snap "$snap" ||
+	    warn "no $repo snaps on $drive_name" || return
+
+	# shellcheck disable=SC2086 # variable contains a glob
+	set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
+	dst=${!#}/$snap
+	$IfRun mkdir -p "${dst%/*}"		 # rsync will fix dir perms
+	$IfRun cp -al "$backup_snap" "$PWD/$dst" # $PWD for 'ps'
+}
+readonly -f _link-snap
+
+# `----------------------
+
 link-snap() {
 	local snap_name=${1%/}; shift; drive_names=$*
 
@@ -9227,21 +9248,9 @@ link-snap() {
 	    do	set-drive_name "$drive_name"
 		set-drive_dir  "$drive_name"
 		cd_ "$drive_dir"
-		if [[ -d latest/$snap ]]
-		   then [[ $debug_opt ]] && echo "$drive_name has $snap"
-			continue
-		fi
-
-		set-backup_snap--from-glob      "$snap" ||
-		set-backup_snap--from-best-snap "$snap" ||
-		    warn "no $repo snaps on $drive_name" || continue
-
-		# shellcheck disable=SC2086 # variable contains a glob
-		set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
-		dst=${!#}/$snap
-		$IfRun mkdir -p "${dst%/*}" # rsync fixes perms
-		$IfRun cp -al "$PWD/$backup_snap" "$dst" # $PWD for 'ps'
+		_link-snap &
 	done
+	wait
 }
 readonly -f link-snap
 
