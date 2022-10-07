@@ -176,9 +176,10 @@ drv_name2dirs_to_backup[X]=/home/scott/{.bash*,bin,git} # personal memory stick
 drv_name2dirs_to_backup[Z]=/var/tmp/small-dir # for testing with pseudo-drive Z
 
 # Basic options for "rsync"; add --acls if it's supported.
+# Need --delete for set-backup_snap--from-best-snap (links similar snap)
 # preallocate: slight ext4 speedup; hopefully works with --sparse
 # preallocate error: rsync: do_fallocate <path> "Operation not supported (95)
-rsync_backup_opts="--archive --hard-links --xattrs --sparse --preallocate"
+rsync_backup_opts="--archive --delete --hard-links --xattrs --sparse --preallocate"
 
 # See: https://stackoverflow.com/a/20738063 or "EXIT VALUES" in man page.
 # Vanished source files (status=24) are common if backup tmp directories.
