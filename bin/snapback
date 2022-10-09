@@ -9098,13 +9098,13 @@ readonly -f rm-untagged-snaps
 # ----------------------------------------------------------------------------
 
 set-snap_base-repo-snap_name-snap() {
-	snap_name=$1			# snap_name is a global
+	local snap_arg=$1
 
 	snap_base=~snap
-	[[ $snap_name == */*   ]] || snap=$PWD/$snap_name
-	[[ $snap_name == */*/* ]] || snap=$snap_base/$snap_name
-	repo=$(basename "${snap%/*}")
-	snap_name=${snap##*/}
+	[[ $snap_arg == */*   ]] || snap_arg=$PWD/$snap_arg
+	[[ $snap_arg == */*/* ]] || snap_arg=$snap_base/$snap_arg
+	repo=$(basename "${snap_arg%/*}")
+	snap_name=${snap_arg##*/}
 	snap=$snap_base/$repo/$snap_name
 
 	[[ $snap_name == s[1-9]* ]] || snap_name=$(readlink "$snap") ||
@@ -9118,7 +9118,7 @@ find-signatures() {
 	# bytes,modify time in seconds,path
 	# shellcheck disable=SC2035 # don't want ./path
 	pushd_ "$1"
-	find ./* -type f -printf "%s,%T@,%p\n" | sort
+	find ./* -type f -printf "%s,%T@,%p\n"
 	popd_
 }
 readonly -f find-signatures
@@ -9133,8 +9133,11 @@ readonly -f _byte_sum
 # ----------------------
 
 set-missing_bytes() {
-	local snap_sig_file=$1 other_sig_file=$2
+	local snap_sig_file=$1 other_sig_file=$2  file
 
+	for file in "$snap_sig_file" "$other_sig_file"
+	    do	sort -o "$file" "$file"
+	done
 	missing_bytes=$(comm -23 "$snap_sig_file" "$other_sig_file" | _byte_sum)
 	[[ $missing_bytes ]] || missing_bytes=0
 }
@@ -9191,13 +9194,13 @@ function set-backup_snap--from-best-snap() {
 	local lower_snap= higher_snap=
 	local -i i snap_num=${snap##*/s}
 	for (( i=$snap_num-1; i >= 1; i-- ))
-	    do	set-backup_snap--from-glob "s$snap_num" || continue
+	    do	set-backup_snap--from-glob "s$i" || continue
 		lower_snap=$backup_snap
 		break
 	done
 
 	for (( i=$snap_num+1; i <= $max_snap_num; i++ ))
-	    do	set-backup_snap--from-glob "s$snap_num" || continue
+	    do	set-backup_snap--from-glob "s$i" || continue
 		higher_snap=$backup_snap
 		break
 	done
@@ -9230,8 +9233,9 @@ _link-snap() {
 
 	# shellcheck disable=SC2086 # variable contains a glob
 	set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
-	dst=${!#}/$snap
+	dst=${!#}$snap
 	$IfRun mkdir -p "${dst%/*}"		 # rsync will fix dir perms
+	$IfRun ln -s "$snap_name" "${dst%/*}/$tag_name"
 	$IfRun cp -al "$backup_snap" "$PWD/$dst" # $PWD for 'ps'
 }
 readonly -f _link-snap
@@ -9239,7 +9243,7 @@ readonly -f _link-snap
 # `----------------------
 
 link-snap() {
-	local snap_name=${1%/}; shift; drive_names=$*
+	local snap_name=${1%/} tag_name=${2%/}; shift 2; drive_names=$*
 
 	set-snap_base-repo-snap_name-snap "$snap_name"
 	[[ $drive_names ]] || set-drive_names
