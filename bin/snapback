@@ -9069,7 +9069,7 @@ rm-untagged-snaps-on-one-drive() {
 		done
 	done
 
-	touch "$drive_dir/$did_rm_untagged_snaps_file"
+	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file"
 }
 readonly -f rm-untagged-snaps-on-one-drive
 
