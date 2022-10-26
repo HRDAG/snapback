@@ -8146,6 +8146,8 @@ _create-and-mount-filesystem() {
 	archive-writer-stats-data
 	RunCmd mount -v -t "$FS_type" -o "$mount_opts" "$device" "$drive_dir"
 	fix-drive_dir-perms "$drive_dir"
+	[[ $exclude_untagged_snaps ]] && # we have no untagged snaps
+	    $IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
 	run-df "$drive_dir"
 }
 readonly -f _create-and-mount-filesystem
