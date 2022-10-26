@@ -3627,6 +3627,8 @@ readonly -f _have-full-snapshot
 
 declare -i num_full_link_dests
 
+readonly did_link_snap_file_name=.linked-snap
+
 set-num_full_link_dests() {
 
 	# OLD: need at least 2 --link-dest args in case sysadmnin borked one,
@@ -3650,6 +3652,13 @@ set-num_full_link_dests() {
 	# files/sec; also, when inodes fit in the inode cache, you don't
 	# beatup backup disks as much, so they should live longer.
 	num_full_link_dests=1
+
+	# there's a race with link-snaps: if we link to latest/ just before a
+	# job creates a new .partial, when the .partial is done then latest/
+	# doesn't have the newly-linked snap; so need an extra --link-dest
+	[[ -f $drive_dir/$did_link_snap_file_name ]] &&
+	    (( $num_full_link_dests == 1 )) &&
+	    ((  num_full_link_dests+=1 ))
 }
 readonly -f set-num_full_link_dests
 
@@ -4404,6 +4413,10 @@ function backup-drive() {
 	# delete a database-dump, or write $date_time & $status to a database
 	${backup_drive_post_hook-}
 
+	# we no longer have race condition of link-snap (possibly) near backup
+	[[ $status == 0 ]] &&
+	    $IfRun rm -f "$did_link_snap_file_name"
+
 	unlock backup
 
 	if [[ ! $is_multi_writer_drive ]]
@@ -4763,7 +4776,7 @@ _set-drive_dirs--for-update-srcs() {
 	dst_backup_type=$backup_type
 
 	local src_drive_dir
-	set-drive_dirs -a
+	set-drive_dirs
 	local all_drive_dirs=$drive_dirs
 	drive_dirs=
 	for src_drive_dir in $all_drive_dirs
@@ -9032,7 +9045,7 @@ readonly -f set-sudo--if-not-root
 
 # ----------------------------------------------------------------------------
 
-readonly did_rm_untagged_snaps_file=.rm-snaps
+readonly did_rm_untagged_snaps_file_name=.rm-snaps
 
 rm-untagged-snaps-on-one-drive() {
 	local drive_name=${1:-$drive_name}
@@ -9042,7 +9055,7 @@ rm-untagged-snaps-on-one-drive() {
 	set-drive_name "$drive_name"
 	set-drive_dir  "$drive_name"
 
-	[[ -f "$drive_dir/$did_rm_untagged_snaps_file" ]] && return
+	[[ -f "$drive_dir/$did_rm_untagged_snaps_file_name" ]] && return
 
 	# shellcheck disable=SC2231 # variable contains a glob
 	cd "$drive_dir" &&
@@ -9069,7 +9082,7 @@ rm-untagged-snaps-on-one-drive() {
 		done
 	done
 
-	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file"
+	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
 }
 readonly -f rm-untagged-snaps-on-one-drive
 
@@ -9231,12 +9244,12 @@ _link-snap() {
 	set-backup_snap--from-best-snap "$snap" ||
 	    warn "no $repo snaps on $drive_name" || return
 
-	# shellcheck disable=SC2086 # variable contains a glob
-	set -- $snapshot_glob+(|.partial) # maybe rsync'ing to .partial
-	dst=${!#}$snap
+	set-latest_snapshot
+	dst=$latest_snapshot$snap
 	$IfRun mkdir -p "${dst%/*}"		 # rsync will fix dir perms
 	$IfRun ln -s "$snap_name" "${dst%/*}/$tag_name"
 	$IfRun cp -al "$backup_snap" "$PWD/$dst" # $PWD for 'ps'
+	$IfRun touch "$did_link_snap_file_name"
 }
 readonly -f _link-snap
 
@@ -9506,9 +9519,10 @@ _run-debug-cmds() {
 	fi
 
 	$Trace
-				       _show-test-results "$tmp_o"
+						  _show-test-results "$tmp_o"
+	# stdin must npt be a tty, else we'll test cron-excluded drives
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
-	RunCmd $tst_cmd_ &> "$tmp_t" ; _show-test-results "$tmp_t"
+	RunCmd $tst_cmd_ &> "$tmp_t" < $dev_null; _show-test-results "$tmp_t"
 	[[ $test == u ]] &&
 	    set-srcs_dst_file && cp "$srcs_dst_file" "$tmp_t.args"
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; report-same-results; return; }
@@ -9517,8 +9531,8 @@ _run-debug-cmds() {
 	Since different results, regenerate data cached from installed cmd ..."
 	# shellcheck disable=SC2086 # $*cmd contains its arguments
 	PATH=${old_cmd%/*}:$PATH \
-	RunCmd $old_cmd_ &> "$tmp_o" ; _show-test-results "$tmp_o"
-				       _show-test-results "$tmp_t"
+	RunCmd $old_cmd_ &> "$tmp_o" < $dev_null; _show-test-results "$tmp_o"
+						  _show-test-results "$tmp_t"
 	[[ $test == u ]] &&
 	    set-srcs_dst_file && cp "$srcs_dst_file" "$tmp_o.args"
 	cmp -s "$tmp_o" "$tmp_t" && { set +x; report-same-results; return; }
