@@ -5085,8 +5085,6 @@ function update-drive() {
 
 	rmdir ./*.partial &> $dev_null	# in case crashed
 
-	$IfRun rm-untagged-snaps-on-one-drive "$drive_name"
-
 	set-srcs_dst_file
 	mkdir-missing-snapshots-then-print-copy-args > "$srcs_dst_file"
 
