@@ -6861,7 +6861,7 @@ show-FS-repair-cmds() {
 	header "$highlighted_string"
 	echo
 	if [[ $watch_opt ]]
-	   then sed -r -e "$sed_opt" -e 's@ -.* (/dev/)@ ... \1@'
+	   then sed -re "/ time /d" -e "$sed_opt" -e 's@ -.* (/dev/)@ ... \1@'
 	   else sed "$sed_opt"
 	fi < "$FS_repair_cmds_file"
 
@@ -9057,6 +9057,7 @@ rm-untagged-snaps-on-one-drive() {
 
 	[[ -f "$drive_dir/$did_rm_untagged_snaps_file_name" ]] && return
 
+	repo_dirs=${extra_excludes%/*}
 	# shellcheck disable=SC2231 # variable contains a glob
 	cd "$drive_dir" &&
 	for snapshot in $snapshot_glob*
@@ -9094,7 +9095,6 @@ rm-untagged-snaps() {
 
 	set-sudo--if-not-root
 
-	repo_dirs=${extra_excludes%/*}
 	for drive_name in $drive_names
 	    do	rm-untagged-snaps-on-one-drive "$drive_name" &
 		job_PID=$!
