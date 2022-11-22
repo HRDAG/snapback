@@ -153,11 +153,13 @@ Encrypt the drive, then create a decrypted mapping:
 	sudo snapcrypt init $drive_name $raw_device
 
     # If it fails with "Device size is not aligned to requested sector size.",
-    # then delete the partition and recreate with Last sector of default-1
-    # (keep subtracting a bigger number until the error disappears); or
-    # perhaps _add_ to the first sector.  This can be dangerous (you could
-    # *LOSE* data on other partitions if you make a mistake), so there are
-    # various alternatives:
+    # then delete the partition and recreate with Last sector of default-1 (it
+    # will probably be an odd number, since it's the last sector not a length;
+    # keep decrementing the number until error disappears); or perhaps _add_
+    # to the first sector (especially if it's not a multiple of 8).
+    #
+    # This can be dangerous (you could *LOSE* data on other partitions if you
+    # make a mistake), so there are various alternatives:
 
     # 0. easiest, but least efficient: re-run 'init' with the smallest
     # sector-size that will work, i.e. copy-and-paste the following 3 lines:
