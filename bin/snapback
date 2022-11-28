@@ -4670,6 +4670,7 @@ readonly -f copy-snapshots
 function copy-snapshot-rsync() {
 	local src_snapshot=$1 dst_snapshot=$2
 
+	# only one job can be creating the very first backup
 	if have-enough-snapshots-for-backup "$dst_snapshot"
 	   then local lock_bkp=$false
 	   else local lock_bkp=$true
@@ -5035,9 +5036,9 @@ function fill-in-unpruned-empty-snapshots() {
 			        >  "$fastest_snapshots_file" # so no subprocess
 			# shellcheck disable=SC2034 # foo is unused snapshots
 			read -r snap foo < "$fastest_snapshots_file"
-			if  [[ $snap ]]
-			   then copy-snapshot-rsync "$snap" "$dst_snapshot" >&2
-				status=0 # we did some work
+			if  [[ $snap ]] &&
+			    copy-snapshot-rsync "$snap" "$dst_snapshot" >&2
+			   then	status=0 # we did some work
 				# copy-* took a long time, recheck drive speeds
 				$IfRun unset drive_name2speed_record >&2
 				force_opt= # do 1 force per pass
