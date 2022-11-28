@@ -3989,6 +3989,8 @@ fi
 
 function do-pre-backup-tasks() {
 
+	do-chores
+
 	(( $start_minute == 0 )) || return # only do tasks hourly
 
 	# prepare for possibly-hourly backups
@@ -6206,7 +6208,7 @@ exec-watch-snapback-w() {
 	local opts=
 	while [[ ${1-} == -* || ${1-} == [0-9]* ]]; do opts+="$1 "; shift; done
 
-	local w_opts="$no_errors $stats_opt $cron_opt $bg_opt"
+	local w_opts="$no_errors $no_old_errors $stats_opt $cron_opt $bg_opt"
 	if [[ $names ]]
 	   then # shellcheck disable=SC2086 # variable contains multiple values
 		set-drive_names--from-user-args $names ||
@@ -6562,6 +6564,8 @@ show-errors-in-syslog() {
 
 	[[ ! ${no_errors-} && -s $errors_count_msg_file ]] && {
 
+	set-start_hour-start_minute-start_DoM-start_DoW
+	[[ ${no_old_errors-} ]] && regex="^[A-Z].. $start_DoM " || regex=.
 	# shellcheck disable=SC2155    # 'basename' never fails
 	local header=" count  subset-of-$(basename "$syslog_path")-record"
 	set-highlighted_string warning "${header^^}"
@@ -6580,7 +6584,7 @@ show-errors-in-syslog() {
 		set-highlighted_string $type "$msg"
 		printf "%6d: %s\n" "$count" "$highlighted_string"
 		(( rows_left-=1 ))
-	done < "$errors_count_msg_file"
+	done <<<"$( grep "$regex" "$errors_count_msg_file" )"
 
 	echo
 	(( rows_left-=2 ))
@@ -7162,6 +7166,7 @@ watch() {
 	Usage: watch [options] [-- watch-options] [section-function-names]
 	our options:
 	   -E: don't show syslog errors
+	   -Y: don't show yesterday's syslog errors
 	   -C: also show backup-drive jobs run by cron
 	   -s: only show descriptive statistics
 	   -d: only show 'df' (so can watch Used and IUsed)
@@ -7170,12 +7175,13 @@ watch() {
 	   -P: don't parallelize generation of sections; debug with: w -P ...
 	EOF
 	# most of these variables are accessed in exec-watch-snapback-w
-	local watch_opt= no_errors= stats_opt= cron_opt= bg_opt= names=
-	local OPTIND opt
-	while getopts "wEsCPduN: n: hk" opt
+	local watch_opt= no_errors= no_old_errors= stats_opt= cron_opt= bg_opt=
+	local OPTIND opt names=
+	while getopts "wEYsCPduN: n: hk" opt
 	   do	case $opt in
 		   ( w ) watch_opt=-$opt ;; # internal option
 		   ( E ) no_errors=-$opt ;;
+		   ( Y ) no_old_errors=-$opt ;;
 		   ( C )  cron_opt=-$opt ;;
 		   ( s ) stats_opt=-$opt ;;
 		   ( d )    df_opt=-$opt ;;
