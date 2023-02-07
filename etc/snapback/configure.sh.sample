@@ -202,7 +202,7 @@ no_log_rsync_exit_statuses="20"		# can add 31
 # After you change this variable, touch excludes.txt to alert run-prune that
 # a full exclude-style prune run is needed, so new excludes delete files.
 #
-# Best not use these until Scott supports dissimilar drives in update-drives,
+# Best to not customize these until support dissimilar drives in update-drives,
 extra_includes_file=			# include some of what's excluded below
 extra_excludes=				# per-drive custom excludes
 

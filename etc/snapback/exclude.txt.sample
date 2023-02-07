@@ -114,6 +114,7 @@
 /home/*/tmp/*
 /home/*/[Tt]rash/*
 /home/**/Favicons
+/home/*/.cache
 
 # https://superuser.com/questions/1587202/login-data-file-in-chrome-retrieve-logins-passwords-urls
 # https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data
@@ -185,6 +186,10 @@
 /home/*/.dbus/session-bus/*
 # 19 MB, changes daily
 /home/*/.local/share/zeitgeist/*
+# can have 10GB of session data
+/home/*/.local/share/rstudio*/sessions/active
+# can have 3GB of session data
+/home/*/.rstudio/*
 
 # personal R libraries
 /home/*/R/x86_64-pc-linux-gnu-library/*
@@ -193,6 +198,9 @@
 /home/*/*/R/x86_64-pc-linux-gnu-library/*
 /home/*/*/R/library/*
 /home/*/*/R/rlib/*
+
+# personal python libraries
+/home/*/.local/lib/python*
 
 # miscellaneous files that don't need to be saved (on a non-Mac)
 .DS_Store
