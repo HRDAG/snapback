@@ -39,6 +39,15 @@
 # /usr/share/texmf-texlive
 # /usr/src/kernels/*
 
+# older versions
+/usr/local/cuda-[89].0
+/usr/local/julia-1.[0-7]*
+/usr/local/image/julia-1.[0-7]*
+/usr/local/image/rstudio-server-1.*-amd64.deb
+# very old gcc stuff
+/usr/local/libexec/gcc/x86_64-pc-linux-gnu/[0-9].*
+/usr/src/linux-headers-4.*
+
 # contains 1 MB of .ttf files that change daily
 /usr/share/fonts/truetype/ttf-dejavu/*
 
@@ -94,6 +103,9 @@
 # home-directory user stuff				#
 # -------------------------------------------------------
 
+# punctuation, an error
+/home/*/[^.a-zA-Z0-9]
+
 # the files in here have 111 hard links, which causes link-failures with ext4
 /home/*/libexec/git-core
 
@@ -112,9 +124,12 @@
 /home/*/.torch/*
 /home/*/.*/bundle/*
 /home/*/tmp/*
-/home/*/[Tt]rash/*
-/home/**/Favicons
+/home/*/TMP/*
 /home/*/.cache
+/root/.cache/*
+/home/*/.cabal/*
+/home/*/.fastai/data
+/home/*/.linuxbrew/*
 
 # https://superuser.com/questions/1587202/login-data-file-in-chrome-retrieve-logins-passwords-urls
 # https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data
@@ -184,12 +199,23 @@
 
 # miscellaneous config
 /home/*/.dbus/session-bus/*
+# 400 MB
+/home/*/.local/share/nvim/plugged/*
+# 350 MB
+/home/*/.local/share/r-miniconda/*
+/home/*/.local/share/[Tt]rash/*
+# 500 MB
+/home/*/.local/share/virtualenvs/*
 # 19 MB, changes daily
 /home/*/.local/share/zeitgeist/*
-# can have 10GB of session data
+# can have 10-30 GB of session data
 /home/*/.local/share/rstudio*/sessions/active
-# can have 3GB of session data
+/home/*/.local/share/rstudio*/rstudio/sessions/active
+/home/*/.local/share/rstudio/suspended-session-data
+# can have 3 GB of session data
 /home/*/.rstudio/*
+# 800 MB
+/home/*/.RData
 
 # personal R libraries
 /home/*/R/x86_64-pc-linux-gnu-library/*

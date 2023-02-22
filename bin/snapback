@@ -2507,7 +2507,7 @@ save-stats-file() {
 	# OK if multiple writers -> larger minutes, that's "current reality"
 	if [[ $data_type == MB ]]
 	   then local lock_file=${data_file%.txt}.pid
-		$IfRun lockpid -r "$lock_file" || print-call-stack
+		$IfRun lockpid -r "$lock_file" || : print-call-stack
 		# a prune or copy could have been suspended by another writer
 		if [[ -s $data_file ]]
 		   then local stats_content
@@ -4361,6 +4361,24 @@ readonly -f allow-pruning
 
 # ---------------------------------
 
+delete-older-dirs-if-small-drive() {
+
+	is-arg1-in-arg2 "$drive_name" "${small_drives-}" || return
+
+	local latest_snapshot dir
+	set-latest_snapshot
+	cd "$drive_dir" &&
+	for snapshot in $snapshot_glob*
+	    do	[[ $snapshot == $latest_snapshot ]] && break
+		for dir in ${dirs_to_delete_in_old_snapshots-}
+		    do	[[ -d $snapshot$dir ]] || continue
+			$IfRun rm -r $snapshot$dir
+		done
+	done
+}
+
+# ---------------------------------
+
 restore-lock() {
 	local lock_path=${1-} lock_PGID=${2-}
 
@@ -4418,6 +4436,8 @@ function backup-drive() {
 	# we no longer have race condition of link-snap (possibly) near backup
 	[[ $status == 0 ]] &&
 	    $IfRun rm -f "$did_link_snap_file_name"
+
+	[[ $status == 0 ]] && delete-older-dirs-if-small-drive
 
 	unlock backup
 
@@ -5114,10 +5134,10 @@ readonly -f update-drive
 
 do-chores() {
 
-	check-logs			# create data for 'watch'
+	$IfRun check-logs		# create data for 'watch'
 	rm-dangling-stats-symlinks
 	rm-stale-locks			# do before ...
-	did-re-start-monitor-drives-if-needed
+	$IfRun did-re-start-monitor-drives-if-needed
 	# log "$FUNCNAME finished"	# for debugging
 }
 readonly -f do-chores
@@ -5724,7 +5744,7 @@ set-drive_responses() {
 			   then set-highlighted_string warning "$secs"
 				secs=$highlighted_string
 			fi
-		   else set-highlighted_string error HUNG!
+		   else set-highlighted_string error HUNG!!
 			local secs=$highlighted_string
 		fi
 		responses+="$drive_name=$secs "
