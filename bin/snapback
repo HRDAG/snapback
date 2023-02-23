@@ -4315,10 +4315,12 @@ readonly -f does-non-prune-job-hold-prune-lock
 
 # ----------------------
 
-_did_prevent_pruning_print_stack=$false
+_did_prevent_pruning=$false
 
 maybe-prevent-pruning() {
 	local resource=$1 drive_name
+
+	[[ $_did_prevent_pruning ]] && return
 	set-drive_name- "$resource" || return
 
 	is-multi-writer-drive   && return # simultaneous pruning?
@@ -4344,8 +4346,9 @@ maybe-prevent-pruning() {
 			    tee -a "$file_for_logging"
 		fi
 		$IfRun sleep-exe 0.9
+		break
 	done
-	_did_prevent_pruning_print_stack=$false # for future call
+	_did_prevent_pruning=$true
 }
 readonly -f maybe-prevent-pruning
 
