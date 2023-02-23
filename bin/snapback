@@ -3571,7 +3571,7 @@ function prune-drive() {
 	set -- $(prune-type-to-file year  "$snapshots_to_prune_file" "$@")
 
 	rm-pruned-snapshots "$snapshots_to_prune_file" # it deletes the file
-	rm -f "$snapshots_to_prune_file"
+	rm -f "$snapshots_to_prune_file"	       # ... but just in case
 
 	[[ $only_do_mv ]] && return 0
 
