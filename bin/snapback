@@ -4304,14 +4304,35 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-function does-non-prune-job-hold-prune-lock {
+function set-cmd_holding_lock {
+	local lock_type=$1
 
-	 local lock_paths lock_PGID command
-	 set-lock_paths prune && set-lock_PGID "$lock_paths" || return 1
-	 set-command--from-PGIDs "$lock_PGID"
-	 ! [[ $command =~ ' prune-drives? ' ]]
+	local lock_paths lock_PGID command
+	set-lock_paths $lock_type && set-lock_PGID "$lock_paths" || return 1
+	set-command--from-PGIDs "$lock_PGID"
+	cmd_holding_prune_lock=$command
 }
-readonly -f does-non-prune-job-hold-prune-lock
+readonly -f set-cmd_holding_lock
+
+# ----------------------
+
+function does-backup-job-hold-lock {
+	local lock_type=$1
+
+	set-cmd_holding_lock $lock_type &&
+	[[ $cmd_holding_lock =~ ' backup-drives? ' ]]
+}
+readonly -f does-backup-job-hold-lock
+
+# ----------------------
+
+function does-non-prune-job-hold-lock {
+	local lock_type=$1
+
+	set-cmd_holding_lock prune $lock_type ||
+	! [[ $cmd_holding_lock =~ ' prune-drives? ' ]]
+}
+readonly -f does-non-prune-job-hold-lock
 
 # ----------------------
 
@@ -4326,29 +4347,26 @@ maybe-prevent-pruning() {
 	is-multi-writer-drive   && return # simultaneous pruning?
 	is-drive-usage-too-high && return # really need pruning?
 
-	until lock -P --quiet prune
-	    do	local status=$?
-
-		# did another copy job lock the same source?
-		if does-non-prune-job-hold-prune-lock
+	lock -P --quiet prune
+	local  status=$?
+	if [[ $status != 0 ]]		# someone else holds lock?
+	   then # did another copy job lock the same source?
+		if does-non-prune-job-hold-lock prune
 		   then # we want the lock if the other copy finishes before us
 			local lockpid_opt="--pid=$BASHPID" # us, not child ...
 			lock -w -P $lockpid_opt prune &
+			_did_prevent_pruning=$true
 			return
 		fi
 
-		kill-job-on-drives prune
-		if [[ ! $_did_prevent_pruning_print_stack ]]
-		   then  _did_prevent_pruning_print_stack=$true
-			local lock_msg="lock returned $status"
-			print-call-stack \
-			    "$lock_msg: awaiting $drive_name lock" |
-			    tee -a "$file_for_logging"
-		fi
+		does-backup-job-hold-lock prune && return # don't kill backup
+		kill-job-on-drives prune # kill copy job
+		print-call-stack \
+		    "$lock returned $status: awaiting $drive_name lock" |
+		    tee -a "$file_for_logging"
+
 		$IfRun sleep-exe 0.9
-		break
-	done
-	_did_prevent_pruning=$true
+	fi
 }
 readonly -f maybe-prevent-pruning
 
