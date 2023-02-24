@@ -4354,13 +4354,13 @@ maybe-prevent-pruning() {
 		if does-non-prune-job-hold-lock prune
 		   then # we want the lock if the other copy finishes before us
 			local lockpid_opt="--pid=$BASHPID" # us, not child ...
-			lock -w -P $lockpid_opt prune &
-			_did_prevent_pruning=$true
+			lock -w -P $lockpid_opt prune &	# wait forever for it
+			_did_prevent_pruning=$true	# don't do it again
 			return
 		fi
 
 		does-backup-job-hold-lock prune && return # don't kill backup
-		kill-job-on-drives prune # kill copy job
+		kill-job-on-drives prune # kill prune job
 		print-call-stack \
 		    "$lock returned $status: awaiting $drive_name lock" |
 		    tee -a "$file_for_logging"
