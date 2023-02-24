@@ -4329,7 +4329,7 @@ readonly -f does-backup-job-hold-lock
 function does-non-prune-job-hold-lock {
 	local lock_type=$1
 
-	set-cmd_holding_lock prune $lock_type ||
+	set-cmd_holding_lock $lock_type ||
 	! [[ $cmd_holding_lock =~ ' prune-drives? ' ]]
 }
 readonly -f does-non-prune-job-hold-lock
@@ -4388,9 +4388,10 @@ delete-older-dirs-if-small-drive() {
 
 	local latest_snapshot dir
 	set-latest_snapshot || return
+	latest_snapshot=${latest_snapshot##*/} # basename
 	cd "$drive_dir" &&
 	for snapshot in $snapshot_glob*
-	    do	[[ $snapshot == $latest_snapshot ]] && break
+	    do	[[ $snapshot == "$latest_snapshot" ]] && break
 		for dir in ${dirs_to_delete_in_old_snapshots-}
 		    do	[[ -d $snapshot$dir ]] || continue
 			$IfRun rm -r $snapshot$dir
