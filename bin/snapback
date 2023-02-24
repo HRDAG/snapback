@@ -4387,7 +4387,7 @@ delete-older-dirs-if-small-drive() {
 	is-arg1-in-arg2 "$drive_name" "${small_drives-}" || return
 
 	local latest_snapshot dir
-	set-latest_snapshot
+	set-latest_snapshot || return
 	cd "$drive_dir" &&
 	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot == $latest_snapshot ]] && break
