@@ -5281,7 +5281,7 @@ create-jobs() {
 	 _set-function-our_exe-writer_type "$type"
 
 	if [[ $are_recursing ]]
-	   then # $Trace
+	   then $Trace
 		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
 		exit-normally $?
@@ -9729,7 +9729,7 @@ case $action in
 	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
 	set-start_hour-start_minute-start_DoM-start_DoW
-	[[ $1 == -r ]] && { do-pre-backup-tasks; $Trace; }
+	[[ $1 == -r ]] && do-pre-backup-tasks
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then wait			# want to stay in 'ps'
@@ -9762,7 +9762,6 @@ case $action in
 				 ${excluded_src_names_glob_opt-}
 				${backup_period_for_update_opt-}"
 	# shellcheck disable=SC2086 # $opts may be null or multi
-	# [[ $1 == -r ]] && ${Trace-:}
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
