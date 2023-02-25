@@ -4735,7 +4735,7 @@ function copy-snapshot-rsync() {
 			unlock  backup		   # ... but don't hold lock
 		fi
 
-		is-copy-src ||	       # 2 drives copying to each other?
+		is-copy-src &&	       # 2 drives copying to each other?
 		    suspend-jobs prune # cron will swap jobs if drive space low
 	fi
 
@@ -5145,6 +5145,7 @@ function update-drive() {
 
 	prune-drive "$drive_name"
 
+	$Trace
 	fill-in-unpruned-empty-snapshots "$srcs_dst_file"
 	local status=$?
 	# shellcheck disable=SC2086 # variable contains multiple values
@@ -5293,7 +5294,7 @@ create-jobs() {
 	 _set-function-our_exe-writer_type "$type"
 
 	if [[ $are_recursing ]]
-	   then $Trace
+	   then # $Trace
 		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
 		exit-normally $?
@@ -5309,7 +5310,7 @@ create-jobs() {
 
 		$our_name_ watch
 "
-	$Trace
+	# $Trace
 	for name
 	    do	# [[ $name == *[aA] ]] && set -x	   # uncomment to debug
 		set-drive_name- "$name" &&  name=$drive_name # cleanup for 'ps'
@@ -9774,6 +9775,7 @@ case $action in
 				 ${excluded_src_names_glob_opt-}
 				${backup_period_for_update_opt-}"
 	# shellcheck disable=SC2086 # $opts may be null or multi
+	# [[ $1 == -r ]] && ${Trace-:}
 	create-jobs update $opts "$@"
 	# [[ ! $is_cron ]] || wait	# so see master cron job in ps
 	;;
