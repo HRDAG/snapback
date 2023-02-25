@@ -8912,6 +8912,8 @@ readonly OS_ignorable_error_strings="\
 Could not resolve keysym Invalid
 .translations.get called with reason:
 JS ERROR: TypeError:
+Bus client reset DNS server list.
+Bus client reset search domain list.
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
