@@ -4332,7 +4332,7 @@ readonly -f does-backup-job-hold-lock
 function does-prune-job-hold-lock {
 	local lock_type=$1
 
-	set-cmd_holding_lock "$lock_type" ||
+	set-cmd_holding_lock "$lock_type" &&
 	[[ $cmd_holding_lock =~ ' prune-drives? ' ]]
 }
 readonly -f does-prune-job-hold-lock
