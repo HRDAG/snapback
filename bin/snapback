@@ -2381,12 +2381,10 @@ function is-copy-higher-priority-than-prune() {
 		is-copy-src &&		# 2 drives copying to each other?
 		    lock-PID --release --quiet prune # might not exist???
 		continue-jobs prune	# may do nothing if backup running
-	   else is-copy-src && return 0	# might not suspend _or_ prune
+	   else is-copy-src || return 1
 		maybe-prevent-pruning "$copy_src_dir"
 		continue-jobs copy	# may do nothing if backup running
-		is-multi-writer-drive && return 1
-		does-prune-job-hold-lock prune && suspend-jobs prune
-		return 0
+		is-multi-writer-drive || return 0
 	fi
 
 	return 1
@@ -4350,26 +4348,15 @@ maybe-prevent-pruning() {
 	is-multi-writer-drive   && return # simultaneous pruning?
 	is-drive-usage-too-high && return # really need pruning?
 
-	lock -P --quiet prune
-	local  status=$?
-	if [[ $status != 0 ]]		# someone else holds lock?
-	   then # did another copy job lock the same source?
-		if ! does-prune-job-hold-lock prune
-		   then # we want the lock if the other copy finishes before us
-			local lockpid_opt="--pid=$BASHPID" # us, not child ...
-			lock -w -P $lockpid_opt prune &	# wait forever for it
-			_did_prevent_pruning=$true	# don't do it again
-			return
-		fi
+	lock -P --quiet prune && return	# try to grab lock
 
-		does-backup-job-hold-lock prune && return # don't kill backup
-		kill-job-on-drives prune # kill prune job
-		print-call-stack \
-		    "$lock returned $status: awaiting $drive_name lock" |
-		    tee -a "$file_for_logging"
+	does-prune-job-hold-lock prune &&
+	    kill-job-on-drives prune
 
-		$IfRun sleep-exe 0.9
-	fi
+	# we want the lock if another owner finishes before us
+	local lockpid_opt="--pid=$BASHPID" # us, not child ...
+	lock -w -P $lockpid_opt prune &	# wait forever for it
+	_did_prevent_pruning=$true	# don't do it again
 }
 readonly -f maybe-prevent-pruning
 
