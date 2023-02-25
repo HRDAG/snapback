@@ -9729,7 +9729,7 @@ case $action in
 	[[ $1 != -r ]] && assert-not-option "$1"
 	[[ $# != 0  ]] || abort-with-action-Usage
 	set-start_hour-start_minute-start_DoM-start_DoW
-	[[ $1 == -r ]] && do-pre-backup-tasks
+	[[ $1 != -r ]] && do-pre-backup-tasks
 	create-jobs backup "$@"
 	if [[ $is_cron ]]
 	   then wait			# want to stay in 'ps'
