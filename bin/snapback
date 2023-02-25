@@ -2385,7 +2385,7 @@ function is-copy-higher-priority-than-prune() {
 		maybe-prevent-pruning "$copy_src_dir"
 		continue-jobs copy	# may do nothing if backup running
 		is-multi-writer-drive && return 1
-		does-non-prune-job-hold-lock || suspend-jobs prune
+		does-prune-job-hold-lock prune && suspend-jobs prune
 		return 0
 	fi
 
@@ -2886,7 +2886,7 @@ function _should-run-prune {
 	if [[ $is_cron ]]
 	   then is-copy-higher-priority-than-prune && return 1
 	   else # if user changed backup_period or prune-rate, need to rescan
-		does-non-prune-job-hold-lock ||
+		does-prune-job-hold-lock prune &&
 		kill-job-on-drives prune # kill old job, we'll be new job
 	fi
 
@@ -4329,13 +4329,13 @@ readonly -f does-backup-job-hold-lock
 
 # ----------------------
 
-function does-non-prune-job-hold-lock {
+function does-prune-job-hold-lock {
 	local lock_type=$1
 
 	set-cmd_holding_lock "$lock_type" ||
-	! [[ $cmd_holding_lock =~ ' prune-drives? ' ]]
+	[[ $cmd_holding_lock =~ ' prune-drives? ' ]]
 }
-readonly -f does-non-prune-job-hold-lock
+readonly -f does-prune-job-hold-lock
 
 # ----------------------
 
@@ -4354,7 +4354,7 @@ maybe-prevent-pruning() {
 	local  status=$?
 	if [[ $status != 0 ]]		# someone else holds lock?
 	   then # did another copy job lock the same source?
-		if does-non-prune-job-hold-lock prune
+		if ! does-prune-job-hold-lock prune
 		   then # we want the lock if the other copy finishes before us
 			local lockpid_opt="--pid=$BASHPID" # us, not child ...
 			lock -w -P $lockpid_opt prune &	# wait forever for it
@@ -4441,6 +4441,8 @@ function backup-drive() {
 	if [[ ! $is_multi_writer_drive ]]
 	   then suspend-jobs copy prune
 		# if suspended a copy, it's now OK to prune its source drive
+		local prune_lock_path= copy_PGID=
+		is-drive-usage-too-high &&
 		_set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 	fi
 
@@ -4469,7 +4471,11 @@ function backup-drive() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then # before continue a copy, disable the pruning of its source
-		restore-lock "${prune_lock_path-}" "${copy_PGID-}"
+		if [[ "$prune_lock_path" ]] # did we delete copy's lock?
+		   then does-prune-job-hold-lock prune &&
+			   kill-job-on-drives prune # if a prune job started
+			restore-lock "$prune_lock_path" "$copy_PGID"
+		fi
 		$IfRun create-jobs prune # also manages (continues) a copy job
 	fi
 
