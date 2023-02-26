@@ -2385,7 +2385,7 @@ function is-copy-higher-priority-than-prune() {
 		    lock-PID --release --quiet prune # might not exist???
 		continue-jobs prune	# may do nothing if backup running
 	   else is-copy-src || return 1
-		maybe-prevent-pruning "$copy_src_dir"
+		maybe-prevent-pruning "$copy_src_dir"; set +x
 		continue-jobs copy	# may do nothing if backup running
 		is-multi-writer-drive || return 0
 	fi
@@ -4308,22 +4308,22 @@ readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
 # ----------------------
 
-function set-cmd_holding_lock {
+function set-cmd_holding_lock-lock_paths {
 	local lock_type=$1
 
-	local lock_paths lock_PGID command
+	local lock_PGID command
 	set-lock_paths "$lock_type" && set-lock_PGID "$lock_paths" || return 1
 	set-command--from-PGIDs "$lock_PGID"
 	cmd_holding_lock=$command
 }
-readonly -f set-cmd_holding_lock
+readonly -f set-cmd_holding_lock-lock_paths
 
 # ----------------------
 
 function does-backup-job-hold-lock {
 	local lock_type=$1
 
-	set-cmd_holding_lock "$lock_type" &&
+	set-cmd_holding_lock-lock_paths "$lock_type" &&
 	[[ $cmd_holding_lock =~ ' backup-drive ' ]]
 }
 readonly -f does-backup-job-hold-lock
@@ -4333,7 +4333,7 @@ readonly -f does-backup-job-hold-lock
 function does-prune-job-hold-lock {
 	local lock_type=$1
 
-	set-cmd_holding_lock "$lock_type" &&
+	set-cmd_holding_lock-lock_paths "$lock_type" &&
 	[[ $cmd_holding_lock =~ ' prune-drive ' ]]
 }
 readonly -f does-prune-job-hold-lock
@@ -4353,12 +4353,12 @@ maybe-prevent-pruning() {
 
 	lock -P --quiet prune && return	# try to grab lock
 
-	does-prune-job-hold-lock prune &&
+	does-prune-job-hold-lock prune && # sets lock_paths
 	    kill-job-on-drives prune
 
 	# we want the lock if another owner finishes before us
 	local lockpid_opt="--pid=$BASHPID" # us, not child ...
-	lock -w -P $lockpid_opt prune &	# wait forever for it
+	sudo-lockpid "$lockpid_opt" --wait "$lock_paths" & # wait forever
 	_did_prevent_pruning=$true	# don't do it again
 }
 readonly -f maybe-prevent-pruning
