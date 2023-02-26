@@ -265,7 +265,7 @@ our_opts=
 while getopts "C cnvqr: E:edtT:l hk"  arg
     do	our_opts+="-$arg ${OPTARG-} "
 	case $arg in
-	   ( C ) is_cron=$true	cron_opt=-C ;;
+	   ( C ) readonly is_cron=$true cron_opt=-C ;;
 
 	   ( c ) our_rsync_opts+="--checksum "	;;
 	   ( n ) our_rsync_opts+="--verbose --dry-run " ;;
@@ -2373,7 +2373,7 @@ function is-copy-higher-priority-than-prune() {
 	set-drive_dir   "$drive_name"
 	[[ $action == run ]] || reset-drive-jobs-priorities || return 1
 
-	have-job copy || { continue-jobs prune; return 1; }
+	have-job copy || is-copy-src || { continue-jobs prune; return 1; }
 
 	local rsync_src_dir
 	  set-rsync_src_dir--from-job copy
