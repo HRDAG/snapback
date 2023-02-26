@@ -349,13 +349,13 @@ readonly pruned_timestamp=.pruned.ts
 readonly our_opts=${our_opts% }
 # need to fork and exec ourselves for session control with 'setsid'
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly   backup_drive_exe="$our_path $our_opts backup-drive"
+readonly  backup_drive_exe="$our_path $our_opts backup-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly    prune_drive_exe="$our_path $our_opts  prune-drive"
+readonly   prune_drive_exe="$our_path $our_opts  prune-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly   update_drive_exe="$our_path $our_opts update-drive"
+readonly  update_drive_exe="$our_path $our_opts update-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly copy_snapshots_exe="$our_path $our_opts copy-snapshots"
+readonly copy_snapshot_exe="$our_path $our_opts copy-snapshots"
 
 readonly hostname=${HOSTNAME%%.*}
 
@@ -1595,8 +1595,11 @@ function set-drive_dir() {
 	assert-not-option "$1"
 	local drive_name=$1		# result of set-drive_name, i.e. valid
 
+	drive_name=${drive_name#-s}	# source argument?
+	drive_name=${drive_name#$drive_dir_prefix}
+	drive_name=${drive_name%/$snapshot_glob*}
 	[[ $drive_name != */* ]] ||
-	  abort "'/' in drive name not (yet)supported, add to drive_dir_prefix"
+	    abort "'/' in drive name not supported: $drive_name"
 
 	set-drive_dir-
 
@@ -4321,7 +4324,7 @@ function does-backup-job-hold-lock {
 	local lock_type=$1
 
 	set-cmd_holding_lock "$lock_type" &&
-	[[ $cmd_holding_lock =~ ' backup-drives? ' ]]
+	[[ $cmd_holding_lock =~ ' backup-drive ' ]]
 }
 readonly -f does-backup-job-hold-lock
 
@@ -4331,7 +4334,7 @@ function does-prune-job-hold-lock {
 	local lock_type=$1
 
 	set-cmd_holding_lock "$lock_type" &&
-	[[ $cmd_holding_lock =~ ' prune-drives? ' ]]
+	[[ $cmd_holding_lock =~ ' prune-drive ' ]]
 }
 readonly -f does-prune-job-hold-lock
 
@@ -4627,12 +4630,13 @@ function copy-snapshot() {
 	[[ $1 == -q ]] && { local is_quiet=$true ; shift; } || local is_quiet=
 	[[ $1 == -u ]] && { local is_update=$true; shift; } || local is_update=
 	assert-not-option -o "${1-}"
-	[[ $src     ]] && set -- "$src" "$1"
+	[[ $src     ]] && set -- "$src" "$@"
 	(( $# >= 2  )) || abort-function "src(s) dst_drive_name"
 	local src_snapshot=${1%/} dst_drive_name=${!#}
 	local src_snapshots=${*#"$dst_drive_name"}
 	src_snapshot=${src_snapshot%/.keep}
 	local drive_name=$drive_name drive_dir=${drive_dir-} # protect caller
+	set-drive_name "$drive_name"	# set drive_log_dir (??)
 	copy_snapshot_args=		# holds result when $is_update
 
 	$Trace
@@ -4726,7 +4730,7 @@ function copy-snapshot-rsync() {
 		    suspend-jobs prune # cron will swap jobs if drive space low
 	fi
 
-	maybe-prevent-pruning "$src_snapshot"
+	maybe-prevent-pruning "$src_snapshot"; set +x
 
 	set-priority copy
 
@@ -5220,11 +5224,12 @@ _set-function-our_exe-writer_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
+	# does-prune-job-hold-lock assumes function names are singular
 	case $type in
 	   ( backup ) function=backup-drive	writer_type=backup  ;;
 	   ( prune  ) function=prune-drive	writer_type=prune   ;;
 	   ( update ) function=update-drive	writer_type=copy    ;;
-	   ( copy   ) function=copy-snapshots	writer_type=copy    ;;
+	   ( copy   ) function=copy-snapshot	writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
 	local our_exe_varname=${function//-/_}_exe
