@@ -4636,7 +4636,6 @@ function copy-snapshot() {
 	local src_snapshots=${*#"$dst_drive_name"}
 	src_snapshot=${src_snapshot%/.keep}
 	local drive_name=$drive_name drive_dir=${drive_dir-} # protect caller
-	set-drive_name "$drive_name"	# set drive_log_dir (??)
 	copy_snapshot_args=		# holds result when $is_update
 
 	$Trace
@@ -5287,6 +5286,7 @@ create-jobs() {
 
 	if [[ $are_recursing ]]
 	   then $Trace
+		[[ $function == copy-snapshot ]] && function=${function}s
 		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
 		exit-normally $?
