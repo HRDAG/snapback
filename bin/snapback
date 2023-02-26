@@ -1555,6 +1555,7 @@ readonly -f set-drive_name
 # This is faster than set-drive_dir, but *must* call with known-valid name.
 # This can be called with a name that leaves off the leading or trailing class.
 function set-drive_dir-() {
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} == -W ]] && { local do_warn= ; shift; } || local do_warn=$true
 	local name=${1:-$drive_name}
 
@@ -1562,13 +1563,14 @@ function set-drive_dir-() {
 	   then drive_dir=$mon_overhead_drive_dir
 	   else drive_dir=$drive_dir_prefix$name
 	fi
-	[[ -d  $drive_dir ]] && return 0
+	[[ -d  $drive_dir ]] && { x-return 0; }
 	# sysadmin may be using drive name without the class
 	set -- $drive_dir_prefix"$name"[^a-zA-Z0-9]* \
 	       $drive_dir_prefix*[^a-zA-Z0-9]"$name"
-	[[ $# == 1 ]] && drive_dir=$1 && [[ -d $drive_dir ]] && return 0
+	[[ $# == 1 ]] && drive_dir=$1 && [[ -d $drive_dir ]] && { x-return 0; }
 
 	[[ ! $do_warn ]] || warn "no mount directory for '$name'"
+	x-return
 }
 readonly -f set-drive_dir-
 
@@ -1591,6 +1593,7 @@ readonly -f set-decryption_dev
 readonly darwin_drive_dir=/var/local/snapback
 
 function set-drive_dir() {
+	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ $1 == -q ]] && { local is_quiet=$true; shift; } || local is_quiet=
 	assert-not-option "$1"
 	local drive_name=$1		# result of set-drive_name, i.e. valid
@@ -1619,14 +1622,14 @@ function set-drive_dir() {
 	if is-drive-mounted "$drive_dir"
 	   then have-cmd fix_snapshot_names &&
 		   fix_snapshot_names "$drive_dir" # must call last
-		return 0
+		x-return 0
 	fi
 
 	if [[ ! $is_quiet ]]
 	   then warn "no filesystem mounted on $drive_dir"
 		# print-call-stack $drive_name # uncomment to debug
 	fi
-	return 1
+	x-return 1
 }
 readonly -f set-drive_dir
 
@@ -4346,6 +4349,7 @@ _did_prevent_pruning=$false
 maybe-prevent-pruning() {
 	local resource=$1 drive_name
 
+	[[ $resource ]] || return
 	[[ $_did_prevent_pruning ]] && return
 	set-drive_name- "$resource" || return
 
@@ -5286,8 +5290,8 @@ create-jobs() {
 	 _set-function-our_exe-writer_type "$type"
 
 	if [[ $are_recursing ]]
-	   then $Trace
-		[[ $function == copy-snapshot ]] && function=${function}s
+	   then [[ $function == copy-snapshot ]] && function=${function}s
+		$Trace
 		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
 		exit-normally $?
@@ -9532,7 +9536,8 @@ _show-test-results() {
 	local output_file=$1
 
 	[[ -s $output_file ]] &&
-	echo "$(sort "$output_file" | md5sum) $(md5sum "$output_file")"
+	echo \
+     "$(sort "$output_file" | md5sum | sed 's/ *-//') $(md5sum "$output_file")"
 	x-return
 }
 readonly -f _show-test-results
