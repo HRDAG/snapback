@@ -2367,10 +2367,11 @@ readonly -f reset-drive-jobs-priorities
 # ------------------------------------------
 
 function is-copy-higher-priority-than-prune() {
-	local drive_name=${*:-$drive_name}
+	local drive_name=${1:-$drive_name} drive_dir
 
 	set-drive_name- "$drive_name"
-	reset-drive-jobs-priorities || return 1
+	set-drive_dir   "$drive_name"
+	[[ $action == run ]] || reset-drive-jobs-priorities || return 1
 
 	have-job copy || { continue-jobs prune; return 1; }
 
@@ -2378,13 +2379,13 @@ function is-copy-higher-priority-than-prune() {
 	  set-rsync_src_dir--from-job copy
 	local  copy_src_dir=$rsync_src_dir
 
-	if is-drive-usage-too-high-for-copy
+	if [[ $action != run ]] && is-drive-usage-too-high-for-copy
 	   then suspend-jobs copy
 		allow-pruning "$copy_src_dir"
 		is-copy-src &&		# 2 drives copying to each other?
 		    lock-PID --release --quiet prune # might not exist???
 		continue-jobs prune	# may do nothing if backup running
-	   else is-copy-src || return 1
+	   else is-copy-src && return 0	# might not suspend _or_ prune
 		maybe-prevent-pruning "$copy_src_dir"; set +x
 		continue-jobs copy	# may do nothing if backup running
 		is-multi-writer-drive || return 0
