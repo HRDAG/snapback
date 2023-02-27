@@ -119,6 +119,7 @@ declare -A $custom_config_maps
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizing functions (like source-drive-specific-config-file and *hooks)
+[[ ${1-} == -d ]] && IfRun=echo
 source "$config_file" || abort "source'd $config_file ended with non-0 status"
 
 for _var in $optional_config_vars
