@@ -2376,6 +2376,8 @@ function is-copy-higher-priority-than-prune() {
 	set-drive_dir   "$drive_name"
 	[[ $action == run ]] || reset-drive-jobs-priorities || return 1
 
+	# dpn't thrash the disk head w/copy src or dst on same drive as prune
+
 	have-job copy || is-copy-src || { continue-jobs prune; return 1; }
 
 	local rsync_src_dir
