@@ -799,7 +799,7 @@ unlock() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} == -P ]] && { local no_prune=$true;shift; } || local no_prune=
 	[[ ${1-} == -* ]] && { local lock_opt=$1   ;shift; } || local lock_opt=
-	[[ $# == 1 ]] || abort-function "[-P] [lockpid-opt] type"
+	[[ $# == [12]  ]] || abort-function "[-P] [lockpid-opt] type [name]"
 	local type name
 	 _set-type-name "$@"
 
@@ -810,7 +810,7 @@ unlock() {
 	fi
 
 	# shellcheck disable=SC2086 # *_opt may be null
-	lock-PID --release $lock_opt "$type"
+	lock-PID -n $name --release $lock_opt "$type"
 
 	_lock_type_name2lock_file[$type,$name]=	# in case unset fails ...
 	unset "_lock_type_name2lock_file[$type,$name]" # this sometimes fails?
@@ -4255,6 +4255,7 @@ readonly -f backup-drive-rsync
 function is-copy-src() {
 	local resource=${1:-$drive_name}
 
+	# copy grabs the source prune lock (to prevent pruning)
 	if ! [[ $resource == $lock_dir/* || $resource == *.pid ]]
 	   then local lock_path
 		set-lock_path prune || return 1
@@ -4729,7 +4730,9 @@ function copy-snapshot-rsync() {
 
 	if [[ ! $is_multi_writer_drive ]]
 	   then if [[ ! $lock_bkp ]]
-		   then lock -w backup || return 1 # wait for backup ...
+		   then lock -w backup "$src_snapshot" && # wait for backup ...
+			unlock  backup "$src_snapshot"	  # src drive now idle
+			lock -w backup || return 1 # wait for backup ...
 			unlock  backup		   # ... but don't hold lock
 		fi
 
