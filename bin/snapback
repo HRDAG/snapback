@@ -9115,6 +9115,8 @@ rm-untagged-snaps-on-one-drive() {
 
 	[[ -f "$drive_dir/$did_rm_untagged_snaps_file_name" ]] && return
 
+	set-sudo--if-not-root
+
 	repo_dirs=${extra_excludes%/*}
 	# shellcheck disable=SC2231 # variable contains a glob
 	cd "$drive_dir" &&
@@ -9150,8 +9152,6 @@ readonly -f rm-untagged-snaps-on-one-drive
 rm-untagged-snaps() {
 	local drive_names=$*
 	[[ $drive_names ]] || set-drive_names -a
-
-	set-sudo--if-not-root
 
 	for drive_name in $drive_names
 	    do	rm-untagged-snaps-on-one-drive "$drive_name" &
