@@ -119,6 +119,7 @@ declare -A $custom_config_maps
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizing functions (like source-drive-specific-config-file and *hooks)
+# shellcheck disable=SC2209 # we d0n't want to run echo command
 [[ ${1-} == -d ]] && IfRun=echo
 source "$config_file" || abort "source'd $config_file ended with non-0 status"
 
@@ -1046,7 +1047,7 @@ function signal-job() {
 	sudo-lockpid    --release  "$lock_path" && return 0 # nothing to kill
 
 	set-lock_PGID "$lock_path" || return 0 # is a valid job to signal?
-	set-PGIDs--from-PIDs $lock_PGID && lock_PGID=$PGIDs  # for rm*tag
+	set-PGIDs--from-PIDs "$lock_PGID" && lock_PGID=$PGIDs  # for rm*tag
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
 	set-signal_is_kill "$signal" || return 0 # (wanted to) terminate job?
@@ -1631,7 +1632,8 @@ function set-drive_dir() {
 	local drive_name=$1		# result of set-drive_name, i.e. valid
 
 	drive_name=${drive_name#-s}	# source argument?
-	drive_name=${drive_name#$drive_dir_prefix}
+	drive_name=${drive_name#"$drive_dir_prefix"}
+	# shellcheck disable=SC2295 # variable holds a glob
 	drive_name=${drive_name%/$snapshot_glob*}
 	[[ $drive_name != */* ]] ||
 	    abort "'/' in drive name not supported: $drive_name"
@@ -5265,7 +5267,7 @@ _set-function-our_exe-writer_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
-	# does-prune-job-hold-lock assumes function names are singular
+	# does-prune-job-hold-lock assumes function names are singular.
 	case $type in
 	   ( backup ) function=backup-drive	writer_type=backup  ;;
 	   ( prune  ) function=prune-drive	writer_type=prune   ;;
@@ -6246,7 +6248,7 @@ readonly -f trim-backup-ps
 function trim-prune-ps {
 
 	trim-ps |
-	sed -e "s@$drive_dir_prefix[^/]*/@@" \
+	sed -e "s@${drive_dir_prefix}[^/]*/@@" \
 	    -e "s@/var/repos/@ ~@"
 }
 readonly -f trim-prune-ps
@@ -9839,7 +9841,7 @@ case $action in
 	if [[ $is_recursion ]]
 	   then $action "$@"
 	   else trap '' HUP
-		setsid $our_path $action -r "$@" || abort "$acton -r"
+		setsid "$our_path" "$action" -r "$@" || abort "$action -r"
 	fi
 	;;
 
