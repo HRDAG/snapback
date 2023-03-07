@@ -1049,6 +1049,9 @@ function signal-job() {
 	set-lock_PGID "$lock_path" || return 0 # is a valid job to signal?
 	set-PGIDs--from-PIDs "$lock_PGID" && lock_PGID=$PGIDs  # for rm*tag
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
+	local m="kill ${signal^^} ${lock_path#$lock_dir/}"
+	[[ $is_cron ]] && m+=" (by 'cron')" || m+=" (by $LOGNAME)"
+	log 2 "$m"
 
 	set-signal_is_kill "$signal" || return 0 # (wanted to) terminate job?
 
