@@ -843,11 +843,41 @@ readonly -f set-ps_fields--from-PGIDs
 
 # ---------------------------------
 
+function set-ps_fields--from-PIDs() {
+	local column_name=$1; shift
+
+	setup-ps-options
+	ps_fields=
+
+	local PID
+	for PID
+	    do	# shellcheck disable=SC2046 # we want word splitting
+		set -- $(COLUMNS=999 ps -o "$column_name=" "$PID")
+		[[ $# != 0 ]] && ps_fields+="$* "
+	done
+
+	# set -f; set -- $ps_fields; set +f; ps_fields=$*
+	[[ $ps_fields ]]
+}
+readonly -f set-ps_fields--from-PIDs
+
+# ---------------------------------
+
 function set-PIDs--from-PGIDs() {
 
 	PIDs=
 	set-ps_fields--from-PGIDs pid "$@" || return 1
 	PIDs=$ps_fields
+}
+readonly -f set-PIDs--from-PGIDs
+
+# ---------------------------------
+
+function set-PGIDs--from-PIDs() {
+
+	PGIDs=
+	set-ps_fields--from-PIDs pgid "$@" || return 1
+	PGIDs=$ps_fields
 }
 readonly -f set-PIDs--from-PGIDs
 
@@ -1016,6 +1046,7 @@ function signal-job() {
 	sudo-lockpid    --release  "$lock_path" && return 0 # nothing to kill
 
 	set-lock_PGID "$lock_path" || return 0 # is a valid job to signal?
+	set-PGIDs--from-PIDs $lock_PGID && lock_PGID=$PGIDs  # for rm*tag
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
 	set-signal_is_kill "$signal" || return 0 # (wanted to) terminate job?
@@ -6214,7 +6245,9 @@ readonly -f trim-backup-ps
 
 function trim-prune-ps {
 
-	trim-ps
+	trim-ps |
+	sed -e "s@$drive_dir_prefix[^/]*/@@" \
+	    -e "s@/var/repos/@ ~@"
 }
 readonly -f trim-prune-ps
 
@@ -6399,9 +6432,10 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	num_drives=$#
 
 	# shellcheck disable=SC2086 # variable contains multiple values
-	! set-lock_PGIDs prune && prune_cmds= ||
+	! set-lock_PGIDs prune && prune_cmds= || {
+	set-PGIDs--from-PIDs $lock_PGIDs && lock_PGIDs=$PGIDs # for rm*tag
 	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null  |
-     egrep ' (prune-drive|update-drive|copy-snapshots|lockpid|sleep|rm|sync) ')
+     egrep ' ((prune|update|backup)-drive|copy-snapshots|rm-untagged-snaps|lockpid|sleep|rm|sync)( |$)') ; }
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
@@ -9141,8 +9175,7 @@ rm-untagged-snaps-on-one-drive() {
 				echo "$PWD/$snap" # $PWD/ for 'ps' cmd
 			done | xargs $IfRun $sudo rm -f -r # -f in case none
 		done
-	done
-
+	done &&
 	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
 }
 readonly -f rm-untagged-snaps-on-one-drive
@@ -9802,7 +9835,12 @@ case $action in
 
    # rm-untagged-snaps [names]: for extra_includes_file=tagged-snaps.txt
    ( rm*tag* ) undo-action-abbrev rm-untagged-snaps
-	$action "$@"
+	[[ ${1-} == -r ]] && { shift; is_recursion=$1; } || is_recursion=
+	if [[ $is_recursion ]]
+	   then $action "$@"
+	   else trap '' HUP
+		setsid $our_path $action -r "$@" || abort "$acton -r"
+	fi
 	;;
 
    # rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
