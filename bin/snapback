@@ -5268,6 +5268,7 @@ _set-function-our_exe-writer_type() {
 
 	# *_exe variables include options to snapback (e.g. -d and -t)
 	# does-prune-job-hold-lock assumes function names are singular.
+	# There's code that assumes these function names are singular.
 	case $type in
 	   ( backup ) function=backup-drive	writer_type=backup  ;;
 	   ( prune  ) function=prune-drive	writer_type=prune   ;;
@@ -9837,6 +9838,7 @@ case $action in
 
    # rm-untagged-snaps [names]: for extra_includes_file=tagged-snaps.txt
    ( rm*tag* ) undo-action-abbrev rm-untagged-snaps
+	# the following could probably be done with create-jobs
 	[[ ${1-} == -r ]] && { shift; is_recursion=$1; } || is_recursion=
 	if [[ $is_recursion ]]
 	   then $action "$@"
