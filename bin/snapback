@@ -1028,7 +1028,8 @@ function signal-job() {
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
 	# don't log the every-5-minutes continue-prune-just-in-case
-	[[ $action == prune* && signal == *CONT && $job_type == prune ]] || {
+	[[ $action == prune* && $signal == *CONT && $job_type == prune &&
+	   $is_cron ]] || {
 	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
 	[[ $is_cron ]] && msg+=" (by 'cron')" || msg+=" (by $LOGNAME)"
 	if [[ ${is_cron-} ]]
