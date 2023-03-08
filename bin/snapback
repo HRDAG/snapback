@@ -5252,7 +5252,7 @@ _set-function-our_exe-writer_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t).
-	# does-prune-job-hold-lock assumes function names are singular.
+	# does-*-job-hold-lock assume function names are singular.
 	case $type in
 	   ( backup ) function=backup-drive	writer_type=backup  ;;
 	   ( prune  ) function=prune-drive	writer_type=prune   ;;
