@@ -4465,7 +4465,7 @@ function backup-drive() {
 
 	set-priority backup
 
-	$IfRun rm-untagged-snaps-on-one-drive "$drive_name"
+	$IfRun rm-untagged-snaps "$drive_name"
 
 	# could create LVM snapshot that's specified in $dirs_to_backup, and/or
 	# do a database-dump
