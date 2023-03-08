@@ -3993,14 +3993,17 @@ function _is-time-to-backup-drive {
 
 	[[ ! $is_cron || $is_acceptance_test ]] && return 0 # run by a person?
 
-	(( $start_hour == 0 && $start_minute == 5 )) &&
-	    update-snapshots-ls
+	(( $start_hour == 0 && $start_minute <  5 )) && is_daily_cron=$true ||
+
+	(( $start_hour == 0 && $start_minute < 10 )) && update-snapshots-ls
 
 	(( $start_hour == 6 && $start_minute == 5 )) &&
 	   write-drive-usage-vs-speed &
 
 	# we're called more than hourly (to reset priorities and check logs)
-	(( $start_minute == 0 )) || [[ $debug_opt ]] || return 1
+	# shellcheck disable=SC2034 # is_hourly_cron may not be used
+	(( $start_minute < 5 )) && is_hourly_cron=$true || [[ $debug_opt ]] ||
+		return 1
 
 	# shellcheck disable=SC2086 # variable contains multiple values
 	set-excluded_hours $excluded_backup_hours
@@ -9144,7 +9147,9 @@ rm-untagged-snaps() {
 
 	[[ -f "$drive_dir/$did_rm_untagged_snaps_file_name" ]] && return
 
-	until lock prune
+	[[ ${is_daily_cron-} ]] && local lock_opt=--quiet || local lock_opt=
+	# shellcheck disable=SC2086 # lock_opt might be empty
+	until lock prune $lock_opt	# might already be running
 	    do	does-prune-job-hold-lock prune &&
 		    kill-jobs prune && $IfRun sleep-exe 0.7 && continue
 		return			# lock held by us or copy
