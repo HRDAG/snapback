@@ -9130,16 +9130,16 @@ rm-untagged-snaps() {
 
 	[[ $exclude_untagged_snaps ]] || return
 
+	set-drive_name "$drive_name"
+	set-drive_dir  "$drive_name"
+
+	[[ -f "$drive_dir/$did_rm_untagged_snaps_file_name" ]] && return
+
 	until lock prune
 	    do	does-prune-job-hold-lock prune &&
 		    kill-jobs prune && $IfRun sleep-exe 0.7 && continue
 		return			# lock held by us or copy
 	done
-
-	set-drive_name "$drive_name"
-	set-drive_dir  "$drive_name"
-
-	[[ -f "$drive_dir/$did_rm_untagged_snaps_file_name" ]] && return
 
 	set-sudo--if-not-root
 
@@ -9171,6 +9171,8 @@ rm-untagged-snaps() {
 	done &&
 	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
 	$Trace
+
+	unlock prune
 }
 readonly -f rm-untagged-snaps
 
