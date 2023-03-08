@@ -119,7 +119,7 @@ declare -A $custom_config_maps
 #
 # this grabs variables that control backup and pruning, and may also hold
 # customizing functions (like source-drive-specific-config-file and *hooks)
-# shellcheck disable=SC2209 # we d0n't want to run echo command
+# shellcheck disable=SC2209 # we d0n't want to run 'echo' command
 [[ ${1-} == -d ]] && IfRun=echo
 source "$config_file" || abort "source'd $config_file ended with non-0 status"
 
@@ -351,15 +351,15 @@ readonly pruned_timestamp=.pruned.ts
 readonly our_opts=${our_opts% }
 # need to fork and exec ourselves for session control with 'setsid'
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly  backup_drive_exe="$our_path $our_opts backup-drive"
+readonly      backup_drive_exe="$our_path $our_opts backup-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly   prune_drive_exe="$our_path $our_opts  prune-drive"
+readonly       prune_drive_exe="$our_path $our_opts  prune-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly rmsnaps_drive_exe="$our_path $our_opts rm-untagged-snaps"
+readonly rm_untagged_snaps_exe="$our_path $our_opts rm-untagged-snaps"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly  update_drive_exe="$our_path $our_opts update-drive"
+readonly      update_drive_exe="$our_path $our_opts update-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly copy_snapshot_exe="$our_path $our_opts copy-snapshots"
+readonly     copy_snapshot_exe="$our_path $our_opts copy-snapshots"
 
 readonly hostname=${HOSTNAME%%.*}
 
@@ -846,41 +846,11 @@ readonly -f set-ps_fields--from-PGIDs
 
 # ---------------------------------
 
-function set-ps_fields--from-PIDs() {
-	local column_name=$1; shift
-
-	setup-ps-options
-	ps_fields=
-
-	local PID
-	for PID
-	    do	# shellcheck disable=SC2046 # we want word splitting
-		set -- $(COLUMNS=999 ps -o "$column_name=" "$PID")
-		[[ $# != 0 ]] && ps_fields+="$* "
-	done
-
-	# set -f; set -- $ps_fields; set +f; ps_fields=$*
-	[[ $ps_fields ]]
-}
-readonly -f set-ps_fields--from-PIDs
-
-# ---------------------------------
-
 function set-PIDs--from-PGIDs() {
 
 	PIDs=
 	set-ps_fields--from-PGIDs pid "$@" || return 1
 	PIDs=$ps_fields
-}
-readonly -f set-PIDs--from-PGIDs
-
-# ---------------------------------
-
-function set-PGIDs--from-PIDs() {
-
-	PGIDs=
-	set-ps_fields--from-PIDs pgid "$@" || return 1
-	PGIDs=$ps_fields
 }
 readonly -f set-PIDs--from-PGIDs
 
@@ -1053,7 +1023,6 @@ function signal-job() {
 	sudo-lockpid    --release  "$lock_path" && return 0 # nothing to kill
 
 	set-lock_PGID "$lock_path" || return 0 # is a valid job to signal?
-	set-PGIDs--from-PIDs "$lock_PGID" && lock_PGID=$PGIDs  # for rm*tag
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
 	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
@@ -5282,13 +5251,12 @@ readonly -f set-drive_names--from-user-args
 _set-function-our_exe-writer_type() {
 	local type=$1
 
-	# *_exe variables include options to snapback (e.g. -d and -t)
+	# *_exe variables include options to snapback (e.g. -d and -t).
 	# does-prune-job-hold-lock assumes function names are singular.
-	# There's code that assumes these function names are singular.
 	case $type in
 	   ( backup ) function=backup-drive	writer_type=backup  ;;
 	   ( prune  ) function=prune-drive	writer_type=prune   ;;
-	   ( rmsnaps) function=rmsnaps-drive	writer_type=prune   ;;
+	   ( rmsnaps) function=rm-untagged-snap	writer_type=prune   ;;
 	   ( update ) function=update-drive	writer_type=copy    ;;
 	   ( copy   ) function=copy-snapshot	writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
@@ -5347,7 +5315,10 @@ create-jobs() {
 	 _set-function-our_exe-writer_type "$type"
 
 	if [[ $are_recursing ]]
-	   then [[ $function == copy-snapshot ]] && function=${function}s
+	   then case $function in
+		    ( copy-snapshot | rm-untagged-snap )
+			function=${function}s ;;
+		esac
 		$Trace
 		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
@@ -6452,10 +6423,9 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	num_drives=$#
 
 	# shellcheck disable=SC2086 # variable contains multiple values
-	! set-lock_PGIDs prune && prune_cmds= || {
-	set-PGIDs--from-PIDs $lock_PGIDs && lock_PGIDs=$PGIDs # for rm*tag
+	! set-lock_PGIDs prune && prune_cmds= ||
 	prune_cmds=$(ps_ $ps_opt_g $lock_PGIDs 2>$dev_null  |
-     egrep ' ((prune|update|backup)-drive|copy-snapshots|rm-untagged-snaps|lockpid|sleep|rm|sync)( |$)') ; }
+     egrep ' ((prune|update|backup)-drive|copy-snapshots|rm-untagged-snaps|lockpid|sleep|rm|sync)( |$)')
 
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
@@ -9159,10 +9129,16 @@ readonly -f set-sudo--if-not-root
 
 readonly did_rm_untagged_snaps_file_name=.rm-snaps
 
-rm-untagged-snaps-on-one-drive() {
+rm-untagged-snaps() {
 	local drive_name=${1:-$drive_name}
 
 	[[ $exclude_untagged_snaps ]] || return
+
+	until lock prune
+	    do	does-prune-job-hold-lock prune &&
+		    kill-jobs prune && $IfRun sleep-exe 0.7 && continue
+		return			# lock held by us or copy
+	done
 
 	set-drive_name "$drive_name"
 	set-drive_dir  "$drive_name"
@@ -9180,6 +9156,7 @@ rm-untagged-snaps-on-one-drive() {
 		    do	[[ $repo_dir == */nohup.out ]] &&
 			    rm -f "$repo_dir" && continue
 			cd "$drive_dir/$snapshot/$repo_dir" || continue
+			set +x
 
 			# like show_tagged_snapshots in snapserv
 			tagged_snaps=
@@ -9197,23 +9174,7 @@ rm-untagged-snaps-on-one-drive() {
 		done
 	done &&
 	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
-}
-readonly -f rm-untagged-snaps-on-one-drive
-
-# ---------------------------------
-
-rm-untagged-snaps() {
-	local drive_names=$*
-	[[ $drive_names ]] || set-drive_names -a
-
-	for drive_name in $drive_names
-	    do	rm-untagged-snaps-on-one-drive "$drive_name" &
-		job_PID=$!
-		kill-jobs prune || set-lock_path prune
-		echo "$job_PID" > "$lock_path"
-		disown "$job_PID"
-	done
-	disown -a
+	$Trace
 }
 readonly -f rm-untagged-snaps
 
@@ -9854,7 +9815,7 @@ case $action in
 	;;
 
    # rm-untagged-snaps [names]: for extra_includes_file=tagged-snaps.txt
-   ( rm*tag* ) undo-action-abbrev rm-untagged-snaps
+   ( rm*tag* | rm*snap* ) undo-action-abbrev rm-untagged-snaps
 	[[ ${1-} != -r ]] && assert-not-option "$1"
 	create-jobs rmsnaps "$@"
 	;;
