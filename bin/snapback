@@ -1053,12 +1053,12 @@ function signal-job() {
 	set-PGIDs--from-PIDs "$lock_PGID" && lock_PGID=$PGIDs  # for rm*tag
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
-	if [[ ${is_cron-} && ! ${debug_opt-} ]]
+	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
+	[[ $is_cron ]] && msg+=" (by 'cron')" || msg+=" (by $LOGNAME)"
+	if [[ ${is_cron-} ]]
 	   then local output_file=/dev/stdout
 	   else local output_file=$drives_log_dir/$drive_name/messages.log
 	fi
-	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
-	[[ $is_cron ]] && msg+=" (by 'cron')" || msg+=" (by $LOGNAME)"
 	[[ ! $debug_opt ]] &&
 	log 2 "$msg" >> "$output_file"
 
