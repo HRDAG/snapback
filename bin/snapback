@@ -355,6 +355,8 @@ readonly  backup_drive_exe="$our_path $our_opts backup-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly   prune_drive_exe="$our_path $our_opts  prune-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
+readonly rmsnaps_drive_exe="$our_path $our_opts rm-untagged-snaps"
+# shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly  update_drive_exe="$our_path $our_opts update-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly copy_snapshot_exe="$our_path $our_opts copy-snapshots"
@@ -5284,6 +5286,7 @@ _set-function-our_exe-writer_type() {
 	case $type in
 	   ( backup ) function=backup-drive	writer_type=backup  ;;
 	   ( prune  ) function=prune-drive	writer_type=prune   ;;
+	   ( rmsnaps) function=rmsnaps-drive	writer_type=prune   ;;
 	   ( update ) function=update-drive	writer_type=copy    ;;
 	   ( copy   ) function=copy-snapshot	writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
@@ -9850,13 +9853,8 @@ case $action in
 
    # rm-untagged-snaps [names]: for extra_includes_file=tagged-snaps.txt
    ( rm*tag* ) undo-action-abbrev rm-untagged-snaps
-	# the following could probably be done with create-jobs
-	[[ ${1-} == -r ]] && { shift; is_recursion=$1; } || is_recursion=
-	if [[ $is_recursion ]]
-	   then $action "$@"
-	   else trap '' HUP
-		setsid "$our_path" "$action" -r "$@" || abort "$action -r"
-	fi
+	[[ ${1-} != -r ]] && assert-not-option "$1"
+	create-jobs rmsnaps "$@"
 	;;
 
    # rm snapshots: rename snapshots to *.rm, so they'll be pruned (rm -rf)
