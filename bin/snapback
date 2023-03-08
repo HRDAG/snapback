@@ -359,7 +359,7 @@ readonly rm_untagged_snaps_exe="$our_path $our_opts rm-untagged-snaps"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
 readonly      update_drive_exe="$our_path $our_opts update-drive"
 # shellcheck disable=SC2034 # variable constructed with 'eval'
-readonly     copy_snapshot_exe="$our_path $our_opts copy-snapshots"
+readonly    copy_snapshots_exe="$our_path $our_opts copy-snapshots"
 
 readonly hostname=${HOSTNAME%%.*}
 
@@ -5252,13 +5252,13 @@ _set-function-our_exe-writer_type() {
 	local type=$1
 
 	# *_exe variables include options to snapback (e.g. -d and -t).
-	# does-*-job-hold-lock assume function names are singular.
+	# does-*-job-hold-lock assume 'foo-drive' names are singular.
 	case $type in
-	   ( backup ) function=backup-drive	writer_type=backup  ;;
-	   ( prune  ) function=prune-drive	writer_type=prune   ;;
-	   ( rmsnaps) function=rm-untagged-snap	writer_type=prune   ;;
-	   ( update ) function=update-drive	writer_type=copy    ;;
-	   ( copy   ) function=copy-snapshot	writer_type=copy    ;;
+	   ( backup ) function=backup-drive	 writer_type=backup  ;;
+	   ( prune  ) function=prune-drive	 writer_type=prune   ;;
+	   ( rmsnaps) function=rm-untagged-snaps writer_type=prune   ;;
+	   ( update ) function=update-drive	 writer_type=copy    ;;
+	   ( copy   ) function=copy-snapshots	 writer_type=copy    ;;
 	   (   *    ) abort-function "action '$type' is not supported" ;;
 	esac
 	local our_exe_varname=${function//-/_}_exe
@@ -5315,11 +5315,7 @@ create-jobs() {
 	 _set-function-our_exe-writer_type "$type"
 
 	if [[ $are_recursing ]]
-	   then case $function in
-		    ( copy-snapshot | rm-untagged-snap )
-			function=${function}s ;;
-		esac
-		$Trace
+	   then $Trace
 		# shellcheck disable=SC2086 # variable contains multiple values
 		$function $opts $1
 		exit-normally $?
@@ -6433,7 +6429,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 		awk '  /rsync/ { if (second) {print; second=0} else second=1 }
 		     ! /rsync/ { print }' <<<"$*" ; } # use when don't have -H
 
-	# both update-drive and copy-snapshot use the copy lock
+	# both update-drive and copy-snapshots use the copy lock
 	# shellcheck disable=SC2086 # variable contains multiple values
 	! set-lock_PGIDs copy && copy_rsync_cmds= ||
 	copy_rsync_cmds=$(ps_ $ps_opt_g $lock_PGIDs |
@@ -9662,7 +9658,7 @@ function acceptance-test() {
 	src_snapshots=$1
 	[[ -d $2 ]] && src_snapshots+=" ${!#}"
 	# shellcheck disable=SC2086 # variable contains multiple values
-	_run-debug-cmds c copy-snapshot $src_snapshots Z
+	_run-debug-cmds c copy-snapshots $src_snapshots Z
 	}
 
 	# --------------------------------------------
