@@ -1034,7 +1034,10 @@ function signal-job() {
 	if [[ $# == 1 && $1 == *.pid ]]
 	   then lock_path=$1		# global variable, caller can use it
 		[[ $lock_path == /* ]] || lock_path=$lock_dir/${lock_path##*/}
-	   else local job_type=$1 drive_name=${2:-$drive_name}
+		local drive_name=${lock_path##"$lock_dir"/*-}
+		drive_name=${drive_name%.pid}
+	   else [[ $# == [12] ]] || abort-function "-signal type [drive_name]"
+		local job_type=$1 drive_name=${2:-$drive_name}
 		suspend-tracing
 		set-drive_name- "$drive_name"
 		set-lock_path "$job_type" # global variable, caller can use it
@@ -1049,9 +1052,15 @@ function signal-job() {
 	set-lock_PGID "$lock_path" || return 0 # is a valid job to signal?
 	set-PGIDs--from-PIDs "$lock_PGID" && lock_PGID=$PGIDs  # for rm*tag
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
-	local m="kill ${signal^^} ${lock_path#$lock_dir/}"
-	[[ $is_cron ]] && m+=" (by 'cron')" || m+=" (by $LOGNAME)"
-	log 2 "$m"
+
+	if [[ ${is_cron-} && ! ${debug_opt-} ]]
+	   then local output_file=/dev/stdout
+	   else local output_file=$drives_log_dir/$drive_name/messages.log
+	fi
+	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
+	[[ $is_cron ]] && msg+=" (by 'cron')" || msg+=" (by $LOGNAME)"
+	[[ ! $debug_opt ]] &&
+	log 2 "$msg" >> "$output_file"
 
 	set-signal_is_kill "$signal" || return 0 # (wanted to) terminate job?
 
