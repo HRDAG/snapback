@@ -1006,6 +1006,8 @@ function signal-job() {
 	if [[ $# == 1 && $1 == *.pid ]]
 	   then lock_path=$1		# global variable, caller can use it
 		[[ $lock_path == /* ]] || lock_path=$lock_dir/${lock_path##*/}
+		local job_type=${lock_path#"$lock_dir"/}
+		job_type=${job_type%%-*}
 		local drive_name=${lock_path#"$lock_dir"/}
 		drive_name=${drive_name#*-}
 		drive_name=${drive_name%.pid}
@@ -1025,6 +1027,8 @@ function signal-job() {
 	set-lock_PGID "$lock_path" || return 0 # is a valid job to signal?
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
+	# don't log the every-5-minutes continue-prune-just-in-case
+	[[ $action == prune* && signal == *CONT && $job_type == prune ]] || {
 	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
 	[[ $is_cron ]] && msg+=" (by 'cron')" || msg+=" (by $LOGNAME)"
 	if [[ ${is_cron-} ]]
@@ -1033,6 +1037,7 @@ function signal-job() {
 	fi
 	[[ $debug_opt || $drive_name == monitor ]] ||
 	log 2 "$msg" >> "$output_file"
+	}
 
 	set-signal_is_kill "$signal" || return 0 # (wanted to) terminate job?
 
@@ -1835,6 +1840,9 @@ validate-config-variables() {
 	# shellcheck disable=SC2053 # RHS variable holds a glob
 	[[ $min_date_for_usage_vs_speed_data == $snapshot_day_glob ]] ||
 	    abort "min_date_for_usage_vs_speed_data is invalid date"
+
+	[[ $writer_types != *-* ]] ||
+	    abort "writer_types can't have dashes in their name"
 
 	local var=snapshot_date_time_separator
 	[[ ${!var} == ',' ]] ||
