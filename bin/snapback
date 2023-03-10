@@ -7888,6 +7888,8 @@ function unmount-drives() {
 	    do	$IfRun kill-job-on-drives all "$name"
 	done
 
+	$IfRun sudo killall xfs_repair |& fgrep -v 'no process found'
+
 	[[ $debug_opt ]] && local output=/dev/stdout || local output=$dev_null
 	local name drive_name drive_dir status=0
 	for name
