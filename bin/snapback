@@ -2991,7 +2991,7 @@ _prune-exclude-globs-from-all-snapshots() {
 	popd_ -q
 
 	[[ $drive_name == Z ]] ||
-	$IfRun log "pruned exclude-globs from _all_ snapshots"
+	$IfRun log "pruned globs in excludes.txt from _all_ snapshots"
 
 	shopt -u globstar
 	restore-tracing
@@ -9139,6 +9139,9 @@ readonly -f set-sudo--if-not-root
 
 readonly did_rm_untagged_snaps_file_name=.rm-snaps
 
+# When run from command line, it's a regular job holding prune lock,
+# suspend or kill it the same way as other jobs.
+# If run by backup, can kill the xargs at the end, e.g. killall -9 xargs
 rm-untagged-snaps() {
 	local drive_name=${1:-$drive_name}
 
@@ -9182,9 +9185,9 @@ rm-untagged-snaps() {
 				# shellcheck disable=SC2086
 				is-arg1-in-arg2 $snap $tagged_snaps && continue
 				echo "$PWD/$snap" # $PWD/ for 'ps' cmd
-			done | xargs $IfRun $sudo rm -f -r # -f in case none
+			done
 		done
-	done &&
+	done | xargs $IfRun $sudo rm -f -r && # -f in case none; can kill xargs
 	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
 	$Trace
 
