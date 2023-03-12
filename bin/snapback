@@ -9187,7 +9187,7 @@ rm-untagged-snaps() {
 				echo "$PWD/$snap" # $PWD/ for 'ps' cmd
 			done
 		done
-	done | xargs $IfRun $sudo rm -f -r && # -f in case none; can kill xargs
+	done | xargs -r $IfRun $sudo rm -r && # can kill xargs if run by backup
 	$IfRun touch "$drive_dir/$did_rm_untagged_snaps_file_name"
 	$Trace
 
