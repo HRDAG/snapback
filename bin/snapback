@@ -4174,9 +4174,10 @@ function _run-rsync-cmd() {
 
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
 	local relative_opt= excludes=
-	[[ $writer_type != copy ]] &&
-	relative_opt=--relative  excludes="--exclude=$drive_dir_prefix*
-					   --exclude-from=$exclude_file"
+	[[ $writer_type != copy ]] && relative_opt=--relative
+	# FixMe: I'm pretty sure these work without --relative
+	excludes="--exclude=$drive_dir_prefix*
+		  --exclude-from=$exclude_file"
 	# shellcheck disable=SC2086
 	set -- $partial_dst/*
 	if [[ $# != 0 ]]		# snapshot not empty?
@@ -8952,6 +8953,8 @@ Could not resolve keysym Invalid
 JS ERROR: TypeError:
 Bus client reset DNS server list.
 Bus client reset search domain list.
+Can not find util-vserver installation
+PHY reset is blocked due to SOL/IDER session.
 [AppIndicatorSupport-WARN] Attempting to re-register"
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
