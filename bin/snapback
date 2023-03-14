@@ -4159,9 +4159,9 @@ set-partial_dst() {
 	   else partial_dst=$dst_snapshot.partial
 		# if we (partially) created this snapshot earlier, reuse it
 		local suffix
-		for   suffix in '' '.links'
+		for   suffix in '' '.links' '.rm'
 		    do	local  useful_dst=$dst_snapshot$suffix
-			[[ -d $useful_dst ]] &&
+			[[ -d $useful_dst/bin ]] &&
 			   $IfRun mv "$useful_dst" "$partial_dst" && break
 		done
 	fi
