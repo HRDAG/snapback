@@ -1028,8 +1028,8 @@ function signal-job() {
 	sudo-kill -s "${signal^^}" -"$lock_PGID" || return 1 # did kill work?
 
 	# don't log the every-5-minutes continue-prune-just-in-case
-	[[ $action == prune* && $signal == *CONT && $job_type == prune &&
-	   $is_cron ]] || {
+	[[ $action == prune* && $signal == *CONT &&
+	   ( $job_type == prune || $job_type == copy ) && $is_cron ]] || {
 	local msg="kill -${signal^^} ${lock_path#"$lock_dir"/}"
 	[[ $is_cron ]] && msg+=" (by 'cron')" || msg+=" (by $LOGNAME)"
 	if [[ ${is_cron-} ]]
@@ -4507,7 +4507,8 @@ function backup-drive() {
 			   kill-job-on-drives prune # if a prune job started
 			restore-lock "$prune_lock_path" "$copy_PGID"
 		fi
-		$IfRun create-jobs prune # also manages (continues) a copy job
+		continue-jobs copy prune # log it
+		$IfRun create-jobs prune # also continues, without logging
 	fi
 
 	return $status
