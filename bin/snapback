@@ -3102,10 +3102,10 @@ rm-pruned-snapshots() {
 	[[ $rm_count != 0 && ! $is_update ]] &&
 	if (( $log_level >= 3 ))
 	   then [[ $debug_opt || $drive_name == Z ]] ||
-		log "will prune these snapshots: " "$rm_snapshots"
+		log 2 "will prune these snapshots: " "$rm_snapshots"
 	   else local -i n=$rm_count
 		$IfRun \
-		log "pruning $n snapshots: will rename to *.rm for deletion"
+		log 2 "pruning $n snapshots: will rename to *.rm for deletion"
 	fi
 
 	if [[ $only_do_mv ]]
@@ -3143,9 +3143,9 @@ rm-pruned-snapshots() {
 	(( $number_pruned_snapshots > 0 )) &&
 	if (( $log_level >= 3 ))
 	   then [[ $debug_opt || $drive_name == Z ]] ||
-	        log "deleted these pruned snapshots: $snapshot_basenames"
+	        log 2 "deleted these pruned snapshots: $snapshot_basenames"
 	   else $IfRun \
-		log "deleted $number_pruned_snapshots *.rm pruned snapshots"
+		log 2 "deleted $number_pruned_snapshots *.rm pruned snapshots"
 	fi
 
 	_prune-exclude-globs-from-all-snapshots
@@ -4249,6 +4249,7 @@ function run-rsync() {
 	fi
 	restore-tracing link_dest_opts
 
+	log 2 "starting rsync"
 	local -i starting_MB=0		# for *-save-writer-stats
 	_run-rsync-cmd
 	local status=$?
