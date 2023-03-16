@@ -4342,7 +4342,9 @@ readonly -f set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy
 function _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock() {
 
 	set-prune_lock_path-copy_PGID--for-prune-lock-owned-by-copy "${1-}" &&
-	    $IfRun sudo rm "$prune_lock_path" ||unset prune_lock_path copy_PGID
+	    { log 2 "hiding prune lock with copy, so can prune"
+	      $IfRun sudo rm "$prune_lock_path"; } ||
+		unset prune_lock_path copy_PGID
 }
 readonly -f _set-prune_lock_path-copy_PGID--if-release-copy-src-prune-lock
 
