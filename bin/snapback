@@ -1218,8 +1218,8 @@ function set-drive_dirs() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} != -* && ( -t 0 || -t 1 || -t 2 ) ]] && set -- -a "$@"
 	case $* in
-	    ( '' ) local regex=$drive_name_regex ;; # default: ones we backup
-	    ( -a ) local regex=$admin_drive_name_regex ;; # all, for sysadmin
+	    ( '' ) local regex="$drive_name_regex\\b" ;; # ones we backup
+	    ( -a ) local regex="$admin_drive_name_regex\\b" ;; # for sysadmin
 	    ( -A ) local regex= ;;	# all filesystems 'df' shows
 	    (  * ) abort-function "[-a | -A]" ;;
 	esac
@@ -1232,8 +1232,7 @@ function set-drive_dirs() {
 	fi
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(sed -r -n -e '\~^/dev/(fuse|loop)~d' \
-			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" |
-		     egrep "/$admin_drive_name_regex$" | sort)
+			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" | sort)
 	drive_dirs=$*
 	fully-populate-custom-config-maps # ensure we support any new drives
 	can-trace-final-test
