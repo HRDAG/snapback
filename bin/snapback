@@ -1232,7 +1232,8 @@ function set-drive_dirs() {
 	fi
 	# shellcheck disable=SC2046 # we want word splitting
 	set -- $(sed -r -n -e '\~^/dev/(fuse|loop)~d' \
-			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" | sort)
+			   -e "s~^/[^ ]* ($regex) .*~\1~p" <<<"$mounts" |
+		     egrep "/$admin_drive_name_regex$" | sort)
 	drive_dirs=$*
 	fully-populate-custom-config-maps # ensure we support any new drives
 	can-trace-final-test
