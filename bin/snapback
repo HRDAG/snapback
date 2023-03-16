@@ -7272,7 +7272,8 @@ watch() {
 	   -E: don't show syslog errors
 	   -Y: don't show yesterday's syslog errors
 	   -C: also show backup-drive jobs run by cron
-	   -s: only show descriptive statistics
+	   -s: only  show descriptive statistics
+	   -S: don't show descriptive statistics
 	   -d: only show 'df' (so can watch Used and IUsed)
 	   -u: show sections you specify in config w/user_watch_functions=
 	   -N names: limit display to drive-names
@@ -7281,13 +7282,14 @@ watch() {
 	# most of these variables are accessed in exec-watch-snapback-w
 	local watch_opt= no_errors= no_old_errors= stats_opt= cron_opt= bg_opt=
 	local OPTIND opt names=
-	while getopts "wEYsCPduN: n: hk" opt
+	while getopts "wEYsSCPduN: n: hk" opt
 	   do	case $opt in
 		   ( w ) watch_opt=-$opt ;; # internal option
 		   ( E ) no_errors=-$opt ;;
 		   ( Y ) no_old_errors=-$opt ;;
 		   ( C )  cron_opt=-$opt ;;
 		   ( s ) stats_opt=-$opt ;;
+		   ( S ) stats_opt=-$opt ;;
 		   ( d )    df_opt=-$opt ;;
 		   ( u ) user_show=-$opt ;;
 		   ( P )    bg_opt=-$opt ;;
@@ -7367,15 +7369,16 @@ watch() {
 	show-sudo-config-warning
 
 	generate show-stats-section-1
+	[[ $stats_opt != -S ]] && {
 	generate show-stats-section-2-backup
 	generate show-stats-section-2-prune
 	generate show-stats-section-2-copy
 	generate show-stats-section-3
-	generate show-stats-section-4
+	generate show-stats-section-4; }
 
 	generate show-filesystem-info-that-fits "$drive_dirs"
 
-	[[ $stats_opt ]] && { show-generated-output; return; }
+	[[ $stats_opt == -s ]] && { show-generated-output; return; }
 
 	[[ ! $cron_cmds || $show_all ]] &&
 	generate show-prune-cmds
