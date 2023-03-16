@@ -4170,6 +4170,21 @@ readonly -f set-partial_dst
 
 # -------------------------------------------------------
 
+set-small_drive_excludes() {
+
+	small_drive_excludes=
+	is-arg1-in-arg2 "$drive_name" "${small_drives-}" || return 1
+
+	local dir
+	for dir in ${dirs_to_delete_in_old_snapshots_on_small_drives-}
+	    do	small_drive_excludes+=" --exclude=$dir"
+	done
+	[[ $small_drive_excludes ]]
+}
+readonly -f set-small_drive_excludes
+
+# ---------------------------------
+
 function _run-rsync-cmd() {
 
 	# drive_dir_prefix and rsync_backup_opts come from $config_file
@@ -4178,6 +4193,8 @@ function _run-rsync-cmd() {
 	# FixMe: I'm pretty sure these work without --relative
 	excludes="--exclude=$drive_dir_prefix*
 		  --exclude-from=$exclude_file"
+	[[ $writer_type == copy ]] && set-small_drive_excludes &&
+	    excludes+=$small_drive_excludes
 	# shellcheck disable=SC2086
 	set -- $partial_dst/*
 	if [[ $# != 0 ]]		# snapshot not empty?
@@ -4429,7 +4446,7 @@ delete-older-dirs-if-small-drive() {
 	cd "$drive_dir" &&
 	for snapshot in $snapshot_glob*
 	    do	[[ $snapshot == "$latest_snapshot" ]] && break
-		for dir in ${dirs_to_delete_in_old_snapshots-}
+		for dir in ${dirs_to_delete_in_old_snapshots_on_small_drives-}
 		    do	[[ -d $snapshot$dir ]] || continue
 			$IfRun rm -r "$snapshot$dir"
 		done
