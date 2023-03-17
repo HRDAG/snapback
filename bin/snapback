@@ -6239,6 +6239,7 @@ function trim-ps {
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
 	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
 	    -e '/ lockpid .* replica/d' \
+	    -e 's@ --pid=[0-9]* @ @'	\
 	    -e "s@ --dir=$lock_dir @ @"	\
 	    -e "s@ --quiet @ @"		\
 	    -e 's@/bin/bash /@/@'	\
@@ -6246,6 +6247,8 @@ function trim-ps {
 	    -e 's@ /usr/local/bin/@ @'	\
 	    -e 's@ -r @ @'		\
 	    -e "s@ $HOME/@ ~/@g"	\
+	    -e '/update-drive/s@ -s@ -s @' \
+	    -e "/:[0-9][0-9]   *$our_name_ /d" \
 	    -e 's@\([0-9]\)     rsync@\1   rsync@' # so can fit in 80 columns
 	return 0
 }
@@ -6286,14 +6289,11 @@ function trim-copy-update-ps {
 	# shellcheck disable=SC1087
 	trim-ps |
 	sed -r \
-	    -e "s/--.*--[^ ]* //" \
-	    -e '/update-drive/s@ -s@ -s @' \
 	    -e "/   [^ ]*$ud/d"   \
 	    -e   "/$cpss/s@ -s@ @g" \
 	    -e   "/$cpss/s@ -B @ @g" \
 	    -e "s@($cpss[^ ]+ +[^ ]+) +[^ ]+.* ([^ ]+) *\$@\1 ... \2@" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
-	    -e "/[0-9]   $our_name_/d" \
 	    -e "s@ $rsync_backup_opts_ /@ /@" \
 	    -e "/ rm /s@/[^/]*/\. /@/\$snap/. /@" \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
