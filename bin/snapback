@@ -6295,7 +6295,7 @@ function trim-copy-update-ps {
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
 	    -e "/[0-9]   $our_name_/d" \
 	    -e "s@ $rsync_backup_opts_ /@ /@" \
-	    -e "s@/[^/]*/\. /@/\$snap/. /@" \
+	    -e "/ rm /s@/[^/]*/\. /@/\$snap/. /@" \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
 }
