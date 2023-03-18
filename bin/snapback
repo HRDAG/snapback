@@ -6249,7 +6249,7 @@ function trim-ps {
 	    -e "s@ $HOME/@ ~/@g"	\
 	    -e '/update-drive/s@ -s@ -s @' \
 	    -e "/:[0-9][0-9]   *$our_name_ /d" \
-	    -e 's@\([0-9]\)     rsync@\1   rsync@' # so can fit in 80 columns
+	    -e 's@\([0-9]\)   *rsync@\1   rsync@' # so can fit in 80 columns
 	return 0
 }
 readonly -f trim-ps
@@ -6294,7 +6294,7 @@ function trim-copy-update-ps {
 	    -e   "/$cpss/s@ -B @ @g" \
 	    -e "s@($cpss[^ ]+ +[^ ]+) +[^ ]+.* ([^ ]+) *\$@\1 ... \2@" \
 	    -e 's@ --.* --link-dest=[^ ]* /@ /@' \
-	    -e "s@ $rsync_backup_opts_ /@ /@" \
+	    -e "/ rsync /s@ --*.*--[^ ]* @ @" \
 	    -e "/ rm /s@/[^/]*/\. /@/\$snap/. /@" \
 	    -e "s@$drive_dir_prefix@@g"	# remove prefix last
 	return 0
