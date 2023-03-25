@@ -6460,7 +6460,7 @@ set-prune_cmds-copy_rsync_cmds-bkp_rsync_cmds() {
 	# if -H, use spacing to find middle rsync (the one with the most CPU)
 	[[ $ps_opt_H ]] && local rsync_ps="    rsync" || local rsync_ps=rsync
 	cmds-with-one-rsync() {
-		awk '  /rsync/ { if (second) {print; second=0} else second=1 }
+		awk '  /rsync/ { count += 1; if (count == 3) print }
 		     ! /rsync/ { print }' <<<"$*" ; } # use when don't have -H
 
 	# both update-drive and copy-snapshots use the copy lock
