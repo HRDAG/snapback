@@ -75,7 +75,7 @@ FS_log_VG=				# should be fast & reliable
 # Used by set-FS_external_log: should it setup an external filesystem journal?
 	 do_want_external_log=$FS_log_VG # value for (RAID of) rotational disks
 drv_name2do_want_external_log[SSD]=$false # value for SSD / flash memory stick
-drv_name2do_want_external_big[big]=$true  # value for mechanical disk drives
+drv_name2do_want_external_log[big]=$true  # value for mechanical disk drives
 #
 # The above and the below are correlated.
 #
