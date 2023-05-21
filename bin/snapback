@@ -544,7 +544,7 @@ set-name_glob() {
 	   then name_glob=${name_glob^^}
 	elif [[ $is_drive_name_capitalized ]]
 	   then # shellcheck disable=SC1083
-		[[ $name_glob != [[{]* ]] ||
+		[[ $name_glob != [[{]* || $action == update-dr* ]] ||
 		    abort-function "ask $coder to support this glob: $glob"
 		name_glob=${name_glob^}
 	fi
@@ -982,8 +982,8 @@ function sudo-kill() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	local PID=${!#}
 
-	$IfRun kill "$@" 2> $dev_null &&
-	    { x-return 0; }		# kill is built-in, so cheap
+	$IfRun kill "$@" 2> $dev_null && # kill is built-in, so cheap
+	    { x-return 0; }
 	is-process-alive "${PID#-}" || { x-return 1; }
 
 	# shellcheck disable=SC2155 # don't need 'kill' status. we use stderr
@@ -1077,7 +1077,7 @@ function _signal-jobs() {
 readonly -f _signal-jobs
 
 # these take multiple types, and work with the current $drive_name
-function  suspend-jobs() {
+function  suspend-jobs() {		# only for debugging, usually redefined
 
 	[[ $UID == 0 ]] &&
 	print-call-stack "$drive_name" | tee -a "$file_for_logging"
@@ -1218,8 +1218,8 @@ function set-drive_dirs() {
 	can-profile-not-trace # use x-return to leave function; can comment-out
 	[[ ${1-} != -* && ( -t 0 || -t 1 || -t 2 ) ]] && set -- -a "$@"
 	case $* in
-	    ( '' ) local regex="$drive_name_regex\\b" ;; # ones we backup
-	    ( -a ) local regex="$admin_drive_name_regex\\b" ;; # for sysadmin
+	    ( '' ) local regex="$drive_name_regex" ;; # ones we backup
+	    ( -a ) local regex="$admin_drive_name_regex" ;; # for sysadmin
 	    ( -A ) local regex= ;;	# all filesystems 'df' shows
 	    (  * ) abort-function "[-a | -A]" ;;
 	esac
@@ -2404,7 +2404,7 @@ function is-copy-higher-priority-than-prune() {
 	set-drive_dir   "$drive_name"
 	[[ $action == run ]] || reset-drive-jobs-priorities || return 1
 
-	# dpn't thrash the disk head w/copy src or dst on same drive as prune
+	# don't thrash the disk head w/copy src or dst on same drive as prune
 
 	have-job copy || is-copy-src || { continue-jobs prune; return 1; }
 
@@ -3401,7 +3401,7 @@ readonly backup_period2minimal_snapshot_regex
 set-date_span--scaled() {
 	local _date_span=${1:-$date_span}
 
-	set-product "$_date_span" "$pruning_span_scale_factor"
+	set-product "$_date_span" "${pruning_span_scale_factor#0}" # not octal
 	date_span=$product
 	(( $date_span <= 0 )) && date_span=1
 
@@ -4266,7 +4266,7 @@ function run-rsync() {
 	fi
 	restore-tracing link_dest_opts
 
-	log 2 "starting rsync"
+	log 2 "starting rsync of $(basename $partial_dst)"
 	local -i starting_MB=0		# for *-save-writer-stats
 	_run-rsync-cmd
 	local status=$?
@@ -4439,7 +4439,9 @@ delete-older-dirs-if-small-drive() {
 
 	is-arg1-in-arg2 "$drive_name" "${small_drives-}" || return
 
-	local latest_snapshot dir
+	local latest_snapshot drive_dir dir
+	[[ ${drive_dir-} ]] ||
+	 set-drive_dir "$drive_name"
 	set-latest_snapshot || return
 	latest_snapshot=${latest_snapshot##*/} # basename
 	# shellcheck disable=SC2231 # variable holds a glob
@@ -5131,7 +5133,7 @@ function fill-in-unpruned-empty-snapshots() {
 			[[ $# != 0 ]] || continue # was it pruned away?
 			# desired snapshot could be newly created, or pruned...
 			# shellcheck disable=SC2086 # we want to glob
-			set -- "$drive_dir_prefix"$src_names_glob/"${src_snapshot_1##*/}"
+			eval set -- "$drive_dir_prefix"$src_names_glob/"${src_snapshot_1##*/}"
 			[[ $# != 0 ]] || continue # sources pruned away?
 
 			is-set     drive_name2speed_record ||
@@ -5151,7 +5153,8 @@ function fill-in-unpruned-empty-snapshots() {
 				echo "$args" # save for next pass
 			fi
 		done < "$copy_args_file" > "$skipped_copy_args_file"
-		[[ ! $did_skip_a_snapshot ]] && break # did we do all the work?
+		[[ ! $did_skip_a_snapshot || $debug_opt ]] && # finished work?
+		    break
 		$IfRun cp "$skipped_copy_args_file" "$copy_args_file" # faster
 		[[   $force_opt || $ignore_slow_sources ]] ||
 		    { force_opt=-f; continue; }
@@ -6237,10 +6240,15 @@ readonly -f run-lsblk
 function trim-ps {
 
 	# when prune excludes, prune & cron-job can both have a multi-arg 'rm'
+	# remove --pid= twice, for: sudo-lockpid --pid=...
 	sed -e 's@\( rm [^0-9]*[0-9][^ ]* \).*@\1...@'	\
+	    -e '/ sudo lockpid /d'	\
+	    -e 's/      /  /'		\
 	    -e '/ lockpid .* replica/d' \
 	    -e 's@ --pid=[0-9]* @ @'	\
+	    -e 's@ --pid=[0-9]* @ @'	\
 	    -e "s@ --dir=$lock_dir @ @"	\
+	    -e "s@ $lock_dir/@ @"	\
 	    -e "s@ --quiet @ @"		\
 	    -e 's@/bin/bash /@/@'	\
 	    -e 's@ bash /@ /@'		\
@@ -7925,6 +7933,7 @@ function unmount-drives() {
 		# shellcheck disable=SC2024 # $dev_null always writable
 		sudo umount -h &> $dev_null || warn "need sudo privs" || break
 		umount_cmd="$IfRun sudo umount -v $drive_dir"
+		trap '' SIGHUP		# we want the umount to finish
 		# shellcheck disable=SC2034
 		for _i in {1..99}	# wait for kill to finish
 		    do	$umount_cmd && break
