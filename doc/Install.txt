@@ -458,7 +458,7 @@ is not excessively large, because the average file indde is linked into many
 snapshots).
 
 If you make vm.vfs_cache_pressure too low, pmie will write a message to syslog
-that that looks like:
+that looks like:
 
     pcp-pmie[PID]: Severe demand for real memory N.Mpgsout/s@HOST
 

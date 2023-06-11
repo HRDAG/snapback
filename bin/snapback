@@ -8994,6 +8994,7 @@ PHY reset is blocked due to SOL/IDER session.
 [[ -v    OS_error_strings ]] ||		# can set custom value in $config_file
 readonly OS_error_strings="\
 I/O error
+oom-kill:
 Failed to connect stdout to the journal socket, ignoring: "
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
@@ -9010,6 +9011,9 @@ Synchronize Cache(10) failed"
 readonly XFS_error_strings="\
 Internal error
 xfs_do_force_shutdown
+XFS: xfsaild/
+__alloc_pages_slowpath
+page allocation failure
 Shutting down filesystem"
 
 # shellcheck disable=SC2034 # name used in syslog_search_string_var_names
@@ -9083,6 +9087,8 @@ search-syslog-for-errors() {
 		   -e    '/Result: hostbyte=/s/^sd /scrzzz /' \
 		   -e  's/(blocks? +)[xa-f0-9]+/\1B/' \
 		   -e 's/( error 5 numblks? )[0-9]+/\1N/' \
+		   -e 's/\([0-9]+\)/(PID)/' \
+		   -e 's/(, mode):0x[a-z0-9]+/\1:MODE/' \
 		   -e "s/(sectors? +)[0-9]+.*/$sectors/" \
 		   -e "s/(daddr +)[0-9a-xf]+.*/$daddrs/" \
 		   -e "s/^.*(\\.$service_string)/$services\\1/" |
