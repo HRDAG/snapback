@@ -8137,14 +8137,17 @@ _set-opts-log_opt-mount_opts--for-extN() {
 	   else local ext4_extent_opt=
 	fi
 
-	# If you want to backup nanosecond timestamps or file creation time,
-	# use inode size >= 256; otherwise, use 128.
+	# We default inodes to 256 bytes, to backup nanosecond timestamps,
+	# file creation times, and extended attributes.  This adds an extra
+	# 128 bytes to each file and directory; but both of them typically
+	# have at-least 1024 bytes of data blocks, and file inodes are shared
+	# across snapshots.
 
 	opts+="-v "
 	[[ $opts != *-T* ]] && {
 	[[ $opts != *-b* ]]	&& opts+="-b $block_size "
 	[[ $opts != *-i* ]]	&& opts+="-i $bytes_per_inode "
-	[[ $opts != *-I* ]]	&& opts+="-I 128 "	; }
+	[[ $opts != *-I* ]]	&& opts+="-I 256 "	; }
 	[[ $opts != *-m* ]]	&& opts+="-m .1 "
 	[[ $opts != *extent* ]] && opts+="$ext4_extent_opt "
 

@@ -50,10 +50,9 @@ renice 1 $$ &> /dev/null		# lower priority than logins
 # mkfs_cmd_opts="mkfs.xfs"	      # XFS needed if apps use many hard-links
 # mkfs_cmd_opts="mkfs.xfs -i size=1024"	# action 'dir-sizes' suggests?
 
-# Defaults to opts="-b 1024 -i 1024 -I 128 -m .1"; you can override them,
+# Defaults to opts="-b 1024 -i 1024 -I 256 -m .1"; you can override them,
 # but first read the long comments near _set-opts-log_opt-mount_opts--for-extN.
 # Small block sizes are best, see the comment above about mkfs-backup-drive .
-# Use -I 256 to backup nanosecond timestamps and/or file creation time.
 # Defaults to extent-based if new-enough kernel, override with "-O ^extent".
 	 mkfs_cmd_opts="mkfs.ext4"	# typical GNU/Linux server or laptop
 drv_name2mkfs_cmd_opts[SSD]="mkfs.ext4 -b 1024 -i 3000" # extra inodes
