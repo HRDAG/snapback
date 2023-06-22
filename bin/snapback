@@ -4452,7 +4452,7 @@ delete-older-dirs-if-small-drive() {
 		for dir in ${dirs_to_delete_in_old_snapshots_on_small_drives-}
 		    do	[[ -L $snapshot$dir ]] && continue # e.g. /datos@
 			[[ -d $snapshot$dir ]] || continue
-			$IfRun rm -r "$snapshot$dir"
+			$IfRun rm -r "$PWD/$snapshot$dir"
 		done
 	done
 }
