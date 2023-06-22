@@ -245,8 +245,8 @@ declare -i max_backup_period_for_pruning=0    # default to the same
 # --------------------------------------------------------------------------- #
 
 # Maximum acceptable FileSystem usage (before make pruning highest priority).
-declare -i	    max_FS_usage_percent=95	 # for "df" and "df -i"
-declare -i drv_name2max_FS_usage_percent[XFS]=75 # avoid XFS slowdowns
+# Note that XFS with small (much less than 2GB) log will be slow at high FS %.
+declare -i max_FS_usage_percent=95	# for "df" and "df -i"
 
 # ---------------------------------------------------------
 
